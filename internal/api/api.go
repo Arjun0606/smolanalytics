@@ -30,6 +30,7 @@ func (s *Server) Handler() http.Handler {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 	mux.HandleFunc("POST /v1/events", s.ingest)
+	mux.HandleFunc("POST /v1/ask", s.ask)
 	mux.HandleFunc("GET /v1/funnel", s.apiFunnel)
 	mux.HandleFunc("GET /", s.dashboard)
 	return mux

@@ -72,6 +72,12 @@
   .segmeta{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 12px}
   .segname{font-size:13px} .segnums{font-family:var(--mono);font-size:12px;color:var(--mut)}
 
+  /* the ask answer panel */
+  .askresult{margin:0 0 4px;padding:14px 16px 14px 38px;background:var(--surface2);border:1px solid var(--accent);
+    border-top:none;font-size:14px;line-height:1.6;color:var(--fg);position:relative}
+  .askresult::before{content:"✦";position:absolute;left:14px;top:14px;color:var(--accent)}
+  .askresult.load{color:var(--mut)}
+
   .foot{color:var(--mut2);font-size:12px;text-align:center;padding:28px 0;font-family:var(--mono)}
   @media(max-width:860px){.grid{grid-template-columns:1fr}.stats{grid-template-columns:1fr}}
 </style>
@@ -79,13 +85,15 @@
 <body>
 <header><div class="wrap bar">
   <div class="logo">smol<b>analytics</b></div>
-  <form class="ask" onsubmit="return false">
+  <form class="ask" id="askform">
     <span class="k">›</span>
-    <input placeholder="ask anything   —   why did checkout drop last week? what's my activation rate?" aria-label="ask">
+    <input id="askq" autocomplete="off" placeholder="ask anything   —   what's my conversion rate? where do users drop off? top sources?" aria-label="ask">
     <span class="hint">⏎ ask</span>
   </form>
   <div class="updated">updated {{.Updated}}</div>
-</div></header>
+</div>
+<div class="wrap"><div id="askresult" class="askresult" hidden></div></div>
+</header>
 
 <main class="wrap">
   <div class="stats">
@@ -151,5 +159,19 @@
 
   <div class="foot">metered by smolanalytics · one binary, your data</div>
 </main>
+<script>
+  (function(){
+    var f=document.getElementById('askform'),q=document.getElementById('askq'),res=document.getElementById('askresult');
+    f.addEventListener('submit',function(e){
+      e.preventDefault();
+      var question=q.value.trim(); if(!question) return;
+      res.hidden=false; res.className='askresult load'; res.textContent='thinking…';
+      fetch('/v1/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:question})})
+        .then(function(r){return r.json()})
+        .then(function(j){res.className='askresult'; res.textContent=j.answer||j.error||'no answer';})
+        .catch(function(){res.className='askresult'; res.textContent='something went wrong';});
+    });
+  })();
+</script>
 </body>
 </html>
