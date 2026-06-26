@@ -18,10 +18,11 @@ import (
 func Seed(s store.Store) error {
 	r := rand.New(rand.NewSource(42))
 	start := time.Now().UTC().AddDate(0, 0, -29).Truncate(24 * time.Hour)
+	sources := []string{"google", "twitter", "hacker news", "direct", "reddit"}
 	id := 0
-	emit := func(name, user string, t time.Time) error {
+	emit := func(name, user string, t time.Time, props map[string]any) error {
 		id++
-		return s.Ingest(event.Event{ID: fmt.Sprintf("e%d", id), Name: name, DistinctID: user, Timestamp: t})
+		return s.Ingest(event.Event{ID: fmt.Sprintf("e%d", id), Name: name, DistinctID: user, Timestamp: t, Properties: props})
 	}
 
 	for day := 0; day < 30; day++ {
@@ -30,22 +31,35 @@ func Seed(s store.Store) error {
 		nSignups := 18 + day/2 + r.Intn(20)
 		for i := 0; i < nSignups; i++ {
 			user := fmt.Sprintf("u%d", id)
+			source := sources[r.Intn(len(sources))]
+			plan := "free"
+			if r.Float64() < 0.3 {
+				plan = "pro"
+			}
+			props := map[string]any{"source": source, "plan": plan}
 			t := dayStart.Add(time.Duration(r.Intn(24)) * time.Hour).Add(time.Duration(r.Intn(60)) * time.Minute)
 
-			if err := emit("signup", user, t); err != nil {
+			if err := emit("signup", user, t, props); err != nil {
 				return err
 			}
-			if err := emit("open", user, t.Add(time.Minute)); err != nil {
+			if err := emit("open", user, t.Add(time.Minute), props); err != nil {
 				return err
 			}
 
-			// ~58% activate, of those ~45% check out (the funnel drop-off)
-			if r.Float64() < 0.58 {
-				if err := emit("activate", user, t.Add(time.Duration(r.Intn(180)+5)*time.Minute)); err != nil {
+			// pro users + google traffic convert a bit better (so breakdowns are interesting)
+			activateP, checkoutP := 0.55, 0.42
+			if plan == "pro" {
+				activateP, checkoutP = 0.78, 0.6
+			}
+			if source == "hacker news" {
+				activateP += 0.08
+			}
+			if r.Float64() < activateP {
+				if err := emit("activate", user, t.Add(time.Duration(r.Intn(180)+5)*time.Minute), props); err != nil {
 					return err
 				}
-				if r.Float64() < 0.45 {
-					if err := emit("checkout", user, t.Add(time.Duration(r.Intn(48)+2)*time.Hour)); err != nil {
+				if r.Float64() < checkoutP {
+					if err := emit("checkout", user, t.Add(time.Duration(r.Intn(48)+2)*time.Hour), props); err != nil {
 						return err
 					}
 				}
@@ -55,7 +69,7 @@ func Seed(s store.Store) error {
 			for d := 1; d <= 14; d++ {
 				if r.Float64() < 0.55/float64(d) {
 					ret := dayStart.AddDate(0, 0, d).Add(time.Duration(r.Intn(24)) * time.Hour)
-					if err := emit("open", user, ret); err != nil {
+					if err := emit("open", user, ret, props); err != nil {
 						return err
 					}
 				}

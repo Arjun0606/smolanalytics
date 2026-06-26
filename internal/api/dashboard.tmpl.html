@@ -66,6 +66,12 @@
   .bars .col:hover .bar{opacity:1}
   .axis{display:flex;justify-content:space-between;color:var(--mut2);font-family:var(--mono);font-size:10px;margin-top:8px}
 
+  /* segmentation breakdown */
+  .seg{position:relative;height:34px;margin-bottom:5px;background:var(--surface2);border:1px solid var(--line);overflow:hidden}
+  .segbar{position:absolute;inset:0 auto 0 0;background:rgba(245,166,35,.16);border-right:2px solid rgba(245,166,35,.5)}
+  .segmeta{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 12px}
+  .segname{font-size:13px} .segnums{font-family:var(--mono);font-size:12px;color:var(--mut)}
+
   .foot{color:var(--mut2);font-size:12px;text-align:center;padding:28px 0;font-family:var(--mono)}
   @media(max-width:860px){.grid{grid-template-columns:1fr}.stats{grid-template-columns:1fr}}
 </style>
@@ -115,19 +121,31 @@
       </div>
     </div>
 
-    <div class="card">
-      <h2>Retention · returning users</h2>
-      <table class="heat">
-        <thead><tr><th>Cohort</th><th>n</th>{{range .RetDayHeaders}}<th>{{.}}</th>{{end}}</tr></thead>
-        <tbody>
-          {{range .Retention}}
-          <tr>
-            <td class="lab">{{.Date}}</td><td class="lab">{{.Size}}</td>
-            {{range .Cells}}{{if .Empty}}<td class="empty"></td>{{else}}<td style="{{.Style}}"><div class="cell">{{.Label}}</div></td>{{end}}{{end}}
-          </tr>
-          {{end}}
-        </tbody>
-      </table>
+    <div>
+      <div class="card">
+        <h2>Retention · returning users</h2>
+        <table class="heat">
+          <thead><tr><th>Cohort</th><th>n</th>{{range .RetDayHeaders}}<th>{{.}}</th>{{end}}</tr></thead>
+          <tbody>
+            {{range .Retention}}
+            <tr>
+              <td class="lab">{{.Date}}</td><td class="lab">{{.Size}}</td>
+              {{range .Cells}}{{if .Empty}}<td class="empty"></td>{{else}}<td style="{{.Style}}"><div class="cell">{{.Label}}</div></td>{{end}}{{end}}
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>Signups by source</h2>
+        {{range .BySource}}
+        <div class="seg">
+          <div class="segbar" style="width:{{.BarPct}}%"></div>
+          <div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div>
+        </div>
+        {{end}}
+      </div>
     </div>
   </div>
 

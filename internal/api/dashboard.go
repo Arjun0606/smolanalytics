@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
+	"github.com/Arjun0606/smolanalytics/internal/query"
 )
 
 //go:embed dashboard.tmpl.html
@@ -43,6 +45,13 @@ type trendBar struct {
 	HeightPct int
 }
 
+type segRow struct {
+	Value  string
+	Count  int
+	Pct    int
+	BarPct int // width relative to the top group
+}
+
 type dashVM struct {
 	TotalUsers    int
 	Signups       int
@@ -51,6 +60,7 @@ type dashVM struct {
 	Retention     []retRow
 	RetDayHeaders []string
 	Trend         []trendBar
+	BySource      []segRow
 	Events        []string
 	Updated       string
 }
@@ -123,6 +133,29 @@ func (s *Server) dashboard(w http.ResponseWriter, _ *http.Request) {
 			Count:     p.Count,
 			HeightPct: int(math.Round(float64(p.Count) / float64(maxT) * 100)),
 		})
+	}
+
+	// Segmentation: signups broken down by acquisition source.
+	var signups []event.Event
+	for _, e := range evs {
+		if e.Name == "signup" {
+			signups = append(signups, e)
+		}
+	}
+	groups := query.Breakdown(signups, "source")
+	top := 0
+	if len(groups) > 0 {
+		top = groups[0].Count
+	}
+	for _, g := range groups {
+		row := segRow{Value: g.Value, Count: g.Count}
+		if vm.Signups > 0 {
+			row.Pct = int(math.Round(float64(g.Count) / float64(vm.Signups) * 100))
+		}
+		if top > 0 {
+			row.BarPct = int(math.Round(float64(g.Count) / float64(top) * 100))
+		}
+		vm.BySource = append(vm.BySource, row)
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
