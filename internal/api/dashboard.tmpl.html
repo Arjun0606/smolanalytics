@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>smolanalytics</title>
+<style>
+  :root{
+    --bg:#0A0A0A; --surface:#141414; --surface2:#1A1A1A; --line:#262626;
+    --fg:#FAFAFA; --mut:#8E8E8E; --mut2:#5A5A5A; --accent:#F5A623; --warn:#E5544B; --ok:#3DD68C;
+    --mono:ui-monospace,"JetBrains Mono",SFMono-Regular,Menlo,monospace;
+    --sans:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  a{color:inherit}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 24px}
+
+  /* top bar + the hero ask command bar */
+  header{position:sticky;top:0;z-index:10;background:rgba(10,10,10,.85);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+  .bar{display:flex;align-items:center;gap:18px;height:60px}
+  .logo{font-weight:800;letter-spacing:-.02em;font-size:17px;white-space:nowrap}
+  .logo b{color:var(--accent)}
+  .ask{flex:1;position:relative}
+  .ask input{width:100%;background:var(--surface);border:1px solid var(--line);color:var(--fg);
+    font-family:var(--mono);font-size:13px;padding:11px 14px 11px 38px;outline:none;transition:border-color .15s}
+  .ask input:focus{border-color:var(--accent)}
+  .ask .k{position:absolute;left:13px;top:50%;transform:translateY(-50%);color:var(--mut2)}
+  .ask .hint{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--mut2);font-family:var(--mono);font-size:11px}
+  .updated{color:var(--mut2);font-family:var(--mono);font-size:11px;white-space:nowrap}
+
+  /* stat cards */
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:24px 0}
+  .stat{background:var(--surface);border:1px solid var(--line);padding:18px}
+  .stat .l{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--mut)}
+  .stat .v{font-family:var(--mono);font-size:30px;font-weight:700;margin-top:6px;letter-spacing:-.02em}
+  .stat .v.acc{color:var(--accent)}
+
+  .grid{display:grid;grid-template-columns:1.1fr .9fr;gap:14px}
+  .card{background:var(--surface);border:1px solid var(--line);padding:20px;margin-bottom:14px}
+  .card h2{font-size:13px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.1em;color:var(--mut);margin:0 0 18px}
+
+  /* funnel */
+  .fstep{margin-bottom:6px}
+  .fdrop{font-family:var(--mono);font-size:11px;color:var(--warn);margin:8px 0 4px 2px}
+  .fbarwrap{position:relative;height:42px;background:var(--surface2);border:1px solid var(--line);overflow:hidden}
+  .fbar{position:absolute;inset:0 auto 0 0;background:linear-gradient(90deg,rgba(245,166,35,.28),rgba(245,166,35,.12));border-right:2px solid var(--accent)}
+  .fmeta{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 14px}
+  .fname{font-weight:600}
+  .fnums{font-family:var(--mono);font-size:12px}
+  .fnums .c{color:var(--fg)} .fnums .p{color:var(--accent);margin-left:10px}
+
+  /* retention heatmap */
+  table.heat{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:11px}
+  table.heat th{color:var(--mut);font-weight:500;text-align:center;padding:4px 0;border-bottom:1px solid var(--line)}
+  table.heat th:first-child,table.heat td:first-child{text-align:left;color:var(--mut)}
+  table.heat td{text-align:center;padding:0;height:30px;color:#0A0A0A;font-weight:600}
+  table.heat td.lab{color:var(--mut);font-weight:400;padding-right:8px}
+  table.heat td.empty{background:var(--surface2)}
+  table.heat .cell{display:flex;align-items:center;justify-content:center;height:30px}
+
+  /* trends */
+  .bars{display:flex;align-items:flex-end;gap:3px;height:120px;padding-top:10px}
+  .bars .col{flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%}
+  .bars .bar{background:var(--accent);opacity:.55;min-height:2px;transition:opacity .15s}
+  .bars .col:hover .bar{opacity:1}
+  .axis{display:flex;justify-content:space-between;color:var(--mut2);font-family:var(--mono);font-size:10px;margin-top:8px}
+
+  .foot{color:var(--mut2);font-size:12px;text-align:center;padding:28px 0;font-family:var(--mono)}
+  @media(max-width:860px){.grid{grid-template-columns:1fr}.stats{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header><div class="wrap bar">
+  <div class="logo">smol<b>analytics</b></div>
+  <form class="ask" onsubmit="return false">
+    <span class="k">›</span>
+    <input placeholder="ask anything   —   why did checkout drop last week? what's my activation rate?" aria-label="ask">
+    <span class="hint">⏎ ask</span>
+  </form>
+  <div class="updated">updated {{.Updated}}</div>
+</div></header>
+
+<main class="wrap">
+  <div class="stats">
+    <div class="stat"><div class="l">Users</div><div class="v">{{.TotalUsers}}</div></div>
+    <div class="stat"><div class="l">Signups (30d)</div><div class="v">{{.Signups}}</div></div>
+    <div class="stat"><div class="l">Signup → checkout</div><div class="v acc">{{.OverallConv}}%</div></div>
+  </div>
+
+  <div class="grid">
+    <div>
+      <div class="card">
+        <h2>Funnel · signup → activate → checkout</h2>
+        {{range .Funnel}}
+          {{if not .First}}<div class="fdrop">↓ {{.PctPrev}}% continue · {{.Dropped}} dropped</div>{{end}}
+          <div class="fstep">
+            <div class="fbarwrap">
+              <div class="fbar" style="width:{{.PctTop}}%"></div>
+              <div class="fmeta">
+                <span class="fname">{{.Event}}</span>
+                <span class="fnums"><span class="c">{{.Count}}</span><span class="p">{{.PctTop}}%</span></span>
+              </div>
+            </div>
+          </div>
+        {{end}}
+      </div>
+
+      <div class="card">
+        <h2>Signups per day</h2>
+        <div class="bars">
+          {{range .Trend}}<div class="col" title="{{.Date}}: {{.Count}}"><div class="bar" style="height:{{.HeightPct}}%"></div></div>{{end}}
+        </div>
+        <div class="axis"><span>{{with index .Trend 0}}{{.Date}}{{end}}</span><span>now</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Retention · returning users</h2>
+      <table class="heat">
+        <thead><tr><th>Cohort</th><th>n</th>{{range .RetDayHeaders}}<th>{{.}}</th>{{end}}</tr></thead>
+        <tbody>
+          {{range .Retention}}
+          <tr>
+            <td class="lab">{{.Date}}</td><td class="lab">{{.Size}}</td>
+            {{range .Cells}}{{if .Empty}}<td class="empty"></td>{{else}}<td style="{{.Style}}"><div class="cell">{{.Label}}</div></td>{{end}}{{end}}
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="foot">metered by smolanalytics · one binary, your data</div>
+</main>
+</body>
+</html>
