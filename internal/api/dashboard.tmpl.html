@@ -72,6 +72,16 @@
   .segmeta{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 12px}
   .segname{font-size:13px} .segnums{font-family:var(--mono);font-size:12px;color:var(--mut)}
 
+  /* segmented funnel conversion */
+  .segconv{display:flex;gap:18px}
+  .sc{flex:1}
+  .sc-h{display:flex;align-items:baseline;justify-content:space-between}
+  .sc-name{font-size:13px;text-transform:capitalize}
+  .sc-conv{font-family:var(--mono);font-size:22px;font-weight:700;color:var(--accent)}
+  .sc-track{height:6px;background:var(--surface2);border:1px solid var(--line);margin:8px 0 6px;overflow:hidden}
+  .sc-fill{height:100%;background:var(--accent)}
+  .sc-sub{font-family:var(--mono);font-size:11px;color:var(--mut)}
+
   /* the ask answer panel */
   .askresult{margin:0 0 4px;padding:14px 16px 14px 38px;background:var(--surface2);border:1px solid var(--accent);
     border-top:none;font-size:14px;line-height:1.6;color:var(--fg);position:relative}
@@ -118,6 +128,19 @@
             </div>
           </div>
         {{end}}
+      </div>
+
+      <div class="card">
+        <h2>Conversion by plan · segmented funnel</h2>
+        <div class="segconv">
+          {{range .ConvByPlan}}
+          <div class="sc">
+            <div class="sc-h"><span class="sc-name">{{.Value}}</span><span class="sc-conv">{{.Conv}}%</span></div>
+            <div class="sc-track"><div class="sc-fill" style="width:{{.Conv}}%"></div></div>
+            <div class="sc-sub">{{.Users}} users</div>
+          </div>
+          {{end}}
+        </div>
       </div>
 
       <div class="card">

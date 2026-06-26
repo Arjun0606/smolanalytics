@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"math"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/event"
@@ -52,6 +53,42 @@ type segRow struct {
 	BarPct int // width relative to the top group
 }
 
+// segConv is one segment's funnel conversion — the "pro converts 2x free" insight.
+type segConv struct {
+	Value string
+	Users int
+	Conv  int // overall funnel conversion %, this segment
+}
+
+// funnelBySegment runs the signup→activate→checkout funnel separately for each
+// value of a property — segmentation applied to a report, the core Mixpanel move.
+func funnelBySegment(evs []event.Event, property string) []segConv {
+	vals := map[string]bool{}
+	for _, e := range evs {
+		if e.Name == "signup" {
+			if v, ok := e.Properties[property]; ok {
+				vals[toStr(v)] = true
+			}
+		}
+	}
+	steps := []funnel.Step{{Event: "signup"}, {Event: "activate"}, {Event: "checkout"}}
+	out := make([]segConv, 0, len(vals))
+	for v := range vals {
+		seg := query.Apply(evs, []query.Filter{{Property: property, Op: query.Eq, Value: v}})
+		fr := funnel.Compute(seg, steps, 7*24*time.Hour)
+		out = append(out, segConv{Value: v, Users: fr.Steps[0].Count, Conv: pct(fr.OverallConversion)})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Users > out[j].Users })
+	return out
+}
+
+func toStr(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
+}
+
 type dashVM struct {
 	TotalUsers    int
 	Signups       int
@@ -61,6 +98,7 @@ type dashVM struct {
 	RetDayHeaders []string
 	Trend         []trendBar
 	BySource      []segRow
+	ConvByPlan    []segConv
 	Events        []string
 	Updated       string
 }
@@ -157,6 +195,8 @@ func (s *Server) dashboard(w http.ResponseWriter, _ *http.Request) {
 		}
 		vm.BySource = append(vm.BySource, row)
 	}
+
+	vm.ConvByPlan = funnelBySegment(evs, "plan")
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = dashTmpl.Execute(w, vm)
