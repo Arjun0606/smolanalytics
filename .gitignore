@@ -1,0 +1,8 @@
+/bin/
+*.out
+.DS_Store
+/dist/
+/smolanalytics
+.env
+.env.*
+gtm/
