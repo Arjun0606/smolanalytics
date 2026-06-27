@@ -186,6 +186,17 @@
     <div id="saved" class="saved"><div class="exsummary">no saved reports yet — build one above and hit Save</div></div>
   </div>
 
+  <div class="card">
+    <h2>Cohorts · define a user group once, reuse on any report</h2>
+    <div class="exrow">
+      <input id="coName" autocomplete="off" placeholder="cohort name (e.g. Paying users)">
+      <input id="coEvents" list="exEvents" autocomplete="off" placeholder="events, comma-separated (e.g. checkout)">
+      <select id="coMatch"><option value="any">did any</option><option value="all">did all</option></select>
+      <button id="coCreate">Create</button>
+    </div>
+    <div id="coList" class="saved"><div class="exsummary">no cohorts yet</div></div>
+  </div>
+
   <div class="grid">
     <div>
       <div class="card">
@@ -436,6 +447,33 @@
         .then(function(r){return r.json()}).then(loadSaved).catch(function(){});
     };
     loadSaved();
+
+    // cohort builder — create a reusable user group from the dashboard
+    var coName=document.getElementById('coName'),coEvents=document.getElementById('coEvents'),
+        coMatch=document.getElementById('coMatch'),coCreate=document.getElementById('coCreate'),
+        coList=document.getElementById('coList');
+    function renderCohorts(items){
+      if(!items.length){coList.innerHTML='<div class="exsummary">no cohorts yet</div>';return;}
+      coList.innerHTML='';
+      items.forEach(function(c){
+        var chip=document.createElement('div'); chip.className='chip';
+        chip.innerHTML='<span>'+esc(c.name)+'</span><span class="t">'+esc(c.match||'any')+' · '+esc((c.events||[]).join(','))+'</span><span class="x">✕</span>';
+        chip.querySelector('.x').onclick=function(){ fetch('/v1/cohorts/'+c.id,{method:'DELETE'}).then(refreshCohorts); };
+        coList.appendChild(chip);
+      });
+    }
+    function refreshCohorts(){
+      fetch('/v1/cohorts').then(function(r){return r.json()}).then(function(j){renderCohorts(j.cohorts||[]); loadCohorts();}).catch(function(){});
+    }
+    coCreate.onclick=function(){
+      var name=coName.value.trim(); if(!name)return;
+      var events=coEvents.value.split(',').map(function(s){return s.trim();}).filter(Boolean);
+      if(!events.length){coEvents.focus();return;}
+      fetch('/v1/cohorts',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({name:name,match:coMatch.value,events:events})})
+        .then(function(r){return r.json()}).then(function(){coName.value='';coEvents.value='';refreshCohorts();}).catch(function(){});
+    };
+    refreshCohorts();
   })();
 </script>
 </body>
