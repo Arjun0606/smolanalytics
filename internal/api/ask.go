@@ -141,4 +141,3 @@ func hasAny(s string, subs ...string) bool {
 	}
 	return false
 }
-

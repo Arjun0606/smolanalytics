@@ -68,9 +68,11 @@ func serve(st store.Store, closeStore func() error) {
 	if addr == "" {
 		addr = ":8080"
 	}
+	app := api.New(st)
+	app.SetWriteKey(os.Getenv("SMOLANALYTICS_WRITE_KEY"))
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           api.New(st).Handler(),
+		Handler:           app.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,

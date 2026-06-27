@@ -5,10 +5,13 @@ package api
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
+	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/event"
@@ -19,12 +22,20 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/trends"
 )
 
+//go:embed sdk.js
+var sdkJS string
+
 type Server struct {
-	store store.Store
-	mcp   *mcp.Server
+	store    store.Store
+	mcp      *mcp.Server
+	writeKey string // if set, POST /v1/events requires Authorization: Bearer <writeKey>
 }
 
 func New(s store.Store) *Server { return &Server{store: s, mcp: mcp.New(s)} }
+
+// SetWriteKey gates event ingestion behind a write key (production). Empty = open
+// (dev). The SDK passes the same key.
+func (s *Server) SetWriteKey(k string) { s.writeKey = k }
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -32,11 +43,45 @@ func (s *Server) Handler() http.Handler {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 	mux.HandleFunc("POST /v1/events", s.ingest)
+	mux.HandleFunc("OPTIONS /v1/events", s.preflight) // browser SDK CORS preflight
+	mux.HandleFunc("GET /sdk.js", s.serveSDK)
 	mux.HandleFunc("POST /v1/ask", s.ask)
 	mux.HandleFunc("GET /v1/funnel", s.apiFunnel)
 	mux.HandleFunc("POST /mcp", s.handleMCP)
 	mux.HandleFunc("GET /", s.dashboard)
 	return mux
+}
+
+// setCORS lets the browser SDK post events from any origin.
+func setCORS(w http.ResponseWriter) {
+	h := w.Header()
+	h.Set("Access-Control-Allow-Origin", "*")
+	h.Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	h.Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	h.Set("Access-Control-Max-Age", "86400")
+}
+
+func (s *Server) preflight(w http.ResponseWriter, _ *http.Request) {
+	setCORS(w)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) serveSDK(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	_, _ = io.WriteString(w, sdkJS)
+}
+
+// authorized checks the write key (constant-time). Open when no key is configured.
+func (s *Server) authorized(r *http.Request) bool {
+	if s.writeKey == "" {
+		return true
+	}
+	got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if got == "" {
+		got = r.URL.Query().Get("key") // sendBeacon fallback can't set headers
+	}
+	return subtle.ConstantTimeCompare([]byte(got), []byte(s.writeKey)) == 1
 }
 
 // handleMCP is the Streamable-HTTP MCP transport: point a remote MCP client
@@ -56,6 +101,11 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 // ingest accepts a single event or an array. Missing ID gets one (so the client
 // need not generate it); missing timestamp defaults to now. Idempotent on ID.
 func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
+	setCORS(w)
+	if !s.authorized(r) {
+		writeErr(w, http.StatusUnauthorized, "invalid or missing write key")
+		return
+	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, 4<<20))
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "read error")

@@ -17,6 +17,29 @@ Simple analytics (Plausible, Fathom) can't do funnels or product analytics. Powe
 - **Beautiful by default.** Server-rendered, instant, opinionated — looks designed, not assembled.
 - **Open source.** Own your data; no per-event tax.
 
+## Send events (2 minutes)
+Drop the SDK in your app — it batches, persists an anonymous id, and flushes on unload:
+
+```html
+<script src="https://YOUR_HOST/sdk.js"></script>
+<script>
+  smolanalytics.init("YOUR_WRITE_KEY", { host: "https://YOUR_HOST" });
+  smolanalytics.track("signup", { plan: "pro", source: "hacker news" });
+  // later, when they log in:
+  smolanalytics.identify("user_123", { email: "a@b.com" });
+</script>
+```
+
+Or POST directly (any language) — single event or a batch:
+
+```sh
+curl -X POST https://YOUR_HOST/v1/events \
+  -H "Authorization: Bearer YOUR_WRITE_KEY" \
+  -d '{"name":"signup","distinct_id":"user_123","properties":{"plan":"pro"}}'
+```
+
+Set `SMOLANALYTICS_WRITE_KEY` to require the key (production); leave it unset for local dev. CORS is open so the browser SDK works from any origin.
+
 ## Ask it anything (MCP)
 smolanalytics speaks the Model Context Protocol, so your own AI assistant reads your analytics directly:
 
