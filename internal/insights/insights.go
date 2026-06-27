@@ -70,7 +70,7 @@ func (s *Store) Save(in Insight) (Insight, error) {
 		return Insight{}, fmt.Errorf("name is required")
 	}
 	switch in.Type {
-	case "funnel", "trend", "breakdown", "retention":
+	case "funnel", "trend", "breakdown", "retention", "paths", "lifecycle", "stickiness", "groups":
 	default:
 		return Insight{}, fmt.Errorf("unknown report type %q", in.Type)
 	}
