@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/api"
+	"github.com/Arjun0606/smolanalytics/internal/cohort"
 	"github.com/Arjun0606/smolanalytics/internal/demo"
 	"github.com/Arjun0606/smolanalytics/internal/insights"
 	"github.com/Arjun0606/smolanalytics/internal/mcp"
@@ -75,6 +76,11 @@ func serve(st store.Store, closeStore func() error) {
 		app.SetInsights(ins)
 	} else {
 		log.Printf("smolanalytics: saved reports disabled (%v)", err)
+	}
+	if coh, err := cohort.Open(dataPath() + ".cohorts.json"); err == nil {
+		app.SetCohorts(coh)
+	} else {
+		log.Printf("smolanalytics: cohorts disabled (%v)", err)
 	}
 	srv := &http.Server{
 		Addr:              addr,

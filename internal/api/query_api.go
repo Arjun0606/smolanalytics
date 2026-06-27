@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/cohort"
 	"github.com/Arjun0606/smolanalytics/internal/engagement"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/paths"
@@ -26,13 +27,21 @@ func filtersFrom(r *http.Request) []query.Filter {
 	return fs
 }
 
-// filtered loads all events and applies the request's filters.
+// filtered loads all events, applies the request's property filters, and (if
+// ?cohort=<id> is set) scopes to that cohort's members. Cohort membership is
+// resolved over the full history, then the filtered events are kept for those users.
 func (s *Server) filtered(r *http.Request) ([]event.Event, error) {
-	evs, err := s.store.Range(time.Time{}, time.Time{})
+	all, err := s.store.Range(time.Time{}, time.Time{})
 	if err != nil {
 		return nil, err
 	}
-	return query.Apply(evs, filtersFrom(r)), nil
+	evs := query.Apply(all, filtersFrom(r))
+	if cid := r.URL.Query().Get("cohort"); cid != "" && s.cohorts != nil {
+		if d, ok := s.cohorts.Get(cid); ok {
+			evs = cohort.FilterToUsers(evs, cohort.Resolve(all, d))
+		}
+	}
+	return evs, nil
 }
 
 // These endpoints back the interactive Explore panel: run any report on any of the
