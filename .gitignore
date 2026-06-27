@@ -3,6 +3,7 @@
 .DS_Store
 /dist/
 /smolanalytics
+*.data
 .env
 .env.*
 gtm/
