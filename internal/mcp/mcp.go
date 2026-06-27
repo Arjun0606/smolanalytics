@@ -21,6 +21,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/engagement"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
+	"github.com/Arjun0606/smolanalytics/internal/paths"
 	"github.com/Arjun0606/smolanalytics/internal/query"
 	"github.com/Arjun0606/smolanalytics/internal/retention"
 	"github.com/Arjun0606/smolanalytics/internal/store"
@@ -260,6 +261,20 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		}
 		_ = json.Unmarshal(args, &a)
 		return jsonText(engagement.ComputeStickiness(query.Apply(evs, a.Filters), time.Time{}))
+	case "paths":
+		var a struct {
+			Start   string         `json:"start"`
+			Depth   int            `json:"depth"`
+			Filters []query.Filter `json:"filters"`
+		}
+		_ = json.Unmarshal(args, &a)
+		if a.Start == "" {
+			return "", fmt.Errorf("paths needs a start event")
+		}
+		if a.Depth <= 0 {
+			a.Depth = 3
+		}
+		return jsonText(paths.After(query.Apply(evs, a.Filters), a.Start, a.Depth))
 	default:
 		return "", fmt.Errorf("unknown tool: %s", name)
 	}

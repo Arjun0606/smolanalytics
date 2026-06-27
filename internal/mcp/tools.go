@@ -107,6 +107,15 @@ var toolList = []map[string]any{
 			"filters": filtersSchema,
 		}, nil),
 	},
+	{
+		"name":        "paths",
+		"description": "User flows: after a start event, what do users do next (ranked at each step)? Use for 'what do users do after signup', 'where do users go from the pricing page', 'common paths after X'.",
+		"inputSchema": obj(map[string]any{
+			"start":   map[string]any{"type": "string", "description": "The event to start the flow from, e.g. \"signup\"."},
+			"depth":   map[string]any{"type": "number", "description": "How many steps to follow (default 3)."},
+			"filters": filtersSchema,
+		}, []string{"start"}),
+	},
 }
 
 func obj(props map[string]any, required []string) map[string]any {

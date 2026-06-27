@@ -8,6 +8,7 @@ import (
 
 	"github.com/Arjun0606/smolanalytics/internal/engagement"
 	"github.com/Arjun0606/smolanalytics/internal/event"
+	"github.com/Arjun0606/smolanalytics/internal/paths"
 	"github.com/Arjun0606/smolanalytics/internal/query"
 	"github.com/Arjun0606/smolanalytics/internal/retention"
 	"github.com/Arjun0606/smolanalytics/internal/trends"
@@ -138,4 +139,26 @@ func (s *Server) apiStickiness(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, engagement.ComputeStickiness(evs, time.Time{}))
+}
+
+// GET /v1/paths?start=signup&depth=3&filters=... — what users do after an event
+func (s *Server) apiPaths(w http.ResponseWriter, r *http.Request) {
+	start := r.URL.Query().Get("start")
+	if start == "" {
+		writeErr(w, http.StatusBadRequest, "start event is required")
+		return
+	}
+	depth := 3
+	if v, err := strconv.Atoi(r.URL.Query().Get("depth")); err == nil && v > 0 {
+		depth = v
+	}
+	if depth > 10 {
+		depth = 10
+	}
+	evs, err := s.filtered(r)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, paths.After(evs, start, depth))
 }
