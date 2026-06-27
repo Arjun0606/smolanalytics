@@ -21,6 +21,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/engagement"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
+	"github.com/Arjun0606/smolanalytics/internal/groups"
 	"github.com/Arjun0606/smolanalytics/internal/paths"
 	"github.com/Arjun0606/smolanalytics/internal/query"
 	"github.com/Arjun0606/smolanalytics/internal/retention"
@@ -275,6 +276,17 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 			a.Depth = 3
 		}
 		return jsonText(paths.After(query.Apply(evs, a.Filters), a.Start, a.Depth))
+	case "groups":
+		var a struct {
+			Property string         `json:"property"`
+			Limit    int            `json:"limit"`
+			Filters  []query.Filter `json:"filters"`
+		}
+		_ = json.Unmarshal(args, &a)
+		if a.Property == "" {
+			return "", fmt.Errorf("groups needs a group property, e.g. \"company\"")
+		}
+		return jsonText(groups.Compute(query.Apply(evs, a.Filters), a.Property, time.Time{}, a.Limit))
 	default:
 		return "", fmt.Errorf("unknown tool: %s", name)
 	}

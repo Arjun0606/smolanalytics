@@ -9,6 +9,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/cohort"
 	"github.com/Arjun0606/smolanalytics/internal/engagement"
 	"github.com/Arjun0606/smolanalytics/internal/event"
+	"github.com/Arjun0606/smolanalytics/internal/groups"
 	"github.com/Arjun0606/smolanalytics/internal/paths"
 	"github.com/Arjun0606/smolanalytics/internal/query"
 	"github.com/Arjun0606/smolanalytics/internal/retention"
@@ -170,4 +171,23 @@ func (s *Server) apiPaths(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, paths.After(evs, start, depth))
+}
+
+// GET /v1/groups?property=company&limit=50&filters=... — account-level roll-up
+func (s *Server) apiGroups(w http.ResponseWriter, r *http.Request) {
+	property := r.URL.Query().Get("property")
+	if property == "" {
+		writeErr(w, http.StatusBadRequest, "property is required (the group key, e.g. company)")
+		return
+	}
+	limit := 50
+	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 {
+		limit = v
+	}
+	evs, err := s.filtered(r)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, groups.Compute(evs, property, time.Time{}, limit))
 }
