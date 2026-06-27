@@ -17,6 +17,7 @@ import (
 
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
+	"github.com/Arjun0606/smolanalytics/internal/insights"
 	"github.com/Arjun0606/smolanalytics/internal/mcp"
 	"github.com/Arjun0606/smolanalytics/internal/retention"
 	"github.com/Arjun0606/smolanalytics/internal/store"
@@ -32,10 +33,17 @@ var Version = "0.1.0"
 type Server struct {
 	store    store.Store
 	mcp      *mcp.Server
+	insights *insights.Store
 	writeKey string // if set, POST /v1/events requires Authorization: Bearer <writeKey>
 }
 
-func New(s store.Store) *Server { return &Server{store: s, mcp: mcp.New(s)} }
+func New(s store.Store) *Server {
+	ins, _ := insights.Open("") // in-memory by default; SetInsights adds persistence
+	return &Server{store: s, mcp: mcp.New(s), insights: ins}
+}
+
+// SetInsights swaps in a persistent saved-reports store.
+func (s *Server) SetInsights(st *insights.Store) { s.insights = st }
 
 // SetWriteKey gates event ingestion behind a write key (production). Empty = open
 // (dev). The SDK passes the same key.
@@ -61,6 +69,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/events/recent", s.recentEvents)
 	mux.HandleFunc("GET /v1/users/{id}", s.userActivity)
 	mux.HandleFunc("GET /v1/export", s.export)
+	mux.HandleFunc("GET /v1/insights", s.listInsights)
+	mux.HandleFunc("POST /v1/insights", s.saveInsight)
+	mux.HandleFunc("DELETE /v1/insights/{id}", s.deleteInsight)
 	mux.HandleFunc("POST /mcp", s.handleMCP)
 	mux.HandleFunc("GET /", s.dashboard)
 	return recoverMW(mux)

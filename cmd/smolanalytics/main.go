@@ -15,6 +15,7 @@ import (
 
 	"github.com/Arjun0606/smolanalytics/internal/api"
 	"github.com/Arjun0606/smolanalytics/internal/demo"
+	"github.com/Arjun0606/smolanalytics/internal/insights"
 	"github.com/Arjun0606/smolanalytics/internal/mcp"
 	"github.com/Arjun0606/smolanalytics/internal/store"
 	"github.com/Arjun0606/smolanalytics/internal/store/file"
@@ -70,6 +71,11 @@ func serve(st store.Store, closeStore func() error) {
 	}
 	app := api.New(st)
 	app.SetWriteKey(os.Getenv("SMOLANALYTICS_WRITE_KEY"))
+	if ins, err := insights.Open(dataPath() + ".insights.json"); err == nil {
+		app.SetInsights(ins)
+	} else {
+		log.Printf("smolanalytics: saved reports disabled (%v)", err)
+	}
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           app.Handler(),
