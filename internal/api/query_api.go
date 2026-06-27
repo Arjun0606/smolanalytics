@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/engagement"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/query"
 	"github.com/Arjun0606/smolanalytics/internal/retention"
@@ -110,4 +111,31 @@ func (s *Server) apiRetention(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, retention.Compute(evs, days, r.URL.Query().Get("event")))
+}
+
+// GET /v1/lifecycle?days=30&filters=... — new/returning/resurrected/dormant per day
+func (s *Server) apiLifecycle(w http.ResponseWriter, r *http.Request) {
+	days := 30
+	if v, err := strconv.Atoi(r.URL.Query().Get("days")); err == nil && v > 0 {
+		days = v
+	}
+	if days > 180 {
+		days = 180
+	}
+	evs, err := s.filtered(r)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"days": engagement.ComputeLifecycle(evs, days)})
+}
+
+// GET /v1/stickiness?filters=... — DAU/WAU/MAU + ratio
+func (s *Server) apiStickiness(w http.ResponseWriter, r *http.Request) {
+	evs, err := s.filtered(r)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, engagement.ComputeStickiness(evs, time.Time{}))
 }

@@ -92,6 +92,21 @@ var toolList = []map[string]any{
 			"distinct_id": map[string]any{"type": "string", "description": "The user/visitor id to look up."},
 		}, []string{"distinct_id"}),
 	},
+	{
+		"name":        "lifecycle",
+		"description": "Daily lifecycle breakdown: how many users are new, returning, resurrected, or went dormant each day. Use for 'are we growing or churning', 'how many users came back', 'new vs returning'.",
+		"inputSchema": obj(map[string]any{
+			"days":    map[string]any{"type": "number", "description": "How many trailing days (default 30)."},
+			"filters": filtersSchema,
+		}, nil),
+	},
+	{
+		"name":        "stickiness",
+		"description": "Engagement ratio: daily/weekly/monthly active users (DAU/WAU/MAU) and the DAU/MAU stickiness ratio. Use for 'how engaged are users', 'DAU', 'how sticky is the product'.",
+		"inputSchema": obj(map[string]any{
+			"filters": filtersSchema,
+		}, nil),
+	},
 }
 
 func obj(props map[string]any, required []string) map[string]any {

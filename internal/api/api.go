@@ -65,6 +65,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/trends", s.apiTrends)
 	mux.HandleFunc("GET /v1/breakdown", s.apiBreakdown)
 	mux.HandleFunc("GET /v1/retention", s.apiRetention)
+	mux.HandleFunc("GET /v1/lifecycle", s.apiLifecycle)
+	mux.HandleFunc("GET /v1/stickiness", s.apiStickiness)
 	mux.HandleFunc("GET /v1/meta", s.apiMeta)
 	mux.HandleFunc("GET /v1/events/recent", s.recentEvents)
 	mux.HandleFunc("GET /v1/users/{id}", s.userActivity)

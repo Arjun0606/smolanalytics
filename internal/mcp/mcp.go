@@ -18,6 +18,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/engagement"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
 	"github.com/Arjun0606/smolanalytics/internal/query"
@@ -243,6 +244,22 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 			return "", fmt.Errorf("user_activity needs a distinct_id")
 		}
 		return jsonText(userProfile(evs, a.DistinctID))
+	case "lifecycle":
+		var a struct {
+			Days    int            `json:"days"`
+			Filters []query.Filter `json:"filters"`
+		}
+		_ = json.Unmarshal(args, &a)
+		if a.Days <= 0 {
+			a.Days = 30
+		}
+		return jsonText(map[string]any{"days": engagement.ComputeLifecycle(query.Apply(evs, a.Filters), a.Days)})
+	case "stickiness":
+		var a struct {
+			Filters []query.Filter `json:"filters"`
+		}
+		_ = json.Unmarshal(args, &a)
+		return jsonText(engagement.ComputeStickiness(query.Apply(evs, a.Filters), time.Time{}))
 	default:
 		return "", fmt.Errorf("unknown tool: %s", name)
 	}
