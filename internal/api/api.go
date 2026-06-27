@@ -13,6 +13,7 @@ import (
 
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
+	"github.com/Arjun0606/smolanalytics/internal/mcp"
 	"github.com/Arjun0606/smolanalytics/internal/retention"
 	"github.com/Arjun0606/smolanalytics/internal/store"
 	"github.com/Arjun0606/smolanalytics/internal/trends"
@@ -20,9 +21,10 @@ import (
 
 type Server struct {
 	store store.Store
+	mcp   *mcp.Server
 }
 
-func New(s store.Store) *Server { return &Server{store: s} }
+func New(s store.Store) *Server { return &Server{store: s, mcp: mcp.New(s)} }
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -32,8 +34,23 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/events", s.ingest)
 	mux.HandleFunc("POST /v1/ask", s.ask)
 	mux.HandleFunc("GET /v1/funnel", s.apiFunnel)
+	mux.HandleFunc("POST /mcp", s.handleMCP)
 	mux.HandleFunc("GET /", s.dashboard)
 	return mux
+}
+
+// handleMCP is the Streamable-HTTP MCP transport: point a remote MCP client
+// (Claude, Cursor) at http://host/mcp and it reads this server's live data.
+func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, 4<<20))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "read error")
+		return
+	}
+	status, resp := s.mcp.HTTPDispatch(body)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_, _ = w.Write(resp)
 }
 
 // ingest accepts a single event or an array. Missing ID gets one (so the client

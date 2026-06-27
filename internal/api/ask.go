@@ -15,9 +15,11 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/trends"
 )
 
-// ask answers a plain-English question about the data. v1 routes common questions
-// (conversion, retention, signups, sources, active users) deterministically so it
-// works with zero setup; arbitrary questions get an LLM (next) when a key is set.
+// ask answers a plain-English question about the data with zero dependencies —
+// it routes common questions (conversion, retention, signups, sources, active
+// users) deterministically, right in the dashboard, no model required. For
+// arbitrary questions the user connects smolanalytics to their OWN Claude /
+// Cursor over MCP (we never call a model ourselves) — see internal/mcp.
 func (s *Server) ask(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	var req struct {
@@ -50,8 +52,8 @@ func answer(q string, evs []event.Event) string {
 	case hasAny(q, "active", "users", "dau", "wau", "total"):
 		return answerActive(evs)
 	default:
-		return "I can answer about your conversion funnel, retention, signups/growth, traffic sources, and active users. " +
-			"(Plain-English answers to any question land when you set an LLM key — that's next.)"
+		return "I can answer about your conversion funnel, retention, signups/growth, traffic sources, and active users right here. " +
+			"For anything else, connect smolanalytics to your own Claude or Cursor over MCP and just ask — your model reads the same data through our tools."
 	}
 }
 
