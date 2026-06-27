@@ -1,0 +1,32 @@
+# Deploy smolanalytics to Fly.io: `fly launch --copy-config` then `fly deploy`.
+# A persistent volume keeps your event log across restarts/redeploys.
+app = "smolanalytics"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  ADDR = ":8080"
+  SMOLANALYTICS_DB = "/data/smolanalytics.data"
+
+[[mounts]]
+  source = "smolanalytics_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    grace_period = "5s"
+    interval = "15s"
+    method = "GET"
+    path = "/healthz"
+    timeout = "2s"
+
+# Set your write key as a secret so ingestion is authenticated:
+#   fly secrets set SMOLANALYTICS_WRITE_KEY=$(openssl rand -hex 16)

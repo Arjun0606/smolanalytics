@@ -1,0 +1,7 @@
+.git
+gtm
+*.data
+*.out
+dist
+bin
+SPEC.md

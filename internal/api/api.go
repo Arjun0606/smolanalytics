@@ -25,6 +25,9 @@ import (
 //go:embed sdk.js
 var sdkJS string
 
+// Version is the build version (overridable at build time via -ldflags).
+var Version = "0.1.0"
+
 type Server struct {
 	store    store.Store
 	mcp      *mcp.Server
@@ -41,6 +44,9 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	})
+	mux.HandleFunc("GET /version", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]string{"name": "smolanalytics", "version": Version})
 	})
 	mux.HandleFunc("POST /v1/events", s.ingest)
 	mux.HandleFunc("OPTIONS /v1/events", s.preflight) // browser SDK CORS preflight

@@ -48,6 +48,22 @@ smolanalytics speaks the Model Context Protocol, so your own AI assistant reads 
 
 Tools exposed: `overview`, `list_events`, `funnel`, `retention`, `trends`, `breakdown`. Your model picks the right one and explains the answer.
 
+## Deploy it (production)
+One static binary, no cgo, no cluster — it runs anywhere.
+
+```sh
+# Docker (persistent event log on a volume)
+docker build -t smolanalytics .
+docker run -p 8080:8080 -v $PWD/data:/data \
+  -e SMOLANALYTICS_WRITE_KEY=$(openssl rand -hex 16) smolanalytics
+
+# Fly.io (one command, persistent volume + health checks via fly.toml)
+fly launch --copy-config && fly deploy
+fly secrets set SMOLANALYTICS_WRITE_KEY=$(openssl rand -hex 16)
+```
+
+Config (all env): `ADDR` (default `:8080`), `SMOLANALYTICS_DB` (event log path), `SMOLANALYTICS_WRITE_KEY` (require a key on ingestion). Health at `/healthz`, build at `/version`.
+
 ## What's here today
 - `internal/funnel` — deterministic ordered conversion funnels (conversion windows, drop-off).
 - `internal/retention` — cohort retention grids.
