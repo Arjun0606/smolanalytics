@@ -82,6 +82,19 @@
   .sc-fill{height:100%;background:var(--accent)}
   .sc-sub{font-family:var(--mono);font-size:11px;color:var(--mut)}
 
+  /* explore panel */
+  .exrow{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+  .exrow select,.exrow input{background:var(--surface2);border:1px solid var(--line);color:var(--fg);font-family:var(--mono);font-size:13px;padding:9px 11px;outline:none}
+  .exrow input{flex:1;min-width:150px}
+  .exrow select:focus,.exrow input:focus{border-color:var(--accent)}
+  .exrow button{background:var(--accent);color:#0A0A0A;border:none;font-weight:700;padding:9px 20px;cursor:pointer;font-family:var(--mono);font-size:13px}
+  .exout{min-height:8px}
+  .exbar{position:relative;height:34px;background:var(--surface2);border:1px solid var(--line);margin-bottom:5px;overflow:hidden}
+  .exfill{position:absolute;inset:0 auto 0 0;background:rgba(245,166,35,.18);border-right:2px solid var(--accent)}
+  .exmeta{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 12px;font-family:var(--mono);font-size:12px}
+  .exmeta .p{color:var(--accent);margin-left:8px}
+  .exsummary{font-family:var(--mono);font-size:13px;color:var(--mut);padding:6px 0}
+
   /* live events feed */
   .livedot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--ok);margin-left:6px;animation:pulse 1.6s infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
@@ -121,6 +134,23 @@
     <div class="stat"><div class="l">Users</div><div class="v">{{.TotalUsers}}</div></div>
     <div class="stat"><div class="l">Signups (30d)</div><div class="v">{{.Signups}}</div></div>
     <div class="stat"><div class="l">Signup → checkout</div><div class="v acc">{{.OverallConv}}%</div></div>
+  </div>
+
+  <div class="card explore">
+    <h2>Explore · run any report on your own events</h2>
+    <div class="exrow">
+      <select id="exType">
+        <option value="funnel">Funnel</option>
+        <option value="trend">Trend</option>
+        <option value="breakdown">Breakdown</option>
+        <option value="retention">Retention</option>
+      </select>
+      <input id="exA" list="exEvents" autocomplete="off" placeholder="signup,activate,checkout">
+      <input id="exB" autocomplete="off" placeholder="property" style="display:none">
+      <button id="exRun">Run</button>
+    </div>
+    <datalist id="exEvents"></datalist>
+    <div id="exOut" class="exout"></div>
   </div>
 
   <div class="grid">
@@ -227,6 +257,54 @@
       }).catch(function(){});
     }
     pollLive(); setInterval(pollLive, 4000);
+
+    // explore — run any report on the user's own events
+    var exType=document.getElementById('exType'),exA=document.getElementById('exA'),
+        exB=document.getElementById('exB'),exRun=document.getElementById('exRun'),
+        exOut=document.getElementById('exOut'),exEvents=document.getElementById('exEvents');
+    fetch('/v1/meta').then(function(r){return r.json()}).then(function(j){
+      exEvents.innerHTML=(j.events||[]).map(function(n){return '<option value="'+esc(n)+'">';}).join('');
+    }).catch(function(){});
+    function syncEx(){
+      var t=exType.value;
+      if(t==='funnel'){exA.placeholder='signup,activate,checkout (comma-separated)';exB.style.display='none';}
+      else if(t==='trend'){exA.placeholder='event (e.g. signup)';exB.style.display='none';}
+      else if(t==='breakdown'){exA.placeholder='event (blank = all)';exB.style.display='';exB.placeholder='property (e.g. source)';}
+      else {exA.placeholder='return event (e.g. open)';exB.style.display='';exB.placeholder='days (default 7)';}
+    }
+    exType.onchange=syncEx; syncEx();
+    function bar(label,fillPct,right){
+      return '<div class="exbar"><div class="exfill" style="width:'+fillPct+'%"></div>'+
+        '<div class="exmeta"><span>'+esc(label)+'</span><span>'+right+'</span></div></div>';
+    }
+    function renderEx(t,j){
+      if(j.error){exOut.innerHTML='<div class="exsummary">'+esc(j.error)+'</div>';return;}
+      if(t==='funnel'){
+        var s=j.steps||[];
+        exOut.innerHTML=s.map(function(x){var p=Math.round((x.conversion_from_top||0)*100);
+          return bar(x.event,p,'<span>'+x.count+'</span><span class="p">'+p+'%</span>');}).join('')||'<div class="exsummary">no data</div>';
+      }else if(t==='trend'){
+        var pts=j.points||[],max=1;pts.forEach(function(p){if(p.count>max)max=p.count;});
+        exOut.innerHTML='<div class="exsummary">'+(j.total||0)+' total over '+pts.length+' days</div><div class="bars">'+
+          pts.map(function(p){return '<div class="col" title="'+esc(p.date)+': '+p.count+'"><div class="bar" style="height:'+Math.round(p.count/max*100)+'%"></div></div>';}).join('')+'</div>';
+      }else if(t==='breakdown'){
+        var g=j.groups||[],gmax=(g[0]&&g[0].count)||1;
+        exOut.innerHTML=g.map(function(x){return bar(x.value,Math.round(x.count/gmax*100),x.count);}).join('')||'<div class="exsummary">no data</div>';
+      }else{
+        var c=j.cohorts||[],size=0,d1=0,d7=0;
+        c.forEach(function(x){size+=x.size;if(x.returned){if(x.returned[1])d1+=x.returned[1];if(x.returned[7])d7+=x.returned[7];}});
+        exOut.innerHTML='<div class="exsummary">Day-1 retention '+(size?Math.round(d1/size*100):0)+'% · Day-7 '+(size?Math.round(d7/size*100):0)+'% · across '+size+' users</div>';
+      }
+    }
+    exRun.onclick=function(){
+      var t=exType.value,a=exA.value.trim(),b=exB.value.trim(),url;
+      if(t==='funnel')url='/v1/funnel?window=168h&steps='+encodeURIComponent(a);
+      else if(t==='trend')url='/v1/trends?event='+encodeURIComponent(a);
+      else if(t==='breakdown')url='/v1/breakdown?event='+encodeURIComponent(a)+'&property='+encodeURIComponent(b);
+      else url='/v1/retention?days='+encodeURIComponent(b||'7')+'&event='+encodeURIComponent(a);
+      exOut.innerHTML='<div class="exsummary">running…</div>';
+      fetch(url).then(function(r){return r.json()}).then(function(j){renderEx(t,j);}).catch(function(){exOut.innerHTML='<div class="exsummary">error</div>';});
+    };
   })();
 </script>
 </body>
