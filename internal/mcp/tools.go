@@ -58,6 +58,20 @@ var toolList = []map[string]any{
 			"property": map[string]any{"type": "string", "description": "Property to group by, e.g. \"source\" or \"plan\"."},
 		}, []string{"property"}),
 	},
+	{
+		"name":        "recent_events",
+		"description": "The most recent raw events (newest first) with their properties. Use to debug instrumentation ('did my signup event arrive', 'what's coming in right now') or to eyeball live activity.",
+		"inputSchema": obj(map[string]any{
+			"limit": map[string]any{"type": "number", "description": "How many recent events (default 20)."},
+		}, nil),
+	},
+	{
+		"name":        "user_activity",
+		"description": "One user's full timeline: event counts, first/last seen, and latest known traits. Use for 'what did user X do', 'when did this user sign up', 'is this account active'.",
+		"inputSchema": obj(map[string]any{
+			"distinct_id": map[string]any{"type": "string", "description": "The user/visitor id to look up."},
+		}, []string{"distinct_id"}),
+	},
 }
 
 func obj(props map[string]any, required []string) map[string]any {

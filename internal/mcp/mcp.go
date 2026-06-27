@@ -209,8 +209,63 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 			rows = append(rows, map[string]any{"value": g.Value, "count": g.Count})
 		}
 		return jsonText(map[string]any{"event": a.Event, "property": a.Property, "groups": rows})
+	case "recent_events":
+		var a struct {
+			Limit int `json:"limit"`
+		}
+		_ = json.Unmarshal(args, &a)
+		if a.Limit <= 0 {
+			a.Limit = 20
+		}
+		cp := make([]event.Event, len(evs))
+		copy(cp, evs)
+		sort.Slice(cp, func(i, j int) bool { return cp[i].Timestamp.After(cp[j].Timestamp) })
+		if len(cp) > a.Limit {
+			cp = cp[:a.Limit]
+		}
+		return jsonText(map[string]any{"events": cp})
+	case "user_activity":
+		var a struct {
+			DistinctID string `json:"distinct_id"`
+		}
+		_ = json.Unmarshal(args, &a)
+		if a.DistinctID == "" {
+			return "", fmt.Errorf("user_activity needs a distinct_id")
+		}
+		return jsonText(userProfile(evs, a.DistinctID))
 	default:
 		return "", fmt.Errorf("unknown tool: %s", name)
+	}
+}
+
+// userProfile summarizes one user's timeline + latest traits for the model.
+func userProfile(evs []event.Event, id string) map[string]any {
+	var mine []event.Event
+	for _, e := range evs {
+		if e.DistinctID == id {
+			mine = append(mine, e)
+		}
+	}
+	if len(mine) == 0 {
+		return map[string]any{"distinct_id": id, "found": false}
+	}
+	sort.Slice(mine, func(i, j int) bool { return mine[i].Timestamp.Before(mine[j].Timestamp) })
+	traits := map[string]any{}
+	counts := map[string]int{}
+	for _, e := range mine {
+		counts[e.Name]++
+		for k, v := range e.Properties {
+			traits[k] = v
+		}
+	}
+	return map[string]any{
+		"distinct_id":  id,
+		"found":        true,
+		"event_count":  len(mine),
+		"first_seen":   mine[0].Timestamp,
+		"last_seen":    mine[len(mine)-1].Timestamp,
+		"traits":       traits,
+		"event_counts": counts,
 	}
 }
 

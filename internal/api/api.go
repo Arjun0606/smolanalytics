@@ -47,6 +47,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /sdk.js", s.serveSDK)
 	mux.HandleFunc("POST /v1/ask", s.ask)
 	mux.HandleFunc("GET /v1/funnel", s.apiFunnel)
+	mux.HandleFunc("GET /v1/events/recent", s.recentEvents)
+	mux.HandleFunc("GET /v1/users/{id}", s.userActivity)
 	mux.HandleFunc("POST /mcp", s.handleMCP)
 	mux.HandleFunc("GET /", s.dashboard)
 	return mux

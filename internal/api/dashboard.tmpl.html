@@ -82,6 +82,17 @@
   .sc-fill{height:100%;background:var(--accent)}
   .sc-sub{font-family:var(--mono);font-size:11px;color:var(--mut)}
 
+  /* live events feed */
+  .livedot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--ok);margin-left:6px;animation:pulse 1.6s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+  .live{font-family:var(--mono);font-size:12px;max-height:260px;overflow:auto}
+  .live .row{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--line)}
+  .live .row:last-child{border-bottom:none}
+  .live .ev{color:var(--accent)}
+  .live .who{color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px}
+  .live .ago{color:var(--mut2)}
+  .livemuted{color:var(--mut2);padding:8px 0}
+
   /* the ask answer panel */
   .askresult{margin:0 0 4px;padding:14px 16px 14px 38px;background:var(--surface2);border:1px solid var(--accent);
     border-top:none;font-size:14px;line-height:1.6;color:var(--fg);position:relative}
@@ -177,6 +188,11 @@
         </div>
         {{end}}
       </div>
+
+      <div class="card">
+        <h2>Live events <span class="livedot"></span></h2>
+        <div id="live" class="live"><div class="livemuted">waiting for events…</div></div>
+      </div>
     </div>
   </div>
 
@@ -194,6 +210,23 @@
         .then(function(j){res.className='askresult'; res.textContent=j.answer||j.error||'no answer';})
         .catch(function(){res.className='askresult'; res.textContent='something went wrong';});
     });
+
+    // live events feed — poll and render newest-first
+    var live=document.getElementById('live');
+    function ago(ts){var s=Math.max(0,(Date.now()-new Date(ts).getTime())/1000);
+      if(s<60)return Math.floor(s)+'s';if(s<3600)return Math.floor(s/60)+'m';if(s<86400)return Math.floor(s/3600)+'h';return Math.floor(s/86400)+'d';}
+    function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
+    function pollLive(){
+      fetch('/v1/events/recent?limit=15').then(function(r){return r.json()}).then(function(evs){
+        if(!evs||!evs.length){return;}
+        live.innerHTML=evs.map(function(e){
+          return '<div class="row"><span class="ev">'+esc(e.name)+'</span>'+
+            '<span class="who">'+esc(e.distinct_id)+'</span>'+
+            '<span class="ago">'+ago(e.timestamp)+'</span></div>';
+        }).join('');
+      }).catch(function(){});
+    }
+    pollLive(); setInterval(pollLive, 4000);
   })();
 </script>
 </body>
