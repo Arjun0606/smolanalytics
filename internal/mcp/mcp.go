@@ -155,8 +155,9 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		return jsonText(map[string]any{"events": names})
 	case "funnel":
 		var a struct {
-			Steps       []string `json:"steps"`
-			WindowHours float64  `json:"window_hours"`
+			Steps       []string       `json:"steps"`
+			WindowHours float64        `json:"window_hours"`
+			Filters     []query.Filter `json:"filters"`
 		}
 		_ = json.Unmarshal(args, &a)
 		if len(a.Steps) < 2 {
@@ -170,35 +171,44 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		if window == 0 {
 			window = 7 * 24 * time.Hour
 		}
-		return jsonText(funnel.Compute(evs, steps, window))
+		return jsonText(funnel.Compute(query.Apply(evs, a.Filters), steps, window))
 	case "retention":
 		var a struct {
-			Event string `json:"event"`
-			Days  int    `json:"days"`
+			Event   string         `json:"event"`
+			Days    int            `json:"days"`
+			Filters []query.Filter `json:"filters"`
 		}
 		_ = json.Unmarshal(args, &a)
 		if a.Days == 0 {
 			a.Days = 7
 		}
-		return jsonText(summarizeRetention(retention.Compute(evs, a.Days, a.Event)))
+		return jsonText(summarizeRetention(retention.Compute(query.Apply(evs, a.Filters), a.Days, a.Event)))
 	case "trends":
 		var a struct {
-			Event  string `json:"event"`
-			Unique bool   `json:"unique"`
+			Event     string         `json:"event"`
+			Unique    bool           `json:"unique"`
+			Breakdown string         `json:"breakdown"`
+			Filters   []query.Filter `json:"filters"`
 		}
 		_ = json.Unmarshal(args, &a)
-		return jsonText(trends.Compute(evs, a.Event, time.Time{}, time.Time{}, a.Unique))
+		ev := query.Apply(evs, a.Filters)
+		if a.Breakdown != "" {
+			return jsonText(map[string]any{"event": a.Event, "breakdown": a.Breakdown,
+				"series": trends.ComputeBreakdown(ev, a.Event, a.Breakdown, time.Time{}, time.Time{}, a.Unique)})
+		}
+		return jsonText(trends.Compute(ev, a.Event, time.Time{}, time.Time{}, a.Unique))
 	case "breakdown":
 		var a struct {
-			Event    string `json:"event"`
-			Property string `json:"property"`
+			Event    string         `json:"event"`
+			Property string         `json:"property"`
+			Filters  []query.Filter `json:"filters"`
 		}
 		_ = json.Unmarshal(args, &a)
 		if a.Property == "" {
 			return "", fmt.Errorf("breakdown needs a property to group by, e.g. \"source\"")
 		}
 		var filtered []event.Event
-		for _, e := range evs {
+		for _, e := range query.Apply(evs, a.Filters) {
 			if a.Event == "" || e.Name == a.Event {
 				filtered = append(filtered, e)
 			}

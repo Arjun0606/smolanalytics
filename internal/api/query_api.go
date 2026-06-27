@@ -1,14 +1,37 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/query"
 	"github.com/Arjun0606/smolanalytics/internal/retention"
 	"github.com/Arjun0606/smolanalytics/internal/trends"
 )
+
+// filtersFrom parses ?filters=<url-encoded JSON array> into predicates, so any
+// report can be segmented (e.g. plan=pro AND country=US). Bad JSON = no filters.
+func filtersFrom(r *http.Request) []query.Filter {
+	raw := r.URL.Query().Get("filters")
+	if raw == "" {
+		return nil
+	}
+	var fs []query.Filter
+	_ = json.Unmarshal([]byte(raw), &fs)
+	return fs
+}
+
+// filtered loads all events and applies the request's filters.
+func (s *Server) filtered(r *http.Request) ([]event.Event, error) {
+	evs, err := s.store.Range(time.Time{}, time.Time{})
+	if err != nil {
+		return nil, err
+	}
+	return query.Apply(evs, filtersFrom(r)), nil
+}
 
 // These endpoints back the interactive Explore panel: run any report on any of the
 // user's own events, not just the demo funnel. The engine already takes arbitrary
@@ -24,37 +47,47 @@ func (s *Server) apiMeta(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"events": names})
 }
 
-// GET /v1/trends?event=signup&unique=true
+// GET /v1/trends?event=signup&unique=true&breakdown=source&filters=...
+// With breakdown set, returns one series per property value (multi-line trend).
 func (s *Server) apiTrends(w http.ResponseWriter, r *http.Request) {
-	evs, err := s.store.Range(time.Time{}, time.Time{})
+	evs, err := s.filtered(r)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	unique := r.URL.Query().Get("unique") == "true"
-	writeJSON(w, http.StatusOK, trends.Compute(evs, r.URL.Query().Get("event"), time.Time{}, time.Time{}, unique))
+	q := r.URL.Query()
+	unique := q.Get("unique") == "true"
+	event := q.Get("event")
+	if bd := q.Get("breakdown"); bd != "" {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"event": event, "breakdown": bd,
+			"series": trends.ComputeBreakdown(evs, event, bd, time.Time{}, time.Time{}, unique),
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, trends.Compute(evs, event, time.Time{}, time.Time{}, unique))
 }
 
-// GET /v1/breakdown?event=signup&property=source
+// GET /v1/breakdown?event=signup&property=source&filters=...
 func (s *Server) apiBreakdown(w http.ResponseWriter, r *http.Request) {
 	property := r.URL.Query().Get("property")
 	if property == "" {
 		writeErr(w, http.StatusBadRequest, "property is required")
 		return
 	}
-	evs, err := s.store.Range(time.Time{}, time.Time{})
+	evs, err := s.filtered(r)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	eventName := r.URL.Query().Get("event")
-	filtered := evs[:0:0]
+	scoped := evs[:0:0]
 	for _, e := range evs {
 		if eventName == "" || e.Name == eventName {
-			filtered = append(filtered, e)
+			scoped = append(scoped, e)
 		}
 	}
-	groups := query.Breakdown(filtered, property)
+	groups := query.Breakdown(scoped, property)
 	rows := make([]map[string]any, 0, len(groups))
 	for _, g := range groups {
 		rows = append(rows, map[string]any{"value": g.Value, "count": g.Count})
@@ -62,7 +95,7 @@ func (s *Server) apiBreakdown(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"event": eventName, "property": property, "groups": rows})
 }
 
-// GET /v1/retention?event=open&days=7
+// GET /v1/retention?event=open&days=7&filters=...
 func (s *Server) apiRetention(w http.ResponseWriter, r *http.Request) {
 	days := 7
 	if v, err := strconv.Atoi(r.URL.Query().Get("days")); err == nil && v > 0 {
@@ -71,7 +104,7 @@ func (s *Server) apiRetention(w http.ResponseWriter, r *http.Request) {
 	if days > 90 {
 		days = 90
 	}
-	evs, err := s.store.Range(time.Time{}, time.Time{})
+	evs, err := s.filtered(r)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return

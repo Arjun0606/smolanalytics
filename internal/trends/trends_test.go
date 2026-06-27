@@ -16,8 +16,8 @@ func ev(user, name string, day int) event.Event {
 func TestDailyCountsAndZeroFill(t *testing.T) {
 	evs := []event.Event{
 		ev("a", "view", 0), ev("a", "view", 0), // day0: 2 raw, 1 unique
-		ev("b", "view", 0),                      // day0 now: 3 raw, 2 unique
-		ev("a", "view", 2),                      // day2: 1
+		ev("b", "view", 0), // day0 now: 3 raw, 2 unique
+		ev("a", "view", 2), // day2: 1
 	}
 	r := Compute(evs, "view", time.Time{}, time.Time{}, false)
 	// days 0,1,2 filled

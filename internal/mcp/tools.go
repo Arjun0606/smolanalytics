@@ -1,5 +1,20 @@
 package mcp
 
+// filtersSchema documents the segmentation predicate array every report accepts:
+// AND-combined conditions over event properties.
+var filtersSchema = map[string]any{
+	"type":        "array",
+	"description": "Optional segmentation. AND-combined conditions over event properties, e.g. [{\"property\":\"plan\",\"op\":\"eq\",\"value\":\"pro\"}]. Ops: eq, neq, contains, gt, lt.",
+	"items": map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"property": map[string]any{"type": "string"},
+			"op":       map[string]any{"type": "string", "enum": []string{"eq", "neq", "contains", "gt", "lt"}},
+			"value":    map[string]any{},
+		},
+	},
+}
+
 // toolList is the tools/list payload — the menu the user's model sees. Descriptions
 // are written FOR the model: tell it when to reach for each tool.
 var toolList = []map[string]any{
@@ -26,6 +41,7 @@ var toolList = []map[string]any{
 				"type":        "number",
 				"description": "Conversion window in hours from the first step (default 168 = 7 days).",
 			},
+			"filters": filtersSchema,
 		}, []string{"steps"}),
 	},
 	{
@@ -40,14 +56,17 @@ var toolList = []map[string]any{
 				"type":        "number",
 				"description": "How many days to measure (default 7).",
 			},
+			"filters": filtersSchema,
 		}, nil),
 	},
 	{
 		"name":        "trends",
-		"description": "Daily time series for an event: how many happened each day (or unique users per day). Use for 'how many signups', 'is growth up', 'plot X over time'.",
+		"description": "Daily time series for an event: how many happened each day (or unique users per day). With breakdown set, returns one line per property value. Use for 'how many signups', 'signups by source over time', 'is growth up'.",
 		"inputSchema": obj(map[string]any{
-			"event":  map[string]any{"type": "string", "description": "Event name, e.g. \"signup\". Empty = all events."},
-			"unique": map[string]any{"type": "boolean", "description": "Count distinct users per day instead of raw events."},
+			"event":     map[string]any{"type": "string", "description": "Event name, e.g. \"signup\". Empty = all events."},
+			"unique":    map[string]any{"type": "boolean", "description": "Count distinct users per day instead of raw events."},
+			"breakdown": map[string]any{"type": "string", "description": "Optional property to split into one series per value, e.g. \"source\"."},
+			"filters":   filtersSchema,
 		}, nil),
 	},
 	{
@@ -56,6 +75,7 @@ var toolList = []map[string]any{
 		"inputSchema": obj(map[string]any{
 			"event":    map[string]any{"type": "string", "description": "Event to break down, e.g. \"signup\". Empty = all events."},
 			"property": map[string]any{"type": "string", "description": "Property to group by, e.g. \"source\" or \"plan\"."},
+			"filters":  filtersSchema,
 		}, []string{"property"}),
 	},
 	{

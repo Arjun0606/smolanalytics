@@ -192,7 +192,7 @@ func (s *Server) apiFunnel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	window, _ := time.ParseDuration(r.URL.Query().Get("window"))
-	evs, err := s.store.Range(time.Time{}, time.Time{})
+	evs, err := s.filtered(r)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return

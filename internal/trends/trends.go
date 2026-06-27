@@ -4,6 +4,7 @@
 package trends
 
 import (
+	"fmt"
 	"sort"
 	"time"
 
@@ -35,7 +36,7 @@ func Compute(events []event.Event, eventName string, from, to time.Time, unique 
 		if eventName != "" && e.Name != eventName {
 			continue
 		}
-		d := e.Timestamp.UTC().Truncate(24 * time.Hour).Unix() / 86400
+		d := e.Timestamp.UTC().Truncate(24*time.Hour).Unix() / 86400
 		if perDay[d] == nil {
 			perDay[d] = map[string]int{}
 		}
@@ -82,4 +83,47 @@ func Compute(events []event.Event, eventName string, from, to time.Time, unique 
 	}
 	sort.Slice(r.Points, func(i, j int) bool { return r.Points[i].Date.Before(r.Points[j].Date) })
 	return r
+}
+
+// Series is one line of a broken-down trend (e.g. signups from "google" over time).
+type Series struct {
+	Value  string  `json:"value"`
+	Points []Point `json:"points"`
+	Total  int     `json:"total"`
+}
+
+// ComputeBreakdown splits a trend into one series per value of property — the
+// multi-line "signups by source over time" report. Events missing the property
+// fall into "(none)". Series are sorted by total descending.
+func ComputeBreakdown(events []event.Event, eventName, property string, from, to time.Time, unique bool) []Series {
+	groups := map[string][]event.Event{}
+	for _, e := range events {
+		if eventName != "" && e.Name != eventName {
+			continue
+		}
+		key := "(none)"
+		if v, ok := e.Properties[property]; ok {
+			key = valueOf(v)
+		}
+		groups[key] = append(groups[key], e)
+	}
+	out := make([]Series, 0, len(groups))
+	for val, evs := range groups {
+		r := Compute(evs, eventName, from, to, unique)
+		out = append(out, Series{Value: val, Points: r.Points, Total: r.Total})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Total != out[j].Total {
+			return out[i].Total > out[j].Total
+		}
+		return out[i].Value < out[j].Value
+	})
+	return out
+}
+
+func valueOf(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return fmt.Sprintf("%v", v)
 }
