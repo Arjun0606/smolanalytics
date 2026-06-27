@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -59,9 +60,24 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/meta", s.apiMeta)
 	mux.HandleFunc("GET /v1/events/recent", s.recentEvents)
 	mux.HandleFunc("GET /v1/users/{id}", s.userActivity)
+	mux.HandleFunc("GET /v1/export", s.export)
 	mux.HandleFunc("POST /mcp", s.handleMCP)
 	mux.HandleFunc("GET /", s.dashboard)
-	return mux
+	return recoverMW(mux)
+}
+
+// recoverMW turns a panic in any handler into a 500 instead of crashing the
+// server — a basic production safety net.
+func recoverMW(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				log.Printf("smolanalytics: panic on %s %s: %v", r.Method, r.URL.Path, rec)
+				writeErr(w, http.StatusInternalServerError, "internal error")
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
 }
 
 // setCORS lets the browser SDK post events from any origin.

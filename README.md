@@ -64,6 +64,8 @@ fly secrets set SMOLANALYTICS_WRITE_KEY=$(openssl rand -hex 16)
 
 Config (all env): `ADDR` (default `:8080`), `SMOLANALYTICS_DB` (event log path), `SMOLANALYTICS_WRITE_KEY` (require a key on ingestion). Health at `/healthz`, build at `/version`.
 
+**No lock-in:** export everything any time — `GET /v1/export?format=csv` or `?format=jsonl` (the JSONL round-trips straight back into `/v1/events`). Take your data to a warehouse or another tool whenever you want.
+
 ## What's here today
 - `internal/funnel` — deterministic ordered conversion funnels (conversion windows, drop-off).
 - `internal/retention` — cohort retention grids.
