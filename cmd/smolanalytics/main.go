@@ -108,6 +108,9 @@ func serve(st store.Store, closeStore func() error) {
 		_ = closeStore()
 	}()
 
+	if os.Getenv("SMOLANALYTICS_PASSWORD") == "" {
+		log.Printf("smolanalytics: WARNING — no SMOLANALYTICS_PASSWORD set; the dashboard, exports and MCP are UNAUTHENTICATED. Set a password (and a write key) before exposing this beyond localhost.")
+	}
 	log.Printf("smolanalytics: dashboard on http://localhost%s · MCP at /mcp", addr)
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)

@@ -5,6 +5,7 @@ package settings
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -67,20 +68,21 @@ func (s *Store) Keys() []APIKey {
 	return out
 }
 
-// ValidKey reports whether key matches any managed key (constant-time not needed
-// here — the caller compares with subtle.ConstantTimeCompare for the env key).
+// ValidKey reports whether key matches any managed key, compared in constant time
+// (and without early-exit) to avoid leaking which/how-many keys exist via timing.
 func (s *Store) ValidKey(key string) bool {
 	if key == "" {
 		return false
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	ok := false
 	for _, k := range s.d.Keys {
-		if k.Key == key {
-			return true
+		if subtle.ConstantTimeCompare([]byte(k.Key), []byte(key)) == 1 {
+			ok = true
 		}
 	}
-	return false
+	return ok
 }
 
 func (s *Store) UpdateProject(name, tz string) error {

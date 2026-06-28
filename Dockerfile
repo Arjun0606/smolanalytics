@@ -1,7 +1,7 @@
 # smolanalytics — single static binary on distroless. No cgo, no cluster.
 FROM golang:1.26-alpine AS build
 WORKDIR /src
-COPY go.mod ./
+COPY go.mod go.sum* ./
 RUN go mod download
 COPY . .
 ARG VERSION=docker

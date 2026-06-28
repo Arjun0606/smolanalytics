@@ -40,6 +40,11 @@
     var batch = queue.splice(0, queue.length);
     var headers = { "Content-Type": "application/json" };
     if (key) headers["Authorization"] = "Bearer " + key;
+    // on a network failure, put the batch back so the next flush retries instead
+    // of silently dropping events (capped so a long outage can't grow unbounded).
+    function requeue() {
+      if (queue.length < 1000) queue = batch.concat(queue);
+    }
     try {
       fetch(host + "/v1/events", {
         method: "POST",
@@ -47,8 +52,12 @@
         body: JSON.stringify(batch),
         keepalive: true,
         mode: "cors",
-      }).catch(function () {});
-    } catch (e) {}
+      }).then(function (r) {
+        if (!r.ok && r.status >= 500) requeue();
+      }).catch(requeue);
+    } catch (e) {
+      requeue();
+    }
   }
 
   function enqueue(name, props) {

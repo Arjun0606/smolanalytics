@@ -40,15 +40,16 @@ func (s *Server) ask(w http.ResponseWriter, r *http.Request) {
 }
 
 func answer(q string, evs []event.Event) string {
+	vol := eventsByVolume(evs) // adapt to the user's OWN events, like the dashboard
 	switch {
 	case hasAny(q, "convert", "conversion", "funnel", "drop", "checkout", "activat"):
-		return answerFunnel(evs)
+		return answerFunnel(evs, vol)
 	case hasAny(q, "retention", "retain", "come back", "comeback", "returning", "stick"):
-		return answerRetention(evs)
+		return answerRetention(evs, vol)
 	case hasAny(q, "source", "where", "from", "channel", "acquisition", "referr"):
-		return answerSources(evs)
+		return answerSources(evs, vol)
 	case hasAny(q, "signup", "sign up", "new user", "how many", "growth", "trend"):
-		return answerSignups(evs)
+		return answerSignups(evs, vol)
 	case hasAny(q, "active", "users", "dau", "wau", "total"):
 		return answerActive(evs)
 	default:
@@ -57,10 +58,11 @@ func answer(q string, evs []event.Event) string {
 	}
 }
 
-func answerFunnel(evs []event.Event) string {
-	fr := funnel.Compute(evs, []funnel.Step{{Event: "signup"}, {Event: "activate"}, {Event: "checkout"}}, 7*24*time.Hour)
+func answerFunnel(evs []event.Event, vol []string) string {
+	fsteps, ftitle := detectFunnel(evs, vol)
+	fr := funnel.Compute(evs, fsteps, 7*24*time.Hour)
 	if len(fr.Steps) == 0 || fr.Steps[0].Count == 0 {
-		return "No signups yet to build a funnel from."
+		return "No events yet to build a funnel from."
 	}
 	worst, worstDrop := "", -1
 	for _, st := range fr.Steps[1:] {
@@ -68,12 +70,12 @@ func answerFunnel(evs []event.Event) string {
 			worstDrop, worst = st.DroppedFromPrev, st.Event
 		}
 	}
-	return fmt.Sprintf("%d of %d users (%d%%) complete signup → activate → checkout. The biggest drop-off is at \"%s\" — %d users fall off there.",
-		fr.Steps[len(fr.Steps)-1].Count, fr.Steps[0].Count, pct(fr.OverallConversion), worst, worstDrop)
+	return fmt.Sprintf("%d of %d users (%d%%) complete %s. The biggest drop-off is at \"%s\" — %d users fall off there.",
+		fr.Steps[len(fr.Steps)-1].Count, fr.Steps[0].Count, pct(fr.OverallConversion), ftitle, worst, worstDrop)
 }
 
-func answerRetention(evs []event.Event) string {
-	rr := retention.Compute(evs, 7, "open")
+func answerRetention(evs []event.Event, vol []string) string {
+	rr := retention.Compute(evs, 7, pickEvent(vol, "open"))
 	var size, d1, d7 int
 	for _, c := range rr.Cohorts {
 		size += c.Size
@@ -91,34 +93,40 @@ func answerRetention(evs []event.Event) string {
 		int(float64(d1)/float64(size)*100+0.5), int(float64(d7)/float64(size)*100+0.5), size)
 }
 
-func answerSources(evs []event.Event) string {
-	var signups []event.Event
+func answerSources(evs []event.Event, vol []string) string {
+	headlineEvent := pickEvent(vol, "signup")
+	srcProp := detectProp(evs, "source")
+	if srcProp == "" {
+		return "Your events don't carry any properties to break down by yet."
+	}
+	var headline []event.Event
 	for _, e := range evs {
-		if e.Name == "signup" {
-			signups = append(signups, e)
+		if e.Name == headlineEvent {
+			headline = append(headline, e)
 		}
 	}
-	groups := query.Breakdown(signups, "source")
+	groups := query.Breakdown(headline, srcProp)
 	if len(groups) == 0 {
-		return "No source data on your signups yet."
+		return "No " + srcProp + " data on your " + headlineEvent + " events yet."
 	}
 	parts := []string{}
 	for i, g := range groups {
 		if i >= 3 {
 			break
 		}
-		parts = append(parts, fmt.Sprintf("%s (%d, %d%%)", g.Value, g.Count, int(float64(g.Count)/float64(len(signups))*100+0.5)))
+		parts = append(parts, fmt.Sprintf("%s (%d, %d%%)", g.Value, g.Count, int(float64(g.Count)/float64(len(headline))*100+0.5)))
 	}
-	return "Top signup sources: " + strings.Join(parts, ", ") + "."
+	return fmt.Sprintf("Top %s by %s: %s.", headlineEvent, srcProp, strings.Join(parts, ", "))
 }
 
-func answerSignups(evs []event.Event) string {
-	tr := trends.Compute(evs, "signup", time.Time{}, time.Time{}, false)
+func answerSignups(evs []event.Event, vol []string) string {
+	ev := pickEvent(vol, "signup")
+	tr := trends.Compute(evs, ev, time.Time{}, time.Time{}, false)
 	days := len(tr.Points)
 	if days == 0 {
-		return "No signups recorded yet."
+		return "No events recorded yet."
 	}
-	return fmt.Sprintf("%d signups over the last %d days — about %d/day.", tr.Total, days, tr.Total/days)
+	return fmt.Sprintf("%d \"%s\" events over the last %d days — about %d/day.", tr.Total, ev, days, tr.Total/days)
 }
 
 func answerActive(evs []event.Event) string {

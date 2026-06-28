@@ -272,7 +272,7 @@
       <div class="card">
         <h2>Conversion by {{.ConvByTitle}} · segmented funnel</h2>
         <div class="segconv">
-          {{range .ConvByPlan}}
+          {{range .ConvBySeg}}
           <div class="sc">
             <div class="sc-h"><span class="sc-name">{{.Value}}</span><span class="sc-conv">{{.Conv}}%</span></div>
             <div class="sc-track"><div class="sc-fill" style="width:{{.Conv}}%"></div></div>

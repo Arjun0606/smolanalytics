@@ -46,7 +46,7 @@ smolanalytics speaks the Model Context Protocol, so your own AI assistant reads 
 - **Local (Claude Desktop / Cursor):** `smolanalytics mcp` runs an MCP server over stdio.
 - **Remote:** point any Streamable-HTTP MCP client at `POST /mcp` on the running server — it shares the live data.
 
-Tools exposed: `overview`, `list_events`, `funnel`, `retention`, `trends`, `breakdown`. Your model picks the right one and explains the answer.
+Tools exposed (12): `overview`, `list_events`, `funnel`, `retention`, `trends` (+ breakdown), `breakdown`, `lifecycle`, `stickiness`, `paths`, `groups` (B2B accounts), `recent_events`, `user_activity` — every report filterable by property conditions. Your model picks the right one and explains the answer. When a key is configured the endpoint requires it.
 
 ## Deploy it (production)
 One static binary, no cgo, no cluster — it runs anywhere.

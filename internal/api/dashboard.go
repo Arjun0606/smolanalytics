@@ -14,6 +14,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
 	"github.com/Arjun0606/smolanalytics/internal/query"
+	"github.com/Arjun0606/smolanalytics/internal/trends"
 )
 
 //go:embed dashboard.tmpl.html
@@ -103,7 +104,7 @@ type dashVM struct {
 	RetDayHeaders []string
 	Trend         []trendBar
 	BySource      []segRow
-	ConvByPlan    []segConv
+	ConvBySeg     []segConv
 	Events        []string
 	Updated       string
 	HasData       bool   // false on a fresh install → show the big onboarding
@@ -141,6 +142,8 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	fr := funnel.Compute(evs, fsteps, 7*24*time.Hour)
 	rr := retentionOf(evs, 7, retEvent)
 	tr := trendOf(evs, trendEvent)
+	// the headline stat is genuinely the trailing 30 days (the label says "(30d)")
+	sig30 := trends.Compute(evs, trendEvent, time.Now().UTC().AddDate(0, 0, -30), time.Time{}, false).Total
 
 	convLabel := ftitle
 	if n := len(fsteps); n >= 2 {
@@ -149,7 +152,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 
 	vm := dashVM{
 		TotalUsers:     distinctUsers(evs),
-		Signups:        tr.Total,
+		Signups:        sig30,
 		OverallConv:    pct(fr.OverallConversion),
 		Events:         names,
 		Updated:        time.Now().UTC().Format("Jan 2, 15:04 MST"),
@@ -241,7 +244,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if segProp != "" {
-		vm.ConvByPlan = funnelBySegment(evs, segProp, fsteps)
+		vm.ConvBySeg = funnelBySegment(evs, segProp, fsteps)
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
