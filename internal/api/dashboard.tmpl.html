@@ -40,6 +40,21 @@
   .card{background:var(--surface);border:1px solid var(--line);padding:20px;margin-bottom:14px}
   .card h2{font-size:13px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.1em;color:var(--mut);margin:0 0 18px}
 
+  /* onboarding */
+  details.onboard{padding:0}
+  details.onboard>summary{cursor:pointer;list-style:none;padding:18px 20px;font-size:13px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.1em;color:var(--accent)}
+  details.onboard>summary::-webkit-details-marker{display:none}
+  details.onboard[open]>summary{border-bottom:1px solid var(--line)}
+  .ob{padding:20px}
+  .obstep{margin-bottom:18px}
+  .obh{font-size:13px;color:var(--mut);margin-bottom:8px}
+  pre.code{background:#0D0D0D;border:1px solid var(--line);padding:14px;overflow:auto;font-family:var(--mono);font-size:12px;line-height:1.6;color:var(--fg);margin:0;white-space:pre-wrap;word-break:break-word}
+  .copy{margin-top:8px;background:transparent;border:1px solid var(--line);color:var(--mut);font-family:var(--mono);font-size:11px;padding:5px 12px;cursor:pointer}
+  .copy:hover{border-color:var(--accent);color:var(--accent)}
+  .obnote{font-size:12px;color:var(--mut);margin-top:8px;line-height:1.6}
+  .obnote code{background:var(--surface2);padding:1px 5px;font-family:var(--mono);font-size:11px}
+  .obstatus{font-family:var(--mono);font-size:12px;color:var(--mut2);padding-top:12px;border-top:1px solid var(--line)}
+
   /* funnel */
   .fstep{margin-bottom:6px}
   .fdrop{font-family:var(--mono);font-size:11px;color:var(--warn);margin:8px 0 4px 2px}
@@ -147,6 +162,40 @@
 </header>
 
 <main class="wrap">
+  <details class="card onboard" {{if not .HasData}}open{{end}}>
+    <summary>{{if .HasData}}Setup &amp; connect{{else}}Get started in 2 minutes{{end}}</summary>
+    <div class="ob">
+      <div class="obstep">
+        <div class="obh">1 · Install — drop this in your app</div>
+        <pre class="code" id="c1">&lt;script src="{{.Base}}/sdk.js"&gt;&lt;/script&gt;
+&lt;script&gt;
+  smolanalytics.init("YOUR_WRITE_KEY", {{"{"}} host: "{{.Base}}" {{"}"}});
+  smolanalytics.track("signup", {{"{"}} plan: "pro" {{"}"}});
+&lt;/script&gt;</pre>
+        <button class="copy" data-c="c1">copy</button>
+      </div>
+
+      <div class="obstep">
+        <div class="obh">…or let your AI do it — paste into Cursor / Claude Code</div>
+        <pre class="code" id="c2">Add smolanalytics product analytics to this app. Load the script {{.Base}}/sdk.js and call smolanalytics.init("YOUR_WRITE_KEY", {{"{"}} host: "{{.Base}}" {{"}"}}). Then call smolanalytics.track(event, props) at the key moments — "signup" on account creation, "activate" at the core aha moment, "checkout" on payment — and smolanalytics.identify(userId) on login. Put the calls in the right places in the codebase.</pre>
+        <button class="copy" data-c="c2">copy</button>
+      </div>
+
+      <div class="obstep">
+        <div class="obh">2 · Ask it anything — connect your own AI over MCP</div>
+        <pre class="code" id="c3">{{"{"}}
+  "mcpServers": {{"{"}}
+    "smolanalytics": {{"{"}} "url": "{{.Base}}/mcp" {{"}"}}
+  {{"}"}}
+{{"}"}}</pre>
+        <button class="copy" data-c="c3">copy</button>
+        <div class="obnote">Add to your Claude Desktop / Cursor MCP config, then ask <em>"what's my activation rate, and is pro converting better than free?"</em> — your model reads your data through our tools. Locally you can also run <code>smolanalytics mcp</code> over stdio.</div>
+      </div>
+
+      <div class="obstatus" id="obstatus">○ waiting for your first event…</div>
+    </div>
+  </details>
+
   <div class="stats">
     <div class="stat"><div class="l">Users</div><div class="v">{{.TotalUsers}}</div></div>
     <div class="stat"><div class="l">Signups (30d)</div><div class="v">{{.Signups}}</div></div>
@@ -474,6 +523,21 @@
         .then(function(r){return r.json()}).then(function(){coName.value='';coEvents.value='';refreshCohorts();}).catch(function(){});
     };
     refreshCohorts();
+
+    // onboarding — copy buttons + live first-event detection
+    Array.prototype.forEach.call(document.querySelectorAll('.copy'),function(b){
+      b.onclick=function(){
+        var pre=document.getElementById(b.getAttribute('data-c')); if(!pre)return;
+        if(navigator.clipboard){navigator.clipboard.writeText(pre.innerText).then(function(){var o=b.textContent;b.textContent='copied ✓';setTimeout(function(){b.textContent=o;},1200);});}
+      };
+    });
+    var obstatus=document.getElementById('obstatus');
+    if(obstatus){
+      function obchk(){fetch('/v1/events/recent?limit=1').then(function(r){return r.json()}).then(function(e){
+        if(e&&e.length){obstatus.innerHTML='<span style="color:var(--ok)">●</span> events flowing — you\'re all set';}
+      }).catch(function(){});}
+      obchk(); setInterval(obchk,4000);
+    }
   })();
 </script>
 </body>

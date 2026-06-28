@@ -101,9 +101,11 @@ type dashVM struct {
 	ConvByPlan    []segConv
 	Events        []string
 	Updated       string
+	HasData       bool   // false on a fresh install → show the big onboarding
+	Base          string // this server's base URL, for ready-to-paste snippets
 }
 
-func (s *Server) dashboard(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	evs, err := s.store.Range(time.Time{}, time.Time{})
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -121,6 +123,8 @@ func (s *Server) dashboard(w http.ResponseWriter, _ *http.Request) {
 		OverallConv: pct(fr.OverallConversion),
 		Events:      names,
 		Updated:     time.Now().UTC().Format("Jan 2, 15:04 MST"),
+		HasData:     len(evs) > 0,
+		Base:        baseURL(r),
 	}
 
 	for i, st := range fr.Steps {
@@ -203,3 +207,13 @@ func (s *Server) dashboard(w http.ResponseWriter, _ *http.Request) {
 }
 
 func pct(f float64) int { return int(math.Round(f * 100)) }
+
+// baseURL reconstructs this server's externally-visible URL for paste-ready
+// snippets (honors a TLS-terminating proxy).
+func baseURL(r *http.Request) string {
+	scheme := "http"
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host
+}
