@@ -198,8 +198,8 @@
 
   <div class="stats">
     <div class="stat"><div class="l">Users</div><div class="v">{{.TotalUsers}}</div></div>
-    <div class="stat"><div class="l">Signups (30d)</div><div class="v">{{.Signups}}</div></div>
-    <div class="stat"><div class="l">Signup → checkout</div><div class="v acc">{{.OverallConv}}%</div></div>
+    <div class="stat"><div class="l">{{.StatEventLabel}} (30d)</div><div class="v">{{.Signups}}</div></div>
+    <div class="stat"><div class="l">{{.ConvLabel}}</div><div class="v acc">{{.OverallConv}}%</div></div>
   </div>
 
   <div class="card explore">
@@ -249,7 +249,7 @@
   <div class="grid">
     <div>
       <div class="card">
-        <h2>Funnel · signup → activate → checkout</h2>
+        <h2>Funnel · {{.FunnelTitle}}</h2>
         {{range .Funnel}}
           {{if not .First}}<div class="fdrop">↓ {{.PctPrev}}% continue · {{.Dropped}} dropped</div>{{end}}
           <div class="fstep">
@@ -264,8 +264,9 @@
         {{end}}
       </div>
 
+      {{if .HasConvBy}}
       <div class="card">
-        <h2>Conversion by plan · segmented funnel</h2>
+        <h2>Conversion by {{.ConvByTitle}} · segmented funnel</h2>
         <div class="segconv">
           {{range .ConvByPlan}}
           <div class="sc">
@@ -276,9 +277,10 @@
           {{end}}
         </div>
       </div>
+      {{end}}
 
       <div class="card">
-        <h2>Signups per day</h2>
+        <h2>{{.TrendLabel}} per day</h2>
         <div class="bars">
           {{range .Trend}}<div class="col" title="{{.Date}}: {{.Count}}"><div class="bar" style="height:{{.HeightPct}}%"></div></div>{{end}}
         </div>
@@ -302,8 +304,9 @@
         </table>
       </div>
 
+      {{if .HasSource}}
       <div class="card">
-        <h2>Signups by source</h2>
+        <h2>{{.SourceTitle}}</h2>
         {{range .BySource}}
         <div class="seg">
           <div class="segbar" style="width:{{.BarPct}}%"></div>
@@ -311,6 +314,7 @@
         </div>
         {{end}}
       </div>
+      {{end}}
 
       <div class="card">
         <h2>Live events <span class="livedot"></span></h2>

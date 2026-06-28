@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/event"
@@ -60,18 +61,21 @@ type segConv struct {
 	Conv  int // overall funnel conversion %, this segment
 }
 
-// funnelBySegment runs the signup→activate→checkout funnel separately for each
-// value of a property — segmentation applied to a report, the core Mixpanel move.
-func funnelBySegment(evs []event.Event, property string) []segConv {
+// funnelBySegment runs the funnel separately for each value of a property —
+// segmentation applied to a report, the core Mixpanel move.
+func funnelBySegment(evs []event.Event, property string, steps []funnel.Step) []segConv {
+	if len(steps) == 0 {
+		return nil
+	}
+	first := steps[0].Event
 	vals := map[string]bool{}
 	for _, e := range evs {
-		if e.Name == "signup" {
+		if e.Name == first {
 			if v, ok := e.Properties[property]; ok {
 				vals[toStr(v)] = true
 			}
 		}
 	}
-	steps := []funnel.Step{{Event: "signup"}, {Event: "activate"}, {Event: "checkout"}}
 	out := make([]segConv, 0, len(vals))
 	for v := range vals {
 		seg := query.Apply(evs, []query.Filter{{Property: property, Op: query.Eq, Value: v}})
@@ -103,6 +107,15 @@ type dashVM struct {
 	Updated       string
 	HasData       bool   // false on a fresh install → show the big onboarding
 	Base          string // this server's base URL, for ready-to-paste snippets
+	// adaptive labels — the default dashboard reflects the user's OWN events
+	FunnelTitle    string
+	ConvLabel      string // "<first> → <last>" of the detected funnel
+	StatEventLabel string // the headline event (e.g. "signup")
+	TrendLabel     string
+	ConvByTitle    string // segment property for the segmented-funnel card
+	SourceTitle    string
+	HasConvBy      bool
+	HasSource      bool
 }
 
 func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
@@ -112,19 +125,39 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fr := funnel.Compute(evs, []funnel.Step{{Event: "signup"}, {Event: "activate"}, {Event: "checkout"}}, 7*24*time.Hour)
-	rr := retentionOf(evs, 7, "open")
-	tr := trendOf(evs, "signup")
 	names, _ := s.store.Names()
+	vol := eventsByVolume(evs)
+	fsteps, ftitle := detectFunnel(evs, vol)
+	trendEvent := pickEvent(vol, "signup")
+	retEvent := pickEvent(vol, "open")
+	segProp := detectProp(evs, "plan")
+	srcProp := detectProp(evs, "source")
+
+	fr := funnel.Compute(evs, fsteps, 7*24*time.Hour)
+	rr := retentionOf(evs, 7, retEvent)
+	tr := trendOf(evs, trendEvent)
+
+	convLabel := ftitle
+	if n := len(fsteps); n >= 2 {
+		convLabel = fsteps[0].Event + " → " + fsteps[n-1].Event
+	}
 
 	vm := dashVM{
-		TotalUsers:  distinctUsers(evs),
-		Signups:     tr.Total,
-		OverallConv: pct(fr.OverallConversion),
-		Events:      names,
-		Updated:     time.Now().UTC().Format("Jan 2, 15:04 MST"),
-		HasData:     len(evs) > 0,
-		Base:        baseURL(r),
+		TotalUsers:     distinctUsers(evs),
+		Signups:        tr.Total,
+		OverallConv:    pct(fr.OverallConversion),
+		Events:         names,
+		Updated:        time.Now().UTC().Format("Jan 2, 15:04 MST"),
+		HasData:        len(evs) > 0,
+		Base:           baseURL(r),
+		FunnelTitle:    ftitle,
+		ConvLabel:      convLabel,
+		StatEventLabel: trendEvent,
+		TrendLabel:     trendEvent,
+		ConvByTitle:    segProp,
+		HasConvBy:      segProp != "",
+		HasSource:      srcProp != "",
+		SourceTitle:    trendEvent + " by " + srcProp,
 	}
 
 	for i, st := range fr.Steps {
@@ -177,30 +210,34 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	// Segmentation: signups broken down by acquisition source.
-	var signups []event.Event
-	for _, e := range evs {
-		if e.Name == "signup" {
-			signups = append(signups, e)
+	// Segmentation: the headline event broken down by the detected source property.
+	if srcProp != "" {
+		var headline []event.Event
+		for _, e := range evs {
+			if e.Name == trendEvent {
+				headline = append(headline, e)
+			}
 		}
-	}
-	groups := query.Breakdown(signups, "source")
-	top := 0
-	if len(groups) > 0 {
-		top = groups[0].Count
-	}
-	for _, g := range groups {
-		row := segRow{Value: g.Value, Count: g.Count}
-		if vm.Signups > 0 {
-			row.Pct = int(math.Round(float64(g.Count) / float64(vm.Signups) * 100))
+		groups := query.Breakdown(headline, srcProp)
+		top := 0
+		if len(groups) > 0 {
+			top = groups[0].Count
 		}
-		if top > 0 {
-			row.BarPct = int(math.Round(float64(g.Count) / float64(top) * 100))
+		for _, g := range groups {
+			row := segRow{Value: g.Value, Count: g.Count}
+			if len(headline) > 0 {
+				row.Pct = int(math.Round(float64(g.Count) / float64(len(headline)) * 100))
+			}
+			if top > 0 {
+				row.BarPct = int(math.Round(float64(g.Count) / float64(top) * 100))
+			}
+			vm.BySource = append(vm.BySource, row)
 		}
-		vm.BySource = append(vm.BySource, row)
 	}
 
-	vm.ConvByPlan = funnelBySegment(evs, "plan")
+	if segProp != "" {
+		vm.ConvByPlan = funnelBySegment(evs, segProp, fsteps)
+	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = dashTmpl.Execute(w, vm)
@@ -216,4 +253,122 @@ func baseURL(r *http.Request) string {
 		scheme = "https"
 	}
 	return scheme + "://" + r.Host
+}
+
+// --- adaptive dashboard: reflect the user's OWN events, not the demo's schema ---
+
+func eventsByVolume(evs []event.Event) []string {
+	c := map[string]int{}
+	for _, e := range evs {
+		c[e.Name]++
+	}
+	ns := make([]string, 0, len(c))
+	for n := range c {
+		ns = append(ns, n)
+	}
+	sort.Slice(ns, func(i, j int) bool {
+		if c[ns[i]] != c[ns[j]] {
+			return c[ns[i]] > c[ns[j]]
+		}
+		return ns[i] < ns[j]
+	})
+	return ns
+}
+
+func hasName(names []string, n string) bool {
+	for _, x := range names {
+		if x == n {
+			return true
+		}
+	}
+	return false
+}
+
+func pickEvent(vol []string, preferred string) string {
+	if hasName(vol, preferred) {
+		return preferred
+	}
+	if len(vol) > 0 {
+		return vol[0]
+	}
+	return ""
+}
+
+// detectFunnel uses the conventional signup→activate→checkout when present, else
+// the top events ordered by how soon users do them after first contact.
+func detectFunnel(evs []event.Event, vol []string) ([]funnel.Step, string) {
+	if hasName(vol, "signup") && hasName(vol, "activate") && hasName(vol, "checkout") {
+		return []funnel.Step{{Event: "signup"}, {Event: "activate"}, {Event: "checkout"}}, "signup → activate → checkout"
+	}
+	top := vol
+	if len(top) > 3 {
+		top = top[:3]
+	}
+	top = orderByJourney(evs, top)
+	steps := make([]funnel.Step, len(top))
+	for i, n := range top {
+		steps[i] = funnel.Step{Event: n}
+	}
+	return steps, strings.Join(top, " → ")
+}
+
+// orderByJourney sorts events by mean delay from each user's first event, so the
+// auto-funnel follows the typical sequence rather than raw volume.
+func orderByJourney(evs []event.Event, want []string) []string {
+	first := map[string]time.Time{}
+	for _, e := range evs {
+		if t, ok := first[e.DistinctID]; !ok || e.Timestamp.Before(t) {
+			first[e.DistinctID] = e.Timestamp
+		}
+	}
+	type acc struct {
+		sum time.Duration
+		n   int
+	}
+	delay := map[string]*acc{}
+	wantSet := map[string]bool{}
+	for _, w := range want {
+		wantSet[w] = true
+	}
+	for _, e := range evs {
+		if !wantSet[e.Name] {
+			continue
+		}
+		a := delay[e.Name]
+		if a == nil {
+			a = &acc{}
+			delay[e.Name] = a
+		}
+		a.sum += e.Timestamp.Sub(first[e.DistinctID])
+		a.n++
+	}
+	mean := func(n string) time.Duration {
+		if a := delay[n]; a != nil && a.n > 0 {
+			return a.sum / time.Duration(a.n)
+		}
+		return 0
+	}
+	out := append([]string{}, want...)
+	sort.Slice(out, func(i, j int) bool { return mean(out[i]) < mean(out[j]) })
+	return out
+}
+
+// detectProp returns the preferred property if present, else the most common one.
+func detectProp(evs []event.Event, preferred string) string {
+	c := map[string]int{}
+	for _, e := range evs {
+		for k := range e.Properties {
+			c[k]++
+		}
+	}
+	if c[preferred] > 0 {
+		return preferred
+	}
+	best, bestN := "", 0
+	for k, n := range c {
+		if n > bestN || (n == bestN && best != "" && k < best) {
+			best, bestN = k, n
+		}
+	}
+	return best
 }
