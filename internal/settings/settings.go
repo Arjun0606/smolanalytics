@@ -4,7 +4,9 @@
 package settings
 
 import (
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
@@ -22,11 +24,20 @@ type APIKey struct {
 	Created time.Time `json:"created"`
 }
 
+// Account is the single operator login (in-app, self-serve — no env required).
+type Account struct {
+	Username string `json:"username"`
+	Hash     string `json:"hash"` // iterated HMAC-SHA256 of the password
+	Salt     string `json:"salt"`
+}
+
 type data struct {
 	ProjectName string   `json:"project_name"`
 	Timezone    string   `json:"timezone"`
 	Secret      string   `json:"secret"` // HMAC key for session cookies
 	Keys        []APIKey `json:"keys"`
+	Account     Account  `json:"account"`
+	RetainDays  int      `json:"retain_days"` // 0 = keep forever
 }
 
 // Store is the concurrency-safe, persisted settings.
@@ -59,6 +70,64 @@ func Open(path string) (*Store, error) {
 func (s *Store) ProjectName() string { s.mu.Lock(); defer s.mu.Unlock(); return s.d.ProjectName }
 func (s *Store) Timezone() string    { s.mu.Lock(); defer s.mu.Unlock(); return s.d.Timezone }
 func (s *Store) Secret() string      { s.mu.Lock(); defer s.mu.Unlock(); return s.d.Secret }
+func (s *Store) RetainDays() int     { s.mu.Lock(); defer s.mu.Unlock(); return s.d.RetainDays }
+func (s *Store) HasPassword() bool   { s.mu.Lock(); defer s.mu.Unlock(); return s.d.Account.Hash != "" }
+
+func (s *Store) Username() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.d.Account.Username != "" {
+		return s.d.Account.Username
+	}
+	return "admin"
+}
+
+// SetAccount sets the operator username + password (hashed). Empty username keeps
+// the existing one.
+func (s *Store) SetAccount(username, password string) error {
+	if password == "" {
+		return fmt.Errorf("password is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	old := s.d.Account
+	salt := newToken(16)
+	un := username
+	if un == "" {
+		un = old.Username
+	}
+	s.d.Account = Account{Username: un, Salt: salt, Hash: hashPw(password, salt)}
+	if err := s.persist(); err != nil {
+		s.d.Account = old
+		return err
+	}
+	return nil
+}
+
+// CheckPassword verifies a password against the stored hash (constant-time).
+func (s *Store) CheckPassword(password string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.d.Account.Hash == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(hashPw(password, s.d.Account.Salt)), []byte(s.d.Account.Hash)) == 1
+}
+
+func (s *Store) SetRetainDays(days int) error {
+	if days < 0 {
+		days = 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	old := s.d.RetainDays
+	s.d.RetainDays = days
+	if err := s.persist(); err != nil {
+		s.d.RetainDays = old
+		return err
+	}
+	return nil
+}
 
 func (s *Store) Keys() []APIKey {
 	s.mu.Lock()
@@ -154,4 +223,20 @@ func newToken(n int) string {
 	b := make([]byte, n)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+// hashPw derives a password hash with iterated HMAC-SHA256 keyed by the salt —
+// deliberately slow, stdlib-only (keeps the binary dependency-free). Adequate for
+// a self-hosted operator login.
+const pwIterations = 120_000
+
+func hashPw(password, salt string) string {
+	mac := hmac.New(sha256.New, []byte(salt))
+	h := []byte(password)
+	for i := 0; i < pwIterations; i++ {
+		mac.Reset()
+		mac.Write(h)
+		h = mac.Sum(nil)
+	}
+	return hex.EncodeToString(h)
 }

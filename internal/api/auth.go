@@ -19,7 +19,22 @@ const sessionCookie = "sa_session"
 
 func dashPassword() string { return os.Getenv("SMOLANALYTICS_PASSWORD") }
 
-func (s *Server) authEnabled() bool { return dashPassword() != "" }
+// authEnabled is true when a login is required — either the env password or an
+// in-app account password has been set.
+func (s *Server) authEnabled() bool {
+	return dashPassword() != "" || (s.settings != nil && s.settings.HasPassword())
+}
+
+// checkLogin accepts either the env password or the in-app account password.
+func (s *Server) checkLogin(pw string) bool {
+	if pw == "" {
+		return false
+	}
+	if env := dashPassword(); env != "" && hmac.Equal([]byte(pw), []byte(env)) {
+		return true
+	}
+	return s.settings != nil && s.settings.CheckPassword(pw)
+}
 
 func (s *Server) sessionSecret() string {
 	if s.settings != nil {
@@ -102,8 +117,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// POST
-	pw := r.FormValue("password")
-	if pw != "" && hmac.Equal([]byte(pw), []byte(dashPassword())) {
+	if s.checkLogin(r.FormValue("password")) {
 		s.setSession(w, r)
 		http.Redirect(w, r, "/", http.StatusFound)
 		return

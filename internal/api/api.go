@@ -98,6 +98,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /logout", s.logout)
 	mux.HandleFunc("GET /settings", s.settingsPage)
 	mux.HandleFunc("POST /v1/settings", s.updateSettings)
+	mux.HandleFunc("POST /v1/settings/account", s.updateAccount)
+	mux.HandleFunc("POST /v1/settings/retention", s.updateRetention)
 	mux.HandleFunc("POST /v1/settings/keys", s.createKey)
 	mux.HandleFunc("DELETE /v1/settings/keys/{id}", s.revokeKey)
 	mux.HandleFunc("POST /v1/settings/clear", s.clearData)
