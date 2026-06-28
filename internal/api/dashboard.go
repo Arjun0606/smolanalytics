@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"fmt"
 	"html/template"
+	"io"
 	"math"
 	"net/http"
 	"sort"
@@ -119,6 +120,10 @@ type dashVM struct {
 }
 
 func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" { // GET / is a catch-all; anything else is a real 404
+		s.notFound(w, r)
+		return
+	}
 	evs, err := s.store.Range(time.Time{}, time.Time{})
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -244,6 +249,18 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 }
 
 func pct(f float64) int { return int(math.Round(f * 100)) }
+
+// notFound renders a clean branded 404 instead of the catch-all dashboard.
+func (s *Server) notFound(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusNotFound)
+	_, _ = io.WriteString(w, `<!doctype html><meta charset="utf-8">`+
+		`<title>not found · smolanalytics</title>`+
+		`<style>html{background:#0A0A0A;color:#FAFAFA;font-family:ui-monospace,Menlo,monospace}`+
+		`body{min-height:100vh;margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px}`+
+		`a{color:#F5A623;text-decoration:none}.b{font-weight:800;letter-spacing:-.02em;font-size:18px;font-family:Inter,sans-serif}.b i{color:#F5A623;font-style:normal}</style>`+
+		`<div class="b">smol<i>analytics</i></div><div style="color:#8E8E8E">404 · nothing here</div><a href="/">← back to dashboard</a>`)
+}
 
 // baseURL reconstructs this server's externally-visible URL for paste-ready
 // snippets (honors a TLS-terminating proxy).

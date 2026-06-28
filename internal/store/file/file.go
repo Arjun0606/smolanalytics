@@ -50,7 +50,11 @@ func Open(path string) (*Store, error) {
 			}
 			s.index(e)
 		}
+		err := sc.Err()
 		_ = f.Close()
+		if err != nil {
+			return nil, err
+		}
 	} else if !os.IsNotExist(err) {
 		return nil, err
 	}
