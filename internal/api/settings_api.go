@@ -10,8 +10,10 @@ import (
 	"sort"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/alert"
 	"github.com/Arjun0606/smolanalytics/internal/audit"
 	"github.com/Arjun0606/smolanalytics/internal/settings"
+	"github.com/Arjun0606/smolanalytics/internal/webhook"
 )
 
 //go:embed login.tmpl.html
@@ -44,13 +46,15 @@ type settingsVM struct {
 	EventCount  int
 	EventStats  []eventStat
 	Audit       []audit.Entry
+	Webhooks    []webhook.Endpoint
+	Alerts      []alert.Alert
 	AuthEnabled bool
 	EnvKeySet   bool
 }
 
 var settingsSections = map[string]bool{
-	"account": true, "project": true, "keys": true,
-	"install": true, "data": true, "audit": true, "about": true,
+	"account": true, "project": true, "keys": true, "install": true,
+	"data": true, "webhooks": true, "alerts": true, "audit": true, "about": true,
 }
 
 func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
@@ -92,6 +96,20 @@ func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
 	}
 	if section == "audit" {
 		vm.Audit = s.audit.Recent(200)
+	}
+	if section == "webhooks" && s.webhooks != nil {
+		vm.Webhooks = s.webhooks.List()
+	}
+	if section == "alerts" {
+		if s.alerts != nil {
+			vm.Alerts = s.alerts.List()
+		}
+		if len(vm.EventStats) == 0 { // event-name suggestions for the alert form
+			names, _ := s.store.Names()
+			for _, n := range names {
+				vm.EventStats = append(vm.EventStats, eventStat{Name: n})
+			}
+		}
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/alert"
 	"github.com/Arjun0606/smolanalytics/internal/api"
 	"github.com/Arjun0606/smolanalytics/internal/audit"
 	"github.com/Arjun0606/smolanalytics/internal/cohort"
@@ -23,6 +24,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/store"
 	"github.com/Arjun0606/smolanalytics/internal/store/file"
 	"github.com/Arjun0606/smolanalytics/internal/store/memory"
+	"github.com/Arjun0606/smolanalytics/internal/webhook"
 )
 
 func main() {
@@ -95,6 +97,17 @@ func serve(st store.Store, closeStore func() error) {
 	} else {
 		log.Printf("smolanalytics: audit log disabled (%v)", err)
 	}
+	if wh, err := webhook.Open(dataPath() + ".webhooks.json"); err == nil {
+		app.SetWebhooks(wh)
+	} else {
+		log.Printf("smolanalytics: webhooks disabled (%v)", err)
+	}
+	if al, err := alert.Open(dataPath() + ".alerts.json"); err == nil {
+		app.SetAlerts(al)
+		go alertLoop(app)
+	} else {
+		log.Printf("smolanalytics: alerts disabled (%v)", err)
+	}
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           app.Handler(),
@@ -144,6 +157,17 @@ func pruneLoop(st store.Store, set *settings.Store) {
 	defer t.Stop()
 	for range t.C {
 		prune()
+	}
+}
+
+// alertLoop evaluates alerts on boot and every 5 minutes, firing webhooks for any
+// whose condition is met.
+func alertLoop(app *api.Server) {
+	app.EvaluateAlerts()
+	t := time.NewTicker(5 * time.Minute)
+	defer t.Stop()
+	for range t.C {
+		app.EvaluateAlerts()
 	}
 }
 

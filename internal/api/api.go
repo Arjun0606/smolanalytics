@@ -9,12 +9,14 @@ import (
 	_ "embed"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/alert"
 	"github.com/Arjun0606/smolanalytics/internal/audit"
 	"github.com/Arjun0606/smolanalytics/internal/cohort"
 	"github.com/Arjun0606/smolanalytics/internal/event"
@@ -25,6 +27,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/settings"
 	"github.com/Arjun0606/smolanalytics/internal/store"
 	"github.com/Arjun0606/smolanalytics/internal/trends"
+	"github.com/Arjun0606/smolanalytics/internal/webhook"
 )
 
 //go:embed sdk.js
@@ -40,6 +43,8 @@ type Server struct {
 	cohorts  *cohort.Store
 	settings *settings.Store
 	audit    *audit.Log
+	webhooks *webhook.Store
+	alerts   *alert.Store
 	writeKey string // if set, POST /v1/events requires Authorization: Bearer <writeKey>
 }
 
@@ -61,8 +66,56 @@ func (s *Server) SetCohorts(st *cohort.Store) { s.cohorts = st }
 // SetAudit swaps in a persistent audit log.
 func (s *Server) SetAudit(l *audit.Log) { s.audit = l }
 
+// SetWebhooks / SetAlerts swap in the persistent notification stores.
+func (s *Server) SetWebhooks(w *webhook.Store) { s.webhooks = w }
+func (s *Server) SetAlerts(a *alert.Store)     { s.alerts = a }
+
 // rec records an operator action to the audit log (best-effort, nil-safe).
 func (s *Server) rec(action, detail string) { s.audit.Record(action, detail) }
+
+// EvaluateAlerts runs every enabled alert against the current data and fires those
+// whose condition is met (debounced to once per window). Called on a schedule.
+func (s *Server) EvaluateAlerts() {
+	if s.alerts == nil {
+		return
+	}
+	evs, err := s.store.Range(time.Time{}, time.Time{})
+	if err != nil {
+		return
+	}
+	now := time.Now().UTC()
+	for _, a := range s.alerts.List() {
+		if !a.Enabled {
+			continue
+		}
+		window := time.Duration(a.WindowHours) * time.Hour
+		if window <= 0 {
+			window = 24 * time.Hour
+		}
+		cutoff := now.Add(-window)
+		var count float64
+		for _, e := range evs {
+			if e.Name == a.Event && e.Timestamp.After(cutoff) {
+				count++
+			}
+		}
+		met := (a.Op == "gt" && count > a.Threshold) || (a.Op == "lt" && count < a.Threshold)
+		fired := false
+		if met && (a.LastFired.IsZero() || now.Sub(a.LastFired) >= window) {
+			fired = true
+			payload := map[string]any{
+				"type": "alert", "alert": a.Name, "event": a.Event,
+				"op": a.Op, "threshold": a.Threshold, "value": count,
+				"window_hours": a.WindowHours, "fired_at": now,
+			}
+			if s.webhooks != nil {
+				s.webhooks.DeliverAll(payload)
+			}
+			s.rec("alert.fired", fmt.Sprintf("%s — %s %s %g (value %g)", a.Name, a.Event, a.Op, a.Threshold, count))
+		}
+		s.alerts.SetChecked(a.ID, count, fired, now)
+	}
+}
 
 // SetWriteKey gates event ingestion behind a write key (production). Empty = open
 // (dev). The SDK passes the same key.
@@ -114,6 +167,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/settings/keys", s.createKey)
 	mux.HandleFunc("DELETE /v1/settings/keys/{id}", s.revokeKey)
 	mux.HandleFunc("POST /v1/settings/clear", s.clearData)
+	mux.HandleFunc("POST /v1/webhooks", s.createWebhook)
+	mux.HandleFunc("DELETE /v1/webhooks/{id}", s.deleteWebhook)
+	mux.HandleFunc("POST /v1/webhooks/{id}/test", s.testWebhook)
+	mux.HandleFunc("POST /v1/alerts", s.createAlert)
+	mux.HandleFunc("DELETE /v1/alerts/{id}", s.deleteAlert)
 	mux.HandleFunc("GET /", s.dashboard)
 	return recoverMW(s.authMW(mux))
 }

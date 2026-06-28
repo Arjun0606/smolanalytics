@@ -67,6 +67,8 @@
     <a href="/settings/keys" class="{{if eq .Section "keys"}}on{{end}}">API keys</a>
     <a href="/settings/install" class="{{if eq .Section "install"}}on{{end}}">Install &amp; connect</a>
     <a href="/settings/data" class="{{if eq .Section "data"}}on{{end}}">Data</a>
+    <a href="/settings/webhooks" class="{{if eq .Section "webhooks"}}on{{end}}">Webhooks</a>
+    <a href="/settings/alerts" class="{{if eq .Section "alerts"}}on{{end}}">Alerts</a>
     <a href="/settings/audit" class="{{if eq .Section "audit"}}on{{end}}">Audit log</a>
     <a href="/settings/about" class="{{if eq .Section "about"}}on{{end}}">About</a>
   </nav>
@@ -162,6 +164,44 @@
     </div>
   {{end}}
 
+  {{if eq .Section "webhooks"}}
+    <div class="card">
+      <h2>Webhooks</h2>
+      <div class="note">smolanalytics POSTs signed JSON here when an alert fires. Verify with the <code>X-Smolanalytics-Signature</code> header (HMAC-SHA256 of the body, using the secret).</div>
+      <div id="hooks" style="margin-top:12px">
+        {{range .Webhooks}}<div class="keyrow" data-id="{{.ID}}"><span class="nm">{{.Name}}</span><span class="kv">{{.URL}}</span><span class="x test" title="send test">test</span><span class="x" title="delete">delete</span></div>
+        {{else}}<div class="note" id="noHooks">no webhooks yet</div>{{end}}
+      </div>
+      <div class="row" style="margin-top:14px">
+        <div><label>Name</label><input id="hName" placeholder="slack alerts"></div>
+        <div><label>URL</label><input id="hUrl" placeholder="https://hooks.example.com/..."></div>
+        <button id="hCreate" class="ghost">Add</button>
+      </div>
+      <span class="msg" id="hMsg"></span>
+    </div>
+  {{end}}
+
+  {{if eq .Section "alerts"}}
+    <div class="card">
+      <h2>Alerts</h2>
+      <div class="note">Fire a webhook when an event's count over a window crosses a threshold (evaluated every 5 minutes). Example: alert if <code>signup</code> in the last 24h is below 10.</div>
+      <div id="alerts" style="margin-top:12px">
+        {{range .Alerts}}<div class="keyrow" data-id="{{.ID}}"><span class="nm">{{.Name}}</span><span class="kv">{{.Event}} {{.Op}} {{.Threshold}} / {{.WindowHours}}h{{if not .LastChecked.IsZero}} · last {{.LastValue}}{{end}}</span><span class="x" title="delete">delete</span></div>
+        {{else}}<div class="note" id="noAlerts">no alerts yet</div>{{end}}
+      </div>
+      <datalist id="evNames">{{range .EventStats}}<option value="{{.Name}}">{{end}}</datalist>
+      <div class="row" style="margin-top:14px">
+        <div><label>Name</label><input id="alName" placeholder="signup drop"></div>
+        <div><label>Event</label><input id="alEvent" list="evNames" placeholder="signup"></div>
+        <div style="max-width:90px"><label>When</label><select id="alOp"><option value="lt">below</option><option value="gt">above</option></select></div>
+        <div style="max-width:100px"><label>Threshold</label><input id="alThresh" type="number" value="10"></div>
+        <div style="max-width:90px"><label>Window h</label><input id="alWindow" type="number" value="24"></div>
+        <button id="alCreate" class="ghost">Add</button>
+      </div>
+      <span class="msg" id="alMsg"></span>
+    </div>
+  {{end}}
+
   {{if eq .Section "audit"}}
     <div class="card">
       <h2>Audit log</h2>
@@ -215,6 +255,42 @@
   });
   Array.prototype.forEach.call(document.querySelectorAll('.copy'),function(b){b.onclick=function(){var p=document.getElementById(b.getAttribute('data-c'));if(navigator.clipboard)navigator.clipboard.writeText(p.innerText).then(function(){var o=b.textContent;b.textContent='copied ✓';setTimeout(function(){b.textContent=o;},1200);});};});
   on('clear',function(){if(!confirm('Delete ALL events permanently? This cannot be undone.'))return;J('/v1/settings/clear','POST').then(function(){flash('clearMsg','cleared ✓');setTimeout(function(){location.reload();},800);});});
+
+  // webhooks
+  var hooks=document.getElementById('hooks');
+  function bindHook(row){
+    var del=row.querySelector('.x[title="delete"]'),test=row.querySelector('.test');
+    if(del)del.onclick=function(){if(!confirm('Delete this webhook?'))return;J('/v1/webhooks/'+row.getAttribute('data-id'),'DELETE').then(function(){row.remove();});};
+    if(test)test.onclick=function(){test.textContent='…';J('/v1/webhooks/'+row.getAttribute('data-id')+'/test','POST').then(function(r){test.textContent='test';flash('hMsg',r.ok?'delivered ✓':(r.j.error||'failed'),!r.ok);});};
+  }
+  if(hooks)Array.prototype.forEach.call(hooks.querySelectorAll('.keyrow'),bindHook);
+  on('hCreate',function(){
+    var name=document.getElementById('hName').value.trim(),url=document.getElementById('hUrl').value.trim();
+    if(!url){flash('hMsg','url required',true);return;}
+    J('/v1/webhooks','POST',{name:name,url:url}).then(function(r){
+      if(!r.ok){flash('hMsg',r.j.error||'failed',true);return;}
+      var no=document.getElementById('noHooks');if(no)no.remove();
+      var row=document.createElement('div');row.className='keyrow';row.setAttribute('data-id',r.j.id);
+      row.innerHTML='<span class="nm">'+esc(r.j.name)+'</span><span class="kv">'+esc(r.j.url)+'</span><span class="x test" title="send test">test</span><span class="x" title="delete">delete</span>';
+      hooks.appendChild(row);bindHook(row);document.getElementById('hName').value='';document.getElementById('hUrl').value='';flash('hMsg','added ✓');
+    });
+  });
+
+  // alerts
+  var alerts=document.getElementById('alerts');
+  function bindAlert(row){var d=row.querySelector('.x[title="delete"]');if(d)d.onclick=function(){if(!confirm('Delete this alert?'))return;J('/v1/alerts/'+row.getAttribute('data-id'),'DELETE').then(function(){row.remove();});};}
+  if(alerts)Array.prototype.forEach.call(alerts.querySelectorAll('.keyrow'),bindAlert);
+  on('alCreate',function(){
+    var name=document.getElementById('alName').value.trim(),ev=document.getElementById('alEvent').value.trim();
+    if(!name||!ev){flash('alMsg','name and event required',true);return;}
+    J('/v1/alerts','POST',{name:name,event:ev,op:document.getElementById('alOp').value,threshold:parseFloat(document.getElementById('alThresh').value)||0,window_hours:parseInt(document.getElementById('alWindow').value,10)||24}).then(function(r){
+      if(!r.ok){flash('alMsg',r.j.error||'failed',true);return;}
+      var a=r.j,no=document.getElementById('noAlerts');if(no)no.remove();
+      var row=document.createElement('div');row.className='keyrow';row.setAttribute('data-id',a.id);
+      row.innerHTML='<span class="nm">'+esc(a.name)+'</span><span class="kv">'+esc(a.event)+' '+esc(a.op)+' '+a.threshold+' / '+a.window_hours+'h</span><span class="x" title="delete">delete</span>';
+      alerts.appendChild(row);bindAlert(row);document.getElementById('alName').value='';document.getElementById('alEvent').value='';flash('alMsg','added ✓');
+    });
+  });
 </script>
 </body>
 </html>
