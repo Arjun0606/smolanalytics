@@ -21,6 +21,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/insights"
 	"github.com/Arjun0606/smolanalytics/internal/mcp"
 	"github.com/Arjun0606/smolanalytics/internal/retention"
+	"github.com/Arjun0606/smolanalytics/internal/settings"
 	"github.com/Arjun0606/smolanalytics/internal/store"
 	"github.com/Arjun0606/smolanalytics/internal/trends"
 )
@@ -36,8 +37,12 @@ type Server struct {
 	mcp      *mcp.Server
 	insights *insights.Store
 	cohorts  *cohort.Store
+	settings *settings.Store
 	writeKey string // if set, POST /v1/events requires Authorization: Bearer <writeKey>
 }
+
+// SetSettings swaps in a persistent settings store (project, keys, session secret).
+func (s *Server) SetSettings(st *settings.Store) { s.settings = st }
 
 func New(s store.Store) *Server {
 	ins, _ := insights.Open("") // in-memory by default; Set* adds persistence
@@ -87,8 +92,17 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /v1/cohorts/{id}", s.deleteCohort)
 	mux.HandleFunc("GET /v1/cohorts/{id}/users", s.cohortUsers)
 	mux.HandleFunc("POST /mcp", s.handleMCP)
+	// account + settings (the operational staple)
+	mux.HandleFunc("GET /login", s.login)
+	mux.HandleFunc("POST /login", s.login)
+	mux.HandleFunc("GET /logout", s.logout)
+	mux.HandleFunc("GET /settings", s.settingsPage)
+	mux.HandleFunc("POST /v1/settings", s.updateSettings)
+	mux.HandleFunc("POST /v1/settings/keys", s.createKey)
+	mux.HandleFunc("DELETE /v1/settings/keys/{id}", s.revokeKey)
+	mux.HandleFunc("POST /v1/settings/clear", s.clearData)
 	mux.HandleFunc("GET /", s.dashboard)
-	return recoverMW(mux)
+	return recoverMW(s.authMW(mux))
 }
 
 // recoverMW turns a panic in any handler into a 500 instead of crashing the
@@ -125,16 +139,21 @@ func (s *Server) serveSDK(w http.ResponseWriter, _ *http.Request) {
 	_, _ = io.WriteString(w, sdkJS)
 }
 
-// authorized checks the write key (constant-time). Open when no key is configured.
+// authorized checks the env write key (constant-time) or any managed key. Open
+// only when NO key is configured anywhere (local dev).
 func (s *Server) authorized(r *http.Request) bool {
-	if s.writeKey == "" {
+	hasManaged := s.settings != nil && len(s.settings.Keys()) > 0
+	if s.writeKey == "" && !hasManaged {
 		return true
 	}
 	got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if got == "" {
 		got = r.URL.Query().Get("key") // sendBeacon fallback can't set headers
 	}
-	return subtle.ConstantTimeCompare([]byte(got), []byte(s.writeKey)) == 1
+	if s.writeKey != "" && subtle.ConstantTimeCompare([]byte(got), []byte(s.writeKey)) == 1 {
+		return true
+	}
+	return hasManaged && s.settings.ValidKey(got)
 }
 
 // handleMCP is the Streamable-HTTP MCP transport: point a remote MCP client

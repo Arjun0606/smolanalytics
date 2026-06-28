@@ -18,6 +18,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/demo"
 	"github.com/Arjun0606/smolanalytics/internal/insights"
 	"github.com/Arjun0606/smolanalytics/internal/mcp"
+	"github.com/Arjun0606/smolanalytics/internal/settings"
 	"github.com/Arjun0606/smolanalytics/internal/store"
 	"github.com/Arjun0606/smolanalytics/internal/store/file"
 	"github.com/Arjun0606/smolanalytics/internal/store/memory"
@@ -81,6 +82,11 @@ func serve(st store.Store, closeStore func() error) {
 		app.SetCohorts(coh)
 	} else {
 		log.Printf("smolanalytics: cohorts disabled (%v)", err)
+	}
+	if set, err := settings.Open(dataPath() + ".settings.json"); err == nil {
+		app.SetSettings(set)
+	} else {
+		log.Printf("smolanalytics: settings persistence disabled (%v)", err)
 	}
 	srv := &http.Server{
 		Addr:              addr,

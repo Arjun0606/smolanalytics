@@ -119,6 +119,23 @@ func (s *Store) Names() ([]string, error) {
 	return out, nil
 }
 
+// Clear truncates the event log and resets the in-memory index.
+func (s *Store) Clear() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.seen = map[string]bool{}
+	s.evs = nil
+	s.names = map[string]bool{}
+	if s.w == nil {
+		return nil
+	}
+	if err := s.w.Truncate(0); err != nil {
+		return err
+	}
+	_, err := s.w.Seek(0, 0)
+	return err
+}
+
 // Count is the number of events held (handy for "is this store empty").
 func (s *Store) Count() int {
 	s.mu.RLock()

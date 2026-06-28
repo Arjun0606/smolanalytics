@@ -54,6 +54,15 @@ func (s *Store) Range(from, to time.Time) ([]event.Event, error) {
 	return out, nil
 }
 
+func (s *Store) Clear() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.seen = map[string]bool{}
+	s.evs = nil
+	s.names = map[string]bool{}
+	return nil
+}
+
 func (s *Store) Names() ([]string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

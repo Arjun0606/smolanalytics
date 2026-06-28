@@ -20,4 +20,6 @@ type Store interface {
 	Range(from, to time.Time) ([]event.Event, error)
 	// Names returns the distinct event names seen (for auto-building funnels/UI).
 	Names() ([]string, error)
+	// Clear deletes all events (the settings "danger zone" reset).
+	Clear() error
 }

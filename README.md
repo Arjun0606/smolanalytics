@@ -62,7 +62,9 @@ fly launch --copy-config && fly deploy
 fly secrets set SMOLANALYTICS_WRITE_KEY=$(openssl rand -hex 16)
 ```
 
-Config (all env): `ADDR` (default `:8080`), `SMOLANALYTICS_DB` (event log path), `SMOLANALYTICS_WRITE_KEY` (require a key on ingestion). Health at `/healthz`, build at `/version`.
+Config (all env): `ADDR` (default `:8080`), `SMOLANALYTICS_DB` (event log path), `SMOLANALYTICS_WRITE_KEY` (require a key on ingestion), `SMOLANALYTICS_PASSWORD` (protect the dashboard with a login). Health at `/healthz`, build at `/version`.
+
+Manage everything from **Settings** (`/settings`): project name, create/revoke API keys, the install snippet, data export, and a danger-zone reset. Set a password and the dashboard requires login; ingestion and MCP keep their own key auth so they never break.
 
 **No lock-in:** export everything any time — `GET /v1/export?format=csv` or `?format=jsonl` (the JSONL round-trips straight back into `/v1/events`). Take your data to a warehouse or another tool whenever you want.
 
