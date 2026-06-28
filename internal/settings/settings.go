@@ -114,6 +114,20 @@ func (s *Store) CheckPassword(password string) bool {
 	return subtle.ConstantTimeCompare([]byte(hashPw(password, s.d.Account.Salt)), []byte(s.d.Account.Hash)) == 1
 }
 
+// RotateSecret generates a new session-signing secret, invalidating every existing
+// session cookie ("sign out everywhere").
+func (s *Store) RotateSecret() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	old := s.d.Secret
+	s.d.Secret = newToken(32)
+	if err := s.persist(); err != nil {
+		s.d.Secret = old
+		return err
+	}
+	return nil
+}
+
 func (s *Store) SetRetainDays(days int) error {
 	if days < 0 {
 		days = 0

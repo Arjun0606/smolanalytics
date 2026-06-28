@@ -91,6 +91,13 @@
       <input id="aConf" type="password" autocomplete="new-password">
       <div style="margin-top:16px"><button id="aSave">Save</button><span class="msg" id="aMsg"></span></div>
     </div>
+    {{if .HasPassword}}
+    <div class="card">
+      <h2>Sessions</h2>
+      <div class="note">Sign out of every device/browser at once (rotates the session key). You'll need to log back in.</div>
+      <button class="ghost" id="aSignoutAll" style="margin-top:14px">Sign out everywhere</button>
+    </div>
+    {{end}}
   {{end}}
 
   {{if eq .Section "project"}}
@@ -234,6 +241,10 @@
     var cur=document.getElementById('aCur');
     J('/v1/settings/account','POST',{username:document.getElementById('aUser').value,password:nw,current_password:cur?cur.value:''})
       .then(function(r){if(r.ok)flash('aMsg','saved ✓');else flash('aMsg',r.j.error||'failed',true);});
+  });
+  on('aSignoutAll',function(){
+    if(!confirm('Sign out of all sessions? You will be logged out now.'))return;
+    J('/v1/settings/signout-all','POST').then(function(){location.href='/login';});
   });
   on('pSave',function(){
     J('/v1/settings','POST',{name:document.getElementById('pName').value,timezone:document.getElementById('pTz').value}).then(function(){flash('pMsg','saved ✓');});

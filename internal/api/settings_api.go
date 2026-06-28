@@ -202,6 +202,22 @@ func (s *Server) updateAccount(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"username": s.settings.Username()})
 }
 
+// signoutAll rotates the session secret, invalidating every session (including the
+// caller's), then clears the current cookie.
+func (s *Server) signoutAll(w http.ResponseWriter, _ *http.Request) {
+	if s.settings == nil {
+		writeErr(w, http.StatusServiceUnavailable, "settings unavailable")
+		return
+	}
+	if err := s.settings.RotateSecret(); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.rec("account.signout_all", "all sessions invalidated")
+	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "signed out everywhere"})
+}
+
 func (s *Server) updateRetention(w http.ResponseWriter, r *http.Request) {
 	if s.settings == nil {
 		writeErr(w, http.StatusServiceUnavailable, "settings unavailable")
