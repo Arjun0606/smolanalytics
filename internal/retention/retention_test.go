@@ -13,6 +13,16 @@ func ev(user, name string, day int) event.Event {
 	return event.Event{DistinctID: user, Name: name, Timestamp: base.AddDate(0, 0, day)}
 }
 
+func TestNegativeDaysDoesNotPanic(t *testing.T) {
+	// regression: maxDays = -2 used to make([]int, -1) and panic.
+	r := Compute([]event.Event{ev("a", "open", 0)}, -2, "")
+	for _, c := range r.Cohorts {
+		if len(c.Returned) < 1 {
+			t.Fatalf("Returned len = %d, want >= 1", len(c.Returned))
+		}
+	}
+}
+
 func TestRetentionGrid(t *testing.T) {
 	evs := []event.Event{
 		// alice: day 0, returns day 1 and day 3

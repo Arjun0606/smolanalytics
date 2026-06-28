@@ -182,7 +182,7 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 			Filters []query.Filter `json:"filters"`
 		}
 		_ = json.Unmarshal(args, &a)
-		if a.Days == 0 {
+		if a.Days <= 0 {
 			a.Days = 7
 		}
 		return jsonText(summarizeRetention(retention.Compute(query.Apply(evs, a.Filters), a.Days, a.Event)))

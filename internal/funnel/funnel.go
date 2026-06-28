@@ -78,26 +78,34 @@ func Compute(events []event.Event, steps []Step, window time.Duration) Result {
 }
 
 // furthestStep returns how many funnel steps a single user completed (0..len). It
-// anchors at the user's FIRST occurrence of step 0, then greedily advances through
-// the remaining steps in time order, requiring each within `window` of the anchor.
+// tries each occurrence of step 0 as the anchor and returns the furthest the user
+// reaches from the best one — so a user whose first step-0 falls out of window but
+// who later retries and converts is still counted (standard Mixpanel/Amplitude
+// re-anchoring, rather than dropping them on the first anchor).
 func furthestStep(evs []event.Event, steps []Step, window time.Duration) int {
 	sort.SliceStable(evs, func(i, j int) bool { return evs[i].Timestamp.Before(evs[j].Timestamp) })
 
-	idx := 0
-	var anchor time.Time
-	for _, e := range evs {
-		if e.Name != steps[idx].Event {
+	best := 0
+	for start := range evs {
+		if evs[start].Name != steps[0].Event {
 			continue
 		}
-		if idx == 0 {
-			anchor = e.Timestamp
-		} else if window > 0 && e.Timestamp.Sub(anchor) > window {
-			break // the next step happened too late — conversion window expired
+		anchor := evs[start].Timestamp
+		idx := 1 // matched step 0
+		for k := start + 1; k < len(evs) && idx < len(steps); k++ {
+			if window > 0 && evs[k].Timestamp.Sub(anchor) > window {
+				break // out of window — and everything after is later, so stop
+			}
+			if evs[k].Name == steps[idx].Event {
+				idx++
+			}
 		}
-		idx++
-		if idx == len(steps) {
-			break
+		if idx > best {
+			best = idx
+		}
+		if best == len(steps) {
+			break // can't do better than full conversion
 		}
 	}
-	return idx
+	return best
 }

@@ -5,6 +5,7 @@
 package groups
 
 import (
+	"fmt"
 	"sort"
 	"time"
 
@@ -90,5 +91,8 @@ func valueOf(v any) string {
 	if s, ok := v.(string); ok {
 		return s
 	}
-	return ""
+	if v == nil {
+		return ""
+	}
+	return fmt.Sprintf("%v", v) // numeric/bool account ids keep distinct buckets
 }

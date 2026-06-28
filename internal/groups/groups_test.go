@@ -12,6 +12,19 @@ func ev(user, company string, daysAgo int, asof time.Time) event.Event {
 		Properties: map[string]any{"company": company}}
 }
 
+func TestNumericGroupValuesStayDistinct(t *testing.T) {
+	// regression: numeric account ids (JSON → float64) all collapsed into "".
+	asof := time.Date(2026, 6, 30, 12, 0, 0, 0, time.UTC)
+	evs := []event.Event{
+		{DistinctID: "u1", Name: "open", Timestamp: asof, Properties: map[string]any{"account_id": float64(1001)}},
+		{DistinctID: "u2", Name: "open", Timestamp: asof, Properties: map[string]any{"account_id": float64(1002)}},
+	}
+	r := Compute(evs, "account_id", asof, 0)
+	if r.TotalGroups != 2 {
+		t.Fatalf("numeric groups = %d, want 2 distinct (1001, 1002)", r.TotalGroups)
+	}
+}
+
 func TestComputeGroups(t *testing.T) {
 	asof := time.Date(2026, 6, 30, 12, 0, 0, 0, time.UTC)
 	evs := []event.Event{

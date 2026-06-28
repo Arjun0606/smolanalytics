@@ -57,6 +57,21 @@ func TestOrderMatters_OutOfOrderDoesNotConvert(t *testing.T) {
 	}
 }
 
+func TestReanchorsOnLaterStartWithinWindow(t *testing.T) {
+	// first signup is out of the 5h window for activate, but a later signup
+	// converts inside it — the user must still count (regression: the old greedy
+	// anchor dropped them).
+	evs := []event.Event{
+		ev("zoe", "signup", 0),
+		ev("zoe", "signup", 8*time.Hour),
+		ev("zoe", "activate", 9*time.Hour),
+	}
+	r := Compute(evs, steps("signup", "activate"), 5*time.Hour)
+	if r.Steps[1].Count != 1 {
+		t.Fatalf("re-anchor: step1 count = %d, want 1 (signup@8h → activate@9h within 5h)", r.Steps[1].Count)
+	}
+}
+
 func TestConversionWindowExpires(t *testing.T) {
 	evs := []event.Event{
 		// within 24h window: converts

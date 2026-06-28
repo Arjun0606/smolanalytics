@@ -28,6 +28,9 @@ type Result struct {
 // the day n days after their first. retentionEvent optionally filters which events
 // count as activity (empty = any event).
 func Compute(events []event.Event, maxDays int, retentionEvent string) Result {
+	if maxDays < 0 {
+		maxDays = 0 // never make a negative-length Returned slice
+	}
 	type userDays struct {
 		first time.Time
 		days  map[int64]bool // day-number (unix-days) -> active

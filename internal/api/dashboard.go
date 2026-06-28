@@ -365,8 +365,10 @@ func orderByJourney(evs []event.Event, want []string) []string {
 		}
 		return 0
 	}
+	// `want` arrives volume-ordered; a stable sort keeps that order on ties (e.g.
+	// identical timestamps from a backfill) so the auto-funnel is deterministic.
 	out := append([]string{}, want...)
-	sort.Slice(out, func(i, j int) bool { return mean(out[i]) < mean(out[j]) })
+	sort.SliceStable(out, func(i, j int) bool { return mean(out[i]) < mean(out[j]) })
 	return out
 }
 
