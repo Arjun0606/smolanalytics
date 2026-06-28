@@ -3,12 +3,14 @@ package api
 import (
 	_ "embed"
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"io"
 	"net/http"
 	"sort"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/audit"
 	"github.com/Arjun0606/smolanalytics/internal/settings"
 )
 
@@ -41,13 +43,14 @@ type settingsVM struct {
 	Keys        []settings.APIKey
 	EventCount  int
 	EventStats  []eventStat
+	Audit       []audit.Entry
 	AuthEnabled bool
 	EnvKeySet   bool
 }
 
 var settingsSections = map[string]bool{
 	"account": true, "project": true, "keys": true,
-	"install": true, "data": true, "about": true,
+	"install": true, "data": true, "audit": true, "about": true,
 }
 
 func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
@@ -87,6 +90,9 @@ func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
 		}
 		sort.Slice(vm.EventStats, func(i, j int) bool { return vm.EventStats[i].Count > vm.EventStats[j].Count })
 	}
+	if section == "audit" {
+		vm.Audit = s.audit.Recent(200)
+	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = settingsTmpl.Execute(w, vm)
@@ -107,6 +113,7 @@ func (s *Server) updateSettings(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.rec("project.updated", s.settings.ProjectName())
 	writeJSON(w, http.StatusOK, map[string]string{"project_name": s.settings.ProjectName(), "timezone": s.settings.Timezone()})
 }
 
@@ -125,6 +132,7 @@ func (s *Server) createKey(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.rec("key.created", k.Name)
 	writeJSON(w, http.StatusCreated, k)
 }
 
@@ -137,6 +145,7 @@ func (s *Server) revokeKey(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.rec("key.revoked", r.PathValue("id"))
 	writeJSON(w, http.StatusOK, map[string]string{"revoked": r.PathValue("id")})
 }
 
@@ -171,6 +180,7 @@ func (s *Server) updateAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.setSession(w, r) // keep the current operator logged in after the change
+	s.rec("account.updated", "username "+s.settings.Username())
 	writeJSON(w, http.StatusOK, map[string]string{"username": s.settings.Username()})
 }
 
@@ -188,6 +198,7 @@ func (s *Server) updateRetention(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.rec("retention.updated", fmt.Sprintf("%d days", req.Days))
 	writeJSON(w, http.StatusOK, map[string]int{"retain_days": req.Days})
 }
 
@@ -196,5 +207,6 @@ func (s *Server) clearData(w http.ResponseWriter, _ *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.rec("data.cleared", "all events deleted")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "cleared"})
 }

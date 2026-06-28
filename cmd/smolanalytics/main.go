@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/api"
+	"github.com/Arjun0606/smolanalytics/internal/audit"
 	"github.com/Arjun0606/smolanalytics/internal/cohort"
 	"github.com/Arjun0606/smolanalytics/internal/demo"
 	"github.com/Arjun0606/smolanalytics/internal/insights"
@@ -88,6 +89,11 @@ func serve(st store.Store, closeStore func() error) {
 		go pruneLoop(st, set)
 	} else {
 		log.Printf("smolanalytics: settings persistence disabled (%v)", err)
+	}
+	if al, err := audit.Open(dataPath() + ".audit.jsonl"); err == nil {
+		app.SetAudit(al)
+	} else {
+		log.Printf("smolanalytics: audit log disabled (%v)", err)
 	}
 	srv := &http.Server{
 		Addr:              addr,

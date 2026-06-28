@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/audit"
 	"github.com/Arjun0606/smolanalytics/internal/cohort"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
@@ -38,6 +39,7 @@ type Server struct {
 	insights *insights.Store
 	cohorts  *cohort.Store
 	settings *settings.Store
+	audit    *audit.Log
 	writeKey string // if set, POST /v1/events requires Authorization: Bearer <writeKey>
 }
 
@@ -55,6 +57,12 @@ func (s *Server) SetInsights(st *insights.Store) { s.insights = st }
 
 // SetCohorts swaps in a persistent cohort store.
 func (s *Server) SetCohorts(st *cohort.Store) { s.cohorts = st }
+
+// SetAudit swaps in a persistent audit log.
+func (s *Server) SetAudit(l *audit.Log) { s.audit = l }
+
+// rec records an operator action to the audit log (best-effort, nil-safe).
+func (s *Server) rec(action, detail string) { s.audit.Record(action, detail) }
 
 // SetWriteKey gates event ingestion behind a write key (production). Empty = open
 // (dev). The SDK passes the same key.

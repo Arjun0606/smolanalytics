@@ -67,6 +67,7 @@
     <a href="/settings/keys" class="{{if eq .Section "keys"}}on{{end}}">API keys</a>
     <a href="/settings/install" class="{{if eq .Section "install"}}on{{end}}">Install &amp; connect</a>
     <a href="/settings/data" class="{{if eq .Section "data"}}on{{end}}">Data</a>
+    <a href="/settings/audit" class="{{if eq .Section "audit"}}on{{end}}">Audit log</a>
     <a href="/settings/about" class="{{if eq .Section "about"}}on{{end}}">About</a>
   </nav>
 
@@ -158,6 +159,17 @@
       <h2 style="color:var(--warn)">Danger zone</h2>
       <div class="note">Permanently delete all stored events. This cannot be undone.</div>
       <button class="danger" id="clear" style="margin-top:14px">Clear all data</button><span class="msg" id="clearMsg"></span>
+    </div>
+  {{end}}
+
+  {{if eq .Section "audit"}}
+    <div class="card">
+      <h2>Audit log</h2>
+      <div class="note">Operator actions that changed config or data — newest first.</div>
+      <div style="margin-top:12px">
+        {{range .Audit}}<div class="evrow"><span class="nm">{{.Action}}</span><span style="flex:1;color:var(--mut)">{{.Detail}}</span><span class="ct">{{.Time.Format "Jan 2 15:04"}}</span></div>
+        {{else}}<div class="note">no changes recorded yet</div>{{end}}
+      </div>
     </div>
   {{end}}
 
