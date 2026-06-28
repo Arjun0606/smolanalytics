@@ -22,4 +22,7 @@ type Store interface {
 	Names() ([]string, error)
 	// Clear deletes all events (the settings "danger zone" reset).
 	Clear() error
+	// Prune deletes events with Timestamp before the cutoff (retention policy),
+	// returning how many were removed.
+	Prune(before time.Time) (int, error)
 }

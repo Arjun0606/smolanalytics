@@ -63,6 +63,30 @@ func (s *Store) Clear() error {
 	return nil
 }
 
+func (s *Store) Prune(before time.Time) (int, error) {
+	if before.IsZero() {
+		return 0, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	kept := s.evs[:0:0]
+	seen, names := map[string]bool{}, map[string]bool{}
+	removed := 0
+	for _, e := range s.evs {
+		if e.Timestamp.Before(before) {
+			removed++
+			continue
+		}
+		kept = append(kept, e)
+		if e.ID != "" {
+			seen[e.ID] = true
+		}
+		names[e.Name] = true
+	}
+	s.evs, s.seen, s.names = kept, seen, names
+	return removed, nil
+}
+
 func (s *Store) Names() ([]string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

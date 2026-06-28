@@ -157,6 +157,58 @@ func (s *Store) Clear() error {
 	return err
 }
 
+// Prune drops events older than the cutoff and compacts the log (rewrites it with
+// only the kept events). Runs under the write lock; O(n) but only on the retention
+// schedule.
+func (s *Store) Prune(before time.Time) (int, error) {
+	if before.IsZero() {
+		return 0, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.w == nil {
+		return 0, errors.New("store is closed")
+	}
+	kept := s.evs[:0:0]
+	seen, names := map[string]bool{}, map[string]bool{}
+	var buf []byte
+	removed := 0
+	for _, e := range s.evs {
+		if e.Timestamp.Before(before) {
+			removed++
+			continue
+		}
+		kept = append(kept, e)
+		if e.ID != "" {
+			seen[e.ID] = true
+		}
+		names[e.Name] = true
+		b, err := json.Marshal(e)
+		if err != nil {
+			return 0, err
+		}
+		buf = append(buf, b...)
+		buf = append(buf, '\n')
+	}
+	if removed == 0 {
+		return 0, nil
+	}
+	if err := s.w.Truncate(0); err != nil {
+		return 0, err
+	}
+	if _, err := s.w.Seek(0, 0); err != nil {
+		return 0, err
+	}
+	if _, err := s.w.Write(buf); err != nil {
+		return 0, err // memory not yet swapped — disk + memory still consistent-ish; next Prune retries
+	}
+	if err := s.w.Sync(); err != nil {
+		return 0, err
+	}
+	s.evs, s.seen, s.names = kept, seen, names
+	return removed, nil
+}
+
 // Count is the number of events held (handy for "is this store empty").
 func (s *Store) Count() int {
 	s.mu.RLock()

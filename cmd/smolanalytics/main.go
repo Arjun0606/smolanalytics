@@ -85,6 +85,7 @@ func serve(st store.Store, closeStore func() error) {
 	}
 	if set, err := settings.Open(dataPath() + ".settings.json"); err == nil {
 		app.SetSettings(set)
+		go pruneLoop(st, set)
 	} else {
 		log.Printf("smolanalytics: settings persistence disabled (%v)", err)
 	}
@@ -114,6 +115,29 @@ func serve(st store.Store, closeStore func() error) {
 	log.Printf("smolanalytics: dashboard on http://localhost%s · MCP at /mcp", addr)
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
+	}
+}
+
+// pruneLoop enforces the retention policy: on boot and every 6h, delete events
+// older than the configured retain-days window (0 = keep forever).
+func pruneLoop(st store.Store, set *settings.Store) {
+	prune := func() {
+		days := set.RetainDays()
+		if days <= 0 {
+			return
+		}
+		before := time.Now().UTC().AddDate(0, 0, -days)
+		if n, err := st.Prune(before); err != nil {
+			log.Printf("smolanalytics: retention prune failed: %v", err)
+		} else if n > 0 {
+			log.Printf("smolanalytics: retention pruned %d events older than %d days", n, days)
+		}
+	}
+	prune()
+	t := time.NewTicker(6 * time.Hour)
+	defer t.Stop()
+	for range t.C {
+		prune()
 	}
 }
 
