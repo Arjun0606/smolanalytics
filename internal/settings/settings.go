@@ -86,13 +86,18 @@ func (s *Store) ValidKey(key string) bool {
 func (s *Store) UpdateProject(name, tz string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	on, ot := s.d.ProjectName, s.d.Timezone
 	if name != "" {
 		s.d.ProjectName = name
 	}
 	if tz != "" {
 		s.d.Timezone = tz
 	}
-	return s.persist()
+	if err := s.persist(); err != nil {
+		s.d.ProjectName, s.d.Timezone = on, ot // roll back so memory matches disk
+		return err
+	}
+	return nil
 }
 
 func (s *Store) AddKey(name string) (APIKey, error) {
@@ -104,6 +109,7 @@ func (s *Store) AddKey(name string) (APIKey, error) {
 	k := APIKey{ID: newToken(6), Name: name, Key: "sa_" + newToken(20), Created: time.Now().UTC()}
 	s.d.Keys = append(s.d.Keys, k)
 	if err := s.persist(); err != nil {
+		s.d.Keys = s.d.Keys[:len(s.d.Keys)-1] // roll back
 		return APIKey{}, err
 	}
 	return k, nil
@@ -112,14 +118,19 @@ func (s *Store) AddKey(name string) (APIKey, error) {
 func (s *Store) RevokeKey(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := s.d.Keys[:0]
-	for _, k := range s.d.Keys {
+	old := s.d.Keys
+	out := make([]APIKey, 0, len(old)) // fresh slice — don't mutate the backing array
+	for _, k := range old {
 		if k.ID != id {
 			out = append(out, k)
 		}
 	}
 	s.d.Keys = out
-	return s.persist()
+	if err := s.persist(); err != nil {
+		s.d.Keys = old // roll back so a revoked key can't resurrect on restart
+		return err
+	}
+	return nil
 }
 
 func (s *Store) persist() error {

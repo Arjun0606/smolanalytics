@@ -184,9 +184,13 @@ func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "invalid or missing write key")
 		return
 	}
-	body, err := io.ReadAll(io.LimitReader(r.Body, 4<<20))
+	body, tooLarge, err := readLimited(r, 4<<20)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "read error")
+		return
+	}
+	if tooLarge {
+		writeErr(w, http.StatusRequestEntityTooLarge, "payload too large — max 4MB per request")
 		return
 	}
 	var batch []event.Event
@@ -202,6 +206,10 @@ func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		batch = []event.Event{one}
+	}
+	if len(batch) > maxBatchEvents {
+		writeErr(w, http.StatusRequestEntityTooLarge, "too many events in one batch — max 10000")
+		return
 	}
 	now := time.Now().UTC()
 	for i := range batch {
@@ -262,6 +270,21 @@ func newID() string {
 	b := make([]byte, 12)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+const maxBatchEvents = 10000
+
+// readLimited reads up to limit bytes; tooLarge is true if the body exceeded it,
+// so callers can return a clear 413 instead of a misleading JSON-parse 400.
+func readLimited(r *http.Request, limit int64) (body []byte, tooLarge bool, err error) {
+	b, err := io.ReadAll(io.LimitReader(r.Body, limit+1))
+	if err != nil {
+		return nil, false, err
+	}
+	if int64(len(b)) > limit {
+		return b[:limit], true, nil
+	}
+	return b, false, nil
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

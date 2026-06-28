@@ -9,6 +9,7 @@ package file
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -30,7 +31,7 @@ type Store struct {
 // returns a store ready to append. Corrupt trailing lines are skipped, not fatal.
 func Open(path string) (*Store, error) {
 	if dir := filepath.Dir(path); dir != "" && dir != "." {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return nil, err
 		}
 	}
@@ -59,7 +60,7 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 
-	w, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	w, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600) // holds PII
 	if err != nil {
 		return nil, err
 	}
@@ -80,6 +81,14 @@ func (s *Store) index(e event.Event) {
 func (s *Store) Ingest(events ...event.Event) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.w == nil {
+		return errors.New("store is closed")
+	}
+	// Marshal all new events into one buffer first, then a single append + fsync,
+	// then index — so a batch is all-or-nothing on disk (no half-written batch that
+	// a client retry would partially duplicate) and is durable before we ack.
+	var buf []byte
+	toIndex := events[:0:0]
 	for _, e := range events {
 		if e.ID != "" && s.seen[e.ID] {
 			continue // idempotent: a retried event is neither re-logged nor re-counted
@@ -88,12 +97,20 @@ func (s *Store) Ingest(events ...event.Event) error {
 		if err != nil {
 			return err
 		}
-		if _, err := s.w.Write(append(b, '\n')); err != nil {
-			return err
-		}
+		buf = append(buf, b...)
+		buf = append(buf, '\n')
+		toIndex = append(toIndex, e)
+	}
+	if len(buf) == 0 {
+		return nil
+	}
+	if _, err := s.w.Write(buf); err != nil {
+		return err
+	}
+	for _, e := range toIndex {
 		s.index(e)
 	}
-	return nil
+	return s.w.Sync() // durable before the caller treats the event as accepted
 }
 
 func (s *Store) Range(from, to time.Time) ([]event.Event, error) {
@@ -154,6 +171,7 @@ func (s *Store) Close() error {
 	if s.w == nil {
 		return nil
 	}
+	_ = s.w.Sync()
 	err := s.w.Close()
 	s.w = nil
 	return err

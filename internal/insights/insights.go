@@ -83,6 +83,7 @@ func (s *Store) Save(in Insight) (Insight, error) {
 	}
 	s.items = append(s.items, in)
 	if err := s.persist(); err != nil {
+		s.items = s.items[:len(s.items)-1] // roll back
 		return Insight{}, err
 	}
 	return in, nil
@@ -92,14 +93,19 @@ func (s *Store) Save(in Insight) (Insight, error) {
 func (s *Store) Delete(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := s.items[:0]
-	for _, it := range s.items {
+	old := s.items
+	out := make([]Insight, 0, len(old))
+	for _, it := range old {
 		if it.ID != id {
 			out = append(out, it)
 		}
 	}
 	s.items = out
-	return s.persist()
+	if err := s.persist(); err != nil {
+		s.items = old // roll back so memory matches disk
+		return err
+	}
+	return nil
 }
 
 // persist writes the whole list via temp-file + rename (atomic). Caller holds lock.

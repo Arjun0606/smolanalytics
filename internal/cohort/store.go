@@ -75,6 +75,7 @@ func (s *Store) Save(d Definition) (Definition, error) {
 	d.Created = now()
 	s.items = append(s.items, d)
 	if err := s.persist(); err != nil {
+		s.items = s.items[:len(s.items)-1] // roll back
 		return Definition{}, err
 	}
 	return d, nil
@@ -83,14 +84,19 @@ func (s *Store) Save(d Definition) (Definition, error) {
 func (s *Store) Delete(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := s.items[:0]
-	for _, d := range s.items {
+	old := s.items
+	out := make([]Definition, 0, len(old))
+	for _, d := range old {
 		if d.ID != id {
 			out = append(out, d)
 		}
 	}
 	s.items = out
-	return s.persist()
+	if err := s.persist(); err != nil {
+		s.items = old // roll back so memory matches disk
+		return err
+	}
+	return nil
 }
 
 func (s *Store) persist() error {
