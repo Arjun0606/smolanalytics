@@ -157,8 +157,14 @@ func (s *Server) authorized(r *http.Request) bool {
 }
 
 // handleMCP is the Streamable-HTTP MCP transport: point a remote MCP client
-// (Claude, Cursor) at http://host/mcp and it reads this server's live data.
+// (Claude, Cursor) at http://host/mcp and it reads this server's live data. When a
+// key is configured it's required here too — otherwise a public deploy would leak
+// all analytics to anyone. Local/stdio use stays open.
 func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
+	if !s.authorized(r) {
+		writeErr(w, http.StatusUnauthorized, "invalid or missing key — add Authorization: Bearer <key>")
+		return
+	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, 4<<20))
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "read error")

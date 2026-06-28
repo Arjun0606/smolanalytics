@@ -87,6 +87,7 @@
     <label>Connect your AI (MCP)</label>
     <pre class="code" id="cMcp">{{"{"}} "mcpServers": {{"{"}} "smolanalytics": {{"{"}} "url": "{{.Base}}/mcp" {{"}"}} {{"}"}} {{"}"}}</pre>
     <button class="copy" data-c="cMcp">copy</button>
+    <div class="note">Your own model reads your data through these tools — we never run a model, so it costs nothing. When a key is configured the endpoint requires it: add <code>"headers": {{"{"}} "Authorization": "Bearer &lt;key&gt;" {{"}"}}</code> next to the url.</div>
   </div>
 
   <div class="card">
