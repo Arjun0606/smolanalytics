@@ -18,17 +18,17 @@ type Step struct {
 
 // StepResult is the outcome for one funnel stage.
 type StepResult struct {
-	Event             string  `json:"event"`
-	Count             int     `json:"count"`               // distinct users who reached this step
-	ConversionFromTop float64 `json:"conversion_from_top"` // count / step0 count
+	Event              string  `json:"event"`
+	Count              int     `json:"count"`                // distinct users who reached this step
+	ConversionFromTop  float64 `json:"conversion_from_top"`  // count / step0 count
 	ConversionFromPrev float64 `json:"conversion_from_prev"` // count / previous step count
-	DroppedFromPrev   int     `json:"dropped_from_prev"`   // previous count - count
+	DroppedFromPrev    int     `json:"dropped_from_prev"`    // previous count - count
 }
 
 // Result is the full funnel: per-step counts + the overall conversion.
 type Result struct {
-	Steps           []StepResult `json:"steps"`
-	OverallConversion float64    `json:"overall_conversion"` // last step / first step
+	Steps             []StepResult `json:"steps"`
+	OverallConversion float64      `json:"overall_conversion"` // last step / first step
 }
 
 // Compute runs the funnel over events. A user counts toward step i only if they

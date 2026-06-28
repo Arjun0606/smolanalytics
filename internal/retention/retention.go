@@ -20,7 +20,7 @@ type Cohort struct {
 // Result is the full retention grid (one row per cohort day).
 type Result struct {
 	Cohorts []Cohort `json:"cohorts"`
-	MaxDays int       `json:"max_days"`
+	MaxDays int      `json:"max_days"`
 }
 
 // Compute builds the retention grid over maxDays. A user belongs to the cohort of

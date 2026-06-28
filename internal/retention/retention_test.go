@@ -49,7 +49,7 @@ func TestRetentionGrid(t *testing.T) {
 func TestMultipleCohortsAndEventFilter(t *testing.T) {
 	evs := []event.Event{
 		ev("a", "open", 0), ev("a", "open", 1),
-		ev("b", "open", 2), // different cohort day
+		ev("b", "open", 2),  // different cohort day
 		ev("c", "noise", 0), // filtered out by retentionEvent
 	}
 	r := Compute(evs, 3, "open")
