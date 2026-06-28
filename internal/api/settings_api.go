@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"io"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/settings"
@@ -22,27 +23,71 @@ var (
 	settingsTmpl = template.Must(template.New("settings").Parse(settingsHTML))
 )
 
+type eventStat struct {
+	Name  string
+	Count int
+}
+
 type settingsVM struct {
+	Section     string
 	Project     string
 	Timezone    string
+	Username    string
+	HasPassword bool
+	AuthVia     string // "in-app" | "env" | "none"
+	RetainDays  int
 	Base        string
 	Version     string
 	Keys        []settings.APIKey
 	EventCount  int
+	EventStats  []eventStat
 	AuthEnabled bool
 	EnvKeySet   bool
 }
 
+var settingsSections = map[string]bool{
+	"account": true, "project": true, "keys": true,
+	"install": true, "data": true, "about": true,
+}
+
 func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
+	section := r.PathValue("section")
+	if !settingsSections[section] {
+		section = "account"
+	}
 	evs, _ := s.store.Range(time.Time{}, time.Time{})
+
 	vm := settingsVM{
-		Project: s.projectName(), Base: baseURL(r), Version: Version,
+		Section: section, Project: s.projectName(), Base: baseURL(r), Version: Version,
 		EventCount: len(evs), AuthEnabled: s.authEnabled(), EnvKeySet: s.writeKey != "",
+		Username: "admin", AuthVia: "none",
 	}
 	if s.settings != nil {
 		vm.Timezone = s.settings.Timezone()
 		vm.Keys = s.settings.Keys()
+		vm.Username = s.settings.Username()
+		vm.HasPassword = s.settings.HasPassword()
+		vm.RetainDays = s.settings.RetainDays()
 	}
+	switch {
+	case vm.HasPassword:
+		vm.AuthVia = "in-app"
+	case dashPassword() != "":
+		vm.AuthVia = "env"
+	}
+
+	if section == "data" { // event taxonomy
+		counts := map[string]int{}
+		for _, e := range evs {
+			counts[e.Name]++
+		}
+		names, _ := s.store.Names()
+		for _, n := range names {
+			vm.EventStats = append(vm.EventStats, eventStat{Name: n, Count: counts[n]})
+		}
+		sort.Slice(vm.EventStats, func(i, j int) bool { return vm.EventStats[i].Count > vm.EventStats[j].Count })
+	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = settingsTmpl.Execute(w, vm)
 }

@@ -96,7 +96,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /login", s.login)
 	mux.HandleFunc("POST /login", s.login)
 	mux.HandleFunc("GET /logout", s.logout)
-	mux.HandleFunc("GET /settings", s.settingsPage)
+	mux.HandleFunc("GET /settings", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/settings/account", http.StatusFound)
+	})
+	mux.HandleFunc("GET /settings/{section}", s.settingsPage)
 	mux.HandleFunc("POST /v1/settings", s.updateSettings)
 	mux.HandleFunc("POST /v1/settings/account", s.updateAccount)
 	mux.HandleFunc("POST /v1/settings/retention", s.updateRetention)

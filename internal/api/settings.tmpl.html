@@ -11,29 +11,35 @@
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;line-height:1.5}
   a{color:var(--accent);text-decoration:none}
-  .wrap{max-width:820px;margin:0 auto;padding:0 24px 60px}
-  header{position:sticky;top:0;background:rgba(10,10,10,.85);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);margin-bottom:24px}
-  .bar{max-width:820px;margin:0 auto;padding:0 24px;display:flex;align-items:center;gap:16px;height:60px}
+  header{position:sticky;top:0;z-index:5;background:rgba(10,10,10,.85);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+  .bar{max-width:980px;margin:0 auto;padding:0 24px;display:flex;align-items:center;gap:14px;height:60px}
   .logo{font-weight:800;letter-spacing:-.02em;font-size:17px}.logo b{color:var(--accent)}
+  .bar .tag{color:var(--mut2);font-family:var(--mono);font-size:12px}
   .bar .sp{flex:1}
   .bar a{font-family:var(--mono);font-size:12px;color:var(--mut)}.bar a:hover{color:var(--accent)}
-  h1{font-size:15px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.1em;color:var(--mut);margin:0}
+  .layout{max-width:980px;margin:24px auto;padding:0 24px;display:grid;grid-template-columns:200px 1fr;gap:28px}
+  nav.side{display:flex;flex-direction:column;gap:2px;position:sticky;top:84px;align-self:start}
+  nav.side a{font-family:var(--mono);font-size:13px;color:var(--mut);padding:8px 12px;border-left:2px solid transparent}
+  nav.side a:hover{color:var(--fg)}
+  nav.side a.on{color:var(--accent);border-left-color:var(--accent);background:var(--surface)}
   .card{background:var(--surface);border:1px solid var(--line);padding:22px;margin-bottom:16px}
   .card h2{font-size:13px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.1em;color:var(--mut);margin:0 0 16px}
   label{display:block;font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);margin:14px 0 6px}
   input,select{background:var(--surface2);border:1px solid var(--line);color:var(--fg);font-family:var(--mono);font-size:13px;padding:9px 11px;outline:none;width:100%}
   input:focus{border-color:var(--accent)}
   .row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
-  .row>div{flex:1;min-width:140px}
+  .row>div{flex:1;min-width:130px}
   button{background:var(--accent);color:#0A0A0A;border:none;font-weight:700;padding:9px 18px;cursor:pointer;font-family:var(--mono);font-size:13px;white-space:nowrap}
   button.ghost{background:transparent;color:var(--fg);border:1px solid var(--line)}
   button.ghost:hover{border-color:var(--accent);color:var(--accent)}
   button.danger{background:transparent;color:var(--warn);border:1px solid var(--warn)}
   button.danger:hover{background:var(--warn);color:#0A0A0A}
   .note{font-size:12px;color:var(--mut);margin-top:8px;line-height:1.6}
-  .keyrow{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:12px}
-  .keyrow:last-child{border-bottom:none}
-  .keyrow .nm{color:var(--fg)}.keyrow .kv{color:var(--mut);flex:1;overflow:hidden;text-overflow:ellipsis}
+  .note code{background:var(--surface2);padding:1px 5px;font-family:var(--mono);font-size:11px}
+  .keyrow,.evrow{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:12px}
+  .keyrow:last-child,.evrow:last-child{border-bottom:none}
+  .keyrow .nm,.evrow .nm{color:var(--fg)}.keyrow .kv{color:var(--mut);flex:1;overflow:hidden;text-overflow:ellipsis}
+  .evrow .nm{flex:1}.evrow .ct{color:var(--mut)}
   .keyrow .x{color:var(--mut2);cursor:pointer}.keyrow .x:hover{color:var(--warn)}
   pre.code{background:#0D0D0D;border:1px solid var(--line);padding:13px;overflow:auto;font-family:var(--mono);font-size:12px;line-height:1.6;margin:0;white-space:pre-wrap;word-break:break-word}
   .copy{margin-top:8px;background:transparent;border:1px solid var(--line);color:var(--mut);font-size:11px;padding:5px 12px}
@@ -41,109 +47,162 @@
   .stat{font-family:var(--mono)}.stat b{font-size:24px}
   .danger-zone{border-color:var(--warn)}
   .msg{font-family:var(--mono);font-size:12px;color:var(--ok);margin-left:10px}
+  .pill{font-family:var(--mono);font-size:11px;padding:2px 8px;border:1px solid var(--line);color:var(--mut);border-radius:2px}
+  @media(max-width:720px){.layout{grid-template-columns:1fr}nav.side{flex-direction:row;flex-wrap:wrap;position:static}}
 </style>
 </head>
 <body>
 <header><div class="bar">
   <div class="logo">smol<b>analytics</b></div>
-  <span style="color:var(--mut2);font-family:var(--mono);font-size:12px">settings</span>
+  <span class="tag">settings</span>
   <div class="sp"></div>
   <a href="/">← dashboard</a>
   {{if .AuthEnabled}}<a href="/logout">sign out</a>{{end}}
 </div></header>
 
-<main class="wrap">
-  <div class="card">
-    <h2>Project</h2>
-    <div class="row">
-      <div><label>Name</label><input id="pName" value="{{.Project}}"></div>
-      <div><label>Timezone</label><input id="pTz" value="{{.Timezone}}" placeholder="UTC"></div>
-      <button id="pSave">Save</button><span class="msg" id="pMsg"></span>
-    </div>
-  </div>
+<div class="layout">
+  <nav class="side">
+    <a href="/settings/account" class="{{if eq .Section "account"}}on{{end}}">Account</a>
+    <a href="/settings/project" class="{{if eq .Section "project"}}on{{end}}">Project</a>
+    <a href="/settings/keys" class="{{if eq .Section "keys"}}on{{end}}">API keys</a>
+    <a href="/settings/install" class="{{if eq .Section "install"}}on{{end}}">Install &amp; connect</a>
+    <a href="/settings/data" class="{{if eq .Section "data"}}on{{end}}">Data</a>
+    <a href="/settings/about" class="{{if eq .Section "about"}}on{{end}}">About</a>
+  </nav>
 
-  <div class="card">
-    <h2>API keys</h2>
-    <div class="note">Keys authenticate event ingestion. {{if .EnvKeySet}}An environment key (<code>SMOLANALYTICS_WRITE_KEY</code>) is also active.{{else}}No environment key set — ingestion is open until you create a key here.{{end}}</div>
-    <div id="keys" style="margin-top:12px">
-      {{range .Keys}}
-      <div class="keyrow" data-id="{{.ID}}"><span class="nm">{{.Name}}</span><span class="kv">{{.Key}}</span><span class="x" title="revoke">revoke</span></div>
-      {{else}}
-      <div class="note" id="noKeys">no keys yet</div>
-      {{end}}
+  <main>
+  {{if eq .Section "account"}}
+    <div class="card">
+      <h2>Account</h2>
+      <div class="note">Login status:
+        {{if eq .AuthVia "in-app"}}<span class="pill" style="color:var(--ok);border-color:var(--ok)">protected · in-app password</span>
+        {{else if eq .AuthVia "env"}}<span class="pill">protected · env password</span> — set one below to manage it in-app
+        {{else}}<span class="pill" style="color:var(--warn);border-color:var(--warn)">open · no password</span> — set one below to require login{{end}}
+      </div>
+      <label>Username</label>
+      <input id="aUser" value="{{.Username}}">
+      {{if .HasPassword}}<label>Current password</label><input id="aCur" type="password" autocomplete="current-password">{{end}}
+      <label>{{if .HasPassword}}New password{{else}}Set a password{{end}}</label>
+      <input id="aNew" type="password" autocomplete="new-password" placeholder="at least 8 characters">
+      <label>Confirm password</label>
+      <input id="aConf" type="password" autocomplete="new-password">
+      <div style="margin-top:16px"><button id="aSave">Save</button><span class="msg" id="aMsg"></span></div>
     </div>
-    <div class="row" style="margin-top:14px">
-      <div><label>New key name</label><input id="kName" placeholder="production"></div>
-      <button id="kCreate" class="ghost">Create key</button>
-    </div>
-  </div>
+  {{end}}
 
-  <div class="card">
-    <h2>Install &amp; connect</h2>
-    <label>Add to your app</label>
-    <pre class="code" id="cInstall">&lt;script src="{{.Base}}/sdk.js"&gt;&lt;/script&gt;
+  {{if eq .Section "project"}}
+    <div class="card">
+      <h2>Project</h2>
+      <div class="row">
+        <div><label>Name</label><input id="pName" value="{{.Project}}"></div>
+        <div><label>Timezone</label><input id="pTz" value="{{.Timezone}}" placeholder="UTC"></div>
+        <button id="pSave">Save</button><span class="msg" id="pMsg"></span>
+      </div>
+    </div>
+  {{end}}
+
+  {{if eq .Section "keys"}}
+    <div class="card">
+      <h2>API keys</h2>
+      <div class="note">Keys authenticate event ingestion and the MCP endpoint. {{if .EnvKeySet}}An environment key (<code>SMOLANALYTICS_WRITE_KEY</code>) is also active.{{else}}No environment key set — ingestion is open until you create a key here.{{end}}</div>
+      <div id="keys" style="margin-top:12px">
+        {{range .Keys}}<div class="keyrow" data-id="{{.ID}}"><span class="nm">{{.Name}}</span><span class="kv">{{.Key}}</span><span class="x" title="revoke">revoke</span></div>
+        {{else}}<div class="note" id="noKeys">no keys yet</div>{{end}}
+      </div>
+      <div class="row" style="margin-top:14px">
+        <div><label>New key name</label><input id="kName" placeholder="production"></div>
+        <button id="kCreate" class="ghost">Create key</button>
+      </div>
+    </div>
+  {{end}}
+
+  {{if eq .Section "install"}}
+    <div class="card">
+      <h2>Install</h2>
+      <pre class="code" id="cInstall">&lt;script src="{{.Base}}/sdk.js"&gt;&lt;/script&gt;
 &lt;script&gt;smolanalytics.init("YOUR_KEY", {{"{"}} host: "{{.Base}}" {{"}"}});&lt;/script&gt;</pre>
-    <button class="copy" data-c="cInstall">copy</button>
-    <label>Connect your AI (MCP)</label>
-    <pre class="code" id="cMcp">{{"{"}} "mcpServers": {{"{"}} "smolanalytics": {{"{"}} "url": "{{.Base}}/mcp" {{"}"}} {{"}"}} {{"}"}}</pre>
-    <button class="copy" data-c="cMcp">copy</button>
-    <div class="note">Your own model reads your data through these tools — we never run a model, so it costs nothing. When a key is configured the endpoint requires it: add <code>"headers": {{"{"}} "Authorization": "Bearer &lt;key&gt;" {{"}"}}</code> next to the url.</div>
-  </div>
-
-  <div class="card">
-    <h2>Data</h2>
-    <div class="stat"><b>{{.EventCount}}</b> events stored</div>
-    <div class="row" style="margin-top:14px">
-      <a href="/v1/export?format=csv"><button class="ghost">Export CSV</button></a>
-      <a href="/v1/export?format=jsonl"><button class="ghost">Export JSONL</button></a>
+      <button class="copy" data-c="cInstall">copy</button>
     </div>
-    <div class="note">JSONL round-trips straight back into <code>/v1/events</code> — no lock-in.</div>
-  </div>
+    <div class="card">
+      <h2>Connect your AI (MCP)</h2>
+      <pre class="code" id="cMcp">{{"{"}} "mcpServers": {{"{"}} "smolanalytics": {{"{"}} "url": "{{.Base}}/mcp" {{"}"}} {{"}"}} {{"}"}}</pre>
+      <button class="copy" data-c="cMcp">copy</button>
+      <div class="note">Your own model reads your data through these tools — we never run a model. When a key is set, add <code>"headers": {{"{"}} "Authorization": "Bearer &lt;key&gt;" {{"}"}}</code> next to the url.</div>
+    </div>
+  {{end}}
 
-  <div class="card danger-zone">
-    <h2 style="color:var(--warn)">Danger zone</h2>
-    <div class="note">Permanently delete all stored events. This cannot be undone.</div>
-    <button class="danger" id="clear" style="margin-top:14px">Clear all data</button>
-    <span class="msg" id="clearMsg"></span>
-  </div>
+  {{if eq .Section "data"}}
+    <div class="card">
+      <h2>Storage</h2>
+      <div class="stat"><b>{{.EventCount}}</b> events stored</div>
+      <div class="row" style="margin-top:14px">
+        <a href="/v1/export?format=csv"><button class="ghost">Export CSV</button></a>
+        <a href="/v1/export?format=jsonl"><button class="ghost">Export JSONL</button></a>
+      </div>
+      <div class="note">JSONL round-trips straight back into <code>/v1/events</code> — no lock-in.</div>
+    </div>
+    <div class="card">
+      <h2>Retention</h2>
+      <div class="note">Automatically delete events older than this many days. 0 = keep forever.</div>
+      <div class="row" style="margin-top:12px">
+        <div><label>Retain days</label><input id="rDays" type="number" min="0" value="{{.RetainDays}}"></div>
+        <button id="rSave">Save</button><span class="msg" id="rMsg"></span>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Events tracked</h2>
+      {{range .EventStats}}<div class="evrow"><span class="nm">{{.Name}}</span><span class="ct">{{.Count}}</span></div>
+      {{else}}<div class="note">no events yet</div>{{end}}
+    </div>
+    <div class="card danger-zone">
+      <h2 style="color:var(--warn)">Danger zone</h2>
+      <div class="note">Permanently delete all stored events. This cannot be undone.</div>
+      <button class="danger" id="clear" style="margin-top:14px">Clear all data</button><span class="msg" id="clearMsg"></span>
+    </div>
+  {{end}}
 
-  <div class="card">
-    <h2>About</h2>
-    <div class="note">smolanalytics {{.Version}} · <a href="https://github.com/Arjun0606/smolanalytics" target="_blank">github</a> · one binary, your data</div>
-  </div>
-</main>
+  {{if eq .Section "about"}}
+    <div class="card">
+      <h2>About</h2>
+      <div class="note">smolanalytics {{.Version}} · <a href="https://github.com/Arjun0606/smolanalytics" target="_blank">github</a><br>One binary, your data. Product analytics you ask with your own AI.</div>
+    </div>
+  {{end}}
+  </main>
+</div>
 
 <script>
-  function J(u,m,b){return fetch(u,{method:m||'GET',headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined}).then(function(r){return r.json()});}
+  function J(u,m,b){return fetch(u,{method:m||'GET',headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined}).then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j};});});}
   function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
-  document.getElementById('pSave').onclick=function(){
-    J('/v1/settings','POST',{name:document.getElementById('pName').value,timezone:document.getElementById('pTz').value})
-      .then(function(){var m=document.getElementById('pMsg');m.textContent='saved ✓';setTimeout(function(){m.textContent='';},1500);});
-  };
-  var keys=document.getElementById('keys');
-  function bindRevoke(row){
-    row.querySelector('.x').onclick=function(){
-      if(!confirm('Revoke this key? Apps using it will stop sending.'))return;
-      J('/v1/settings/keys/'+row.getAttribute('data-id'),'DELETE').then(function(){row.remove();});
-    };
-  }
-  Array.prototype.forEach.call(keys.querySelectorAll('.keyrow'),bindRevoke);
-  document.getElementById('kCreate').onclick=function(){
-    var nm=document.getElementById('kName').value.trim()||'default';
-    J('/v1/settings/keys','POST',{name:nm}).then(function(k){
-      var no=document.getElementById('noKeys'); if(no)no.remove();
-      var row=document.createElement('div'); row.className='keyrow'; row.setAttribute('data-id',k.id);
-      row.innerHTML='<span class="nm">'+esc(k.name)+'</span><span class="kv">'+esc(k.key)+'</span><span class="x" title="revoke">revoke</span>';
-      keys.appendChild(row); bindRevoke(row); document.getElementById('kName').value='';
-    });
-  };
-  Array.prototype.forEach.call(document.querySelectorAll('.copy'),function(b){
-    b.onclick=function(){var p=document.getElementById(b.getAttribute('data-c'));if(navigator.clipboard)navigator.clipboard.writeText(p.innerText).then(function(){var o=b.textContent;b.textContent='copied ✓';setTimeout(function(){b.textContent=o;},1200);});};
+  function flash(id,t,bad){var m=document.getElementById(id);if(!m)return;m.textContent=t;m.style.color=bad?'var(--warn)':'var(--ok)';if(!bad)setTimeout(function(){m.textContent='';},1800);}
+  function on(id,fn){var e=document.getElementById(id);if(e)e.onclick=fn;}
+
+  on('aSave',function(){
+    var nw=document.getElementById('aNew').value, cf=document.getElementById('aConf').value;
+    if(nw!==cf){flash('aMsg','passwords do not match',true);return;}
+    var cur=document.getElementById('aCur');
+    J('/v1/settings/account','POST',{username:document.getElementById('aUser').value,password:nw,current_password:cur?cur.value:''})
+      .then(function(r){if(r.ok)flash('aMsg','saved ✓');else flash('aMsg',r.j.error||'failed',true);});
   });
-  document.getElementById('clear').onclick=function(){
-    if(!confirm('Delete ALL events permanently? This cannot be undone.'))return;
-    J('/v1/settings/clear','POST').then(function(){var m=document.getElementById('clearMsg');m.textContent='cleared ✓';setTimeout(function(){location.reload();},900);});
-  };
+  on('pSave',function(){
+    J('/v1/settings','POST',{name:document.getElementById('pName').value,timezone:document.getElementById('pTz').value}).then(function(){flash('pMsg','saved ✓');});
+  });
+  on('rSave',function(){
+    J('/v1/settings/retention','POST',{days:parseInt(document.getElementById('rDays').value,10)||0}).then(function(){flash('rMsg','saved ✓');});
+  });
+  var keys=document.getElementById('keys');
+  function bindRevoke(row){row.querySelector('.x').onclick=function(){if(!confirm('Revoke this key? Apps using it stop sending.'))return;J('/v1/settings/keys/'+row.getAttribute('data-id'),'DELETE').then(function(){row.remove();});};}
+  if(keys)Array.prototype.forEach.call(keys.querySelectorAll('.keyrow'),bindRevoke);
+  on('kCreate',function(){
+    var nm=document.getElementById('kName').value.trim()||'default';
+    J('/v1/settings/keys','POST',{name:nm}).then(function(r){
+      var no=document.getElementById('noKeys');if(no)no.remove();
+      var row=document.createElement('div');row.className='keyrow';row.setAttribute('data-id',r.j.id);
+      row.innerHTML='<span class="nm">'+esc(r.j.name)+'</span><span class="kv">'+esc(r.j.key)+'</span><span class="x" title="revoke">revoke</span>';
+      keys.appendChild(row);bindRevoke(row);document.getElementById('kName').value='';
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('.copy'),function(b){b.onclick=function(){var p=document.getElementById(b.getAttribute('data-c'));if(navigator.clipboard)navigator.clipboard.writeText(p.innerText).then(function(){var o=b.textContent;b.textContent='copied ✓';setTimeout(function(){b.textContent=o;},1200);});};});
+  on('clear',function(){if(!confirm('Delete ALL events permanently? This cannot be undone.'))return;J('/v1/settings/clear','POST').then(function(){flash('clearMsg','cleared ✓');setTimeout(function(){location.reload();},800);});});
 </script>
 </body>
 </html>
