@@ -9,6 +9,40 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/event"
 )
 
+// usage reports this instance's event + user counts so a control plane (the Cloud)
+// can meter and enforce plan limits. Key-authed (it's a programmatic endpoint).
+func (s *Server) usage(w http.ResponseWriter, r *http.Request) {
+	if !s.authorized(r) {
+		writeErr(w, http.StatusUnauthorized, "invalid or missing key")
+		return
+	}
+	evs, err := s.store.Range(time.Time{}, time.Time{})
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	cutoff := time.Now().UTC().AddDate(0, 0, -30)
+	month := time.Now().UTC().Format("2006-01")
+	users := map[string]bool{}
+	var events30d, eventsMonth int
+	for _, e := range evs {
+		users[e.DistinctID] = true
+		if e.Timestamp.After(cutoff) {
+			events30d++
+		}
+		if e.Timestamp.UTC().Format("2006-01") == month {
+			eventsMonth++
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"total_events": len(evs),
+		"events_30d":   events30d,
+		"events_month": eventsMonth,
+		"period":       month,
+		"users":        len(users),
+	})
+}
+
 // recentEvents returns the most recent events (newest first) — the live feed you
 // watch right after instrumenting to confirm data is flowing. GET /v1/events/recent?limit=50
 func (s *Server) recentEvents(w http.ResponseWriter, r *http.Request) {

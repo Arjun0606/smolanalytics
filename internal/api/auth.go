@@ -82,7 +82,7 @@ func isPublic(r *http.Request) bool {
 	switch {
 	case p == "/login" || p == "/logout" || p == "/healthz" || p == "/version" || p == "/sdk.js":
 		return true
-	case p == "/v1/events" || p == "/mcp": // own key auth / programmatic
+	case p == "/v1/events" || p == "/mcp" || p == "/v1/usage": // own key auth / programmatic
 		return true
 	case r.Method == http.MethodOptions:
 		return true
