@@ -91,6 +91,35 @@ curl -X POST https://YOUR_HOST/v1/events \
   -d '{"name":"signup","distinct_id":"user_123","properties":{"plan":"pro"}}'
 ```
 
+### From any platform — web, mobile, server
+Ingestion is one HTTP endpoint, so **mobile apps, backends, and anything else send events the same way.** No heavy SDK required:
+
+```swift
+// iOS (Swift)
+var req = URLRequest(url: URL(string: "\(host)/v1/events")!)
+req.httpMethod = "POST"; req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+req.httpBody = try JSONSerialization.data(withJSONObject: ["name": "signup", "distinct_id": userId])
+URLSession.shared.dataTask(with: req).resume()
+```
+```kotlin
+// Android (Kotlin / OkHttp)
+val body = """{"name":"signup","distinct_id":"$userId"}""".toRequestBody("application/json".toMediaType())
+client.newCall(Request.Builder().url("$host/v1/events").addHeader("Authorization","Bearer $key").post(body).build()).enqueue(cb)
+```
+```js
+// React Native / Node / any JS backend
+fetch(`${host}/v1/events`, { method: "POST",
+  headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+  body: JSON.stringify({ name: "purchase", distinct_id: userId, properties: { amount: 29 } }) });
+```
+```python
+# Python backend
+requests.post(f"{host}/v1/events", headers={"Authorization": f"Bearer {key}"},
+              json={"name": "signup", "distinct_id": user_id, "properties": {"plan": "pro"}})
+```
+The browser SDK adds autocapture + batching on top; everywhere else, it's a 5-line POST. Same engine, same "ask in your editor," same verdict — whatever your product runs on.
+
 Even easier: paste *this* into Cursor/Claude Code and let it instrument your app —
 > "Add smolanalytics: load `https://YOUR_HOST/sdk.js`, init with my key, and `track()` the key moments (signup, activate, checkout) plus `identify()` on login."
 
