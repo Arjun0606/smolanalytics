@@ -138,6 +138,16 @@ make demo    # seed + serve
 make race    # tests with the race detector
 ```
 
+## Don't want to run it? → smolanalytics Cloud
+Self-hosting is free forever. But if you'd rather not run a server — or you're a **team** — the [hosted Cloud](https://smolanalytics.com) does the parts a single binary can't:
+
+- **Zero ops** — we host an isolated instance per project; scale, backups, and uptime are ours.
+- **Your whole team** — invites, roles, shared projects (the OSS is single-operator by design).
+- **The brief, delivered** — your "what to fix" digest by email + Slack every morning, reliably, without you keeping a server up or wiring webhooks.
+- **Scale + retention** — millions of events, longer history, no ops.
+
+Generous free tier (100k events, runs a real product), then $19/mo. Same product, same "ask in your editor," same own-your-data — just managed. **[Start free →](https://smolanalytics.com)**
+
 ## Contributing
 PRs welcome — keep it small, correct, and dependency-free. See [CONTRIBUTING.md](CONTRIBUTING.md). Security issues: [SECURITY.md](SECURITY.md).
 
