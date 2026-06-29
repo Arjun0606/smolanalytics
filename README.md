@@ -43,6 +43,8 @@ Every analytics tool now has an AI assistant — but it's bolted *inside their a
 - **Beautiful by default.** Server-rendered, instant, opinionated — looks designed, not assembled.
 - **Open source (MIT), genuinely self-hostable.** Own the whole thing — no paywalled features stripped from the self-hosted edition.
 
+**Why not just use Mixpanel or PostHog?** They're deeper — but there are three things they *structurally can't* match, because it would break their business: (1) **the AI is yours, so it's free** — they meter theirs (Mixpanel caps it at 30–300 queries/mo, Amplitude gates it behind a $30k/yr tier); (2) **it can't lie** — theirs writes SQL and admits it hallucinates, ours calls exact reports; (3) **your data never trains a model** — PostHog now trains on yours by default, ours is a binary on your box. Same funnels/retention, a fraction of the price, and it tells you what to fix instead of making you dig.
+
 ## Ask it in your editor (the whole point)
 Connect once — the AI you already code with reads your real analytics and answers:
 
