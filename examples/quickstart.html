@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>smolanalytics quickstart</title>
+  <!-- point this at your server -->
+  <script src="http://localhost:8080/sdk.js"></script>
+  <script>
+    smolanalytics.init("YOUR_WRITE_KEY", { host: "http://localhost:8080" });
+  </script>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #0a0a0a; color: #fafafa; display: grid; place-items: center; height: 100vh; margin: 0; }
+    button { background: #f5a623; color: #0a0a0a; border: 0; font-weight: 700; padding: 12px 20px; margin: 4px; cursor: pointer; font-family: ui-monospace, monospace; }
+    .hint { color: #8e8e8e; font-family: ui-monospace, monospace; font-size: 13px; margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <div style="text-align:center">
+    <h1>smol<span style="color:#f5a623">analytics</span> quickstart</h1>
+    <button onclick="smolanalytics.track('signup', { plan: 'pro', source: 'quickstart' })">track signup</button>
+    <button onclick="smolanalytics.track('activate')">track activate</button>
+    <button onclick="smolanalytics.track('checkout', { amount: 29 })">track checkout</button>
+    <div class="hint">click the buttons, then watch them on the dashboard's Live events feed →<br />http://localhost:8080</div>
+  </div>
+</body>
+</html>

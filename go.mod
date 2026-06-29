@@ -1,3 +1,3 @@
 module github.com/Arjun0606/smolanalytics
 
-go 1.26.4
+go 1.23.0

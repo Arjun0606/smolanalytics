@@ -1,0 +1,39 @@
+version: 2
+
+project_name: smolanalytics
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - main: ./cmd/smolanalytics
+    binary: smolanalytics
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X github.com/Arjun0606/smolanalytics/internal/api.Version={{.Version}}
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude: ["^docs:", "^test:", "^ci:", "^chore:"]
+
+release:
+  footer: |
+    ---
+    Run it: `docker run -p 8080:8080 ghcr.io/arjun0606/smolanalytics`
