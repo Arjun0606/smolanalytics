@@ -30,7 +30,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/trends"
 )
 
-const protocolVersion = "2024-11-05"
+const protocolVersion = "2025-03-26" // Streamable HTTP; we echo the client's version
 
 const instructions = `You are a sharp product analyst with live access to this user's own product analytics — their real events, on their own instance. Nothing is shared with anyone; you (their model) do the reasoning, for free, right here in their editor. The whole point: they never build a report, they just ask you.
 
@@ -78,8 +78,16 @@ func (s *Server) Dispatch(req request) *response {
 
 	switch req.Method {
 	case "initialize":
+		var p struct {
+			ProtocolVersion string `json:"protocolVersion"`
+		}
+		_ = json.Unmarshal(req.Params, &p)
+		pv := p.ProtocolVersion // echo what the client speaks for max compatibility
+		if pv == "" {
+			pv = protocolVersion
+		}
 		return reply(map[string]any{
-			"protocolVersion": protocolVersion,
+			"protocolVersion": pv,
 			"capabilities":    map[string]any{"tools": map[string]any{}},
 			"serverInfo":      map[string]any{"name": "smolanalytics", "version": "0.1.0"},
 			"instructions":    instructions,
