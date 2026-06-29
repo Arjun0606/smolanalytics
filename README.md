@@ -36,11 +36,12 @@ Then open **http://localhost:8080** — a fully populated dashboard, and an ask 
 ## Why this exists
 Every analytics tool now has an AI assistant — but it's bolted *inside their app*, you pay for it, and you still leave your editor to use it. smolanalytics flips it: the analytics comes to where you already work, answered by the model you already pay for.
 
-- **Ask in your editor, for free.** It's an MCP server — connect Claude / Cursor / Claude Code and ask in plain English. Your model does the reasoning, so there are no API keys and no per-question AI tax. The dashboard has a built-in ask bar too, zero setup.
-- **Real product analytics.** Funnels, retention, trends, segmentation, lifecycle, stickiness, paths, cohorts, B2B accounts — deterministic and fast, every report filterable by property.
-- **One binary + your data.** No Kafka, no ClickHouse cluster, no SPA build step. `docker run` it anywhere; export any time. No per-event surprise bills.
+- **Ask in your editor, for free.** It's an MCP server — connect Claude / Cursor / Claude Code and ask in plain English. Your model does the reasoning, so there are no API keys and no metered AI credits. The dashboard has a built-in ask bar too, zero setup.
+- **It can't make up numbers.** Every other tool's AI assistant admits it hallucinates. Ours can't — it calls exact, deterministic reports (not guessed SQL), so the answer is the real computed number or nothing.
+- **Real product analytics.** Funnels, retention, trends, segmentation, lifecycle, stickiness, paths, cohorts, B2B accounts — every report filterable. The funnels Plausible makes you pay for and can't self-host.
+- **One binary, not a cluster.** No Kafka/ClickHouse/Redis, no 12-hours-debugging-self-host. `docker run` and it's up. Your data never leaves your box and never trains anyone's model.
 - **Beautiful by default.** Server-rendered, instant, opinionated — looks designed, not assembled.
-- **Open source (MIT).** Own the whole thing.
+- **Open source (MIT), genuinely self-hostable.** Own the whole thing — no paywalled features stripped from the self-hosted edition.
 
 ## Ask it in your editor (the whole point)
 Connect once — the AI you already code with reads your real analytics and answers:
