@@ -1,6 +1,8 @@
 # smolanalytics
 
-**Product analytics in a single Go binary. As simple as Plausible, as powerful as Mixpanel — and you just *ask* it in plain English.**
+**Product analytics that lives in your editor. You don't build reports — you ask the AI you're already coding with. Free, self-hosted, one binary, your data.**
+
+You ship a feature in Cursor or Claude Code, then ask *"did activation improve this week?"* right there. Your model answers from your real data over MCP. We run no model, so it costs you nothing.
 
 ```sh
 go run ./cmd/smolanalytics demo   # seeds a realistic dataset + opens a populated dashboard
@@ -8,14 +10,14 @@ go run ./cmd/smolanalytics demo   # seeds a realistic dataset + opens a populate
 
 Then open http://localhost:8080.
 
-## Why
-Simple analytics (Plausible, Fathom) can't do funnels or product analytics. Powerful analytics (Mixpanel, Amplitude, PostHog) are complex, expensive, and need a cluster to run. Nobody owns the middle: **full product-analytics depth, with a dead-simple experience, in one binary you actually own.**
+## Why this exists
+Every analytics tool now has an AI assistant — but it's bolted *inside their app*, you pay for it, and you still leave your editor to use it. smolanalytics flips it: the analytics comes to where you already work, answered by the model you already pay for.
 
-- **One binary + your data.** No Kafka, no ClickHouse cluster, no SPA build step. Self-host it anywhere or use the cloud.
-- **Real product analytics.** Funnels, cohort retention, trends, segmentation — deterministic and fast.
-- **Ask with your OWN AI.** smolanalytics is an MCP server: connect it to your Claude / Cursor / Claude Code and ask *"why did checkout drop last week?"* in plain English. Your model reads the data through our tools — we never call a model ourselves, so there are no API keys and no inference cost on our side. The dashboard also answers common questions built-in, zero setup.
+- **Ask in your editor, for free.** It's an MCP server — connect it to Claude / Cursor / Claude Code and ask in plain English. Your model does the reasoning, so there are no API keys and no per-question AI tax. The dashboard also answers common questions built-in, zero setup.
+- **Real product analytics.** Funnels, retention, trends, segmentation, lifecycle, stickiness, paths, cohorts, B2B accounts — deterministic and fast, every report filterable.
+- **One binary + your data.** No Kafka, no ClickHouse cluster, no SPA build step. `docker run` it anywhere; export any time. No per-event surprise bills.
 - **Beautiful by default.** Server-rendered, instant, opinionated — looks designed, not assembled.
-- **Open source.** Own your data; no per-event tax.
+- **Open source.** Own the whole thing.
 
 ## Send events (2 minutes)
 Drop the SDK in your app — it batches, persists an anonymous id, and flushes on unload:
