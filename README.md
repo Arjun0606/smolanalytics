@@ -67,14 +67,16 @@ ai  ▸ Activation is 62% (657 of 1,051 signups reach "activate").
 ```
 The 12 tools your model gets: `overview`, `list_events`, `funnel`, `retention`, `trends` (+ breakdown), `breakdown`, `lifecycle`, `stickiness`, `paths`, `groups` (B2B accounts), `recent_events`, `user_activity` — every one filterable by property (`plan=pro`, `source=hn`, …).
 
-## Send events (2 minutes)
-Drop the SDK in your app — it batches, persists an anonymous id, retries on failure, and flushes on unload:
+## Send events (2 minutes, zero instrumentation)
+Drop the snippet in — it **autocaptures pageviews + clicks instantly**, so you get real data with no manual event tagging. Add `track()` for the key moments (signup, checkout) when you want funnels.
 
 ```html
 <script src="https://YOUR_HOST/sdk.js"></script>
 <script>
   smolanalytics.init("YOUR_WRITE_KEY", { host: "https://YOUR_HOST" });
-  smolanalytics.track("signup", { plan: "pro", source: "hacker news" });
+  // that's it — pageviews + clicks are captured automatically.
+  // optional, for funnels:
+  smolanalytics.track("signup", { plan: "pro" });
   smolanalytics.identify("user_123", { email: "a@b.com" }); // on login
 </script>
 ```

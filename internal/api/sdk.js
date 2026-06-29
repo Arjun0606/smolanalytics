@@ -70,6 +70,59 @@
     if (queue.length >= 20) flush();
   }
 
+  // autocapture: pageviews (incl. SPA route changes) + clicks on interactive
+  // elements, so you get real data with zero manual instrumentation. Element
+  // metadata only — never input values.
+  function setupAutocapture() {
+    var lastPath = null;
+    function pageview() {
+      if (location.pathname === lastPath) return;
+      lastPath = location.pathname;
+      enqueue("$pageview", { path: location.pathname, referrer: document.referrer, title: document.title });
+    }
+    pageview();
+    ["pushState", "replaceState"].forEach(function (m) {
+      var orig = history[m];
+      if (typeof orig !== "function") return;
+      history[m] = function () {
+        var r = orig.apply(this, arguments);
+        pageview();
+        return r;
+      };
+    });
+    window.addEventListener("popstate", pageview);
+
+    document.addEventListener(
+      "click",
+      function (e) {
+        var node = e.target,
+          depth = 0;
+        while (node && node.tagName && depth < 4) {
+          var tag = node.tagName.toLowerCase();
+          var clickable =
+            tag === "a" ||
+            tag === "button" ||
+            (tag === "input" && /^(submit|button)$/.test(node.type || "")) ||
+            (node.getAttribute && node.getAttribute("role") === "button");
+          if (clickable) {
+            enqueue("$click", {
+              tag: tag,
+              text: ((node.innerText || node.value || "") + "").trim().slice(0, 80) || undefined,
+              id: node.id || undefined,
+              classes: (node.className && (node.className + "").slice(0, 120)) || undefined,
+              href: node.href || undefined,
+              path: location.pathname,
+            });
+            return;
+          }
+          node = node.parentElement;
+          depth++;
+        }
+      },
+      true,
+    );
+  }
+
   var smol = {
     init: function (writeKey, opts) {
       opts = opts || {};
@@ -77,7 +130,7 @@
       host = (opts.host || "").replace(/\/$/, "");
       distinctId();
       if (opts.autocapture !== false) {
-        smol.track("$pageview", { path: location.pathname, referrer: document.referrer });
+        setupAutocapture(); // pageviews + clicks, zero manual instrumentation
       }
       if (timer) clearInterval(timer);
       timer = setInterval(flush, (opts.flushInterval || 3) * 1000);
