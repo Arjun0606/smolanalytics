@@ -42,13 +42,29 @@ curl -X POST https://YOUR_HOST/v1/events \
 
 Set `SMOLANALYTICS_WRITE_KEY` to require the key (production); leave it unset for local dev. CORS is open so the browser SDK works from any origin.
 
-## Ask it anything (MCP)
-smolanalytics speaks the Model Context Protocol, so your own AI assistant reads your analytics directly:
+## Ask it in your editor (the whole point)
+smolanalytics is an MCP server, so the AI you already code with reads your real analytics and answers — no report-building, no separate tab, no AI bill. Connect once:
 
-- **Local (Claude Desktop / Cursor):** `smolanalytics mcp` runs an MCP server over stdio.
-- **Remote:** point any Streamable-HTTP MCP client at `POST /mcp` on the running server — it shares the live data.
+**Cursor / Claude Desktop** — add to your MCP config:
+```json
+{ "mcpServers": { "smolanalytics": { "url": "http://localhost:8080/mcp" } } }
+```
+**Claude Code** — one command:
+```sh
+claude mcp add --transport http smolanalytics http://localhost:8080/mcp
+```
+**Local stdio** (try it on demo data): `{ "command": "smolanalytics", "args": ["mcp"] }`
 
-Tools exposed (12): `overview`, `list_events`, `funnel`, `retention`, `trends` (+ breakdown), `breakdown`, `lifecycle`, `stickiness`, `paths`, `groups` (B2B accounts), `recent_events`, `user_activity` — every report filterable by property conditions. Your model picks the right one and explains the answer. When a key is configured the endpoint requires it.
+(When a key is set, add `"headers": { "Authorization": "Bearer YOUR_KEY" }` next to the url.)
+
+Then just ask — in the same window you write code:
+```
+you ▸ how's activation, and is pro converting better than free?
+ai  ▸ Activation is 62% (657 of 1,051 signups reach "activate").
+      Pro converts 2.4× better end-to-end — 45% signup→checkout vs 19% on free.
+      The leak is activate→checkout on free (only 31% continue). Want the paths after activate?
+```
+Your model picks the right reports and explains the answer. The 12 tools it has: `overview`, `list_events`, `funnel`, `retention`, `trends` (+ breakdown), `breakdown`, `lifecycle`, `stickiness`, `paths`, `groups` (B2B accounts), `recent_events`, `user_activity` — every one filterable by property (plan=pro, source=hn, …). The dashboard also has a built-in ask bar for common questions, zero setup.
 
 ## Deploy it (production)
 One static binary, no cgo, no cluster — it runs anywhere.
