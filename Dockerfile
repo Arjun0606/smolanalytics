@@ -14,4 +14,7 @@ COPY --from=build /smolanalytics /smolanalytics
 ENV ADDR=:8080 SMOLANALYTICS_DB=/data/smolanalytics.data
 VOLUME /data
 EXPOSE 8080
-ENTRYPOINT ["/smolanalytics", "serve"]
+# ENTRYPOINT is just the binary so `docker run <img> demo|serve|mcp` works;
+# CMD defaults to serve.
+ENTRYPOINT ["/smolanalytics"]
+CMD ["serve"]
