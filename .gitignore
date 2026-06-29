@@ -7,3 +7,9 @@
 .env
 .env.*
 gtm/
+
+# internal strategy — never publish
+SPEC.md
+gtm/
+*-STRATEGY.md
+NOTES.md
