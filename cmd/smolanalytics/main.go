@@ -18,6 +18,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/audit"
 	"github.com/Arjun0606/smolanalytics/internal/cohort"
 	"github.com/Arjun0606/smolanalytics/internal/demo"
+	"github.com/Arjun0606/smolanalytics/internal/insight"
 	"github.com/Arjun0606/smolanalytics/internal/insights"
 	"github.com/Arjun0606/smolanalytics/internal/mcp"
 	"github.com/Arjun0606/smolanalytics/internal/settings"
@@ -99,6 +100,7 @@ func serve(st store.Store, closeStore func() error) {
 	}
 	if wh, err := webhook.Open(dataPath() + ".webhooks.json"); err == nil {
 		app.SetWebhooks(wh)
+		go dailyBrief(st, wh)
 	} else {
 		log.Printf("smolanalytics: webhooks disabled (%v)", err)
 	}
@@ -157,6 +159,29 @@ func pruneLoop(st store.Store, set *settings.Store) {
 	defer t.Stop()
 	for range t.C {
 		prune()
+	}
+}
+
+// dailyBrief delivers the proactive "what to look at" verdict to configured
+// webhooks once a day — the morning brief, the habit loop.
+func dailyBrief(st store.Store, wh *webhook.Store) {
+	t := time.NewTicker(24 * time.Hour)
+	defer t.Stop()
+	for range t.C {
+		evs, err := st.Range(time.Time{}, time.Time{})
+		if err != nil {
+			continue
+		}
+		findings := insight.Generate(evs)
+		if len(findings) == 0 {
+			continue
+		}
+		wh.DeliverAll(map[string]any{
+			"type":     "daily_brief",
+			"text":     insight.Text(findings),
+			"findings": findings,
+			"at":       time.Now().UTC(),
+		})
 	}
 }
 

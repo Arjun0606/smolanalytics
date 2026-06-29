@@ -43,6 +43,16 @@
   .card{background:var(--surface);border:1px solid var(--line);padding:20px;margin-bottom:14px}
   .card h2{font-size:13px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.1em;color:var(--mut);margin:0 0 18px}
 
+  /* verdict — the proactive "what to look at" front door */
+  .verdict h2{display:flex;align-items:center}
+  .vdot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent);margin-left:8px;animation:pulse 1.6s infinite}
+  .vrow{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--line);align-items:baseline;flex-wrap:wrap}
+  .vrow:last-child{border-bottom:none}
+  .vrow .vt{font-weight:600;min-width:220px}
+  .vrow .vd{color:var(--mut);font-size:13px;flex:1}
+  .vrow.warn .vt{color:var(--warn)}
+  .vmuted{color:var(--mut2);font-family:var(--mono);font-size:12px;padding:4px 0}
+
   /* onboarding */
   details.onboard{padding:0}
   details.onboard>summary{cursor:pointer;list-style:none;padding:18px 20px;font-size:13px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.1em;color:var(--accent)}
@@ -166,6 +176,13 @@
 </header>
 
 <main class="wrap">
+  {{if .HasData}}
+  <div class="card verdict">
+    <h2>What to look at <span class="vdot"></span></h2>
+    <div id="verdict"><div class="vmuted">reading your data…</div></div>
+  </div>
+  {{end}}
+
   <details class="card onboard" {{if not .HasData}}open{{end}}>
     <summary>{{if .HasData}}Setup &amp; connect{{else}}Get started in 2 minutes{{end}}</summary>
     <div class="ob">
@@ -531,6 +548,21 @@
         .then(function(r){return r.json()}).then(function(){coName.value='';coEvents.value='';refreshCohorts();}).catch(function(){});
     };
     refreshCohorts();
+
+    // verdict — proactive "what to look at", the front door
+    var vEl=document.getElementById('verdict');
+    if(vEl){
+      fetch('/v1/notable').then(function(r){return r.json()}).then(function(j){
+        var fs=(j&&j.findings)||[];
+        if(!fs.length){vEl.innerHTML='<div class="vmuted">not enough data yet — send some events.</div>';return;}
+        vEl.innerHTML='';
+        fs.forEach(function(f){
+          var row=document.createElement('div'); row.className='vrow'+(f.severity==='warn'?' warn':'');
+          row.innerHTML='<span class="vt">'+esc(f.title)+'</span><span class="vd">'+esc(f.detail)+'</span>';
+          vEl.appendChild(row);
+        });
+      }).catch(function(){vEl.innerHTML='<div class="vmuted">could not load.</div>';});
+    }
 
     // onboarding — copy buttons + live first-event detection
     Array.prototype.forEach.call(document.querySelectorAll('.copy'),function(b){

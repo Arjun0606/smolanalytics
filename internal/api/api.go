@@ -143,6 +143,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/groups", s.apiGroups)
 	mux.HandleFunc("GET /v1/meta", s.apiMeta)
 	mux.HandleFunc("GET /v1/usage", s.usage)
+	mux.HandleFunc("GET /v1/notable", s.notable)
 	mux.HandleFunc("GET /v1/events/recent", s.recentEvents)
 	mux.HandleFunc("GET /v1/users/{id}", s.userActivity)
 	mux.HandleFunc("GET /v1/export", s.export)

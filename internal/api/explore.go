@@ -7,7 +7,19 @@ import (
 	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/event"
+	"github.com/Arjun0606/smolanalytics/internal/insight"
 )
+
+// notable returns the proactive "what's broken / what to look at" digest — the
+// verdict that fronts the dashboard and the daily brief.
+func (s *Server) notable(w http.ResponseWriter, _ *http.Request) {
+	evs, err := s.store.Range(time.Time{}, time.Time{})
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"findings": insight.Generate(evs)})
+}
 
 // usage reports this instance's event + user counts so a control plane (the Cloud)
 // can meter and enforce plan limits. Key-authed (it's a programmatic endpoint).
