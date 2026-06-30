@@ -1,7 +1,8 @@
 // Package store is the data layer. The Store interface keeps the analytics engine
 // (funnels, retention, trends) independent of the backend: an in-memory store for
-// tests and the CLI demo, a DuckDB store for real columnar speed in production —
-// same interface, so the engine never changes.
+// tests and the CLI demo, the durable file log for a single box, and the tiered
+// segment store (columnar segments on object storage) for scale — same interface, so
+// the engine never changes. See gtm/SCALE.md for the architecture.
 package store
 
 import (
@@ -18,6 +19,11 @@ type Store interface {
 	// Range returns every event with Timestamp in [from, to). Either bound may be
 	// zero to mean unbounded. Events are returned for the engine to compute over.
 	Range(from, to time.Time) ([]event.Event, error)
+	// Scan streams every event in [from, to) through fn, in storage order. Unlike
+	// Range it never materializes the full set, so a columnar/object-store backend
+	// keeps memory bounded regardless of total volume. fn returning an error stops the
+	// scan and is returned. This is the query path the scale tiers are built around.
+	Scan(from, to time.Time, fn func(event.Event) error) error
 	// Names returns the distinct event names seen (for auto-building funnels/UI).
 	Names() ([]string, error)
 	// Clear deletes all events (the settings "danger zone" reset).

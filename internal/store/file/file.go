@@ -134,6 +134,23 @@ func (s *Store) Range(from, to time.Time) ([]event.Event, error) {
 	return out, nil
 }
 
+func (s *Store) Scan(from, to time.Time, fn func(event.Event) error) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, e := range s.evs {
+		if !from.IsZero() && e.Timestamp.Before(from) {
+			continue
+		}
+		if !to.IsZero() && !e.Timestamp.Before(to) {
+			continue
+		}
+		if err := fn(e); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *Store) Names() ([]string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

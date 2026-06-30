@@ -1,6 +1,6 @@
 // Package memory is an in-memory store.Store: enough to run the full engine in
-// tests and the zero-setup CLI demo. Concurrency-safe. The DuckDB backend
-// satisfies the same interface for production columnar speed.
+// tests and the zero-setup CLI demo. Concurrency-safe. The tiered segment store
+// (columnar, object-store-backed) satisfies the same interface for scale.
 package memory
 
 import (
@@ -52,6 +52,23 @@ func (s *Store) Range(from, to time.Time) ([]event.Event, error) {
 		out = append(out, e)
 	}
 	return out, nil
+}
+
+func (s *Store) Scan(from, to time.Time, fn func(event.Event) error) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, e := range s.evs {
+		if !from.IsZero() && e.Timestamp.Before(from) {
+			continue
+		}
+		if !to.IsZero() && !e.Timestamp.Before(to) {
+			continue
+		}
+		if err := fn(e); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Store) Clear() error {
