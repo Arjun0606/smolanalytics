@@ -6,6 +6,7 @@ package insight
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"time"
 
@@ -103,7 +104,7 @@ func Generate(evs []event.Event) []Finding {
 		}
 	}
 	if prev7 > 0 {
-		change := int(float64(last7-prev7) / float64(prev7) * 100)
+		change := int(math.Round(float64(last7-prev7) / float64(prev7) * 100)) // round (handles negatives), not truncate
 		sev, dir := "info", "up"
 		if change < 0 {
 			dir = "down"

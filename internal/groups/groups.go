@@ -66,10 +66,11 @@ func Compute(events []event.Event, property string, asof time.Time, limit int) R
 	res := Result{Property: property, TotalGroups: len(groups)}
 	out := make([]Group, 0, len(groups))
 	for val, g := range groups {
-		if g.last.After(d7) {
+		// inclusive window (!Before == >=) so a group active exactly N days ago counts
+		if !g.last.Before(d7) {
 			res.ActiveGroups7d++
 		}
-		if g.last.After(d30) {
+		if !g.last.Before(d30) {
 			res.ActiveGroups30d++
 		}
 		out = append(out, Group{Value: val, Events: g.events, Users: len(g.users), LastSeen: g.last})

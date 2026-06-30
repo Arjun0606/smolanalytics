@@ -89,13 +89,15 @@ func ComputeStickiness(events []event.Event, asof time.Time) Stickiness {
 	d1, d7, d30 := asof.AddDate(0, 0, -1), asof.AddDate(0, 0, -7), asof.AddDate(0, 0, -30)
 	dau, wau, mau := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	for _, e := range events {
-		if e.Timestamp.After(d30) {
+		// inclusive lower bound (!Before == >=) so "trailing N days" includes the
+		// window boundary, consistent with the funnel.
+		if !e.Timestamp.Before(d30) {
 			mau[e.DistinctID] = true
 		}
-		if e.Timestamp.After(d7) {
+		if !e.Timestamp.Before(d7) {
 			wau[e.DistinctID] = true
 		}
-		if e.Timestamp.After(d1) {
+		if !e.Timestamp.Before(d1) {
 			dau[e.DistinctID] = true
 		}
 	}
