@@ -16,6 +16,8 @@
   var queue = [];
   var did = null;
   var timer = null;
+  var captured = false; // autocapture wired once, even if the snippet loads twice
+  var warnedAuth = false; // warn once on a bad key, don't spam the console
 
   function uid() {
     return "a-" + Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -54,6 +56,11 @@
         mode: "cors",
       }).then(function (r) {
         if (!r.ok && r.status >= 500) requeue();
+        else if ((r.status === 401 || r.status === 403) && !warnedAuth) {
+          warnedAuth = true;
+          // a typo'd write key drops every event silently otherwise — say so once
+          if (window.console) console.warn("smolanalytics: events rejected (" + r.status + ") — check your write key");
+        }
       }).catch(requeue);
     } catch (e) {
       requeue();
@@ -74,6 +81,8 @@
   // elements, so you get real data with zero manual instrumentation. Element
   // metadata only — never input values.
   function setupAutocapture() {
+    if (captured) return; // idempotent — a second init must not double-wrap history or double-bind clicks
+    captured = true;
     var lastPath = null;
     function pageview() {
       if (location.pathname === lastPath) return;
