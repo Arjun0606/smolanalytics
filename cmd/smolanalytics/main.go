@@ -25,8 +25,10 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/mcp"
 	"github.com/Arjun0606/smolanalytics/internal/settings"
 	"github.com/Arjun0606/smolanalytics/internal/store"
+	"github.com/Arjun0606/smolanalytics/internal/store/blob"
 	"github.com/Arjun0606/smolanalytics/internal/store/file"
 	"github.com/Arjun0606/smolanalytics/internal/store/memory"
+	"github.com/Arjun0606/smolanalytics/internal/store/segment"
 	"github.com/Arjun0606/smolanalytics/internal/webhook"
 )
 
@@ -37,18 +39,11 @@ func main() {
 	}
 	switch cmd {
 	case "serve":
-		fs, err := file.Open(dataPath())
+		st, closeStore, err := openServeStore()
 		if err != nil {
 			log.Fatal(err)
 		}
-		log.Printf("smolanalytics: %d events loaded from %s", fs.Count(), dataPath())
-		if n := envInt("SMOLANALYTICS_MAX_EVENTS"); n > 0 {
-			if err := fs.SetMaxEvents(n); err != nil {
-				log.Fatal(err)
-			}
-			log.Printf("smolanalytics: memory cap — keeping the newest %d events resident", n)
-		}
-		serve(fs, fs.Close)
+		serve(st, closeStore)
 	case "demo":
 		st := memory.New()
 		if err := demo.Seed(st); err != nil {
@@ -69,6 +64,9 @@ func main() {
 		fmt.Println("  SMOLANALYTICS_DB          event log path (default ./smolanalytics.data)")
 		fmt.Println("  SMOLANALYTICS_RETAIN_DAYS drop events older than N days (default: keep forever)")
 		fmt.Println("  SMOLANALYTICS_MAX_EVENTS  keep only the newest N events resident (memory guardrail)")
+		fmt.Println("  SMOLANALYTICS_COLD        dir for the scale tier: columnar segments, bounded RAM,")
+		fmt.Println("                            history to billions of events (default: single-file log)")
+		fmt.Println("  SMOLANALYTICS_SEAL_EVENTS events per columnar segment when COLD is set (default 50k)")
 		fmt.Println("  the running server also speaks MCP at POST /mcp (Streamable HTTP)")
 	}
 }
@@ -78,6 +76,39 @@ func dataPath() string {
 		return p
 	}
 	return "smolanalytics.data"
+}
+
+// openServeStore picks the storage backend. Default: the durable single-file log (one
+// box, everything-resident, capped by SMOLANALYTICS_MAX_EVENTS). Set SMOLANALYTICS_COLD
+// to a directory (or, later, an object-store URL) to switch on the scale tier: a bounded
+// hot log that seals into compressed columnar segments, so memory stays flat while
+// history grows to billions of events for pennies. Same interface either way.
+func openServeStore() (store.Store, func() error, error) {
+	if cold := os.Getenv("SMOLANALYTICS_COLD"); cold != "" {
+		b, err := blob.NewLocal(cold)
+		if err != nil {
+			return nil, nil, err
+		}
+		s, err := segment.Open(dataPath(), b, envInt("SMOLANALYTICS_SEAL_EVENTS"))
+		if err != nil {
+			return nil, nil, err
+		}
+		log.Printf("smolanalytics: scale backend — hot log %s + columnar segments in %s (%d events)", dataPath(), cold, s.Count())
+		return s, s.Close, nil
+	}
+
+	fs, err := file.Open(dataPath())
+	if err != nil {
+		return nil, nil, err
+	}
+	log.Printf("smolanalytics: %d events loaded from %s", fs.Count(), dataPath())
+	if n := envInt("SMOLANALYTICS_MAX_EVENTS"); n > 0 {
+		if err := fs.SetMaxEvents(n); err != nil {
+			return nil, nil, err
+		}
+		log.Printf("smolanalytics: memory cap — keeping the newest %d events resident", n)
+	}
+	return fs, fs.Close, nil
 }
 
 // envInt reads a non-negative integer env var; returns 0 if unset or unparseable.
