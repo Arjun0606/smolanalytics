@@ -46,7 +46,16 @@ Every analytics tool now has an AI assistant — but it's bolted *inside their a
 **Why not just use Mixpanel or PostHog?** They're deeper — but there are three things they *structurally can't* match, because it would break their business: (1) **the AI is yours, so it's free** — they meter theirs (Mixpanel caps it at 30–300 queries/mo, Amplitude gates it behind a $30k/yr tier); (2) **it can't lie** — theirs writes SQL and admits it hallucinates, ours calls exact reports; (3) **your data never trains a model** — PostHog now trains on yours by default, ours is a binary on your box. Same funnels/retention, a fraction of the price, and it tells you what to fix instead of making you dig.
 
 ## Ask it in your editor (the whole point)
-Connect once — the AI you already code with reads your real analytics and answers:
+The AI you already code with reads your real analytics and answers. Connect once:
+
+```sh
+smolanalytics connect          # auto-adds it to Claude Desktop + Cursor, then restart them
+```
+That's it — restart the editor and ask *"where are users dropping off this week?"*. It
+detects your installed editors and merges in the config (keeping any MCP servers you
+already have); run `connect claude` or `connect cursor` to target one.
+
+<details><summary>Or wire it up by hand</summary>
 
 **Cursor / Claude Desktop** — add to your MCP config:
 ```json
@@ -59,6 +68,7 @@ claude mcp add --transport http smolanalytics http://localhost:8080/mcp
 **Local stdio** (try it on demo data): `{ "command": "smolanalytics", "args": ["mcp"] }`
 
 (When a key is set, add `"headers": { "Authorization": "Bearer YOUR_KEY" }` next to the url.)
+</details>
 
 Then just ask — in the same window you write code:
 ```
@@ -162,7 +172,7 @@ Manage everything from **Settings** (`/settings`): account + password, API keys,
 - `internal/store` — the `Store` interface + in-memory and durable file (append-log) backends. A Postgres/columnar backend slots in behind the same interface.
 - `internal/mcp` — the MCP server (stdio + Streamable HTTP): the "ask with your own AI" layer.
 - `internal/api` — the single-binary HTTP server: ingestion, SDK, dashboard, Explore, settings, auth, webhooks, alerts, audit.
-- `cmd/smolanalytics` — the binary (`serve`, `demo`, `mcp`).
+- `cmd/smolanalytics` — the binary (`serve`, `demo`, `mcp`, `connect`).
 
 ```sh
 make demo    # seed + serve

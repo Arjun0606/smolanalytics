@@ -95,7 +95,7 @@ func (s *Server) EvaluateAlerts() {
 		cutoff := now.Add(-window)
 		var count float64
 		for _, e := range evs {
-			if e.Name == a.Event && e.Timestamp.After(cutoff) {
+			if e.Name == a.Event && !e.Timestamp.Before(cutoff) { // inclusive window, consistent
 				count++
 			}
 		}

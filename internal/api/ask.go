@@ -134,7 +134,7 @@ func answerActive(evs []event.Event) string {
 	cutoff := time.Now().UTC().AddDate(0, 0, -7)
 	recent := map[string]bool{}
 	for _, e := range evs {
-		if e.Timestamp.After(cutoff) {
+		if !e.Timestamp.Before(cutoff) { // inclusive "last 7 days", consistent with the engine
 			recent[e.DistinctID] = true
 		}
 	}

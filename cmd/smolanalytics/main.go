@@ -53,12 +53,19 @@ func main() {
 		serve(st, func() error { return nil })
 	case "mcp":
 		runMCP()
+	case "connect":
+		arg := ""
+		if len(os.Args) >= 3 {
+			arg = os.Args[2]
+		}
+		connect(arg)
 	default:
 		fmt.Println("smolanalytics — product analytics in one binary")
 		fmt.Println()
 		fmt.Println("  smolanalytics demo    seed a realistic dataset + open a populated dashboard")
 		fmt.Println("  smolanalytics serve   persist events from POST /v1/events to a durable log")
 		fmt.Println("  smolanalytics mcp     MCP server over stdio — connect your Claude/Cursor and ask anything")
+		fmt.Println("  smolanalytics connect auto-add smolanalytics to Claude Desktop / Cursor (one command, then ask)")
 		fmt.Println()
 		fmt.Println("  ADDR                      listen address (default :8080)")
 		fmt.Println("  SMOLANALYTICS_DB          event log path (default ./smolanalytics.data)")

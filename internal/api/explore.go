@@ -38,7 +38,7 @@ func (s *Server) usage(w http.ResponseWriter, r *http.Request) {
 	err := s.store.Scan(time.Time{}, time.Time{}, func(e event.Event) error {
 		total++
 		users[e.DistinctID] = true
-		if e.Timestamp.After(cutoff) {
+		if !e.Timestamp.Before(cutoff) { // inclusive "last 30 days"
 			events30d++
 		}
 		if e.Timestamp.UTC().Format("2006-01") == month {
