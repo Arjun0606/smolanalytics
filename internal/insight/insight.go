@@ -51,6 +51,10 @@ func Generate(evs []event.Event) []Finding {
 		return names[i] < names[j]
 	})
 	has := func(n string) bool { _, ok := count[n]; return ok }
+	now := time.Now().UTC()
+
+	// 0) what changed in the last 24h vs the trailing-week baseline — the timeliest read
+	out = append(out, anomalies(evs, names, now)...)
 
 	// 1) biggest funnel leak
 	var steps []funnel.Step
@@ -90,7 +94,6 @@ func Generate(evs []event.Event) []Finding {
 	if !has(head) {
 		head = names[0]
 	}
-	now := time.Now().UTC()
 	var last7, prev7 int
 	for _, e := range evs {
 		if e.Name != head {
@@ -152,6 +155,74 @@ func Generate(evs []event.Event) []Finding {
 	// warnings first
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Severity == "warn" && out[j].Severity != "warn" })
 	return out
+}
+
+// anomalies flags the single sharpest "what changed since yesterday": an event whose
+// last-24h volume deviates hard from its prior-7-day daily baseline. A sudden drop
+// (tracking broke? a funnel regressed?) or spike is the most timely, actionable thing in
+// the verdict. Noise-guarded — only events with a real baseline, only big swings — so a
+// low-volume product never gets false alarms.
+func anomalies(evs []event.Event, names []string, now time.Time) []Finding {
+	recentStart := now.Add(-24 * time.Hour)
+	baseStart := now.Add(-8 * 24 * time.Hour)
+	type stat struct{ last24, baseTotal int }
+	stats := map[string]*stat{}
+	for _, e := range evs {
+		if e.Timestamp.Before(baseStart) || e.Timestamp.After(now) {
+			continue
+		}
+		s := stats[e.Name]
+		if s == nil {
+			s = &stat{}
+			stats[e.Name] = s
+		}
+		if !e.Timestamp.Before(recentStart) {
+			s.last24++
+		} else {
+			s.baseTotal++
+		}
+	}
+
+	top := names // only the highest-volume events, so we never flag something obscure
+	if len(top) > 6 {
+		top = top[:6]
+	}
+	var best Finding
+	bestScore, found := 0.0, false
+	for _, n := range top {
+		s := stats[n]
+		if s == nil {
+			continue
+		}
+		baseDaily := float64(s.baseTotal) / 7.0
+		if baseDaily < 3 { // not enough normal volume to trust a percentage swing
+			continue
+		}
+		dev := (float64(s.last24) - baseDaily) / baseDaily
+		score := math.Abs(dev)
+		if score < 0.4 || score <= bestScore { // need a real swing, keep the sharpest
+			continue
+		}
+		bestScore, found = score, true
+		pct := int(math.Round(score * 100))
+		if dev < 0 {
+			best = Finding{
+				Severity: "warn",
+				Title:    fmt.Sprintf("%s dropped %d%% in the last 24h", n, pct),
+				Detail:   fmt.Sprintf("%d in the last 24h vs ~%.0f/day normally — worth a look (tracking down, or a regression?).", s.last24, baseDaily),
+			}
+		} else {
+			best = Finding{
+				Severity: "info",
+				Title:    fmt.Sprintf("%s jumped %d%% in the last 24h", n, pct),
+				Detail:   fmt.Sprintf("%d in the last 24h vs ~%.0f/day normally.", s.last24, baseDaily),
+			}
+		}
+	}
+	if found {
+		return []Finding{best}
+	}
+	return nil
 }
 
 // Text renders the digest as a plain-text brief (for the daily webhook/email).
