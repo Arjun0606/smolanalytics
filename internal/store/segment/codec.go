@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"time"
 
@@ -65,10 +66,19 @@ func encodeSegment(evs []event.Event) (data []byte, minTS, maxTS time.Time, name
 		writeBytes(&raw, b)
 	}
 
-	// compress the whole serialized buffer
+	// frame with a CRC32 so a truncated / bit-rotted segment is a clean error on read,
+	// not silently-decoded garbage; then flate-compress the whole thing.
+	body := raw.Bytes()
+	framed := make([]byte, 4, len(body)+4)
+	binary.LittleEndian.PutUint32(framed, crc32.ChecksumIEEE(body))
+	framed = append(framed, body...)
 	var comp bytes.Buffer
-	fw, _ := flate.NewWriter(&comp, flate.BestCompression)
-	if _, err = fw.Write(raw.Bytes()); err != nil {
+	fw, ferr := flate.NewWriter(&comp, flate.BestCompression)
+	if ferr != nil {
+		return nil, time.Time{}, time.Time{}, nil, ferr
+	}
+	if _, err = fw.Write(framed); err != nil {
+		_ = fw.Close()
 		return nil, time.Time{}, time.Time{}, nil, err
 	}
 	if err = fw.Close(); err != nil {
@@ -89,6 +99,14 @@ func decodeSegment(data []byte) ([]event.Event, error) {
 	_ = fr.Close()
 	if err != nil {
 		return nil, err
+	}
+	if len(raw) < 4 {
+		return nil, fmt.Errorf("segment: truncated blob")
+	}
+	want := binary.LittleEndian.Uint32(raw[:4])
+	raw = raw[4:]
+	if crc32.ChecksumIEEE(raw) != want {
+		return nil, fmt.Errorf("segment: checksum mismatch — corrupt blob")
 	}
 	r := bytes.NewReader(raw)
 

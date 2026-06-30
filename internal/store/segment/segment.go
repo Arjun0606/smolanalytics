@@ -82,6 +82,13 @@ func (s *Store) recoverHotLocked() error {
 		return nil
 	}
 	last := s.manifest[len(s.manifest)-1]
+	// Only the crash window looks like this: the hot WAL holds EXACTLY the last sealed
+	// segment (same count) and every hot ID is in it. Requiring an exact count match (not
+	// just a subset) means a genuine new open block — which will differ in size — is never
+	// falsely cleared, even if some of its IDs happen to collide with the last segment.
+	if s.hot.Count() != last.Count {
+		return nil
+	}
 	data, err := s.blob.Get(last.Key)
 	if err != nil {
 		return nil
@@ -99,34 +106,41 @@ func (s *Store) recoverHotLocked() error {
 	hot, _ := s.hot.Range(time.Time{}, time.Time{})
 	for _, e := range hot {
 		if e.ID == "" || !ids[e.ID] {
-			return nil // hot has events not in the last segment — it's a genuine open block
+			return nil // a genuine open block — keep it
 		}
 	}
-	return s.hot.Clear() // every hot event already sealed; this was the crash window
+	return s.hot.Clear() // hot is exactly the last sealed segment: the crash window
 }
 
 func (s *Store) Ingest(evs ...event.Event) error {
+	// Hold s.mu around the whole append+seal so a concurrent seal's Range→Clear can't
+	// wipe an event that landed between the snapshot and the clear. (file.Store.Ingest
+	// already serializes its own appends; this also serializes them against sealing.)
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if err := s.hot.Ingest(evs...); err != nil {
 		return err
 	}
-	s.mu.Lock()
 	for _, e := range evs {
 		s.names[e.Name] = true
 	}
-	full := s.hot.Count() >= s.sealAt
-	s.mu.Unlock()
-	if full {
-		return s.seal()
+	if s.hot.Count() >= s.sealAt {
+		return s.sealLocked()
 	}
 	return nil
 }
 
-// seal moves the hot block into an immutable cold segment. Ordering is crash-safe:
-// write the segment, persist the manifest, THEN clear the hot WAL — so a crash never
-// loses data (at worst it leaves a duplicate the next Open reconciles).
+// seal moves the hot block into an immutable cold segment. Caller must NOT hold s.mu.
 func (s *Store) seal() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.sealLocked()
+}
+
+// sealLocked is seal's body; the caller holds s.mu. Ordering is crash-safe: write the
+// segment, persist the manifest, THEN clear the hot WAL — so a crash never loses data
+// (at worst it leaves a duplicate the next Open reconciles).
+func (s *Store) sealLocked() error {
 	if s.hot.Count() == 0 {
 		return nil
 	}
@@ -247,11 +261,15 @@ func (s *Store) Prune(before time.Time) (int, error) {
 		kept = append(kept, m)
 	}
 	if len(drop) > 0 {
+		old := s.manifest
 		s.manifest = kept
 		if err := s.persistManifestLocked(); err != nil {
+			s.manifest = old // roll back so in-memory matches what's still on disk
 			s.mu.Unlock()
 			return 0, err
 		}
+		// manifest no longer references these — a failed Delete just orphans a blob
+		// (harmless, unreferenced), never a dangling reference.
 		for _, k := range drop {
 			_ = s.blob.Delete(k)
 		}

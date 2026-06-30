@@ -132,8 +132,11 @@ func (s *S3) List(prefix string) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		body, _ := io.ReadAll(resp.Body)
+		body, rerr := io.ReadAll(resp.Body)
 		resp.Body.Close()
+		if rerr != nil {
+			return nil, rerr // don't parse a truncated response as a complete listing
+		}
 		if resp.StatusCode/100 != 2 {
 			return nil, fmt.Errorf("blob: s3 list -> %d: %s", resp.StatusCode, body[:min(len(body), 512)])
 		}
@@ -150,6 +153,9 @@ func (s *S3) List(prefix string) ([]string, error) {
 		for _, c := range res.Contents {
 			k := c.Key
 			if s.prefix != "" {
+				if !strings.HasPrefix(k, s.prefix+"/") {
+					continue // defensive: never hand back a key outside this tenant's prefix
+				}
 				k = strings.TrimPrefix(k, s.prefix+"/")
 			}
 			keys = append(keys, k)
