@@ -1,7 +1,8 @@
 // Package funnel computes ordered conversion funnels — the headline feature: of
 // the users who did step 1, how many went on to do step 2, then 3, and where do
 // they drop off. The computation is deterministic and storage-agnostic: it works
-// on a slice of events (from the in-memory store in tests, from DuckDB in prod).
+// on a slice of events from any store.Store — memory, the single-file log, or the
+// columnar segment tier for scale.
 package funnel
 
 import (

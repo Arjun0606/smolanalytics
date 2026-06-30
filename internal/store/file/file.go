@@ -2,8 +2,8 @@
 // replays into memory on open. Pure Go, zero dependencies — the single static
 // binary stays single and static, and events survive restarts. The append log is
 // the source of truth; queries are served from the in-memory index (same speed as
-// the memory store). A columnar backend (DuckDB) can slot in behind the same
-// interface later for scale; this is the smol, always-correct default.
+// the memory store). This is the smol, always-correct default for a single box; the
+// columnar segment tier (internal/store/segment) sits behind the same interface for scale.
 package file
 
 import (
