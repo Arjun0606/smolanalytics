@@ -1,6 +1,7 @@
 package api
 
 import (
+	"container/heap"
 	"net/http"
 	"sort"
 	"strconv"
@@ -28,16 +29,14 @@ func (s *Server) usage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "invalid or missing key")
 		return
 	}
-	evs, err := s.store.Range(time.Time{}, time.Time{})
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
-		return
-	}
 	cutoff := time.Now().UTC().AddDate(0, 0, -30)
 	month := time.Now().UTC().Format("2006-01")
 	users := map[string]bool{}
-	var events30d, eventsMonth int
-	for _, e := range evs {
+	var total, events30d, eventsMonth int
+	// Stream the counts instead of materializing the whole history — the cloud polls this
+	// often, so keep it to a counter + a distinct-users set, not a full event slice.
+	err := s.store.Scan(time.Time{}, time.Time{}, func(e event.Event) error {
+		total++
 		users[e.DistinctID] = true
 		if e.Timestamp.After(cutoff) {
 			events30d++
@@ -45,9 +44,14 @@ func (s *Server) usage(w http.ResponseWriter, r *http.Request) {
 		if e.Timestamp.UTC().Format("2006-01") == month {
 			eventsMonth++
 		}
+		return nil
+	})
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"total_events": len(evs),
+		"total_events": total,
 		"events_30d":   events30d,
 		"events_month": eventsMonth,
 		"period":       month,
@@ -65,23 +69,59 @@ func (s *Server) recentEvents(w http.ResponseWriter, r *http.Request) {
 	if limit > 500 {
 		limit = 500
 	}
-	evs, err := s.store.Range(time.Time{}, time.Time{})
+	// Stream a bounded top-N by timestamp (a min-heap of size `limit`) instead of pulling
+	// the whole history into RAM to sort it — O(limit) memory over a single Scan, so this
+	// stays cheap even against the columnar scale tier.
+	h := &tsHeap{}
+	err := s.store.Scan(time.Time{}, time.Time{}, func(e event.Event) error {
+		if h.Len() < limit {
+			heap.Push(h, e)
+		} else if e.Timestamp.After((*h)[0].Timestamp) {
+			(*h)[0] = e
+			heap.Fix(h, 0)
+		}
+		return nil
+	})
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, recent(evs, limit))
+	out := []event.Event(*h)
+	sort.Slice(out, func(i, j int) bool { return out[i].Timestamp.After(out[j].Timestamp) })
+	writeJSON(w, http.StatusOK, out)
 }
 
-// userActivity returns one user's timeline + latest traits. GET /v1/users/{id}
+// userActivity returns one user's timeline + latest traits. GET /v1/users/{id}. Streams
+// and keeps only this user's events, not the whole dataset.
 func (s *Server) userActivity(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	evs, err := s.store.Range(time.Time{}, time.Time{})
+	var mine []event.Event
+	err := s.store.Scan(time.Time{}, time.Time{}, func(e event.Event) error {
+		if e.DistinctID == id {
+			mine = append(mine, e)
+		}
+		return nil
+	})
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, userProfile(evs, id))
+	writeJSON(w, http.StatusOK, userProfile(mine, id))
+}
+
+// tsHeap is a min-heap of events by timestamp (oldest at the root) for streaming top-N.
+type tsHeap []event.Event
+
+func (h tsHeap) Len() int           { return len(h) }
+func (h tsHeap) Less(i, j int) bool { return h[i].Timestamp.Before(h[j].Timestamp) }
+func (h tsHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+func (h *tsHeap) Push(x any)        { *h = append(*h, x.(event.Event)) }
+func (h *tsHeap) Pop() any {
+	old := *h
+	n := len(old)
+	x := old[n-1]
+	*h = old[:n-1]
+	return x
 }
 
 // recent sorts a copy newest-first and takes the first n.
