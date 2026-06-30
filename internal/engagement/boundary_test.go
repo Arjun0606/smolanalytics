@@ -11,8 +11,8 @@ import (
 func TestStickinessBoundaryInclusive(t *testing.T) {
 	asof := time.Date(2026, 6, 30, 12, 0, 0, 0, time.UTC)
 	evs := []event.Event{
-		{DistinctID: "u_day1", Name: "x", Timestamp: asof.AddDate(0, 0, -1)},  // exactly 1 day ago
-		{DistinctID: "u_day7", Name: "x", Timestamp: asof.AddDate(0, 0, -7)},  // exactly 7 days ago
+		{DistinctID: "u_day1", Name: "x", Timestamp: asof.AddDate(0, 0, -1)},   // exactly 1 day ago
+		{DistinctID: "u_day7", Name: "x", Timestamp: asof.AddDate(0, 0, -7)},   // exactly 7 days ago
 		{DistinctID: "u_day30", Name: "x", Timestamp: asof.AddDate(0, 0, -30)}, // exactly 30 days ago
 	}
 	s := ComputeStickiness(evs, asof)

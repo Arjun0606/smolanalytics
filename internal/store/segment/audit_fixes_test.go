@@ -54,7 +54,7 @@ func TestRecoveryKeepsGenuineNewBlock(t *testing.T) {
 		t.Fatal(err)
 	}
 	// now a genuine NEW hot block of 2 events — one reuses id "e1" (collision), one new
-	_ = s.Ingest(mk("e1", "ev", "u", base.Add(time.Hour), nil))   // colliding id
+	_ = s.Ingest(mk("e1", "ev", "u", base.Add(time.Hour), nil)) // colliding id
 	_ = s.Ingest(mk("new9", "ev", "u", base.Add(2*time.Hour), nil))
 	_ = s.hot.Close() // crash with the new block unsealed (count=2 != sealed count=3)
 
