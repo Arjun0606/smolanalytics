@@ -20,12 +20,13 @@ import (
 )
 
 type Store struct {
-	mu    sync.RWMutex
-	seen  map[string]bool
-	evs   []event.Event
-	names map[string]bool
-	w     *os.File
-	path  string // the log file path, for atomic compaction (write-temp-then-rename)
+	mu        sync.RWMutex
+	seen      map[string]bool
+	evs       []event.Event
+	names     map[string]bool
+	w         *os.File
+	path      string // the log file path, for atomic compaction (write-temp-then-rename)
+	maxEvents int    // 0 = unlimited; >0 keeps only the newest N resident (OOM guardrail)
 }
 
 // Open replays the log at path (creating it and any parent dirs if absent) and
@@ -111,7 +112,10 @@ func (s *Store) Ingest(events ...event.Event) error {
 	for _, e := range toIndex {
 		s.index(e)
 	}
-	return s.w.Sync() // durable before the caller treats the event as accepted
+	if err := s.w.Sync(); err != nil { // durable before the caller treats the event as accepted
+		return err
+	}
+	return s.enforceCapLocked() // keep memory bounded so a flood can't OOM the box
 }
 
 func (s *Store) Range(from, to time.Time) ([]event.Event, error) {
@@ -158,9 +162,8 @@ func (s *Store) Clear() error {
 	return err
 }
 
-// Prune drops events older than the cutoff and compacts the log (rewrites it with
-// only the kept events). Runs under the write lock; O(n) but only on the retention
-// schedule.
+// Prune drops events older than the cutoff and compacts the log. Runs under the write
+// lock; O(n) but only on the retention schedule.
 func (s *Store) Prune(before time.Time) (int, error) {
 	if before.IsZero() {
 		return 0, nil
@@ -170,9 +173,7 @@ func (s *Store) Prune(before time.Time) (int, error) {
 	if s.w == nil {
 		return 0, errors.New("store is closed")
 	}
-	kept := s.evs[:0:0]
-	seen, names := map[string]bool{}, map[string]bool{}
-	var buf []byte
+	kept := make([]event.Event, 0, len(s.evs))
 	removed := 0
 	for _, e := range s.evs {
 		if e.Timestamp.Before(before) {
@@ -180,53 +181,96 @@ func (s *Store) Prune(before time.Time) (int, error) {
 			continue
 		}
 		kept = append(kept, e)
+	}
+	if removed == 0 {
+		return 0, nil
+	}
+	if err := s.compactToLocked(kept); err != nil {
+		return 0, err
+	}
+	return removed, nil
+}
+
+// SetMaxEvents bounds how many of the most-recent events stay resident (0 = unlimited).
+// This is the guardrail that keeps a small instance alive under a flood of ingest
+// instead of OOM-crashing it; it trims immediately if already over. Pair it with
+// retention (RetainDays) to also bound the on-disk log.
+func (s *Store) SetMaxEvents(n int) error {
+	if n < 0 {
+		n = 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.maxEvents = n
+	return s.enforceCapLocked()
+}
+
+// enforceCapLocked drops the oldest events down to maxEvents and compacts the log when
+// resident count exceeds the cap (plus a slack band, so we rewrite on growth rather than
+// on every event). Caller holds the write lock.
+func (s *Store) enforceCapLocked() error {
+	if s.maxEvents <= 0 || s.w == nil {
+		return nil
+	}
+	slack := s.maxEvents / 10
+	if slack < 1000 {
+		slack = 1000
+	}
+	if len(s.evs) <= s.maxEvents+slack {
+		return nil
+	}
+	over := len(s.evs) - s.maxEvents
+	return s.compactToLocked(s.evs[over:]) // keep the newest maxEvents
+}
+
+// compactToLocked atomically rewrites the log to contain exactly `kept` (in order),
+// rebuilds the in-memory index, and swaps it in. Write the kept set to a temp file,
+// fsync it durable, then rename it over the live log — the original is never truncated
+// until the new file is safely on disk, so a Sync failure (ENOSPC/EIO) or a crash
+// mid-compaction can never lose the kept events (on restart you see either the old log
+// or the new one, both complete). Caller holds the write lock.
+func (s *Store) compactToLocked(kept []event.Event) error {
+	seen, names := make(map[string]bool, len(kept)), map[string]bool{}
+	var buf []byte
+	for _, e := range kept {
 		if e.ID != "" {
 			seen[e.ID] = true
 		}
 		names[e.Name] = true
 		b, err := json.Marshal(e)
 		if err != nil {
-			return 0, err
+			return err
 		}
 		buf = append(buf, b...)
 		buf = append(buf, '\n')
 	}
-	if removed == 0 {
-		return 0, nil
-	}
-	// Atomic compaction: write the kept set to a temp file, fsync it durable, then
-	// rename it over the live log. The original is never truncated until the new file
-	// is safely on disk, so a Sync failure (ENOSPC/EIO) or a crash mid-compaction can
-	// never lose the kept events — on restart you see either the old log or the new
-	// one, both complete. (The old in-place truncate could leave an empty/torn file.)
 	tmp := s.path + ".compact"
 	tf, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
-		return 0, err
+		return err
 	}
 	if _, err := tf.Write(buf); err != nil {
 		tf.Close()
 		os.Remove(tmp)
-		return 0, err
+		return err
 	}
 	if err := tf.Sync(); err != nil {
 		tf.Close()
 		os.Remove(tmp)
-		return 0, err
+		return err
 	}
 	if err := tf.Close(); err != nil {
 		os.Remove(tmp)
-		return 0, err
+		return err
 	}
-	// Close the append handle, swap files atomically, then reopen on the new log.
 	if err := s.w.Close(); err != nil {
 		os.Remove(tmp)
-		return 0, err
+		return err
 	}
 	if err := os.Rename(tmp, s.path); err != nil {
 		s.w, _ = os.OpenFile(s.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600) // keep store usable
 		os.Remove(tmp)
-		return 0, err
+		return err
 	}
 	// fsync the directory so the rename itself survives a crash.
 	if d, err := os.Open(filepath.Dir(s.path)); err == nil {
@@ -235,11 +279,15 @@ func (s *Store) Prune(before time.Time) (int, error) {
 	}
 	w, err := os.OpenFile(s.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
-		return 0, err
+		return err
 	}
 	s.w = w
-	s.evs, s.seen, s.names = kept, seen, names
-	return removed, nil
+	// copy into a fresh slice so we never alias the old backing array (kept may be a
+	// sub-slice of s.evs when called from the cap path).
+	ne := make([]event.Event, len(kept))
+	copy(ne, kept)
+	s.evs, s.seen, s.names = ne, seen, names
+	return nil
 }
 
 // Count is the number of events held (handy for "is this store empty").

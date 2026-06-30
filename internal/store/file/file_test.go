@@ -87,3 +87,51 @@ func TestIdempotentAcrossReopen(t *testing.T) {
 		t.Fatalf("after reopen count = %d, want 1 (dedup vs replay)", s2.Count())
 	}
 }
+
+func TestMaxEventsCapBoundsMemoryAndPersists(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "data", "events.jsonl")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetMaxEvents(100); err != nil {
+		t.Fatal(err)
+	}
+	// flood well past the cap + slack (slack floor is 1000)
+	for i := 0; i < 3000; i++ {
+		if err := s.Ingest(ev("", "pageview")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// add a unique newest event we can look for after trimming
+	if err := s.Ingest(event.Event{ID: "newest", Name: "checkout", DistinctID: "u1", Timestamp: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	if c := s.Count(); c > 100+1000 { // never exceeds cap + slack band
+		t.Fatalf("cap not enforced: resident=%d, want <= ~1100", c)
+	}
+	// the newest event must survive the trim (we keep the most-recent)
+	evs, _ := s.Range(time.Time{}, time.Time{})
+	found := false
+	for _, e := range evs {
+		if e.ID == "newest" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("newest event was dropped by the cap — should keep the most recent")
+	}
+	persisted := s.Count()
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// reopen: the compacted on-disk log must match the resident set (bounded, durable)
+	s2, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s2.Count() != persisted {
+		t.Fatalf("reopen mismatch: disk=%d resident-before=%d", s2.Count(), persisted)
+	}
+	_ = s2.Close()
+}

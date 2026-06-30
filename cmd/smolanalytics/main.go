@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -41,6 +42,12 @@ func main() {
 			log.Fatal(err)
 		}
 		log.Printf("smolanalytics: %d events loaded from %s", fs.Count(), dataPath())
+		if n := envInt("SMOLANALYTICS_MAX_EVENTS"); n > 0 {
+			if err := fs.SetMaxEvents(n); err != nil {
+				log.Fatal(err)
+			}
+			log.Printf("smolanalytics: memory cap — keeping the newest %d events resident", n)
+		}
 		serve(fs, fs.Close)
 	case "demo":
 		st := memory.New()
@@ -58,8 +65,10 @@ func main() {
 		fmt.Println("  smolanalytics serve   persist events from POST /v1/events to a durable log")
 		fmt.Println("  smolanalytics mcp     MCP server over stdio — connect your Claude/Cursor and ask anything")
 		fmt.Println()
-		fmt.Println("  ADDR             listen address (default :8080)")
-		fmt.Println("  SMOLANALYTICS_DB event log path (default ./smolanalytics.data)")
+		fmt.Println("  ADDR                      listen address (default :8080)")
+		fmt.Println("  SMOLANALYTICS_DB          event log path (default ./smolanalytics.data)")
+		fmt.Println("  SMOLANALYTICS_RETAIN_DAYS drop events older than N days (default: keep forever)")
+		fmt.Println("  SMOLANALYTICS_MAX_EVENTS  keep only the newest N events resident (memory guardrail)")
 		fmt.Println("  the running server also speaks MCP at POST /mcp (Streamable HTTP)")
 	}
 }
@@ -69,6 +78,16 @@ func dataPath() string {
 		return p
 	}
 	return "smolanalytics.data"
+}
+
+// envInt reads a non-negative integer env var; returns 0 if unset or unparseable.
+func envInt(key string) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 0
 }
 
 // displayURL renders a clickable URL from an ADDR. ADDR can be ":8080" (no host),
@@ -102,6 +121,13 @@ func serve(st store.Store, closeStore func() error) {
 		log.Printf("smolanalytics: cohorts disabled (%v)", err)
 	}
 	if set, err := settings.Open(dataPath() + ".settings.json"); err == nil {
+		// Default retention from env (the cloud sets this per plan) — only if the
+		// operator hasn't already chosen one in the dashboard, which persists and wins.
+		if d := envInt("SMOLANALYTICS_RETAIN_DAYS"); d > 0 && set.RetainDays() == 0 {
+			if err := set.SetRetainDays(d); err == nil {
+				log.Printf("smolanalytics: retention — keeping %d days of events", d)
+			}
+		}
 		app.SetSettings(set)
 		go pruneLoop(st, set)
 	} else {
