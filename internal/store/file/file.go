@@ -25,6 +25,7 @@ type Store struct {
 	evs   []event.Event
 	names map[string]bool
 	w     *os.File
+	path  string // the log file path, for atomic compaction (write-temp-then-rename)
 }
 
 // Open replays the log at path (creating it and any parent dirs if absent) and
@@ -35,7 +36,7 @@ func Open(path string) (*Store, error) {
 			return nil, err
 		}
 	}
-	s := &Store{seen: map[string]bool{}, names: map[string]bool{}}
+	s := &Store{seen: map[string]bool{}, names: map[string]bool{}, path: path}
 
 	if f, err := os.Open(path); err == nil {
 		sc := bufio.NewScanner(f)
@@ -193,18 +194,50 @@ func (s *Store) Prune(before time.Time) (int, error) {
 	if removed == 0 {
 		return 0, nil
 	}
-	if err := s.w.Truncate(0); err != nil {
+	// Atomic compaction: write the kept set to a temp file, fsync it durable, then
+	// rename it over the live log. The original is never truncated until the new file
+	// is safely on disk, so a Sync failure (ENOSPC/EIO) or a crash mid-compaction can
+	// never lose the kept events — on restart you see either the old log or the new
+	// one, both complete. (The old in-place truncate could leave an empty/torn file.)
+	tmp := s.path + ".compact"
+	tf, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
 		return 0, err
 	}
-	if _, err := s.w.Seek(0, 0); err != nil {
+	if _, err := tf.Write(buf); err != nil {
+		tf.Close()
+		os.Remove(tmp)
 		return 0, err
 	}
-	if _, err := s.w.Write(buf); err != nil {
-		return 0, err // memory not yet swapped — disk + memory still consistent-ish; next Prune retries
-	}
-	if err := s.w.Sync(); err != nil {
+	if err := tf.Sync(); err != nil {
+		tf.Close()
+		os.Remove(tmp)
 		return 0, err
 	}
+	if err := tf.Close(); err != nil {
+		os.Remove(tmp)
+		return 0, err
+	}
+	// Close the append handle, swap files atomically, then reopen on the new log.
+	if err := s.w.Close(); err != nil {
+		os.Remove(tmp)
+		return 0, err
+	}
+	if err := os.Rename(tmp, s.path); err != nil {
+		s.w, _ = os.OpenFile(s.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600) // keep store usable
+		os.Remove(tmp)
+		return 0, err
+	}
+	// fsync the directory so the rename itself survives a crash.
+	if d, err := os.Open(filepath.Dir(s.path)); err == nil {
+		_ = d.Sync()
+		_ = d.Close()
+	}
+	w, err := os.OpenFile(s.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return 0, err
+	}
+	s.w = w
 	s.evs, s.seen, s.names = kept, seen, names
 	return removed, nil
 }
