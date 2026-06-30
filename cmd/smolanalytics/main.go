@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -68,6 +69,19 @@ func dataPath() string {
 		return p
 	}
 	return "smolanalytics.data"
+}
+
+// displayURL renders a clickable URL from an ADDR. ADDR can be ":8080" (no host),
+// "127.0.0.1:7799", or "0.0.0.0:8080" — normalize each to something a human can open.
+func displayURL(addr string) string {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "http://localhost" + addr // addr was ":8080"-ish; best effort
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "localhost"
+	}
+	return "http://" + net.JoinHostPort(host, port)
 }
 
 func serve(st store.Store, closeStore func() error) {
@@ -133,7 +147,7 @@ func serve(st store.Store, closeStore func() error) {
 	if os.Getenv("SMOLANALYTICS_PASSWORD") == "" {
 		log.Printf("smolanalytics: WARNING — no SMOLANALYTICS_PASSWORD set; the dashboard, exports and MCP are UNAUTHENTICATED. Set a password (and a write key) before exposing this beyond localhost.")
 	}
-	log.Printf("smolanalytics: dashboard on http://localhost%s · MCP at /mcp", addr)
+	log.Printf("smolanalytics: dashboard on %s · MCP at %s/mcp", displayURL(addr), displayURL(addr))
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
