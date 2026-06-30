@@ -162,6 +162,11 @@ func (s *Server) HTTPDispatch(body []byte) (status int, resp []byte) {
 func (s *Server) all() ([]event.Event, error) { return s.store.Range(time.Time{}, time.Time{}) }
 
 func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
+	// reject malformed arguments JSON once for every tool, with a clear message — rather
+	// than letting each handler silently see zero-valued args and emit a confusing error.
+	if len(args) > 0 && !json.Valid(args) {
+		return "", fmt.Errorf("invalid arguments: not valid JSON")
+	}
 	evs, err := s.all()
 	if err != nil {
 		return "", err

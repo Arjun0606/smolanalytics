@@ -18,6 +18,7 @@
   var timer = null;
   var captured = false; // autocapture wired once, even if the snippet loads twice
   var warnedAuth = false; // warn once on a bad key, don't spam the console
+  var lifecycleBound = false; // flush-on-unload listeners bound once, even on re-init
 
   function uid() {
     return "a-" + Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -42,10 +43,13 @@
     var batch = queue.splice(0, queue.length);
     var headers = { "Content-Type": "application/json" };
     if (key) headers["Authorization"] = "Bearer " + key;
-    // on a network failure, put the batch back so the next flush retries instead
-    // of silently dropping events (capped so a long outage can't grow unbounded).
+    // on a network failure, put the batch back so the next flush retries instead of
+    // silently dropping events. Bound the queue to the newest 1000 so a long outage can't
+    // grow it without limit (the cap must be applied AFTER concat — the queue is ~empty
+    // here post-splice, so checking its length first never triggers).
     function requeue() {
-      if (queue.length < 1000) queue = batch.concat(queue);
+      queue = batch.concat(queue);
+      if (queue.length > 1000) queue = queue.slice(queue.length - 1000);
     }
     try {
       fetch(host + "/v1/events", {
@@ -143,10 +147,14 @@
       }
       if (timer) clearInterval(timer);
       timer = setInterval(flush, (opts.flushInterval || 3) * 1000);
-      window.addEventListener("visibilitychange", function () {
-        if (document.visibilityState === "hidden") flush();
-      });
-      window.addEventListener("pagehide", flush);
+      if (!lifecycleBound) {
+        // bind once — a second init() must not stack duplicate flush-on-unload listeners
+        lifecycleBound = true;
+        window.addEventListener("visibilitychange", function () {
+          if (document.visibilityState === "hidden") flush();
+        });
+        window.addEventListener("pagehide", flush);
+      }
       return smol;
     },
     track: function (name, props) {
