@@ -187,11 +187,15 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	if len(rr.Cohorts) > 12 {
 		start = len(rr.Cohorts) - 12
 	}
+	today := time.Now().UTC().Unix() / 86400
 	for i := len(rr.Cohorts) - 1; i >= start; i-- {
 		c := rr.Cohorts[i]
 		row := retRow{Date: c.Date.Format("Jan 2"), Size: c.Size}
+		cohortDay := c.Date.UTC().Unix() / 86400
 		for d := 0; d <= rr.MaxDays; d++ {
-			if c.Size == 0 || d >= len(c.Returned) {
+			// a day that hasn't started yet for this cohort is blank, not "0%" —
+			// the grid must never render an unobservable cell as churn.
+			if c.Size == 0 || d >= len(c.Returned) || cohortDay+int64(d) > today {
 				row.Cells = append(row.Cells, retCell{Empty: true})
 				continue
 			}

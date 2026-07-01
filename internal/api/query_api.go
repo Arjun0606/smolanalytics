@@ -149,7 +149,18 @@ func (s *Server) apiRetention(w http.ResponseWriter, r *http.Request) {
 		writeQueryErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, retention.Compute(evs, days, r.URL.Query().Get("event")))
+	rr := retention.Compute(evs, days, r.URL.Query().Get("event"))
+	// ship the honest day-N summaries (observable cohorts only, retention.DayN) so no
+	// client ever re-derives them wrong from the raw grid.
+	out := map[string]any{"cohorts": rr.Cohorts, "max_days": rr.MaxDays}
+	now := time.Now().UTC()
+	for _, n := range []int{1, 7, 30} {
+		if ret, size := retention.DayN(rr, n, now); size > 0 {
+			out[fmt.Sprintf("day%d_retention_pct", n)] = int(float64(ret)/float64(size)*100 + 0.5)
+			out[fmt.Sprintf("day%d_cohort_users", n)] = size
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // GET /v1/lifecycle?days=30&filters=... — new/returning/resurrected/dormant per day

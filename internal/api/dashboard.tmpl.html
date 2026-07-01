@@ -446,9 +446,13 @@
         var g=j.groups||[],gmax=(g[0]&&g[0].count)||1;
         exOut.innerHTML=g.map(function(x){return bar(x.value,Math.round(x.count/gmax*100),x.count);}).join('')||'<div class="exsummary">no data</div>';
       }else if(t==='retention'){
-        var c=j.cohorts||[],size=0,d1=0,d7=0;
-        c.forEach(function(x){size+=x.size;if(x.returned){if(x.returned[1])d1+=x.returned[1];if(x.returned[7])d7+=x.returned[7];}});
-        exOut.innerHTML='<div class="exsummary">Day-1 retention '+(size?Math.round(d1/size*100):0)+'% · Day-7 '+(size?Math.round(d7/size*100):0)+'% · across '+size+' users</div>';
+        // the server computes honest day-N summaries (only cohorts old enough to
+        // observe day N) — never re-derive them client-side.
+        var parts=[];
+        if(j.day1_retention_pct!==undefined)parts.push('Day-1 retention '+j.day1_retention_pct+'% ('+j.day1_cohort_users+' users)');
+        if(j.day7_retention_pct!==undefined)parts.push('Day-7 '+j.day7_retention_pct+'% ('+j.day7_cohort_users+' users)');
+        if(j.day30_retention_pct!==undefined)parts.push('Day-30 '+j.day30_retention_pct+'%');
+        exOut.innerHTML='<div class="exsummary">'+(parts.length?parts.join(' · '):'no cohort is old enough to measure retention yet')+'</div>';
       }else if(t==='paths'){
         var lv=j.levels||[];
         exOut.innerHTML='<div class="exsummary">'+(j.users||0)+' users did "'+esc(j.start)+'"</div>'+
