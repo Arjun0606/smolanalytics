@@ -11,7 +11,9 @@ RUN CGO_ENABLED=0 go build -trimpath \
 
 FROM gcr.io/distroless/static-debian12
 COPY --from=build /smolanalytics /smolanalytics
-ENV ADDR=:8080 SMOLANALYTICS_DB=/data/smolanalytics.data
+# containers must bind the wildcard for `-p` port mapping to work. `serve` on a public
+# bind requires a password (set SMOLANALYTICS_PASSWORD); `demo` is exempt (throwaway data).
+ENV ADDR=0.0.0.0:8080 SMOLANALYTICS_DB=/data/smolanalytics.data
 VOLUME /data
 EXPOSE 8080
 # ENTRYPOINT is just the binary so `docker run <img> demo|serve|mcp` works;

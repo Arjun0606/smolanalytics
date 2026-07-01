@@ -9,12 +9,14 @@ Use GitHub's private reporting: **[Report a vulnerability](https://github.com/Ar
 mitigation as quickly as we can.
 
 ## Hardening notes for exposed deployments
-smolanalytics is single-tenant and self-hosted. It's frictionless-by-default for local
-dev; **before you put it on the public internet:**
+smolanalytics is single-tenant and self-hosted. It's **safe by default** — `serve` binds
+`127.0.0.1` (local only), and it **refuses to serve real data unauthenticated on a public
+interface**. When you expose it:
 
-- **Set a dashboard password.** With no `SMOLANALYTICS_PASSWORD` (or in-app account) the
-  dashboard and its management endpoints are unauthenticated — fine on localhost, not on a
-  public interface. The server logs a loud warning while it's unprotected.
+- **A dashboard password is required to bind publicly.** Set `ADDR=0.0.0.0:8080` and the
+  server won't start without `SMOLANALYTICS_PASSWORD` (or an in-app account) — no accidental
+  open dashboard. Override with `SMOLANALYTICS_ALLOW_UNAUTHENTICATED=1` only on a trusted
+  private network. (`demo` is exempt — its data is throwaway.)
 - **Set a write key.** `SMOLANALYTICS_WRITE_KEY` (or a key created in Settings) gates event
   ingestion and the MCP endpoint so strangers can't write to your data.
 - **Webhooks are SSRF-guarded.** Outbound webhook delivery refuses any URL that resolves to

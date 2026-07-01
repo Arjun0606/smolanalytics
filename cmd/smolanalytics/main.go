@@ -43,14 +43,14 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		serve(st, closeStore)
+		serve(st, closeStore, true) // real data — guard against public bind without auth
 	case "demo":
 		st := memory.New()
 		if err := demo.Seed(st); err != nil {
 			log.Fatal(err)
 		}
 		log.Printf("smolanalytics: seeded demo data (in-memory, not persisted)")
-		serve(st, func() error { return nil })
+		serve(st, func() error { return nil }, false) // throwaway demo data — safe to expose
 	case "mcp":
 		runMCP()
 	case "connect":
@@ -67,7 +67,9 @@ func main() {
 		fmt.Println("  smolanalytics mcp     MCP server over stdio — connect your Claude/Cursor and ask anything")
 		fmt.Println("  smolanalytics connect auto-add smolanalytics to Claude Desktop / Cursor (one command, then ask)")
 		fmt.Println()
-		fmt.Println("  ADDR                      listen address (default :8080)")
+		fmt.Println("  ADDR                      listen address (default 127.0.0.1:8080 = local only;")
+		fmt.Println("                            set 0.0.0.0:8080 to expose — then a password is required)")
+		fmt.Println("  SMOLANALYTICS_PASSWORD    dashboard login; required to `serve` on a public interface")
 		fmt.Println("  SMOLANALYTICS_DB          event log path (default ./smolanalytics.data)")
 		fmt.Println("  SMOLANALYTICS_RETAIN_DAYS drop events older than N days (default: keep forever)")
 		fmt.Println("  SMOLANALYTICS_MAX_EVENTS  keep only the newest N events resident (memory guardrail)")
@@ -168,10 +170,26 @@ func displayURL(addr string) string {
 	return "http://" + net.JoinHostPort(host, port)
 }
 
-func serve(st store.Store, closeStore func() error) {
+// isLoopbackBind reports whether ADDR binds only the loopback interface (so it's not
+// reachable from another machine). An empty host or 0.0.0.0/:: is a wildcard = public.
+func isLoopbackBind(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		return false
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return host == "localhost"
+}
+
+func serve(st store.Store, closeStore func() error, guardPublic bool) {
 	addr := os.Getenv("ADDR")
 	if addr == "" {
-		addr = ":8080"
+		addr = "127.0.0.1:8080" // local-only by default; set ADDR=0.0.0.0:8080 to expose (needs a password)
 	}
 	app := api.New(st)
 	app.SetWriteKey(os.Getenv("SMOLANALYTICS_WRITE_KEY"))
@@ -185,6 +203,7 @@ func serve(st store.Store, closeStore func() error) {
 	} else {
 		log.Printf("smolanalytics: cohorts disabled (%v)", err)
 	}
+	hasAccount := false // an in-app dashboard account counts as auth too, not just the env password
 	if set, err := settings.Open(dataPath() + ".settings.json"); err == nil {
 		// Default retention from env (the cloud sets this per plan) — only if the
 		// operator hasn't already chosen one in the dashboard, which persists and wins.
@@ -194,6 +213,7 @@ func serve(st store.Store, closeStore func() error) {
 			}
 		}
 		app.SetSettings(set)
+		hasAccount = set.HasPassword()
 		go pruneLoop(st, set)
 	} else {
 		log.Printf("smolanalytics: settings persistence disabled (%v)", err)
@@ -235,8 +255,20 @@ func serve(st store.Store, closeStore func() error) {
 		_ = closeStore()
 	}()
 
-	if os.Getenv("SMOLANALYTICS_PASSWORD") == "" {
-		log.Printf("smolanalytics: WARNING — no SMOLANALYTICS_PASSWORD set; the dashboard, exports and MCP are UNAUTHENTICATED. Set a password (and a write key) before exposing this beyond localhost.")
+	authOn := os.Getenv("SMOLANALYTICS_PASSWORD") != "" || hasAccount
+	if !authOn {
+		// Safe by default: never let REAL data be served unauthenticated on a public
+		// interface by accident. Localhost is fine (unreachable from outside); demo data
+		// is fine (throwaway). A public bind with real data and no password is refused.
+		if guardPublic && !isLoopbackBind(addr) && os.Getenv("SMOLANALYTICS_ALLOW_UNAUTHENTICATED") == "" {
+			log.Fatalf("smolanalytics: refusing to serve real data on %s without a password —\n"+
+				"  this binds a public interface and the dashboard, exports and MCP would be open to anyone.\n"+
+				"  do ONE of:\n"+
+				"    • set SMOLANALYTICS_PASSWORD=...            (recommended for anything internet-facing)\n"+
+				"    • ADDR=127.0.0.1:8080                       (local only — this is the default)\n"+
+				"    • SMOLANALYTICS_ALLOW_UNAUTHENTICATED=1     (only on a trusted private network)", addr)
+		}
+		log.Printf("smolanalytics: no password set — dashboard/exports/MCP are unauthenticated (ok on %s)", displayURL(addr))
 	}
 	log.Printf("smolanalytics: dashboard on %s · MCP at %s/mcp", displayURL(addr), displayURL(addr))
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

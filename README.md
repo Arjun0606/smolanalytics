@@ -161,7 +161,9 @@ docker run -p 8080:8080 -v $PWD/data:/data \
 fly launch --copy-config && fly deploy
 ```
 
-Config (all env): `ADDR` (default `:8080`), `SMOLANALYTICS_DB` (event log path), `SMOLANALYTICS_WRITE_KEY` (require a key on ingestion + MCP), `SMOLANALYTICS_PASSWORD` (protect the dashboard with a login), `SMOLANALYTICS_RETAIN_DAYS` (drop events older than N days — default: keep forever), `SMOLANALYTICS_MAX_EVENTS` (keep only the newest N events resident — a memory guardrail so a flood degrades to compaction instead of an OOM). Health at `/healthz`, build at `/version`. The server warns loudly if it's exposed without a password.
+**Safe by default:** `serve` binds `127.0.0.1:8080` (local only). To expose it, set `ADDR=0.0.0.0:8080` — and then a dashboard password is **required**: the server refuses to serve real data unauthenticated on a public interface (override with `SMOLANALYTICS_ALLOW_UNAUTHENTICATED=1` only on a trusted network). `demo` is exempt (throwaway data).
+
+Config (all env): `ADDR` (default `127.0.0.1:8080`), `SMOLANALYTICS_DB` (event log path), `SMOLANALYTICS_WRITE_KEY` (require a key on ingestion + MCP), `SMOLANALYTICS_PASSWORD` (dashboard login — required to expose the server), `SMOLANALYTICS_RETAIN_DAYS` (drop events older than N days — default: keep forever), `SMOLANALYTICS_MAX_EVENTS` (keep only the newest N events resident — a memory guardrail so a flood degrades to compaction instead of an OOM). Health at `/healthz`, build at `/version`.
 
 Manage everything from **Settings** (`/settings`): account + password, API keys, data retention, event taxonomy, exports, webhooks, threshold alerts, and an audit log.
 
