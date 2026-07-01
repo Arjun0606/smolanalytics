@@ -5,9 +5,9 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/Arjun0606/smolanalytics)](https://goreportcard.com/report/github.com/Arjun0606/smolanalytics)
 [![release](https://img.shields.io/github/v/release/Arjun0606/smolanalytics?color=f5a623)](https://github.com/Arjun0606/smolanalytics/releases)
 
-**Product analytics that lives in your editor. You don't build reports — you ask the AI you're already coding with. Free, self-hosted, one binary, your data.**
+**The analytics that tells you what to fix. Ask it in plain English, right in the editor you already code in. One binary you run yourself, your own AI so it's free, and your data never leaves your box.**
 
-You ship a feature in Cursor or Claude Code, then ask *"did activation improve this week?"* right there. Your model answers from your real data over [MCP](https://modelcontextprotocol.io). We run no model, so the AI part costs you nothing.
+You ship a feature in Cursor or Claude Code, then ask *"did activation improve this week?"* right there. Your model answers from your real data over [MCP](https://modelcontextprotocol.io). We run no model, so the AI part costs you nothing. And because it's a binary on your machine, no one else ever sees your users' data.
 
 ![The smolanalytics dashboard: the "what to look at" verdict up top, then every report on your own events — funnels, retention, cohorts, paths — all filterable.](docs/dashboard.png)
 
@@ -44,6 +44,16 @@ Every analytics tool now has an AI assistant — but it's bolted *inside their a
 - **Open source (MIT), genuinely self-hostable.** Own the whole thing — no paywalled features stripped from the self-hosted edition.
 
 **Why not just use Mixpanel or PostHog?** They're deeper — but there are three things they *structurally can't* match, because it would break their business: (1) **the AI is yours, so it's free** — they meter theirs (Mixpanel caps it at 30–300 queries/mo, Amplitude gates it behind a $30k/yr tier); (2) **it can't lie** — theirs writes SQL and admits it hallucinates, ours calls exact reports; (3) **your data never trains a model** — PostHog now trains on yours by default, ours is a binary on your box. Same funnels/retention, a fraction of the price, and it tells you what to fix instead of making you dig.
+
+## The most private analytics you can run
+Every hosted analytics tool, the privacy-first ones included, still asks you to trust *their* servers with your users' data. smolanalytics keeps no cloud in the loop: it's a binary on your own box, so the data physically never leaves your infrastructure.
+
+- **No third party, ever.** Nothing to sign a DPA with, no processor to disclose, nothing crossing a border. The answer to "who can see this data?" is just: you.
+- **No third-party cookies, no fingerprinting, no cross-site tracking.** The browser SDK uses a first-party anonymous id and nothing else.
+- **It never trains a model.** There's no model and no vendor, so there's no one to train on your data.
+- **Private by architecture, not by policy.** It isn't private because of a promise on a privacy page; it's private because there's no one else in the loop.
+
+Plausible, Fathom, and Simple Analytics are lovely, and far more private than Google. But they're still a cloud you send data to. Self-hosting is the version where the data never leaves at all.
 
 ## Ask it in your editor (the whole point)
 The AI you already code with reads your real analytics and answers. Connect once:
