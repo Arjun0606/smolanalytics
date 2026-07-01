@@ -9,7 +9,7 @@
 
 You ship a feature in Cursor or Claude Code, then ask *"did activation improve this week?"* right there. Your model answers from your real data over [MCP](https://modelcontextprotocol.io). We run no model, so the AI part costs you nothing.
 
-<!-- demo: drop a screen-recording of "ask in Cursor → answer" here → docs/demo.gif -->
+![The smolanalytics dashboard: the "what to look at" verdict up top, then every report on your own events — funnels, retention, cohorts, paths — all filterable.](docs/dashboard.png)
 
 ## Quickstart (30 seconds)
 
@@ -77,7 +77,7 @@ ai  ▸ Activation is 62% (657 of 1,051 signups reach "activate").
       Pro converts 2.4× better end-to-end — 45% signup→checkout vs 19% on free.
       The leak is activate→checkout on free (only 31% continue). Want the paths after activate?
 ```
-The 12 tools your model gets: `overview`, `list_events`, `funnel`, `retention`, `trends` (+ breakdown), `breakdown`, `lifecycle`, `stickiness`, `paths`, `groups` (B2B accounts), `recent_events`, `user_activity` — every one filterable by property (`plan=pro`, `source=hn`, …).
+The 13 tools your model gets: `whats_notable` (the *what-to-fix* verdict), `overview`, `list_events`, `funnel`, `retention`, `trends`, `breakdown`, `lifecycle`, `stickiness`, `paths`, `groups` (B2B accounts), `recent_events`, `user_activity` — every one filterable by property (`plan=pro`, `source=hn`, …).
 
 ## Send events (2 minutes, zero instrumentation)
 Drop the snippet in — it **autocaptures pageviews + clicks instantly**, so you get real data with no manual event tagging. Add `track()` for the key moments (signup, checkout) when you want funnels.
@@ -169,7 +169,7 @@ Manage everything from **Settings** (`/settings`): account + password, API keys,
 
 ## What's inside
 - `internal/{funnel,retention,trends,paths,engagement,groups,cohort,query}` — the deterministic analytics engine (every report, fully tested).
-- `internal/store` — the `Store` interface + in-memory and durable file (append-log) backends. A Postgres/columnar backend slots in behind the same interface.
+- `internal/store` — the `Store` interface with three backends behind it: in-memory, the durable append-log (single box), and the columnar segment tier (`store/segment` + `store/blob`) that seals into compressed segments on local disk or S3/R2 — billions of events on flat memory, ~7 bytes/event.
 - `internal/mcp` — the MCP server (stdio + Streamable HTTP): the "ask with your own AI" layer.
 - `internal/api` — the single-binary HTTP server: ingestion, SDK, dashboard, Explore, settings, auth, webhooks, alerts, audit.
 - `cmd/smolanalytics` — the binary (`serve`, `demo`, `mcp`, `connect`).
