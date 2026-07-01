@@ -24,11 +24,11 @@ make race        # tests with the race detector
 CI runs exactly these. If they're green locally, they're green on CI.
 
 ## Project layout
-- `cmd/smolanalytics` — the CLI (`serve`, `demo`, `mcp`).
+- `cmd/smolanalytics` — the CLI (`serve`, `demo`, `mcp`, `connect`).
 - `internal/api` — HTTP surface, the dashboard, settings, auth, webhooks, alerts.
 - `internal/mcp` — the Model Context Protocol server (the "ask with your AI" layer).
 - `internal/{funnel,retention,trends,paths,engagement,groups,cohort,query}` — the analytics engine.
-- `internal/store` — the `Store` interface + the in-memory and file (append-log) backends.
+- `internal/store` — the `Store` interface + backends: in-memory, the durable append-log, and the columnar segment tier (`store/segment` + `store/blob`, local disk or S3/R2) for scale.
 
 ## Good first issues
 Look for the `good first issue` label. New report types, new MCP tools, and new store backends (e.g. a Postgres `Store`) are all welcome — they slot in behind existing interfaces without touching the rest.
