@@ -4,15 +4,29 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
-// connect wires this binary into the MCP config of the editors you already use (Claude
-// Desktop, Cursor), so "ask your analytics in your editor" is one command instead of
-// hand-editing JSON. It detects installed editors, merges a "smolanalytics" stdio server
-// into each config (preserving any servers already there), and never clobbers a config it
-// can't parse. Run it once; restart the editor; ask away.
+// connect wires this binary into the MCP config of the coding assistants you already use,
+// so "ask your analytics in your editor" is one command instead of hand-editing JSON. It
+// detects installed assistants and merges a "smolanalytics" stdio server into each config
+// (preserving anything already there), and never clobbers a config it can't parse. Run it
+// once, restart the editor, ask away.
+//
+//	smolanalytics connect            # every installed assistant
+//	smolanalytics connect cursor     # just one (claude | cursor | windsurf | vscode | cline | claude-code)
+
+// mcpClient is an assistant we can auto-configure by merging into its JSON config.
+type mcpClient struct {
+	name  string // display name
+	short string // arg alias
+	path  string // config file ("" if unknown on this OS)
+	key   string // top-level object key: "mcpServers" (most) or "servers" (VS Code)
+}
+
 func connect(target string) {
 	bin, err := os.Executable()
 	if err != nil {
@@ -21,46 +35,44 @@ func connect(target string) {
 	}
 	bin, _ = filepath.Abs(bin)
 	data, _ := filepath.Abs(dataPath())
+	// stdio server config: run `smolanalytics mcp` pointed at this data file.
 	entry := map[string]any{
 		"command": bin,
 		"args":    []string{"mcp"},
 		"env":     map[string]string{"SMOLANALYTICS_DB": data},
 	}
 
-	type tgt struct{ name, path string }
-	var targets []tgt
-	switch target {
-	case "claude":
-		targets = []tgt{{"Claude Desktop", claudeConfigPath()}}
-	case "cursor":
-		targets = []tgt{{"Cursor", cursorConfigPath()}}
-	case "", "all":
-		targets = []tgt{{"Claude Desktop", claudeConfigPath()}, {"Cursor", cursorConfigPath()}}
-	default:
-		fmt.Println("usage: smolanalytics connect [claude|cursor]")
-		return
+	explicit := target != "" && target != "all"
+	wrote := 0
+
+	for _, c := range mcpClients() {
+		if explicit && !strings.EqualFold(target, c.short) && !strings.EqualFold(target, c.name) {
+			continue
+		}
+		if c.path == "" {
+			continue
+		}
+		// on auto-detect, only touch assistants that are actually installed (config dir exists)
+		if !explicit && !dirExists(filepath.Dir(c.path)) {
+			continue
+		}
+		if err := mergeMCPConfig(c.path, c.key, entry); err != nil {
+			fmt.Printf("  %s: %v\n", c.name, err)
+			continue
+		}
+		fmt.Printf("  ✓ %s\n      %s\n", c.name, c.path)
+		wrote++
 	}
 
-	wrote := 0
-	for _, t := range targets {
-		if t.path == "" {
-			continue
-		}
-		// only touch an editor that's actually installed (its config dir exists), unless
-		// the user named it explicitly.
-		if target == "" && !dirExists(filepath.Dir(t.path)) {
-			continue
-		}
-		if err := mergeMCPConfig(t.path, entry); err != nil {
-			fmt.Printf("  %s: %v\n", t.name, err)
-			continue
-		}
-		fmt.Printf("  ✓ %s — added the 'smolanalytics' MCP server\n      %s\n", t.name, t.path)
+	// Claude Code configures via its own CLI (the documented path), not a file we edit.
+	if (!explicit || strings.EqualFold(target, "claude-code")) && addClaudeCode(bin, data) {
+		fmt.Println("  ✓ Claude Code  (added via `claude mcp add`)")
 		wrote++
 	}
 
 	if wrote == 0 {
-		fmt.Println("No installed editor config found. Add this to your MCP config by hand:")
+		fmt.Println("No installed assistant config found. Add this to your MCP config by hand")
+		fmt.Println("(most use the \"mcpServers\" key; VS Code uses \"servers\"):")
 		fmt.Println()
 		b, _ := json.MarshalIndent(map[string]any{"mcpServers": map[string]any{"smolanalytics": entry}}, "  ", "  ")
 		fmt.Println("  " + string(b))
@@ -70,9 +82,33 @@ func connect(target string) {
 	fmt.Println("Done. Restart the editor, then ask: \"what's my biggest funnel drop-off this week?\"")
 }
 
-// mergeMCPConfig adds (or replaces) the smolanalytics server in an editor's MCP config,
-// keeping every other server intact. Refuses to overwrite a config it can't parse.
-func mergeMCPConfig(path string, entry map[string]any) error {
+// mcpClients lists every assistant we can auto-configure, with OS-specific config paths.
+func mcpClients() []mcpClient {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	var cfg string // per-OS user-config base
+	switch runtime.GOOS {
+	case "darwin":
+		cfg = filepath.Join(home, "Library", "Application Support")
+	case "windows":
+		cfg = os.Getenv("APPDATA")
+	default:
+		cfg = filepath.Join(home, ".config")
+	}
+	return []mcpClient{
+		{"Claude Desktop", "claude", filepath.Join(cfg, "Claude", "claude_desktop_config.json"), "mcpServers"},
+		{"Cursor", "cursor", filepath.Join(home, ".cursor", "mcp.json"), "mcpServers"},
+		{"Windsurf", "windsurf", filepath.Join(home, ".codeium", "windsurf", "mcp_config.json"), "mcpServers"},
+		{"VS Code", "vscode", filepath.Join(cfg, "Code", "User", "mcp.json"), "servers"},
+		{"Cline", "cline", filepath.Join(cfg, "Code", "User", "globalStorage", "saoudrizwan.claude-dev", "settings", "cline_mcp_settings.json"), "mcpServers"},
+	}
+}
+
+// mergeMCPConfig adds (or replaces) the smolanalytics server under `key` in an assistant's
+// config, keeping every other server intact. Refuses to overwrite a config it can't parse.
+func mergeMCPConfig(path, key string, entry map[string]any) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -82,12 +118,12 @@ func mergeMCPConfig(path string, entry map[string]any) error {
 			return fmt.Errorf("existing config isn't valid JSON, leaving it untouched: %s", path)
 		}
 	}
-	servers, ok := cfg["mcpServers"].(map[string]any)
+	servers, ok := cfg[key].(map[string]any)
 	if !ok || servers == nil {
 		servers = map[string]any{}
 	}
 	servers["smolanalytics"] = entry
-	cfg["mcpServers"] = servers
+	cfg[key] = servers
 	out, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
@@ -95,30 +131,17 @@ func mergeMCPConfig(path string, entry map[string]any) error {
 	return os.WriteFile(path, out, 0o600)
 }
 
-func claudeConfigPath() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
+// addClaudeCode registers the server through the `claude` CLI (Claude Code's own way).
+// Returns true if it succeeded. Best-effort: no CLI, no problem.
+func addClaudeCode(bin, data string) bool {
+	if _, err := exec.LookPath("claude"); err != nil {
+		return false
 	}
-	switch runtime.GOOS {
-	case "darwin":
-		return filepath.Join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json")
-	case "windows":
-		if ad := os.Getenv("APPDATA"); ad != "" {
-			return filepath.Join(ad, "Claude", "claude_desktop_config.json")
-		}
-		return ""
-	default:
-		return filepath.Join(home, ".config", "Claude", "claude_desktop_config.json")
-	}
-}
-
-func cursorConfigPath() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(home, ".cursor", "mcp.json")
+	// remove any prior entry so re-running connect is idempotent, then add.
+	_ = exec.Command("claude", "mcp", "remove", "smolanalytics", "-s", "user").Run()
+	cmd := exec.Command("claude", "mcp", "add", "smolanalytics", "-s", "user",
+		"-e", "SMOLANALYTICS_DB="+data, "--", bin, "mcp")
+	return cmd.Run() == nil
 }
 
 func dirExists(p string) bool {

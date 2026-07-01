@@ -59,25 +59,37 @@ Plausible, Fathom, and Simple Analytics are lovely, and far more private than Go
 The AI you already code with reads your real analytics and answers. Connect once:
 
 ```sh
-smolanalytics connect          # auto-adds it to Claude Desktop + Cursor, then restart them
+smolanalytics connect          # wires it into every coding assistant you have installed
 ```
 That's it — restart the editor and ask *"where are users dropping off this week?"*. It
-detects your installed editors and merges in the config (keeping any MCP servers you
-already have); run `connect claude` or `connect cursor` to target one.
+detects your installed assistants and merges the config in (keeping any MCP servers you
+already have). Target one with `smolanalytics connect <name>`:
 
-<details><summary>Or wire it up by hand</summary>
+| Assistant | `connect <name>` | It configures |
+|---|---|---|
+| Claude Desktop | `claude` | `claude_desktop_config.json` |
+| Claude Code | `claude-code` | runs `claude mcp add` for you |
+| Cursor | `cursor` | `~/.cursor/mcp.json` |
+| Windsurf | `windsurf` | `~/.codeium/windsurf/mcp_config.json` |
+| VS Code (Copilot) | `vscode` | user `mcp.json` (`servers` key) |
+| Cline | `cline` | `cline_mcp_settings.json` |
 
-**Cursor / Claude Desktop** — add to your MCP config:
+Any MCP client works — it's a standard stdio + Streamable-HTTP server.
+
+<details><summary>Wire it up by hand (or point at a running/remote server over HTTP)</summary>
+
+**stdio** (local, no server needed — reads your data file directly):
+```json
+{ "mcpServers": { "smolanalytics": { "command": "smolanalytics", "args": ["mcp"] } } }
+```
+**HTTP** (point at a running instance, local or remote — shares its live data):
 ```json
 { "mcpServers": { "smolanalytics": { "url": "http://localhost:8080/mcp" } } }
 ```
-**Claude Code** — one command:
-```sh
-claude mcp add --transport http smolanalytics http://localhost:8080/mcp
-```
-**Local stdio** (try it on demo data): `{ "command": "smolanalytics", "args": ["mcp"] }`
+**Claude Code, HTTP:** `claude mcp add --transport http smolanalytics http://localhost:8080/mcp`
+**Zed:** add to `context_servers` in settings. **VS Code:** the top-level key is `servers`, not `mcpServers`.
 
-(When a key is set, add `"headers": { "Authorization": "Bearer YOUR_KEY" }` next to the url.)
+(When a write key is set, add `"headers": { "Authorization": "Bearer YOUR_KEY" }` next to the url.)
 </details>
 
 Then just ask — in the same window you write code:
