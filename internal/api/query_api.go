@@ -2,6 +2,8 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -17,26 +19,52 @@ import (
 )
 
 // filtersFrom parses ?filters=<url-encoded JSON array> into predicates, so any
-// report can be segmented (e.g. plan=pro AND country=US). Bad JSON = no filters.
-func filtersFrom(r *http.Request) []query.Filter {
+// report can be segmented (e.g. plan=pro AND country=US). Malformed filters are an
+// ERROR, never ignored — silently returning unfiltered data as if it were the
+// segment is the worst kind of wrong answer.
+func filtersFrom(r *http.Request) ([]query.Filter, error) {
 	raw := r.URL.Query().Get("filters")
 	if raw == "" {
-		return nil
+		return nil, nil
 	}
 	var fs []query.Filter
-	_ = json.Unmarshal([]byte(raw), &fs)
-	return fs
+	if err := json.Unmarshal([]byte(raw), &fs); err != nil {
+		return nil, badRequestError{fmt.Sprintf("invalid filters JSON: %v", err)}
+	}
+	if err := query.Validate(fs); err != nil {
+		return nil, badRequestError{err.Error()}
+	}
+	return fs, nil
+}
+
+// badRequestError marks a caller mistake (bad filters) so handlers return 400, not 500.
+type badRequestError struct{ msg string }
+
+func (e badRequestError) Error() string { return e.msg }
+
+// writeQueryErr maps a filtered()/store error to the right status code.
+func writeQueryErr(w http.ResponseWriter, err error) {
+	var br badRequestError
+	if errors.As(err, &br) {
+		writeErr(w, http.StatusBadRequest, br.msg)
+		return
+	}
+	writeErr(w, http.StatusInternalServerError, err.Error())
 }
 
 // filtered loads all events, applies the request's property filters, and (if
 // ?cohort=<id> is set) scopes to that cohort's members. Cohort membership is
 // resolved over the full history, then the filtered events are kept for those users.
 func (s *Server) filtered(r *http.Request) ([]event.Event, error) {
+	fs, err := filtersFrom(r)
+	if err != nil {
+		return nil, err
+	}
 	all, err := s.store.Range(time.Time{}, time.Time{})
 	if err != nil {
 		return nil, err
 	}
-	evs := query.Apply(all, filtersFrom(r))
+	evs := query.Apply(all, fs)
 	if cid := r.URL.Query().Get("cohort"); cid != "" && s.cohorts != nil {
 		if d, ok := s.cohorts.Get(cid); ok {
 			evs = cohort.FilterToUsers(evs, cohort.Resolve(all, d))
@@ -53,7 +81,7 @@ func (s *Server) filtered(r *http.Request) ([]event.Event, error) {
 func (s *Server) apiMeta(w http.ResponseWriter, _ *http.Request) {
 	names, err := s.store.Names()
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		writeQueryErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"events": names})
@@ -64,7 +92,7 @@ func (s *Server) apiMeta(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) apiTrends(w http.ResponseWriter, r *http.Request) {
 	evs, err := s.filtered(r)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		writeQueryErr(w, err)
 		return
 	}
 	q := r.URL.Query()
@@ -89,7 +117,7 @@ func (s *Server) apiBreakdown(w http.ResponseWriter, r *http.Request) {
 	}
 	evs, err := s.filtered(r)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		writeQueryErr(w, err)
 		return
 	}
 	eventName := r.URL.Query().Get("event")
@@ -118,7 +146,7 @@ func (s *Server) apiRetention(w http.ResponseWriter, r *http.Request) {
 	}
 	evs, err := s.filtered(r)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		writeQueryErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, retention.Compute(evs, days, r.URL.Query().Get("event")))
@@ -135,7 +163,7 @@ func (s *Server) apiLifecycle(w http.ResponseWriter, r *http.Request) {
 	}
 	evs, err := s.filtered(r)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		writeQueryErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"days": engagement.ComputeLifecycle(evs, days)})
@@ -145,7 +173,7 @@ func (s *Server) apiLifecycle(w http.ResponseWriter, r *http.Request) {
 func (s *Server) apiStickiness(w http.ResponseWriter, r *http.Request) {
 	evs, err := s.filtered(r)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		writeQueryErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, engagement.ComputeStickiness(evs, time.Time{}))
@@ -167,7 +195,7 @@ func (s *Server) apiPaths(w http.ResponseWriter, r *http.Request) {
 	}
 	evs, err := s.filtered(r)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		writeQueryErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, paths.After(evs, start, depth))
@@ -186,7 +214,7 @@ func (s *Server) apiGroups(w http.ResponseWriter, r *http.Request) {
 	}
 	evs, err := s.filtered(r)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		writeQueryErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, groups.Compute(evs, property, time.Time{}, limit))

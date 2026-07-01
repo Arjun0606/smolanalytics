@@ -128,28 +128,24 @@ func Generate(evs []event.Event) []Finding {
 		retEv = names[0]
 	}
 	rr := retention.Compute(evs, 7, retEv)
-	var size, d1, d7 int
-	for _, c := range rr.Cohorts {
-		size += c.Size
-		if len(c.Returned) > 1 {
-			d1 += c.Returned[1]
-		}
-		if len(c.Returned) > 7 {
-			d7 += c.Returned[7]
-		}
-	}
-	if size > 0 {
-		p1 := int(float64(d1)/float64(size)*100 + 0.5)
-		p7 := int(float64(d7)/float64(size)*100 + 0.5)
+	// retention.DayN keeps the denominator honest: only cohorts old enough to have
+	// observed day N count (the retention-triangle rule).
+	d1, size1 := retention.DayN(rr, 1, now)
+	d7, size7 := retention.DayN(rr, 7, now)
+	if size1 > 0 {
+		p1 := int(float64(d1)/float64(size1)*100 + 0.5)
 		sev := "info"
 		if p1 < 20 {
 			sev = "warn"
 		}
-		out = append(out, Finding{
-			Severity: sev,
-			Title:    fmt.Sprintf("Day-1 retention %d%%, day-7 %d%%", p1, p7),
-			Detail:   fmt.Sprintf("based on %q activity across %d users.", retEv, size),
-		})
+		title := fmt.Sprintf("Day-1 retention %d%%", p1)
+		detail := fmt.Sprintf("of %d users past day 1, based on %q activity.", size1, retEv)
+		if size7 > 0 {
+			p7 := int(float64(d7)/float64(size7)*100 + 0.5)
+			title = fmt.Sprintf("Day-1 retention %d%%, day-7 %d%%", p1, p7)
+			detail = fmt.Sprintf("of %d users past day 1 (%d past day 7), based on %q activity.", size1, size7, retEv)
+		}
+		out = append(out, Finding{Severity: sev, Title: title, Detail: detail})
 	}
 
 	// warnings first

@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/engagement"
@@ -161,6 +162,31 @@ func (s *Server) HTTPDispatch(body []byte) (status int, resp []byte) {
 
 func (s *Server) all() ([]event.Event, error) { return s.store.Range(time.Time{}, time.Time{}) }
 
+// checkEvents rejects event names that aren't tracked, listing what IS — so a
+// misspelled step comes back as a self-correcting error instead of a report full of
+// zeros the model would read as "0 conversions". Empty names are allowed (they mean
+// "any event" where a tool supports that).
+func (s *Server) checkEvents(names ...string) error {
+	known, err := s.store.Names()
+	if err != nil {
+		return err
+	}
+	if len(known) == 0 {
+		return fmt.Errorf("no events ingested yet — nothing to analyze")
+	}
+	set := make(map[string]bool, len(known))
+	for _, n := range known {
+		set[n] = true
+	}
+	for _, n := range names {
+		if n != "" && !set[n] {
+			sort.Strings(known)
+			return fmt.Errorf("unknown event %q — tracked events are: %s", n, strings.Join(known, ", "))
+		}
+	}
+	return nil
+}
+
 func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 	// reject malformed arguments JSON once for every tool, with a clear message — rather
 	// than letting each handler silently see zero-valued args and emit a confusing error.
@@ -187,12 +213,20 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		if len(a.Steps) < 2 {
 			return "", fmt.Errorf("funnel needs at least two steps (event names), e.g. [\"signup\",\"checkout\"]")
 		}
+		if err := s.checkEvents(a.Steps...); err != nil {
+			return "", err
+		}
+		if err := query.Validate(a.Filters); err != nil {
+			return "", err
+		}
 		steps := make([]funnel.Step, len(a.Steps))
 		for i, n := range a.Steps {
 			steps[i] = funnel.Step{Event: n}
 		}
-		window := time.Duration(a.WindowHours) * time.Hour
-		if window == 0 {
+		// multiply as float BEFORE converting: time.Duration(0.5) truncates to 0, which
+		// would silently turn "30-minute window" into NO window at all.
+		window := time.Duration(a.WindowHours * float64(time.Hour))
+		if window <= 0 {
 			window = 7 * 24 * time.Hour
 		}
 		return jsonText(funnel.Compute(query.Apply(evs, a.Filters), steps, window))
@@ -206,6 +240,12 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		if a.Days <= 0 {
 			a.Days = 7
 		}
+		if err := s.checkEvents(a.Event); err != nil {
+			return "", err
+		}
+		if err := query.Validate(a.Filters); err != nil {
+			return "", err
+		}
 		return jsonText(summarizeRetention(retention.Compute(query.Apply(evs, a.Filters), a.Days, a.Event)))
 	case "trends":
 		var a struct {
@@ -215,6 +255,12 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 			Filters   []query.Filter `json:"filters"`
 		}
 		_ = json.Unmarshal(args, &a)
+		if err := s.checkEvents(a.Event); err != nil {
+			return "", err
+		}
+		if err := query.Validate(a.Filters); err != nil {
+			return "", err
+		}
 		ev := query.Apply(evs, a.Filters)
 		if a.Breakdown != "" {
 			return jsonText(map[string]any{"event": a.Event, "breakdown": a.Breakdown,
@@ -231,6 +277,12 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		if a.Property == "" {
 			return "", fmt.Errorf("breakdown needs a property to group by, e.g. \"source\"")
 		}
+		if err := s.checkEvents(a.Event); err != nil {
+			return "", err
+		}
+		if err := query.Validate(a.Filters); err != nil {
+			return "", err
+		}
 		var filtered []event.Event
 		for _, e := range query.Apply(evs, a.Filters) {
 			if a.Event == "" || e.Name == a.Event {
@@ -238,6 +290,11 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 			}
 		}
 		groups := query.Breakdown(filtered, a.Property)
+		// every event fell into "(none)" → the property doesn't exist on these events;
+		// error with what IS available instead of returning a bucket the model misreads.
+		if len(filtered) > 0 && len(groups) == 1 && groups[0].Value == "(none)" {
+			return "", fmt.Errorf("no %q events carry property %q — properties seen: %s", a.Event, a.Property, strings.Join(knownProps(filtered), ", "))
+		}
 		rows := make([]map[string]any, 0, len(groups))
 		for _, g := range groups {
 			rows = append(rows, map[string]any{"value": g.Value, "count": g.Count})
@@ -276,12 +333,18 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		if a.Days <= 0 {
 			a.Days = 30
 		}
+		if err := query.Validate(a.Filters); err != nil {
+			return "", err
+		}
 		return jsonText(map[string]any{"days": engagement.ComputeLifecycle(query.Apply(evs, a.Filters), a.Days)})
 	case "stickiness":
 		var a struct {
 			Filters []query.Filter `json:"filters"`
 		}
 		_ = json.Unmarshal(args, &a)
+		if err := query.Validate(a.Filters); err != nil {
+			return "", err
+		}
 		return jsonText(engagement.ComputeStickiness(query.Apply(evs, a.Filters), time.Time{}))
 	case "whats_notable":
 		return jsonText(map[string]any{"findings": insight.Generate(evs)})
@@ -294,6 +357,12 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		_ = json.Unmarshal(args, &a)
 		if a.Start == "" {
 			return "", fmt.Errorf("paths needs a start event")
+		}
+		if err := s.checkEvents(a.Start); err != nil {
+			return "", err
+		}
+		if err := query.Validate(a.Filters); err != nil {
+			return "", err
 		}
 		if a.Depth <= 0 {
 			a.Depth = 3
@@ -309,10 +378,39 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		if a.Property == "" {
 			return "", fmt.Errorf("groups needs a group property, e.g. \"company\"")
 		}
-		return jsonText(groups.Compute(query.Apply(evs, a.Filters), a.Property, time.Time{}, a.Limit))
+		if err := query.Validate(a.Filters); err != nil {
+			return "", err
+		}
+		res := groups.Compute(query.Apply(evs, a.Filters), a.Property, time.Time{}, a.Limit)
+		// no event carries this property → say so (with what IS available) instead of
+		// returning zeros the model would read as "you have 0 accounts".
+		if res.TotalGroups == 0 && len(evs) > 0 {
+			return "", fmt.Errorf("no events carry property %q — properties seen on your events: %s", a.Property, strings.Join(knownProps(evs), ", "))
+		}
+		return jsonText(res)
 	default:
 		return "", fmt.Errorf("unknown tool: %s", name)
 	}
+}
+
+// knownProps lists the distinct property keys seen on events (sorted, capped) —
+// used in error messages so the model can self-correct a bad property name.
+func knownProps(evs []event.Event) []string {
+	set := map[string]bool{}
+	for _, e := range evs {
+		for k := range e.Properties {
+			set[k] = true
+		}
+	}
+	out := make([]string, 0, len(set))
+	for k := range set {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	if len(out) > 40 {
+		out = out[:40]
+	}
+	return out
 }
 
 // userProfile summarizes one user's timeline + latest traits for the model.
@@ -367,22 +465,23 @@ func (s *Server) toolOverview(evs []event.Event) (string, error) {
 }
 
 func summarizeRetention(rr retention.Result) map[string]any {
-	var size, d1, d7 int
+	var size int
 	for _, c := range rr.Cohorts {
 		size += c.Size
-		if len(c.Returned) > 1 {
-			d1 += c.Returned[1]
-		}
-		if len(c.Returned) > 7 {
-			d7 += c.Returned[7]
-		}
 	}
 	out := map[string]any{"cohort_users": size, "max_days": rr.MaxDays}
-	if size > 0 {
-		out["day1_retention_pct"] = int(float64(d1)/float64(size)*100 + 0.5)
-		out["day7_retention_pct"] = int(float64(d7)/float64(size)*100 + 0.5)
+	// Honest day-N summaries: only cohorts old enough to observe day N are in the
+	// denominator (retention.DayN), and a day we can't measure yet is OMITTED, never
+	// reported as 0% — the model must not be handed a fabricated number.
+	now := time.Now().UTC()
+	for _, n := range []int{1, 7, 30} {
+		if ret, sz := retention.DayN(rr, n, now); sz > 0 {
+			out[fmt.Sprintf("day%d_retention_pct", n)] = int(float64(ret)/float64(sz)*100 + 0.5)
+			out[fmt.Sprintf("day%d_cohort_users", n)] = sz
+		}
 	}
 	out["cohorts"] = rr.Cohorts
+	out["note"] = "day-N percentages only include cohorts old enough to observe day N; per-cohort rows show raw counts (Returned[n] of Size)."
 	return out
 }
 

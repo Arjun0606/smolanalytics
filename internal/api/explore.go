@@ -12,8 +12,15 @@ import (
 )
 
 // notable returns the proactive "what's broken / what to look at" digest — the
-// verdict that fronts the dashboard and the daily brief.
-func (s *Server) notable(w http.ResponseWriter, _ *http.Request) {
+// verdict that fronts the dashboard AND the cloud's daily brief. The dashboard
+// arrives with a session cookie; the control plane arrives with the write key
+// (Authorization: Bearer) — accept either. Session-only here would 401 every
+// cloud poll and silently kill the daily-brief retention hook.
+func (s *Server) notable(w http.ResponseWriter, r *http.Request) {
+	if s.authEnabled() && !s.validSession(r) && !s.keyAuthed(r) {
+		writeErr(w, http.StatusUnauthorized, "login or a valid key required")
+		return
+	}
 	evs, err := s.store.Range(time.Time{}, time.Time{})
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())

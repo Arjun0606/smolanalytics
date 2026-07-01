@@ -76,21 +76,19 @@ func answerFunnel(evs []event.Event, vol []string) string {
 
 func answerRetention(evs []event.Event, vol []string) string {
 	rr := retention.Compute(evs, 7, pickEvent(vol, "open"))
-	var size, d1, d7 int
-	for _, c := range rr.Cohorts {
-		size += c.Size
-		if len(c.Returned) > 1 {
-			d1 += c.Returned[1]
-		}
-		if len(c.Returned) > 7 {
-			d7 += c.Returned[7]
-		}
+	now := time.Now().UTC()
+	// honest denominators: only cohorts old enough to observe day N (retention.DayN)
+	d1, size1 := retention.DayN(rr, 1, now)
+	if size1 == 0 {
+		return "Not enough history yet to measure retention — check back once users are past their first day."
 	}
-	if size == 0 {
-		return "Not enough activity yet to measure retention."
+	out := fmt.Sprintf("Day-1 retention is %d%% (of %d users past day 1).",
+		int(float64(d1)/float64(size1)*100+0.5), size1)
+	if d7, size7 := retention.DayN(rr, 7, now); size7 > 0 {
+		out = fmt.Sprintf("Day-1 retention is %d%% and day-7 is %d%% (of %d and %d users old enough to measure).",
+			int(float64(d1)/float64(size1)*100+0.5), int(float64(d7)/float64(size7)*100+0.5), size1, size7)
 	}
-	return fmt.Sprintf("Day-1 retention is %d%% and day-7 is %d%% (across %d users). ",
-		int(float64(d1)/float64(size)*100+0.5), int(float64(d7)/float64(size)*100+0.5), size)
+	return out
 }
 
 func answerSources(evs []event.Event, vol []string) string {

@@ -97,9 +97,19 @@ type Series struct {
 // fall into "(none)". Series are sorted by total descending.
 func ComputeBreakdown(events []event.Event, eventName, property string, from, to time.Time, unique bool) []Series {
 	groups := map[string][]event.Event{}
+	// every series must share ONE date span (the overall min..max day) — otherwise each
+	// line starts/ends at its own first/last event and the multi-line chart's x-axes
+	// disagree with each other.
+	spanFrom, spanTo := from, to
 	for _, e := range events {
 		if eventName != "" && e.Name != eventName {
 			continue
+		}
+		if from.IsZero() && (spanFrom.IsZero() || e.Timestamp.Before(spanFrom)) {
+			spanFrom = e.Timestamp
+		}
+		if to.IsZero() && (spanTo.IsZero() || e.Timestamp.After(spanTo)) {
+			spanTo = e.Timestamp
 		}
 		key := "(none)"
 		if v, ok := e.Properties[property]; ok {
@@ -109,7 +119,7 @@ func ComputeBreakdown(events []event.Event, eventName, property string, from, to
 	}
 	out := make([]Series, 0, len(groups))
 	for val, evs := range groups {
-		r := Compute(evs, eventName, from, to, unique)
+		r := Compute(evs, eventName, spanFrom, spanTo, unique)
 		out = append(out, Series{Value: val, Points: r.Points, Total: r.Total})
 	}
 	sort.Slice(out, func(i, j int) bool {

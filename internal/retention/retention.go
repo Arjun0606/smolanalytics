@@ -79,3 +79,24 @@ func Compute(events []event.Event, maxDays int, retentionEvent string) Result {
 }
 
 func dayNum(t time.Time) int64 { return t.UTC().Unix() / 86400 }
+
+// DayN aggregates day-n retention across cohorts HONESTLY: only cohorts whose
+// day-n has fully elapsed as of `now` enter the denominator. Users who signed up
+// yesterday cannot have day-7 activity yet — counting them would systematically
+// understate retention (the classic retention-triangle mistake), and reporting
+// day-n at all when no cohort is old enough would be a fabricated 0%. Every
+// surface that summarizes retention (verdict, MCP, ask) must use this.
+func DayN(r Result, n int, now time.Time) (retained, size int) {
+	if n <= 0 || n > r.MaxDays {
+		return 0, 0
+	}
+	today := now.UTC().Unix() / 86400
+	for _, c := range r.Cohorts {
+		cohortDay := c.Date.UTC().Unix() / 86400
+		if cohortDay+int64(n) < today && len(c.Returned) > n {
+			size += c.Size
+			retained += c.Returned[n]
+		}
+	}
+	return retained, size
+}

@@ -230,6 +230,18 @@ func (s *Server) authorized(r *http.Request) bool {
 	return hasManaged && s.settings.ValidKey(got)
 }
 
+// keyAuthed is authorized() WITHOUT the open-when-no-keys fallback: it's true only
+// when a key is actually configured and this request presented a valid one. Used by
+// endpoints that accept key-OR-session — the "no keys configured" open mode must not
+// bypass a configured dashboard password.
+func (s *Server) keyAuthed(r *http.Request) bool {
+	hasManaged := s.settings != nil && len(s.settings.Keys()) > 0
+	if s.writeKey == "" && !hasManaged {
+		return false
+	}
+	return s.authorized(r)
+}
+
 // handleMCP is the Streamable-HTTP MCP transport: point a remote MCP client
 // (Claude, Cursor) at http://host/mcp and it reads this server's live data. When a
 // key is configured it's required here too — otherwise a public deploy would leak
@@ -286,15 +298,26 @@ func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now().UTC()
+	maxFuture := now.Add(time.Hour) // tolerate client clock skew, no more
 	for i := range batch {
 		if batch[i].Name == "" {
 			writeErr(w, http.StatusBadRequest, "every event needs a name")
+			return
+		}
+		if batch[i].DistinctID == "" {
+			// silently accepting these would merge every anonymous event into one
+			// phantom "user" and quietly corrupt funnels/retention/DAU forever.
+			writeErr(w, http.StatusBadRequest, "every event needs a distinct_id (the user/visitor id it belongs to)")
 			return
 		}
 		if batch[i].ID == "" {
 			batch[i].ID = newID()
 		}
 		if batch[i].Timestamp.IsZero() {
+			batch[i].Timestamp = now
+		} else if batch[i].Timestamp.After(maxFuture) {
+			// a broken client clock must not plant events in the future — they'd skew
+			// every trailing-window report (and lifecycle anchors on the max day seen).
 			batch[i].Timestamp = now
 		}
 	}
@@ -313,9 +336,12 @@ func (s *Server) apiFunnel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	window, _ := time.ParseDuration(r.URL.Query().Get("window"))
+	if window <= 0 {
+		window = 7 * 24 * time.Hour // same default as the MCP funnel tool — one question, one answer
+	}
 	evs, err := s.filtered(r)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		writeQueryErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, funnel.Compute(evs, steps, window))

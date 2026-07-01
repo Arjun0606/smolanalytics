@@ -48,6 +48,23 @@ func (f Filter) match(e event.Event) bool {
 	return false
 }
 
+// Validate rejects malformed filters up front. An unrecognized op would otherwise
+// match NOTHING and every report would return zeros that look like a real answer —
+// the exact silent-wrong-number failure this engine exists to prevent.
+func Validate(filters []Filter) error {
+	for _, f := range filters {
+		switch f.Op {
+		case Eq, Neq, Contains, Gt, Lt:
+		default:
+			return fmt.Errorf("unknown filter op %q on property %q — valid ops: eq, neq, contains, gt, lt", f.Op, f.Property)
+		}
+		if f.Property == "" {
+			return fmt.Errorf("filter is missing a property name")
+		}
+	}
+	return nil
+}
+
 // Apply returns the events matching ALL filters (empty filters = passthrough).
 func Apply(events []event.Event, filters []Filter) []event.Event {
 	if len(filters) == 0 {

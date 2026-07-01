@@ -4,10 +4,12 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -82,7 +84,7 @@ func isPublic(r *http.Request) bool {
 	switch {
 	case p == "/login" || p == "/logout" || p == "/healthz" || p == "/version" || p == "/sdk.js":
 		return true
-	case p == "/v1/events" || p == "/mcp" || p == "/v1/usage": // own key auth / programmatic
+	case p == "/v1/events" || p == "/mcp" || p == "/v1/usage" || p == "/v1/notable": // own key auth / programmatic
 		return true
 	case r.Method == http.MethodOptions:
 		return true
@@ -106,6 +108,49 @@ func (s *Server) authMW(next http.Handler) http.Handler {
 	})
 }
 
+// loginLimiter is a small fixed-window brute-force guard: max 10 failed attempts
+// per client IP per 5 minutes. In-memory (per-process) is enough — this protects a
+// single-operator password, not a multi-tenant login farm.
+type loginLimiter struct {
+	mu     sync.Mutex
+	fails  map[string]int
+	window time.Time
+}
+
+var loginGuard = &loginLimiter{fails: map[string]int{}}
+
+func (l *loginLimiter) blocked(ip string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := time.Now()
+	if now.Sub(l.window) > 5*time.Minute {
+		l.fails = map[string]int{}
+		l.window = now
+	}
+	return l.fails[ip] >= 10
+}
+
+func (l *loginLimiter) fail(ip string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.fails[ip]++
+}
+
+func clientIP(r *http.Request) string {
+	// behind the Fly/derivative proxy the real client is in X-Forwarded-For
+	if xf := r.Header.Get("X-Forwarded-For"); xf != "" {
+		if i := strings.IndexByte(xf, ','); i > 0 {
+			return strings.TrimSpace(xf[:i])
+		}
+		return strings.TrimSpace(xf)
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		if !s.authEnabled() || s.validSession(r) {
@@ -117,11 +162,17 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// POST
+	ip := clientIP(r)
+	if loginGuard.blocked(ip) {
+		writeErr(w, http.StatusTooManyRequests, "too many failed logins — try again in a few minutes")
+		return
+	}
 	if s.checkLogin(r.FormValue("password")) {
 		s.setSession(w, r)
 		http.Redirect(w, r, "/", http.StatusFound)
 		return
 	}
+	loginGuard.fail(ip)
 	http.Redirect(w, r, "/login?e=1", http.StatusFound)
 }
 
