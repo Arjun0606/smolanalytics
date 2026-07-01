@@ -2,18 +2,25 @@
 # Send events to a running smolanalytics server.
 HOST="${HOST:-http://localhost:8080}"
 KEY="${SMOLANALYTICS_WRITE_KEY:-}"
-AUTH=""
-[ -n "$KEY" ] && AUTH="-H \"Authorization: Bearer $KEY\""
+
+# send <json> — includes the auth header only when a write key is set. (Building the
+# header inside a variable and expanding it unquoted doesn't work in sh, so branch.)
+send() {
+  if [ -n "$KEY" ]; then
+    curl -s -X POST "$HOST/v1/events" -H "Authorization: Bearer $KEY" -d "$1" >/dev/null
+  else
+    curl -s -X POST "$HOST/v1/events" -d "$1" >/dev/null
+  fi
+}
 
 # a single event
-curl -s -X POST "$HOST/v1/events" $AUTH \
-  -d '{"name":"signup","distinct_id":"u_1","properties":{"plan":"pro","source":"hacker news"}}' >/dev/null
+send '{"name":"signup","distinct_id":"u_1","properties":{"plan":"pro","source":"hacker news"}}'
 
 # a batch
-curl -s -X POST "$HOST/v1/events" $AUTH -d '[
+send '[
   {"name":"signup","distinct_id":"u_2","properties":{"plan":"free"}},
   {"name":"activate","distinct_id":"u_2"},
   {"name":"checkout","distinct_id":"u_2","properties":{"amount":29}}
-]' >/dev/null
+]'
 
 echo "sent. open $HOST and ask: \"what's my signup -> checkout conversion?\""
