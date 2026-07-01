@@ -155,7 +155,7 @@ The browser SDK adds autocapture + batching on top; everywhere else, it's a 5-li
 Even easier: paste *this* into Cursor/Claude Code and let it instrument your app —
 > "Add smolanalytics: load `https://YOUR_HOST/sdk.js`, init with my key, and `track()` the key moments (signup, activate, checkout) plus `identify()` on login."
 
-See [`examples/`](examples/) for a runnable page + curl script.
+**Framework guides** (copy-paste, two minutes each): [Next.js](docs/nextjs.md) · [React](docs/react.md) · [Vue](docs/vue.md) · [Backend](docs/backend.md) (Node/Python/Go/Ruby/PHP) · [Mobile](docs/mobile.md) (iOS/Android/RN). See [`examples/`](examples/) for a runnable page + curl script.
 
 ## How it compares
 Honest version — we're **not** deeper than the big tools (no session replay, flags, or experiments *yet*). The bet is a different shape:
