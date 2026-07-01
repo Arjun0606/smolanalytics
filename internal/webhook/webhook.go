@@ -11,9 +11,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -76,6 +79,9 @@ func (s *Store) Add(name, url string) (Endpoint, error) {
 	if url == "" {
 		return Endpoint{}, fmt.Errorf("url is required")
 	}
+	if u, err := neturl.Parse(url); err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return Endpoint{}, fmt.Errorf("webhook url must be http:// or https://")
+	}
 	if name == "" {
 		name = url
 	}
@@ -130,7 +136,46 @@ func sign(secret string, body []byte) string {
 	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
 }
 
-var httpClient = &http.Client{Timeout: 10 * time.Second}
+// SSRF guard: webhooks POST to operator-configured URLs, so a URL pointing at cloud
+// metadata (169.254.169.254), loopback, or an internal service would let a webhook
+// exfiltrate credentials or scan the private network. We check the *resolved* IP at dial
+// time (which also defeats DNS-rebinding and blocks redirects into private space) and
+// refuse private/reserved addresses. Operators who genuinely need an internal target can
+// opt out with SMOLANALYTICS_ALLOW_PRIVATE_WEBHOOKS.
+var allowPrivateWebhooks = os.Getenv("SMOLANALYTICS_ALLOW_PRIVATE_WEBHOOKS") != ""
+
+func isBlockedIP(ip net.IP) bool {
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() ||
+		ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() // 169.254.169.254 (cloud metadata) is link-local
+}
+
+var httpClient = &http.Client{
+	Timeout: 10 * time.Second,
+	Transport: &http.Transport{
+		DialContext: (&net.Dialer{
+			Timeout: 10 * time.Second,
+			Control: func(_, address string, _ syscall.RawConn) error {
+				if allowPrivateWebhooks {
+					return nil
+				}
+				host, _, err := net.SplitHostPort(address) // address is host:port, host already resolved to an IP
+				if err != nil {
+					return err
+				}
+				if ip := net.ParseIP(host); ip != nil && isBlockedIP(ip) {
+					return fmt.Errorf("refusing to connect to private/reserved address %s (SSRF guard)", ip)
+				}
+				return nil
+			},
+		}).DialContext,
+	},
+	CheckRedirect: func(_ *http.Request, via []*http.Request) error {
+		if len(via) >= 5 {
+			return fmt.Errorf("too many redirects")
+		}
+		return nil
+	},
+}
 
 // Send POSTs the body to one endpoint with a signature header.
 func Send(ep Endpoint, body []byte) error {
