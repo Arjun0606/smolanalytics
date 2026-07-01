@@ -56,18 +56,15 @@ func Generate(evs []event.Event) []Finding {
 	// 0) what changed in the last 24h vs the trailing-week baseline — the timeliest read
 	out = append(out, anomalies(evs, names, now)...)
 
-	// 1) biggest funnel leak
+	// 1) biggest funnel leak — on the REAL journey. If the conventional names exist
+	// use them; otherwise order the widest-coverage events by when users actually
+	// first do them (median first-touch), so the auto-funnel follows the product's
+	// true flow instead of raw volume order.
 	var steps []funnel.Step
 	if has("signup") && has("activate") && has("checkout") {
 		steps = []funnel.Step{{Event: "signup"}, {Event: "activate"}, {Event: "checkout"}}
 	} else {
-		top := names
-		if len(top) > 3 {
-			top = top[:3]
-		}
-		for _, n := range top {
-			steps = append(steps, funnel.Step{Event: n})
-		}
+		steps = detectJourney(evs)
 	}
 	if len(steps) >= 2 {
 		fr := funnel.Compute(evs, steps, 7*24*time.Hour)
@@ -86,6 +83,11 @@ func Generate(evs []event.Event) []Finding {
 				Detail: fmt.Sprintf("only %d%% continue; %d users fall off here. Overall %s→%s conversion is %d%%.",
 					worstPct, worstDrop, fr.Steps[0].Event, fr.Steps[len(fr.Steps)-1].Event, int(fr.OverallConversion*100+0.5)),
 			})
+			// 1b) name the segment to blame: if one property value converts far worse
+			// through this exact step, that's the thing to fix — not the average.
+			if f := segmentBlame(evs, worstFrom, worstTo); f != nil {
+				out = append(out, *f)
+			}
 		}
 	}
 

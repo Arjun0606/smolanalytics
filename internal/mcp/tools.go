@@ -20,7 +20,7 @@ var filtersSchema = map[string]any{
 var toolList = []map[string]any{
 	{
 		"name":        "whats_notable",
-		"description": "Proactive digest: the most important things happening right now — the biggest funnel drop-off, week-over-week change in the headline event, and the retention read — each computed exactly. Call this for open-ended asks like 'how's it going?', 'what's broken?', 'what should I look at?', 'anything I should worry about?'.",
+		"description": "Proactive digest: the most important things happening right now — sudden 24h drops/spikes, the biggest drop-off in the (auto-detected) user journey, WHICH segment converts worst through that step, week-over-week change in the headline event, and the retention read — each computed exactly. Call this for open-ended asks like 'how's it going?', 'what's broken?', 'what should I fix?', 'anything I should worry about?'.",
 		"inputSchema": obj(nil, nil),
 	},
 	{
