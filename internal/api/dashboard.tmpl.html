@@ -218,6 +218,7 @@
     </div>
   </details>
 
+  {{if .HasData}}
   <div class="stats">
     <div class="stat"><div class="l">Users</div><div class="v">{{.TotalUsers}}</div></div>
     <div class="stat"><div class="l">{{.StatEventLabel}} (30d)</div><div class="v">{{.Signups}}</div></div>
@@ -344,6 +345,7 @@
       </div>
     </div>
   </div>
+  {{end}}
 
   <div class="foot">metered by smolanalytics · one binary, your data</div>
 </main>
@@ -377,7 +379,9 @@
     }
     pollLive(); setInterval(pollLive, 4000);
 
-    // explore — run any report on the user's own events
+    {{if .HasData}}
+    // explore — run any report on the user's own events (only wired when there's data;
+    // the empty-state dashboard omits these sections)
     var exType=document.getElementById('exType'),exA=document.getElementById('exA'),
         exB=document.getElementById('exB'),exRun=document.getElementById('exRun'),
         exOut=document.getElementById('exOut'),exEvents=document.getElementById('exEvents'),
@@ -549,6 +553,7 @@
         .then(function(r){return r.json()}).then(function(){coName.value='';coEvents.value='';refreshCohorts();}).catch(function(){});
     };
     refreshCohorts();
+    {{end}}
 
     // verdict — proactive "what to look at", the front door
     var vEl=document.getElementById('verdict');
@@ -575,7 +580,7 @@
     var obstatus=document.getElementById('obstatus');
     if(obstatus){
       function obchk(){fetch('/v1/events/recent?limit=1').then(function(r){return r.json()}).then(function(e){
-        if(e&&e.length){obstatus.innerHTML='<span style="color:var(--ok)">●</span> events flowing — you\'re all set';}
+        if(e&&e.length){ {{if .HasData}}obstatus.innerHTML='<span style="color:var(--ok)">●</span> events flowing — you\'re all set';{{else}}location.reload();{{end}} } // first event on a fresh instance → reveal the populated dashboard
       }).catch(function(){});}
       obchk(); setInterval(obchk,4000);
     }
