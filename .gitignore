@@ -1,12 +1,16 @@
 /bin/
-*.out
-.DS_Store
 /dist/
 /smolanalytics
+*.out
+.DS_Store
+
+# runtime data — the event log and all its sidecar files (.insights.json, .settings.json,
+# .audit.jsonl, .cohorts.json, .webhooks.json, .alerts.json, .compact), plus local artifacts
 *.data
+smolanalytics.data*
+.playwright-mcp/
 .env
 .env.*
-gtm/
 
 # internal strategy — never publish
 SPEC.md
