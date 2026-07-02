@@ -234,3 +234,11 @@ PRs welcome — keep it small, correct, and dependency-free. See [CONTRIBUTING.m
 
 ## License
 [MIT](LICENSE). Use it, fork it, host it. A managed cloud (zero-setup hosting + per-tenant isolation) is coming for those who'd rather not run it themselves.
+
+## Show it off
+Using smolanalytics? Add the badge — it helps others find the tool:
+
+```md
+[![analytics: smolanalytics](https://img.shields.io/badge/analytics-smolanalytics-f5a623?labelColor=0a0a0a)](https://github.com/Arjun0606/smolanalytics)
+```
+[![analytics: smolanalytics](https://img.shields.io/badge/analytics-smolanalytics-f5a623?labelColor=0a0a0a)](https://github.com/Arjun0606/smolanalytics)
