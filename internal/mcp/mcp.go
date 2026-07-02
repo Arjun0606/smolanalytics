@@ -19,17 +19,21 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/alert"
+	"github.com/Arjun0606/smolanalytics/internal/cohort"
 	"github.com/Arjun0606/smolanalytics/internal/engagement"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
 	"github.com/Arjun0606/smolanalytics/internal/groups"
 	"github.com/Arjun0606/smolanalytics/internal/insight"
+	"github.com/Arjun0606/smolanalytics/internal/insights"
 	"github.com/Arjun0606/smolanalytics/internal/paths"
 	"github.com/Arjun0606/smolanalytics/internal/query"
 	"github.com/Arjun0606/smolanalytics/internal/retention"
 	"github.com/Arjun0606/smolanalytics/internal/store"
 	"github.com/Arjun0606/smolanalytics/internal/trends"
 	"github.com/Arjun0606/smolanalytics/internal/web"
+	"github.com/Arjun0606/smolanalytics/internal/webhook"
 )
 
 const protocolVersion = "2025-03-26" // Streamable HTTP; we echo the client's version
@@ -41,10 +45,17 @@ How to work:
 - Pick the right tool: funnel (conversion + where users drop off), retention (do they come back), trends (counts over time, optionally broken down by a property), breakdown (segment by a property), web_overview (traffic: visitors, live-now, top pages, referrers, UTM sources, devices), lifecycle (new/returning/resurrected/dormant), stickiness (DAU/WAU/MAU), paths (what users do after an event), groups (B2B accounts), recent_events (debug instrumentation), user_activity (one user's timeline). Every report accepts filters to segment (e.g. plan=pro, source=hacker news).
 - Answer like an analyst, not a database. Lead with the number, say what it means, then offer the most useful next cut. If conversion dropped, find the step; if a segment underperforms, name it; if retention is flat, say so plainly.
 - Be concrete and honest. Quote the real figures. If the data is too thin to conclude, say that instead of guessing.
-- For open-ended asks ("how's the product doing?"), proactively pull the 2-3 most telling reports and synthesize a short read.`
+- For open-ended asks ("how's the product doing?"), proactively pull the 2-3 most telling reports and synthesize a short read.
+- You can also DO things, not just read: create_alert ("tell me if signups drop below 10/day" → op=lt, window_hours=24), add_webhook (Slack/HTTPS endpoint the alerts and daily digest fire to), create_cohort (define a user group once, reuse anywhere), save_report (pin a funnel/trend/breakdown to their dashboard). When the user says "watch this", "alert me", "save that" — reach for these, then confirm what you created by echoing it back.`
 
 type Server struct {
 	store store.Store
+	// optional persistent stores backing the action tools (create_alert, save_report, …);
+	// nil in bare demo/stdio-without-files mode, where those tools explain how to enable them.
+	insights *insights.Store
+	cohorts  *cohort.Store
+	webhooks *webhook.Store
+	alerts   *alert.Store
 }
 
 func New(s store.Store) *Server { return &Server{store: s} }
@@ -400,6 +411,9 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		}
 		return jsonText(res)
 	default:
+		if handled, out, aerr := s.callAction(name, args); handled {
+			return out, aerr
+		}
 		return "", fmt.Errorf("unknown tool: %s", name)
 	}
 }

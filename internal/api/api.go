@@ -56,21 +56,25 @@ func (s *Server) SetSettings(st *settings.Store) { s.settings = st }
 func New(s store.Store) *Server {
 	ins, _ := insights.Open("") // in-memory by default; Set* adds persistence
 	coh, _ := cohort.Open("")
-	return &Server{store: s, mcp: mcp.New(s), insights: ins, cohorts: coh}
+	m := mcp.New(s)
+	m.SetInsights(ins) // MCP action tools share the same stores from the start
+	m.SetCohorts(coh)
+	return &Server{store: s, mcp: m, insights: ins, cohorts: coh}
 }
 
-// SetInsights swaps in a persistent saved-reports store.
-func (s *Server) SetInsights(st *insights.Store) { s.insights = st }
+// SetInsights swaps in a persistent saved-reports store (shared with the MCP action
+// tools, so "save this report" from the editor lands on the dashboard instantly).
+func (s *Server) SetInsights(st *insights.Store) { s.insights = st; s.mcp.SetInsights(st) }
 
-// SetCohorts swaps in a persistent cohort store.
-func (s *Server) SetCohorts(st *cohort.Store) { s.cohorts = st }
+// SetCohorts swaps in a persistent cohort store (shared with MCP).
+func (s *Server) SetCohorts(st *cohort.Store) { s.cohorts = st; s.mcp.SetCohorts(st) }
 
 // SetAudit swaps in a persistent audit log.
 func (s *Server) SetAudit(l *audit.Log) { s.audit = l }
 
-// SetWebhooks / SetAlerts swap in the persistent notification stores.
-func (s *Server) SetWebhooks(w *webhook.Store) { s.webhooks = w }
-func (s *Server) SetAlerts(a *alert.Store)     { s.alerts = a }
+// SetWebhooks / SetAlerts swap in the persistent notification stores (shared with MCP).
+func (s *Server) SetWebhooks(w *webhook.Store) { s.webhooks = w; s.mcp.SetWebhooks(w) }
+func (s *Server) SetAlerts(a *alert.Store)     { s.alerts = a; s.mcp.SetAlerts(a) }
 
 // rec records an operator action to the audit log (best-effort, nil-safe).
 func (s *Server) rec(action, detail string) { s.audit.Record(action, detail) }

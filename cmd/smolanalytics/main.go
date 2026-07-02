@@ -352,7 +352,22 @@ func runMCP() {
 		}
 		st = m
 	}
-	if err := mcp.New(st).ServeStdio(); err != nil {
+	m := mcp.New(st)
+	// action tools (create_alert, save_report, …) write the same sidecar files the
+	// server uses, so anything created from the editor shows up on the dashboard.
+	if ins, err := insights.Open(dataPath() + ".insights.json"); err == nil {
+		m.SetInsights(ins)
+	}
+	if coh, err := cohort.Open(dataPath() + ".cohorts.json"); err == nil {
+		m.SetCohorts(coh)
+	}
+	if wh, err := webhook.Open(dataPath() + ".webhooks.json"); err == nil {
+		m.SetWebhooks(wh)
+	}
+	if al, err := alert.Open(dataPath() + ".alerts.json"); err == nil {
+		m.SetAlerts(al)
+	}
+	if err := m.ServeStdio(); err != nil {
 		log.Fatal(err)
 	}
 }
