@@ -30,7 +30,9 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/paths"
 	"github.com/Arjun0606/smolanalytics/internal/query"
 	"github.com/Arjun0606/smolanalytics/internal/retention"
+	"github.com/Arjun0606/smolanalytics/internal/settings"
 	"github.com/Arjun0606/smolanalytics/internal/store"
+	"github.com/Arjun0606/smolanalytics/internal/trackplan"
 	"github.com/Arjun0606/smolanalytics/internal/trends"
 	"github.com/Arjun0606/smolanalytics/internal/web"
 	"github.com/Arjun0606/smolanalytics/internal/webhook"
@@ -52,11 +54,17 @@ type Server struct {
 	store store.Store
 	// optional persistent stores backing the action tools (create_alert, save_report, …);
 	// nil in bare demo/stdio-without-files mode, where those tools explain how to enable them.
-	insights *insights.Store
-	cohorts  *cohort.Store
-	webhooks *webhook.Store
-	alerts   *alert.Store
+	insights  *insights.Store
+	cohorts   *cohort.Store
+	webhooks  *webhook.Store
+	alerts    *alert.Store
+	settings  *settings.Store
+	trackplan *trackplan.Store
 }
+
+// SetSettings / SetTrackPlan attach the instance-control stores.
+func (s *Server) SetSettings(st *settings.Store)   { s.settings = st }
+func (s *Server) SetTrackPlan(tp *trackplan.Store) { s.trackplan = tp }
 
 func New(s store.Store) *Server { return &Server{store: s} }
 
@@ -101,7 +109,7 @@ func (s *Server) Dispatch(req request) *response {
 		}
 		return reply(map[string]any{
 			"protocolVersion": pv,
-			"capabilities":    map[string]any{"tools": map[string]any{}},
+			"capabilities":    map[string]any{"tools": map[string]any{}, "prompts": map[string]any{}},
 			"serverInfo":      map[string]any{"name": "smolanalytics", "version": "0.1.0"},
 			"instructions":    instructions,
 		})
@@ -128,6 +136,9 @@ func (s *Server) Dispatch(req request) *response {
 			"content": []map[string]any{{"type": "text", "text": text}},
 		})
 	default:
+		if r := s.dispatchPrompts(req.Method, req.Params, reply, fail); r != nil {
+			return r
+		}
 		return fail(-32601, "method not found: "+req.Method)
 	}
 }
@@ -413,6 +424,9 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 	default:
 		if handled, out, aerr := s.callAction(name, args); handled {
 			return out, aerr
+		}
+		if handled, out, cerr := s.callControl(name, args); handled {
+			return out, cerr
 		}
 		return "", fmt.Errorf("unknown tool: %s", name)
 	}

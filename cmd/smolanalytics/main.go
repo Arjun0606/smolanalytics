@@ -29,6 +29,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/store/file"
 	"github.com/Arjun0606/smolanalytics/internal/store/memory"
 	"github.com/Arjun0606/smolanalytics/internal/store/segment"
+	"github.com/Arjun0606/smolanalytics/internal/trackplan"
 	"github.com/Arjun0606/smolanalytics/internal/webhook"
 )
 
@@ -236,6 +237,11 @@ func serve(st store.Store, closeStore func() error, guardPublic bool) {
 	} else {
 		log.Printf("smolanalytics: alerts disabled (%v)", err)
 	}
+	if tp, err := trackplan.Open(dataPath() + ".trackplan.json"); err == nil {
+		app.SetTrackPlan(tp)
+	} else {
+		log.Printf("smolanalytics: tracking plan disabled (%v)", err)
+	}
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           app.Handler(),
@@ -366,6 +372,12 @@ func runMCP() {
 	}
 	if al, err := alert.Open(dataPath() + ".alerts.json"); err == nil {
 		m.SetAlerts(al)
+	}
+	if set, err := settings.Open(dataPath() + ".settings.json"); err == nil {
+		m.SetSettings(set)
+	}
+	if tp, err := trackplan.Open(dataPath() + ".trackplan.json"); err == nil {
+		m.SetTrackPlan(tp)
 	}
 	if err := m.ServeStdio(); err != nil {
 		log.Fatal(err)

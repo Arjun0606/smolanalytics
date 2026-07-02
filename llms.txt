@@ -31,10 +31,20 @@ Batch = JSON array (up to 10k events). Use a stable distinct_id per user.
 `smolanalytics connect` wires Claude Desktop / Claude Code / Cursor / Windsurf / VS Code / Cline
 automatically. Manual stdio config: command `smolanalytics`, args `["mcp"]`, env
 `SMOLANALYTICS_DB=<path>`. Remote: Streamable HTTP at `POST https://YOUR_HOST/mcp` with
-`Authorization: Bearer <write key>`. 26 tools: read (overview, funnel, retention, trends,
-breakdown, web_overview, paths, lifecycle, stickiness, whats_notable, …) AND act
-(create_alert, add_webhook, create_cohort, save_report + list/delete for each) — an agent
-can fully configure monitoring and saved views from the editor.
+`Authorization: Bearer <write key>`. 34 tools + 3 prompts. Read (overview, funnel,
+retention, trends, breakdown, web_overview, paths, lifecycle, stickiness, whats_notable, …),
+act (create_alert, add_webhook, create_cohort, save_report + list/delete), and control the
+instance (set_project, set_retention, create/revoke API keys).
+
+## For agents wiring analytics into an app (the intended loop)
+
+1. Install tracking (snippet or POST — above), with a stable distinct_id per user.
+2. Declare intent: `set_tracking_plan` with every event + expected property keys.
+3. After the app runs, verify: `instrumentation_health` reports per planned event —
+   flowing / MISSING / missing_properties — plus unplanned events. Iterate until healthy.
+4. Set a drop alert on the most important event (`create_alert`) and a webhook
+   (`add_webhook`) so regressions surface without anyone checking a dashboard.
+The `instrument-my-app` MCP prompt walks this exact loop.
 
 ## Key facts
 - Reports are deterministic — tool answers always equal dashboard numbers (same engine).

@@ -28,6 +28,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/retention"
 	"github.com/Arjun0606/smolanalytics/internal/settings"
 	"github.com/Arjun0606/smolanalytics/internal/store"
+	"github.com/Arjun0606/smolanalytics/internal/trackplan"
 	"github.com/Arjun0606/smolanalytics/internal/trends"
 	"github.com/Arjun0606/smolanalytics/internal/webhook"
 )
@@ -51,7 +52,10 @@ type Server struct {
 }
 
 // SetSettings swaps in a persistent settings store (project, keys, session secret).
-func (s *Server) SetSettings(st *settings.Store) { s.settings = st }
+func (s *Server) SetSettings(st *settings.Store) { s.settings = st; s.mcp.SetSettings(st) }
+
+// SetTrackPlan attaches the tracking-plan store (shared with the MCP instrumentation tools).
+func (s *Server) SetTrackPlan(tp *trackplan.Store) { s.mcp.SetTrackPlan(tp) }
 
 func New(s store.Store) *Server {
 	ins, _ := insights.Open("") // in-memory by default; Set* adds persistence
