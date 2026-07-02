@@ -82,6 +82,18 @@ func init() {
 			},
 		},
 		map[string]any{
+			"name":        "delete_user_data",
+			"description": "GDPR right-to-erasure: permanently delete EVERY event belonging to one distinct_id, across all storage tiers. Irreversible — always confirm with the user first, then call with confirm=true. Returns how many events were erased.",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"distinct_id": map[string]any{"type": "string", "description": "The user/visitor id to erase"},
+					"confirm":     map[string]any{"type": "boolean", "description": "Must be true — set only after the user explicitly confirmed"},
+				},
+				"required": []string{"distinct_id", "confirm"},
+			},
+		},
+		map[string]any{
 			"name":        "instrumentation_health",
 			"description": "Verify instrumentation against the tracking plan: per planned event — is it arriving (count, last seen), are its expected properties present? Plus events arriving that aren't in the plan. THE tool to run after wiring or changing tracking code; also great for 'is my tracking broken?'.",
 			"inputSchema": map[string]any{
@@ -186,6 +198,26 @@ func (s *Server) callControl(name string, args json.RawMessage) (bool, string, e
 
 	case "revoke_api_key":
 		return s.deleteByID(args, "settings", func(id string) error { return s.settings.RevokeKey(id) }, s.settings == nil)
+
+	case "delete_user_data":
+		var p struct {
+			DistinctID string `json:"distinct_id"`
+			Confirm    bool   `json:"confirm"`
+		}
+		if err := unmarshalArgs(args, &p); err != nil {
+			return true, "", err
+		}
+		if strings.TrimSpace(p.DistinctID) == "" {
+			return true, "", fmt.Errorf("distinct_id is required")
+		}
+		if !p.Confirm {
+			return true, "", fmt.Errorf("this permanently erases all of %q's events — ask the user to confirm, then call again with confirm=true", p.DistinctID)
+		}
+		n, err := s.store.DeleteUser(p.DistinctID)
+		if err != nil {
+			return true, "", err
+		}
+		return true, jsonStr(map[string]any{"deleted_events": n, "distinct_id": p.DistinctID, "note": "erased across all storage tiers — irreversible"}), nil
 
 	case "set_tracking_plan":
 		if s.trackplan == nil {

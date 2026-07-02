@@ -37,6 +37,7 @@ type Store struct {
 	manifest []segMeta
 	names    map[string]bool
 	sealAt   int
+	seq      int // next segment sequence number — monotonic, NEVER derived from len(manifest)
 }
 
 // Open recovers the hot WAL at hotPath and the cold manifest from the blob backend.
@@ -66,6 +67,15 @@ func Open(hotPath string, b blob.Blob, sealAt int) (*Store, error) {
 	if hn, _ := hot.Names(); hn != nil {
 		for _, n := range hn {
 			s.names[n] = true
+		}
+	}
+	// Restore the sequence counter from the highest existing key. Deriving keys from
+	// len(manifest) was a data-loss bug: after Prune shrinks the manifest, a new seal
+	// could reuse a LIVE segment's key and overwrite it. Monotonic seq can't collide.
+	for _, m := range s.manifest {
+		var n int
+		if _, err := fmt.Sscanf(m.Key, "seg/%010d.sms", &n); err == nil && n >= s.seq {
+			s.seq = n + 1
 		}
 	}
 	// Crash-window recovery: a crash after a segment's manifest was persisted but before
@@ -152,7 +162,7 @@ func (s *Store) sealLocked() error {
 	if err != nil {
 		return err
 	}
-	key := fmt.Sprintf("seg/%010d.sms", len(s.manifest)) // seq key: stable across a crash-retry
+	key := fmt.Sprintf("seg/%010d.sms", s.seq)
 	if err := s.blob.Put(key, data); err != nil {
 		return err
 	}
@@ -161,6 +171,7 @@ func (s *Store) sealLocked() error {
 		s.manifest = s.manifest[:len(s.manifest)-1]
 		return err
 	}
+	s.seq++
 	return s.hot.Clear()
 }
 
@@ -326,4 +337,105 @@ func inRange(ts, from, to time.Time) bool {
 		return false
 	}
 	return true
+}
+
+// DeleteUser erases every event for one distinct_id (GDPR erasure) across both
+// tiers. Sealed segments are immutable, so each affected segment is rewritten:
+// decode → filter → seal the kept events under a fresh key → swap the manifest
+// entry → delete the old blob. The manifest is persisted once at the end with
+// rollback, so a failure can orphan an unreferenced blob but never dangle a
+// reference or half-delete a user.
+func (s *Store) DeleteUser(distinctID string) (int, error) {
+	if distinctID == "" {
+		return 0, nil
+	}
+	s.mu.Lock()
+	removed := 0
+	old := make([]segMeta, len(s.manifest))
+	copy(old, s.manifest)
+	var dropBlobs []string
+	changed := false
+
+	for i, m := range s.manifest {
+		data, err := s.blob.Get(m.Key)
+		if err != nil {
+			s.manifest = old
+			s.mu.Unlock()
+			return 0, fmt.Errorf("segment %s: %w", m.Key, err)
+		}
+		evs, err := decodeSegment(data)
+		if err != nil {
+			s.manifest = old
+			s.mu.Unlock()
+			return 0, fmt.Errorf("segment %s: %w", m.Key, err)
+		}
+		kept := evs[:0:0]
+		for _, e := range evs {
+			if e.DistinctID == distinctID {
+				removed++
+				continue
+			}
+			kept = append(kept, e)
+		}
+		if len(kept) == len(evs) {
+			continue // user not in this segment
+		}
+		changed = true
+		dropBlobs = append(dropBlobs, m.Key)
+		if len(kept) == 0 {
+			s.manifest[i].Count = 0 // marked for removal below
+			continue
+		}
+		nd, minTS, maxTS, names, err := encodeSegment(kept)
+		if err != nil {
+			s.manifest = old
+			s.mu.Unlock()
+			return 0, err
+		}
+		nk := fmt.Sprintf("seg/%010d.sms", s.seq)
+		if err := s.blob.Put(nk, nd); err != nil {
+			s.manifest = old
+			s.mu.Unlock()
+			return 0, err
+		}
+		s.seq++
+		s.manifest[i] = segMeta{Key: nk, Count: len(kept), MinTS: minTS, MaxTS: maxTS, Names: names}
+	}
+
+	if changed {
+		final := s.manifest[:0:0]
+		for _, m := range s.manifest {
+			if m.Count > 0 {
+				final = append(final, m)
+			}
+		}
+		s.manifest = final
+		if err := s.persistManifestLocked(); err != nil {
+			s.manifest = old // rollback — rewritten blobs are orphaned, references stay valid
+			s.mu.Unlock()
+			return 0, err
+		}
+		for _, k := range dropBlobs {
+			_ = s.blob.Delete(k) // unreferenced now — failure just orphans a blob
+		}
+		// names may have shrunk — rebuild from what remains
+		s.names = map[string]bool{}
+		for _, m := range s.manifest {
+			for _, n := range m.Names {
+				s.names[n] = true
+			}
+		}
+		if hn, _ := s.hot.Names(); hn != nil {
+			for _, n := range hn {
+				s.names[n] = true
+			}
+		}
+	}
+	s.mu.Unlock()
+
+	hr, err := s.hot.DeleteUser(distinctID)
+	if err != nil {
+		return removed, err
+	}
+	return removed + hr, nil
 }

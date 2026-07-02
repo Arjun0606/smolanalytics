@@ -51,6 +51,7 @@ Every hosted analytics tool, the privacy-first ones included, still asks you to 
 - **No third party, ever.** Nothing to sign a DPA with, no processor to disclose, nothing crossing a border. The answer to "who can see this data?" is just: you.
 - **No third-party cookies, no fingerprinting, no cross-site tracking.** The browser SDK uses a first-party anonymous id and nothing else.
 - **Cookieless mode — no consent banner needed.** `smolanalytics.init(key, { anonymous: true })` stores *nothing* on the visitor's device; the server derives a daily-rotating anonymous id instead (Plausible's model). Visitors are unlinkable across days, funnels still work within a day, and identified users (after login) keep full analytics. Consent banners cost ~55% of your data — this mode needs none.
+- **Right to erasure, built in.** `DELETE /v1/users/{id}/data` (or ask your AI: *"delete everything about user u123"*) erases a person's events across every storage tier — the GDPR request that takes a ticket queue elsewhere is one call here.
 - **It never trains a model.** There's no model and no vendor, so there's no one to train on your data.
 - **Private by architecture, not by policy.** It isn't private because of a promise on a privacy page; it's private because there's no one else in the loop.
 

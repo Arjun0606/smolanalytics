@@ -181,6 +181,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/settings/keys", s.createKey)
 	mux.HandleFunc("DELETE /v1/settings/keys/{id}", s.revokeKey)
 	mux.HandleFunc("POST /v1/settings/clear", s.clearData)
+	mux.HandleFunc("DELETE /v1/users/{id}/data", s.deleteUserData)
 	mux.HandleFunc("POST /v1/webhooks", s.createWebhook)
 	mux.HandleFunc("DELETE /v1/webhooks/{id}", s.deleteWebhook)
 	mux.HandleFunc("POST /v1/webhooks/{id}/test", s.testWebhook)

@@ -326,3 +326,32 @@ func (s *Store) Close() error {
 	s.w = nil
 	return err
 }
+
+// DeleteUser erases every event for one distinct_id (GDPR erasure), rewriting the
+// log via the same atomic temp-file+rename path compaction uses.
+func (s *Store) DeleteUser(distinctID string) (int, error) {
+	if distinctID == "" {
+		return 0, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.w == nil {
+		return 0, errors.New("store is closed")
+	}
+	kept := make([]event.Event, 0, len(s.evs))
+	removed := 0
+	for _, e := range s.evs {
+		if e.DistinctID == distinctID {
+			removed++
+			continue
+		}
+		kept = append(kept, e)
+	}
+	if removed == 0 {
+		return 0, nil
+	}
+	if err := s.compactToLocked(kept); err != nil {
+		return 0, err
+	}
+	return removed, nil
+}

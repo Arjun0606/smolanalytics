@@ -114,3 +114,28 @@ func (s *Store) Names() ([]string, error) {
 	sort.Strings(out)
 	return out, nil
 }
+
+// DeleteUser erases every event for one distinct_id (GDPR erasure).
+func (s *Store) DeleteUser(distinctID string) (int, error) {
+	if distinctID == "" {
+		return 0, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	kept := s.evs[:0:0]
+	seen, names := map[string]bool{}, map[string]bool{}
+	removed := 0
+	for _, e := range s.evs {
+		if e.DistinctID == distinctID {
+			removed++
+			continue
+		}
+		kept = append(kept, e)
+		if e.ID != "" {
+			seen[e.ID] = true
+		}
+		names[e.Name] = true
+	}
+	s.evs, s.seen, s.names = kept, seen, names
+	return removed, nil
+}

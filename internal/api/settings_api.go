@@ -244,3 +244,19 @@ func (s *Server) clearData(w http.ResponseWriter, _ *http.Request) {
 	s.rec("data.cleared", "all events deleted")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "cleared"})
 }
+
+// deleteUserData erases one distinct_id's events (GDPR right to erasure).
+func (s *Server) deleteUserData(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeErr(w, http.StatusBadRequest, "user id required")
+		return
+	}
+	n, err := s.store.DeleteUser(id)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.rec("data.user_deleted", fmt.Sprintf("distinct_id %s — %d events erased", id, n))
+	writeJSON(w, http.StatusOK, map[string]any{"deleted_events": n, "distinct_id": id})
+}

@@ -31,4 +31,7 @@ type Store interface {
 	// Prune deletes events with Timestamp before the cutoff (retention policy),
 	// returning how many were removed.
 	Prune(before time.Time) (int, error)
+	// DeleteUser erases every event belonging to a distinct_id (GDPR right to
+	// erasure), returning how many events were removed. Irreversible.
+	DeleteUser(distinctID string) (int, error)
 }

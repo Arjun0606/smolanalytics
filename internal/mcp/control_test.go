@@ -142,3 +142,23 @@ func TestPromptsDispatch(t *testing.T) {
 		t.Fatal("unknown prompt must error")
 	}
 }
+
+func TestDeleteUserDataTool(t *testing.T) {
+	s := controlServer(t)
+	// no confirm → refuse with guidance, nothing deleted
+	if _, err := callAct(t, s, "delete_user_data", `{"distinct_id":"u1","confirm":false}`); err == nil || !strings.Contains(err.Error(), "confirm") {
+		t.Fatalf("must demand confirmation, got %v", err)
+	}
+	out, err := callAct(t, s, "delete_user_data", `{"distinct_id":"u1","confirm":true}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `"deleted_events":3`) {
+		t.Fatalf("u1 had 3 events: %s", out)
+	}
+	// idempotent second call deletes zero
+	out, _ = callAct(t, s, "delete_user_data", `{"distinct_id":"u1","confirm":true}`)
+	if !strings.Contains(out, `"deleted_events":0`) {
+		t.Fatalf("second delete should be 0: %s", out)
+	}
+}
