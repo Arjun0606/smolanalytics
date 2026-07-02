@@ -15,6 +15,7 @@
   var key = "";
   var queue = [];
   var did = null;
+  var anon = false; // cookieless mode: nothing stored on the device, no banner needed
   var timer = null;
   var captured = false; // autocapture wired once, even if the snippet loads twice
   var warnedAuth = false; // warn once on a bad key, don't spam the console
@@ -25,6 +26,7 @@
   }
 
   function distinctId() {
+    if (anon) return "$anon"; // sentinel: the server derives a daily-rotating visitor id
     if (did) return did;
     try {
       did = localStorage.getItem("smol_did");
@@ -36,6 +38,21 @@
       did = did || uid();
     }
     return did;
+  }
+
+  // utm + device context for web analytics (top sources, campaigns, device split).
+  // Computed once per page URL — cheap, no external calls, no fingerprinting.
+  function webContext() {
+    var ctx = {};
+    try {
+      var q = new URLSearchParams(location.search);
+      ["utm_source", "utm_medium", "utm_campaign"].forEach(function (k) {
+        var v = q.get(k);
+        if (v) ctx[k] = v.slice(0, 80);
+      });
+    } catch (e) {}
+    ctx.device = /Mobi|Android|iPhone|iPad/.test(navigator.userAgent) ? "mobile" : "desktop";
+    return ctx;
   }
 
   function flush() {
@@ -91,7 +108,11 @@
     function pageview() {
       if (location.pathname === lastPath) return;
       lastPath = location.pathname;
-      enqueue("$pageview", { path: location.pathname, referrer: document.referrer, title: document.title });
+      var props = webContext();
+      props.path = location.pathname;
+      props.referrer = document.referrer;
+      props.title = document.title;
+      enqueue("$pageview", props);
     }
     pageview();
     ["pushState", "replaceState"].forEach(function (m) {
@@ -141,6 +162,11 @@
       opts = opts || {};
       key = writeKey || "";
       host = (opts.host || "").replace(/\/$/, "");
+      // anonymous: true → cookieless mode. Nothing is stored on the visitor's device
+      // (no localStorage, no cookies), so no consent banner is needed; the server
+      // derives a daily-rotating anonymous id instead. identify() still works after
+      // login if you want real user analytics for signed-in users.
+      anon = !!opts.anonymous;
       distinctId();
       if (opts.autocapture !== false) {
         setupAutocapture(); // pageviews + clicks, zero manual instrumentation
@@ -163,6 +189,7 @@
     },
     identify: function (id, traits) {
       if (id) {
+        anon = false; // an explicit login id overrides cookieless mode for this user
         try { localStorage.setItem("smol_did", id); } catch (e) {}
         did = id;
       }

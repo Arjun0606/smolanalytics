@@ -4,7 +4,9 @@
 package api
 
 import (
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	_ "embed"
 	"encoding/hex"
@@ -141,6 +143,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/stickiness", s.apiStickiness)
 	mux.HandleFunc("GET /v1/paths", s.apiPaths)
 	mux.HandleFunc("GET /v1/groups", s.apiGroups)
+	mux.HandleFunc("GET /v1/web", s.apiWeb)
 	mux.HandleFunc("GET /v1/meta", s.apiMeta)
 	mux.HandleFunc("GET /v1/usage", s.usage)
 	mux.HandleFunc("GET /v1/notable", s.notable)
@@ -304,10 +307,17 @@ func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadRequest, "every event needs a name")
 			return
 		}
+		if batch[i].DistinctID == "$anon" {
+			// cookieless mode: the SDK stored NOTHING on the device (no consent banner
+			// needed), so we derive a daily-rotating anonymous visitor id server-side —
+			// stable within a day (sessions/funnels work), unlinkable across days.
+			// Plausible's model, made explicit via the $anon sentinel.
+			batch[i].DistinctID = s.anonID(r, now)
+		}
 		if batch[i].DistinctID == "" {
 			// silently accepting these would merge every anonymous event into one
 			// phantom "user" and quietly corrupt funnels/retention/DAU forever.
-			writeErr(w, http.StatusBadRequest, "every event needs a distinct_id (the user/visitor id it belongs to)")
+			writeErr(w, http.StatusBadRequest, "every event needs a distinct_id (the user/visitor id it belongs to; browsers may send \"$anon\" for cookieless mode)")
 			return
 		}
 		if batch[i].ID == "" {
@@ -370,6 +380,24 @@ func newID() string {
 	b := make([]byte, 12)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+// bootSalt anchors anonymous ids when no settings store exists (dev/demo) — random
+// per process, which is fine there.
+var bootSalt = newID()
+
+// anonID derives the cookieless visitor id: HMAC(day-scoped salt, client IP + UA).
+// Stable within a UTC day so sessions/funnels work; the salt rotates daily so
+// visitors are unlinkable across days and nothing identifying is ever stored —
+// that's what makes "no cookie banner" honest. IP and UA never leave this function.
+func (s *Server) anonID(r *http.Request, now time.Time) string {
+	secret := bootSalt
+	if s.settings != nil {
+		secret = s.settings.Secret()
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	fmt.Fprintf(mac, "%d|%s|%s", now.Unix()/86400, clientIP(r), r.UserAgent())
+	return "anon-" + hex.EncodeToString(mac.Sum(nil))[:16]
 }
 
 const maxBatchEvents = 10000

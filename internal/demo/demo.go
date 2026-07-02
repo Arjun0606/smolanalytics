@@ -39,6 +39,28 @@ func Seed(s store.Store) error {
 			props := map[string]any{"source": source, "plan": plan}
 			t := dayStart.Add(time.Duration(r.Intn(24)) * time.Hour).Add(time.Duration(r.Intn(60)) * time.Minute)
 
+			// the web layer: everyone lands before signing up (referrer per source,
+			// device split, some tagged campaigns) — feeds the web_overview report
+			device := "desktop"
+			if r.Float64() < 0.35 {
+				device = "mobile"
+			}
+			ref := map[string]string{"google": "https://www.google.com/", "twitter": "https://t.co/", "hacker news": "https://news.ycombinator.com/", "reddit": "https://www.reddit.com/", "direct": ""}[source]
+			wprops := map[string]any{"path": "/", "referrer": ref, "device": device, "source": source}
+			if source == "twitter" && r.Float64() < 0.5 {
+				wprops["utm_source"] = "twitter"
+				wprops["utm_campaign"] = "launch"
+			}
+			if err := emit("$pageview", user, t.Add(-3*time.Minute), wprops); err != nil {
+				return err
+			}
+			if r.Float64() < 0.4 {
+				p2 := map[string]any{"path": "/pricing", "referrer": "", "device": device, "source": source}
+				if err := emit("$pageview", user, t.Add(-time.Minute), p2); err != nil {
+					return err
+				}
+			}
+
 			if err := emit("signup", user, t, props); err != nil {
 				return err
 			}

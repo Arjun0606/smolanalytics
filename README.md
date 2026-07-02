@@ -38,7 +38,7 @@ Every analytics tool now has an AI assistant — but it's bolted *inside their a
 
 - **Ask in your editor, for free.** It's an MCP server — connect Claude / Cursor / Claude Code and ask in plain English. Your model does the reasoning, so there are no API keys and no metered AI credits. The dashboard has a built-in ask bar too, zero setup.
 - **It can't make up numbers.** Every other tool's AI assistant admits it hallucinates. Ours can't — it calls exact, deterministic reports (not guessed SQL), so the answer is the real computed number or nothing.
-- **Real product analytics.** Funnels, retention, trends, segmentation, lifecycle, stickiness, paths, cohorts, B2B accounts — every report filterable. The funnels Plausible makes you pay for and can't self-host.
+- **Real product analytics AND web analytics — one tool.** Funnels, retention, trends, segmentation, lifecycle, stickiness, paths, cohorts, B2B accounts — plus the Plausible-shaped web view (visitors, live-now, top pages, referrers, UTM sources, devices). The usual answer is "run Plausible AND something heavier"; this is both, in one binary.
 - **One binary, not a cluster.** No Kafka/ClickHouse/Redis, no 12-hours-debugging-self-host. `docker run` and it's up. Your data never leaves your box and never trains anyone's model.
 - **Beautiful by default.** Server-rendered, instant, opinionated — looks designed, not assembled.
 - **Open source (MIT), genuinely self-hostable.** Own the whole thing — no paywalled features stripped from the self-hosted edition.
@@ -50,6 +50,7 @@ Every hosted analytics tool, the privacy-first ones included, still asks you to 
 
 - **No third party, ever.** Nothing to sign a DPA with, no processor to disclose, nothing crossing a border. The answer to "who can see this data?" is just: you.
 - **No third-party cookies, no fingerprinting, no cross-site tracking.** The browser SDK uses a first-party anonymous id and nothing else.
+- **Cookieless mode — no consent banner needed.** `smolanalytics.init(key, { anonymous: true })` stores *nothing* on the visitor's device; the server derives a daily-rotating anonymous id instead (Plausible's model). Visitors are unlinkable across days, funnels still work within a day, and identified users (after login) keep full analytics. Consent banners cost ~55% of your data — this mode needs none.
 - **It never trains a model.** There's no model and no vendor, so there's no one to train on your data.
 - **Private by architecture, not by policy.** It isn't private because of a promise on a privacy page; it's private because there's no one else in the loop.
 
@@ -158,16 +159,31 @@ Even easier: paste *this* into Cursor/Claude Code and let it instrument your app
 **Framework guides** (copy-paste, two minutes each): [Next.js](docs/nextjs.md) · [React](docs/react.md) · [Vue](docs/vue.md) · [Backend](docs/backend.md) (Node/Python/Go/Ruby/PHP) · [Mobile](docs/mobile.md) (iOS/Android/RN). See [`examples/`](examples/) for a runnable page + curl script.
 
 ## How it compares
-Honest version — we're **not** deeper than the big tools (no session replay, flags, or experiments *yet*). The bet is a different shape:
+Honest version — we're **not** deeper than the big tools. The bet is a different shape:
 
 | | smolanalytics | Plausible / Fathom | Mixpanel / Amplitude | PostHog |
 |---|:---:|:---:|:---:|:---:|
 | Funnels · retention · paths · cohorts | ✅ | ❌ | ✅ | ✅ |
-| Ask in plain English | ✅ **your AI, free** | ❌ | 💲 their AI | 💲 their AI |
-| Lives in your editor (MCP) | ✅ | ❌ | ❌ | ❌ |
+| Web analytics (pages · referrers · live) | ✅ | ✅ | ⚠️ | ✅ |
+| Ask in plain English | ✅ **your AI, free** | ❌ | 💲 their AI | 💲 their AI + MCP |
+| The AI's numbers match the dashboard | ✅ **always — same engine** | — | ⚠️ | ⚠️ their docs: *"may not match the UI"* |
 | Self-host | ✅ one binary | ✅ | ❌ | ⚠️ Kafka + ClickHouse cluster |
 | Own your data · export | ✅ | ✅ | ⚠️ | ✅ |
 | Price | free / self-host | 💲 | 💲💲💲 | free tier + 💲 |
+
+On that accuracy row: PostHog's MCP is real and good — but it answers by generating
+HogQL, and [their own docs](https://posthog.com/tutorials/mcp-analytics) note results
+"sometimes differ from PostHog's dashboard — sampling, timezone handling, default
+filters, caching," with the advice to "verify in the UI" for numbers that matter. Ours
+can't differ: the MCP tools call the exact same deterministic reports the dashboard
+renders. There is no second path to disagree with.
+
+## What we'll never add
+The graveyard of analytics tools is "one tool that became nine." Session replay,
+feature flags, A/B testing, surveys, data warehouses — other tools do those well, and
+bundling them is how you end up needing a cluster and a pricing calculator. We stay
+one binary that answers questions about your events, exactly. If you outgrow that,
+you'll know, and your data exports cleanly.
 
 ## Deploy it (production)
 One static binary, no cgo, no cluster — it runs anywhere.

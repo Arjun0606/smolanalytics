@@ -84,6 +84,14 @@ var toolList = []map[string]any{
 		}, []string{"property"}),
 	},
 	{
+		"name":        "web_overview",
+		"description": "The web-analytics view: unique visitors, pageviews, LIVE visitors right now, top pages, referrers (grouped by host), UTM sources, and device split — from autocaptured $pageview events. Use for 'how's traffic', 'where do visitors come from', 'top pages', 'how many people are on the site right now'.",
+		"inputSchema": obj(map[string]any{
+			"days":    map[string]any{"type": "number", "description": "Trailing window in days (default 30)."},
+			"filters": filtersSchema,
+		}, nil),
+	},
+	{
 		"name":        "recent_events",
 		"description": "The most recent raw events (newest first) with their properties. Use to debug instrumentation ('did my signup event arrive', 'what's coming in right now') or to eyeball live activity.",
 		"inputSchema": obj(map[string]any{

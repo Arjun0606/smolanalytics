@@ -27,6 +27,45 @@ func TestIngestRejectsMissingDistinctID(t *testing.T) {
 	}
 }
 
+// Cookieless mode: "$anon" gets a server-derived daily visitor id — stable for the
+// same client today (funnels work), never the literal "$anon" (no phantom mega-user),
+// different for a different client.
+func TestIngestAnonDerivesDailyID(t *testing.T) {
+	st := memory.New()
+	h := New(st).Handler()
+	send := func(ua string) {
+		req := httptest.NewRequest("POST", "/v1/events", strings.NewReader(`{"name":"$pageview","distinct_id":"$anon"}`))
+		req.Header.Set("User-Agent", ua)
+		req.RemoteAddr = "198.51.100.7:1234"
+		r := httptest.NewRecorder()
+		h.ServeHTTP(r, req)
+		if r.Code != http.StatusAccepted {
+			t.Fatalf("anon ingest: got %d (%s)", r.Code, r.Body.String())
+		}
+	}
+	send("Mozilla/5.0 (Macintosh)")
+	send("Mozilla/5.0 (Macintosh)") // same client → same id
+	send("Mozilla/5.0 (iPhone)")    // different client → different id
+
+	evs, _ := st.Range(time.Time{}, time.Time{})
+	if len(evs) != 3 {
+		t.Fatalf("want 3 events, got %d", len(evs))
+	}
+	ids := map[string]int{}
+	for _, e := range evs {
+		if e.DistinctID == "$anon" || e.DistinctID == "" {
+			t.Fatalf("sentinel must be replaced with a derived id, got %q", e.DistinctID)
+		}
+		if !strings.HasPrefix(e.DistinctID, "anon-") {
+			t.Fatalf("derived id should be anon-…, got %q", e.DistinctID)
+		}
+		ids[e.DistinctID]++
+	}
+	if len(ids) != 2 {
+		t.Fatalf("same client must share an id, different client must not: %v", ids)
+	}
+}
+
 // Far-future client timestamps must be clamped to now — they'd skew every
 // trailing-window report and anchor lifecycle on a day that hasn't happened.
 func TestIngestClampsFutureTimestamps(t *testing.T) {

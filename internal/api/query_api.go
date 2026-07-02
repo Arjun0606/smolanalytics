@@ -16,6 +16,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/query"
 	"github.com/Arjun0606/smolanalytics/internal/retention"
 	"github.com/Arjun0606/smolanalytics/internal/trends"
+	"github.com/Arjun0606/smolanalytics/internal/web"
 )
 
 // filtersFrom parses ?filters=<url-encoded JSON array> into predicates, so any
@@ -210,6 +211,24 @@ func (s *Server) apiPaths(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, paths.After(evs, start, depth))
+}
+
+// GET /v1/web?days=30&filters=... — the web-analytics overview (visitors, pageviews,
+// live-now, top pages, referrers, UTM sources, device split) from $pageview events.
+func (s *Server) apiWeb(w http.ResponseWriter, r *http.Request) {
+	days := 30
+	if v, err := strconv.Atoi(r.URL.Query().Get("days")); err == nil && v > 0 {
+		days = v
+	}
+	if days > 365 {
+		days = 365
+	}
+	evs, err := s.filtered(r)
+	if err != nil {
+		writeQueryErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, web.Compute(evs, days, time.Time{}))
 }
 
 // GET /v1/groups?property=company&limit=50&filters=... — account-level roll-up
