@@ -15,6 +15,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
 	"github.com/Arjun0606/smolanalytics/internal/query"
 	"github.com/Arjun0606/smolanalytics/internal/trends"
+	"github.com/Arjun0606/smolanalytics/internal/web"
 )
 
 //go:embed dashboard.tmpl.html
@@ -118,6 +119,14 @@ type dashVM struct {
 	SourceTitle    string
 	HasConvBy      bool
 	HasSource      bool
+	// the web-analytics glance (from $pageview autocapture) — present only when
+	// pageviews exist, so product-only (backend) instances see nothing extra
+	HasWeb    bool
+	LiveNow   int
+	Visitors  int // unique visitors, 30d
+	Pageviews int // 30d
+	TopPages  []segRow
+	Referrers []segRow
 }
 
 func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
@@ -249,6 +258,39 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 
 	if segProp != "" {
 		vm.ConvBySeg = funnelBySegment(evs, segProp, fsteps)
+	}
+
+	// the web glance — live now, visitors, top pages, referrers (30d). Only shown
+	// when $pageview data exists; a backend-only instance stays product-only.
+	wv := web.Compute(evs, 30, time.Time{})
+	if wv.Pageviews > 0 {
+		vm.HasWeb = true
+		vm.LiveNow = wv.LiveNow
+		vm.Visitors = wv.Visitors
+		vm.Pageviews = wv.Pageviews
+		toRows := func(rows []web.Row, n int) []segRow {
+			top := 0
+			if len(rows) > 0 {
+				top = rows[0].Count
+			}
+			if len(rows) > n {
+				rows = rows[:n]
+			}
+			out := make([]segRow, 0, len(rows))
+			for _, r := range rows {
+				sr := segRow{Value: r.Value, Count: r.Count}
+				if top > 0 {
+					sr.BarPct = int(math.Round(float64(r.Count) / float64(top) * 100))
+				}
+				if wv.Pageviews > 0 {
+					sr.Pct = int(math.Round(float64(r.Count) / float64(wv.Pageviews) * 100))
+				}
+				out = append(out, sr)
+			}
+			return out
+		}
+		vm.TopPages = toRows(wv.TopPages, 6)
+		vm.Referrers = toRows(wv.Referrers, 6)
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

@@ -102,6 +102,14 @@
 
   /* segmented funnel conversion */
   .segconv{display:flex;gap:18px}
+  /* web glance */
+  .webstats{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:16px}
+  .wstat .l{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--mut)}
+  .wstat .v{font-family:var(--mono);font-size:24px;font-weight:700;margin-top:4px;letter-spacing:-.02em}
+  .wstat .v.acc{color:var(--accent)}
+  .webcols{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .wcolh{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--mut2);margin-bottom:8px}
+  @media(max-width:860px){.webcols{grid-template-columns:1fr}.webstats{grid-template-columns:1fr}}
   .sc{flex:1}
   .sc-h{display:flex;align-items:baseline;justify-content:space-between}
   .sc-name{font-size:13px;text-transform:capitalize}
@@ -224,6 +232,27 @@
     <div class="stat"><div class="l">{{.StatEventLabel}} (30d)</div><div class="v">{{.Signups}}</div></div>
     <div class="stat"><div class="l">{{.ConvLabel}}</div><div class="v acc">{{.OverallConv}}%</div></div>
   </div>
+
+  {{if .HasWeb}}
+  <div class="card">
+    <h2>Web · your traffic at a glance{{if gt .LiveNow 0}}<span class="livedot"></span>{{end}}</h2>
+    <div class="webstats">
+      <div class="wstat"><div class="l">Live now</div><div class="v acc">{{.LiveNow}}</div></div>
+      <div class="wstat"><div class="l">Visitors (30d)</div><div class="v">{{.Visitors}}</div></div>
+      <div class="wstat"><div class="l">Pageviews (30d)</div><div class="v">{{.Pageviews}}</div></div>
+    </div>
+    <div class="webcols">
+      <div>
+        <div class="wcolh">top pages</div>
+        {{range .TopPages}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
+      </div>
+      <div>
+        <div class="wcolh">referrers</div>
+        {{range .Referrers}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
+      </div>
+    </div>
+  </div>
+  {{end}}
 
   <div class="card explore">
     <h2>Explore · run any report on your own events</h2>
