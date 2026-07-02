@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Cloud / billing support
+    url: https://smolanalytics.com
+    about: Issues with the hosted Cloud, signup, or billing — not the open-source engine.
+  - name: Questions & ideas
+    url: https://github.com/Arjun0606/smolanalytics/discussions
+    about: "How do I…?" questions and feature ideas — Discussions keeps issues for actionable bugs.

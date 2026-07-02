@@ -30,8 +30,16 @@ CI runs exactly these. If they're green locally, they're green on CI.
 - `internal/{funnel,retention,trends,paths,engagement,groups,cohort,query}` — the analytics engine.
 - `internal/store` — the `Store` interface + backends: in-memory, the durable append-log, and the columnar segment tier (`store/segment` + `store/blob`, local disk or S3/R2) for scale.
 
-## Good first issues
-Look for the `good first issue` label. New report types, new MCP tools, and new store backends (e.g. a Postgres `Store`) are all welcome — they slot in behind existing interfaces without touching the rest.
+## Where to start
+Honest version: this is a one-person repo, so there's no curated backlog of starter
+issues yet. The clean extension seams — where a PR slots in behind an existing
+interface without touching the rest — are:
+- a new **report type** (see any package under `internal/`, e.g. `funnel`, `paths`)
+- a new **MCP tool** (`internal/mcp/tools.go` + `actions.go` — schema + handler + test)
+- a new **`Store` backend** (e.g. Postgres) behind `internal/store.Store`
+- a new **assistant target** for `smolanalytics connect` (`cmd/smolanalytics/connect.go`)
+
+Open a Discussion first if you're unsure the shape fits — saves you a rewrite.
 
 ## Reporting bugs / security
 Open an issue, or for security see [SECURITY.md](SECURITY.md).

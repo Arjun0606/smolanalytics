@@ -192,6 +192,12 @@ bundling them is how you end up needing a cluster and a pricing calculator. We s
 one binary that answers questions about your events, exactly. If you outgrow that,
 you'll know, and your data exports cleanly.
 
+Also on the never-list: **multi-node, clustering, HA.** Exactly one writer per
+instance is *why* the storage engine needs no consensus protocol — crash recovery is
+replaying one log, not electing a leader. The moment we add a second node we inherit
+the distributed-systems tax that makes other tools a weekend to self-host. Need more
+isolation? Run more instances (one per project) — that's the whole cloud's design too.
+
 ## Deploy it (production)
 One static binary, no cgo, no cluster — it runs anywhere.
 
@@ -214,7 +220,27 @@ Manage everything from **Settings** (`/settings`): account + password, API keys,
 
 **No lock-in:** export everything any time — `GET /v1/export?format=csv` or `?format=jsonl` (the JSONL round-trips straight back into `/v1/events`).
 
+**If we disappear:** nothing happens to you. The MIT binary keeps running forever, your events live in plain files on *your* disk or *your* bucket, and exports are one curl. There is no phone-home, no license server, and no closed control plane your data depends on. The binary you run in dev is production — there's no separate "self-host mode" that's secretly the second-class version.
+
 ## What's inside
+
+How an event is stored (the whole write path, inside one binary):
+
+```
+SDK / POST /v1/events
+        │
+        ▼
+append-only hot log ──(fsync per batch — an ACK means it's on disk)
+        │  seals every 50k events
+        ▼
+immutable columnar segment (compressed, CRC'd, ~7 bytes/event)
+        │  optional
+        ▼
+S3 / R2 / Tigris  (flat RAM regardless of history size)
+```
+
+There is exactly one writer — your instance — which is why this needs no consensus protocol, no coordination service, and no cluster. Crash recovery is "replay one log," not "rebuild a quorum." The full reasoning (and what we knowingly traded away) is in [docs/design/storage.md](docs/design/storage.md); terms are pinned in the [glossary](docs/glossary.md).
+
 - `internal/{funnel,retention,trends,paths,engagement,groups,cohort,query}` — the deterministic analytics engine (every report, fully tested).
 - `internal/store` — the `Store` interface with three backends behind it: in-memory, the durable append-log (single box), and the columnar segment tier (`store/segment` + `store/blob`) that seals into compressed segments on local disk or S3/R2 — billions of events on flat memory, ~7 bytes/event.
 - `internal/mcp` — the MCP server (stdio + Streamable HTTP): the "ask with your own AI" layer.
@@ -240,7 +266,7 @@ Generous free tier (100k events, runs a real product), then $19/mo. Same product
 PRs welcome — keep it small, correct, and dependency-free. See [CONTRIBUTING.md](CONTRIBUTING.md). Security issues: [SECURITY.md](SECURITY.md).
 
 ## License
-[MIT](LICENSE). Use it, fork it, host it. A managed cloud (zero-setup hosting + per-tenant isolation) is coming for those who'd rather not run it themselves.
+[MIT](LICENSE), forever. No CLA, no rug-pull relicense — the business is the hosted cloud, never the license. Use it, fork it, host it, sell hosting of it if you want.
 
 ## Show it off
 Using smolanalytics? Add the badge — it helps others find the tool:

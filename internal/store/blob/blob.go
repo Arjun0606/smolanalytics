@@ -42,12 +42,33 @@ func (l *Local) Put(key string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
 		return err
 	}
-	// write-temp-then-rename so a reader never sees a half-written object.
+	// write-temp → fsync → rename → fsync dir: a reader never sees a half-written
+	// object AND a power cut can't leave a renamed-but-empty segment (rename alone
+	// doesn't force the data to disk — the same discipline the hot log uses).
 	tmp := p + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, p)
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, p); err != nil {
+		return err
+	}
+	if d, err := os.Open(filepath.Dir(p)); err == nil {
+		_ = d.Sync() // make the rename itself durable; best-effort (not all FSes support it)
+		_ = d.Close()
+	}
+	return nil
 }
 
 func (l *Local) Get(key string) ([]byte, error) {
