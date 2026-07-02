@@ -169,8 +169,9 @@ func TestLoginRateLimit(t *testing.T) {
 	}
 	r := httptest.NewRecorder()
 	h.ServeHTTP(r, form())
-	if r.Code != http.StatusTooManyRequests {
-		t.Fatalf("11th failed attempt: got %d, want 429", r.Code)
+	// a browser form post gets a page back (redirect with the rate-limit flag), not raw JSON
+	if r.Code != http.StatusFound || r.Header().Get("Location") != "/login?e=rl" {
+		t.Fatalf("11th failed attempt: got %d → %q, want 302 → /login?e=rl", r.Code, r.Header().Get("Location"))
 	}
 }
 

@@ -158,13 +158,15 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_ = loginTmpl.Execute(w, map[string]any{"Project": s.projectName(), "Error": r.URL.Query().Get("e") != ""})
+		e := r.URL.Query().Get("e")
+		_ = loginTmpl.Execute(w, map[string]any{"Project": s.projectName(), "Error": e != "", "RateLimited": e == "rl"})
 		return
 	}
 	// POST
 	ip := clientIP(r)
 	if loginGuard.blocked(ip) {
-		writeErr(w, http.StatusTooManyRequests, "too many failed logins — try again in a few minutes")
+		// a browser form post must get a page back, not raw JSON
+		http.Redirect(w, r, "/login?e=rl", http.StatusFound)
 		return
 	}
 	if s.checkLogin(r.FormValue("password")) {
