@@ -263,6 +263,9 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		if a.Days <= 0 {
 			a.Days = 7
 		}
+		if a.Days > 90 {
+			a.Days = 90 // same cap as the HTTP API — one question, one answer (agreement_test enforces this)
+		}
 		if err := s.checkEvents(a.Event); err != nil {
 			return "", err
 		}
