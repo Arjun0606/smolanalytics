@@ -60,6 +60,31 @@ func main() {
 			arg = os.Args[2]
 		}
 		connect(arg)
+	case "scrub":
+		// verify the cold tier's invariants (every segment readable, CRC-clean, counts
+		// match) and clean up orphaned blobs left by failed deletes. Exit 1 on problems.
+		b, label, err := coldBlob()
+		if err != nil {
+			log.Fatal(err)
+		}
+		if b == nil {
+			log.Fatal("scrub: no cold tier configured (set SMOLANALYTICS_COLD or SMOLANALYTICS_S3_BUCKET)")
+		}
+		st, err := segment.Open(dataPath(), b, envInt("SMOLANALYTICS_SEAL_EVENTS"))
+		if err != nil {
+			log.Fatal(err)
+		}
+		report, deleted := st.Scrub()
+		fmt.Printf("scrub of %s\n", label)
+		fmt.Printf("  segments: %d   events: %d (+%d hot)\n", report.Segments, report.Events, report.HotEvents)
+		fmt.Printf("  orphaned blobs removed: %d\n", deleted)
+		if len(report.Problems) > 0 {
+			for _, p := range report.Problems {
+				fmt.Printf("  PROBLEM: %s\n", p)
+			}
+			os.Exit(1)
+		}
+		fmt.Println("  all invariants hold ✓")
 	default:
 		fmt.Println("smolanalytics — product analytics in one binary")
 		fmt.Println()
@@ -68,6 +93,8 @@ func main() {
 		fmt.Println("  smolanalytics mcp     MCP server over stdio — connect your Claude/Cursor and ask anything")
 		fmt.Println("  smolanalytics connect wire it into your coding assistant (Claude Desktop/Code, Cursor,")
 		fmt.Println("                        Windsurf, VS Code, Cline) in one command, then ask")
+		fmt.Println("  smolanalytics scrub   verify the cold tier (every segment readable, CRC-clean,")
+		fmt.Println("                        counts match) and remove orphaned blobs")
 		fmt.Println()
 		fmt.Println("  ADDR                      listen address (default 127.0.0.1:8080 = local only;")
 		fmt.Println("                            set 0.0.0.0:8080 to expose — then a password is required)")

@@ -1,0 +1,17 @@
+[
+ {
+  "distinct_id": "u1",
+  "id": "fx1",
+  "name": "signup"
+ },
+ {
+  "distinct_id": "u2",
+  "id": "fx2",
+  "name": "$pageview"
+ },
+ {
+  "distinct_id": "u1",
+  "id": "fx3",
+  "name": "checkout"
+ }
+]

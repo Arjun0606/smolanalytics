@@ -7,6 +7,7 @@
 package segment
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -53,8 +54,8 @@ func Open(hotPath string, b blob.Blob, sealAt int) (*Store, error) {
 	s := &Store{hot: hot, blob: b, sealAt: sealAt, names: map[string]bool{}}
 
 	if data, err := b.Get(manifestKey); err == nil {
-		if err := json.Unmarshal(data, &s.manifest); err != nil {
-			return nil, fmt.Errorf("segment: corrupt manifest: %w", err)
+		if err := s.loadManifest(data); err != nil {
+			return nil, err
 		}
 	} else if !os.IsNotExist(err) {
 		return nil, err
@@ -175,8 +176,43 @@ func (s *Store) sealLocked() error {
 	return s.hot.Clear()
 }
 
+// manifestEnvelope is the on-blob manifest format. The explicit version field is
+// what lets a future format change fail loudly ("manifest v3 needs a newer binary")
+// instead of silently misreading — add a compat fixture whenever v bumps.
+type manifestEnvelope struct {
+	V        int       `json:"v"`
+	Segments []segMeta `json:"segments"`
+}
+
+const manifestVersion = 1
+
+// loadManifest accepts both formats: v0 legacy (a bare JSON array, written before
+// versioning existed) and the v1+ envelope. Sniffed by the first non-space byte, so
+// every existing install upgrades in place with no migration step.
+func (s *Store) loadManifest(data []byte) error {
+	trimmed := bytes.TrimLeft(data, " \t\r\n")
+	if len(trimmed) == 0 {
+		return nil
+	}
+	if trimmed[0] == '[' { // legacy v0: bare []segMeta
+		if err := json.Unmarshal(data, &s.manifest); err != nil {
+			return fmt.Errorf("segment: corrupt manifest: %w", err)
+		}
+		return nil
+	}
+	var env manifestEnvelope
+	if err := json.Unmarshal(data, &env); err != nil {
+		return fmt.Errorf("segment: corrupt manifest: %w", err)
+	}
+	if env.V > manifestVersion {
+		return fmt.Errorf("segment: manifest is v%d but this binary understands up to v%d — upgrade smolanalytics", env.V, manifestVersion)
+	}
+	s.manifest = env.Segments
+	return nil
+}
+
 func (s *Store) persistManifestLocked() error {
-	data, err := json.Marshal(s.manifest)
+	data, err := json.Marshal(manifestEnvelope{V: manifestVersion, Segments: s.manifest})
 	if err != nil {
 		return err
 	}
@@ -438,4 +474,79 @@ func (s *Store) DeleteUser(distinctID string) (int, error) {
 		return removed, err
 	}
 	return removed + hr, nil
+}
+
+// VerifyReport is what Verify/scrub found. Problems make the instance unhealthy;
+// orphans are expected debris (failed deletes leave unreferenced blobs by design).
+type VerifyReport struct {
+	Segments  int      `json:"segments"`
+	Events    int      `json:"events"`     // decoded total across segments
+	HotEvents int      `json:"hot_events"` // events in the open hot block
+	Orphans   []string `json:"orphans"`    // blobs under seg/ not in the manifest (warning only)
+	Problems  []string `json:"problems"`   // corruption / mismatches — any entry means unhealthy
+}
+
+// Verify checks the invariants the design doc promises: every manifest entry Gets
+// from the blob backend, decodes (CRC), and matches its recorded count and time
+// range; the hot WAL is readable; unreferenced blobs are reported as orphans.
+func (s *Store) Verify() VerifyReport {
+	s.mu.RLock()
+	segs := make([]segMeta, len(s.manifest))
+	copy(segs, s.manifest)
+	s.mu.RUnlock()
+
+	var r VerifyReport
+	r.Segments = len(segs)
+	referenced := map[string]bool{}
+	for _, m := range segs {
+		referenced[m.Key] = true
+		data, err := s.blob.Get(m.Key)
+		if err != nil {
+			r.Problems = append(r.Problems, fmt.Sprintf("%s: referenced by manifest but unreadable: %v", m.Key, err))
+			continue
+		}
+		evs, err := decodeSegment(data)
+		if err != nil {
+			r.Problems = append(r.Problems, fmt.Sprintf("%s: corrupt: %v", m.Key, err))
+			continue
+		}
+		r.Events += len(evs)
+		if len(evs) != m.Count {
+			r.Problems = append(r.Problems, fmt.Sprintf("%s: manifest says %d events, segment holds %d", m.Key, m.Count, len(evs)))
+		}
+		for _, e := range evs {
+			if e.Timestamp.Before(m.MinTS) || e.Timestamp.After(m.MaxTS) {
+				r.Problems = append(r.Problems, fmt.Sprintf("%s: event %s outside manifest time range", m.Key, e.ID))
+				break
+			}
+		}
+	}
+	if keys, err := s.blob.List("seg/"); err == nil {
+		for _, k := range keys {
+			if !referenced[k] {
+				r.Orphans = append(r.Orphans, k)
+			}
+		}
+	} else {
+		r.Problems = append(r.Problems, fmt.Sprintf("listing blobs: %v", err))
+	}
+	if evs, err := s.hot.Range(time.Time{}, time.Time{}); err == nil {
+		r.HotEvents = len(evs)
+	} else {
+		r.Problems = append(r.Problems, fmt.Sprintf("hot log unreadable: %v", err))
+	}
+	return r
+}
+
+// Scrub is Verify plus housekeeping: deletes the orphaned blobs Verify found
+// (they're unreferenced by design after a failed delete — safe to remove).
+func (s *Store) Scrub() (VerifyReport, int) {
+	r := s.Verify()
+	deleted := 0
+	for _, k := range r.Orphans {
+		if err := s.blob.Delete(k); err == nil {
+			deleted++
+		}
+	}
+	return r, deleted
 }
