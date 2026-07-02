@@ -1,0 +1,42 @@
+# smolanalytics
+
+> Self-hosted product + web analytics in one Go binary. Deterministic reports (funnels,
+> retention, trends, paths, web traffic) exposed over HTTP and MCP, so AI assistants
+> answer analytics questions with exact computed numbers — never generated SQL.
+
+## Install (for agents adding analytics to an app)
+
+Run the server (pick one):
+- docker: `docker run -d -p 8080:8080 -v sa_data:/data -e SMOLANALYTICS_DB=/data/events.log -e SMOLANALYTICS_WRITE_KEY=<key> ghcr.io/arjun0606/smolanalytics:latest serve`
+- binary: `curl -fsSL https://raw.githubusercontent.com/Arjun0606/smolanalytics/main/install.sh | sh`
+
+Web app — add to the HTML head (autocaptures pageviews + clicks, SPA-aware):
+```html
+<script src="https://YOUR_HOST/sdk.js"></script>
+<script>smolanalytics.init("YOUR_WRITE_KEY", { host: "https://YOUR_HOST" });</script>
+```
+Cookieless (no consent banner needed): `smolanalytics.init(key, { host, anonymous: true })`.
+On login: `smolanalytics.identify(userId)`. Custom events: `smolanalytics.track("signup", { plan: "pro" })`.
+
+Backend/mobile — POST one endpoint, any language:
+```
+POST https://YOUR_HOST/v1/events
+Authorization: Bearer YOUR_WRITE_KEY
+{ "name": "signup", "distinct_id": "user_123", "properties": { "plan": "pro" } }
+```
+Batch = JSON array (up to 10k events). Use a stable distinct_id per user.
+
+## Connect an AI assistant (MCP)
+
+`smolanalytics connect` wires Claude Desktop / Claude Code / Cursor / Windsurf / VS Code / Cline
+automatically. Manual stdio config: command `smolanalytics`, args `["mcp"]`, env
+`SMOLANALYTICS_DB=<path>`. Remote: Streamable HTTP at `POST https://YOUR_HOST/mcp` with
+`Authorization: Bearer <write key>`. 14 tools including overview, funnel, retention, trends,
+breakdown, web_overview, paths, lifecycle, stickiness, whats_notable.
+
+## Key facts
+- Reports are deterministic — tool answers always equal dashboard numbers (same engine).
+- Unknown event/property names return corrective errors listing valid names (never silent zeros).
+- One static binary, zero dependencies, MIT. Data stays on your infrastructure.
+- Docs: https://github.com/Arjun0606/smolanalytics (framework guides in /docs).
+- Hosted version: https://smolanalytics-site.vercel.app (cloud, coming soon).
