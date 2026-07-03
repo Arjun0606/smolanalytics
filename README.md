@@ -9,7 +9,9 @@
 
 You ship a feature in Cursor or Claude Code, then ask *"did activation improve this week?"* right there. Your model answers from your real data over [MCP](https://modelcontextprotocol.io). We run no model, so the AI part costs you nothing. And because it's a binary on your machine, no one else ever sees your users' data.
 
-![The smolanalytics dashboard: the "what to look at" verdict up top, then every report on your own events — funnels, retention, cohorts, paths — all filterable.](docs/dashboard.png)
+![smolanalytics in 25 seconds: the verdict finds your biggest drop-off, you ask "which channel converts best?" and get the exact computed answer, then the full product view — funnels, retention, cohorts.](docs/demo.gif)
+
+<sub>That's the real product on demo data — run it yourself in 30 seconds below. ([still image](docs/dashboard.png))</sub>
 
 ## Quickstart (30 seconds)
 
