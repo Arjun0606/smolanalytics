@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/alert"
+	alias2 "github.com/Arjun0606/smolanalytics/internal/alias"
 	"github.com/Arjun0606/smolanalytics/internal/api"
 	"github.com/Arjun0606/smolanalytics/internal/audit"
 	"github.com/Arjun0606/smolanalytics/internal/cohort"
@@ -222,7 +223,19 @@ func serve(st store.Store, closeStore func() error, guardPublic bool) {
 	if addr == "" {
 		addr = "127.0.0.1:8080" // local-only by default; set ADDR=0.0.0.0:8080 to expose (needs a password)
 	}
+	// identity stitching: wrap the store so every read canonicalizes ids through the
+	// alias map (and GDPR erasure fans out across a user's anonymous trail).
+	var aliasMap *alias2.Map
+	if am, err := alias2.Open(dataPath() + ".aliases.json"); err == nil {
+		aliasMap = am
+		st = alias2.Wrap(st, am)
+	} else {
+		log.Printf("smolanalytics: identity stitching disabled (%v)", err)
+	}
 	app := api.New(st)
+	if aliasMap != nil {
+		app.SetAliases(aliasMap)
+	}
 	app.SetWriteKey(os.Getenv("SMOLANALYTICS_WRITE_KEY"))
 	if ins, err := insights.Open(dataPath() + ".insights.json"); err == nil {
 		app.SetInsights(ins)
@@ -396,6 +409,9 @@ func runMCP() {
 			log.Fatal(err)
 		}
 		st = m
+	}
+	if am, err := alias2.Open(dataPath() + ".aliases.json"); err == nil {
+		st = alias2.Wrap(st, am)
 	}
 	m := mcp.New(st)
 	// action tools (create_alert, save_report, …) write the same sidecar files the

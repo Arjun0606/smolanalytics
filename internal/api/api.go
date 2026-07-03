@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/alert"
+	"github.com/Arjun0606/smolanalytics/internal/alias"
 	"github.com/Arjun0606/smolanalytics/internal/audit"
 	"github.com/Arjun0606/smolanalytics/internal/botua"
 	"github.com/Arjun0606/smolanalytics/internal/cohort"
@@ -55,6 +56,7 @@ type Server struct {
 	webhooks *webhook.Store
 	alerts   *alert.Store
 	shares   *share.Store
+	aliases  *alias.Map
 	writeKey string // if set, POST /v1/events requires Authorization: Bearer <writeKey>
 	// autocaptured events dropped because the UA was a known crawler/bot — surfaced in
 	// /v1/usage so "why is my dashboard lower than GA?" has a visible, honest answer.
@@ -82,6 +84,9 @@ func (s *Server) SetInsights(st *insights.Store) { s.insights = st; s.mcp.SetIns
 
 // SetCohorts swaps in a persistent cohort store (shared with MCP).
 func (s *Server) SetCohorts(st *cohort.Store) { s.cohorts = st; s.mcp.SetCohorts(st) }
+
+// SetAliases attaches the identity-stitching map (ingest records anon→user on $identify).
+func (s *Server) SetAliases(a *alias.Map) { s.aliases = a }
 
 // SetGoals attaches the goals store (shared with the MCP goal tools).
 func (s *Server) SetGoals(g *goal.Store) { s.mcp.SetGoals(g) }
@@ -363,6 +368,14 @@ func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 			// stable within a day (sessions/funnels work), unlinkable across days.
 			// Plausible's model, made explicit via the $anon sentinel.
 			batch[i].DistinctID = s.anonID(r, now)
+		}
+		// identity stitching: the SDK's identify() carries the visitor's previous
+		// anonymous id — record anon→user so read-time canonicalization joins the
+		// pre-login journey to the account.
+		if s.aliases != nil && batch[i].Name == "$identify" {
+			if prev, ok := batch[i].Properties["$anon_distinct_id"].(string); ok {
+				_ = s.aliases.Add(prev, batch[i].DistinctID)
+			}
 		}
 		if batch[i].DistinctID == "" {
 			// silently accepting these would merge every anonymous event into one

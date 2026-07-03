@@ -241,12 +241,17 @@
       return smol;
     },
     identify: function (id, traits) {
+      var prev = did; // the anonymous id this browser used before login
       if (id) {
         anon = false; // an explicit login id overrides cookieless mode for this user
         try { localStorage.setItem("smol_did", id); } catch (e) {}
         did = id;
       }
-      enqueue("$identify", traits || {});
+      var props = traits || {};
+      // breadcrumb for identity stitching: the server joins the pre-login journey
+      // to this account (guarded server-side against the $anon sentinel)
+      if (prev && prev !== id) props.$anon_distinct_id = prev;
+      enqueue("$identify", props);
       return smol;
     },
     reset: function () {
