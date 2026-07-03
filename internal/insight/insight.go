@@ -22,6 +22,25 @@ type Finding struct {
 	Detail   string `json:"detail"`
 }
 
+// minSample is the floor for any rate/percentage finding: below this base count
+// the finding is suppressed outright. "activate jumped 50%" when it went 2→3 is
+// noise, and shipping noise as a verdict costs trust with exactly the low-traffic
+// products this digest serves.
+const minSample = 20
+
+// smallSample is the base under which a surviving rate finding carries an explicit
+// qualifier, so the reader can weigh a swing on n=34 against one on n=3400.
+const smallSample = 100
+
+// qualify appends the small-sample note when the base clears the floor but is
+// still thin enough that the percentage deserves a caveat.
+func qualify(detail string, n int) string {
+	if n < smallSample {
+		return fmt.Sprintf("%s (n=%d — small sample)", detail, n)
+	}
+	return detail
+}
+
 func absInt(n int) int {
 	if n < 0 {
 		return -n
@@ -68,20 +87,24 @@ func Generate(evs []event.Event) []Finding {
 	}
 	if len(steps) >= 2 {
 		fr := funnel.Compute(evs, steps, 7*24*time.Hour)
-		worstDrop, worstFrom, worstTo, worstPct := -1, "", "", 0
+		worstDrop, worstFrom, worstTo, worstPct, worstBase := -1, "", "", 0, 0
 		for i := 1; i < len(fr.Steps); i++ {
+			if fr.Steps[i-1].Count < minSample {
+				continue // a conversion % on a handful of entrants is noise, not a leak
+			}
 			if fr.Steps[i].DroppedFromPrev > worstDrop {
 				worstDrop = fr.Steps[i].DroppedFromPrev
 				worstFrom, worstTo = fr.Steps[i-1].Event, fr.Steps[i].Event
 				worstPct = int(fr.Steps[i].ConversionFromPrev*100 + 0.5)
+				worstBase = fr.Steps[i-1].Count
 			}
 		}
 		if worstDrop > 0 {
 			out = append(out, Finding{
 				Severity: "warn",
 				Title:    fmt.Sprintf("Biggest drop-off: %s → %s", worstFrom, worstTo),
-				Detail: fmt.Sprintf("only %d%% continue; %d users fall off here. Overall %s→%s conversion is %d%%.",
-					worstPct, worstDrop, fr.Steps[0].Event, fr.Steps[len(fr.Steps)-1].Event, int(fr.OverallConversion*100+0.5)),
+				Detail: qualify(fmt.Sprintf("only %d%% continue; %d users fall off here. Overall %s→%s conversion is %d%%.",
+					worstPct, worstDrop, fr.Steps[0].Event, fr.Steps[len(fr.Steps)-1].Event, int(fr.OverallConversion*100+0.5)), worstBase),
 			})
 			// 1b) name the segment to blame: if one property value converts far worse
 			// through this exact step, that's the thing to fix — not the average.
@@ -108,7 +131,7 @@ func Generate(evs []event.Event) []Finding {
 			prev7++
 		}
 	}
-	if prev7 > 0 {
+	if prev7 >= minSample {
 		change := int(math.Round(float64(last7-prev7) / float64(prev7) * 100)) // round (handles negatives), not truncate
 		sev, dir := "info", "up"
 		if change < 0 {
@@ -120,7 +143,7 @@ func Generate(evs []event.Event) []Finding {
 		out = append(out, Finding{
 			Severity: sev,
 			Title:    fmt.Sprintf("%s is %s %d%% week-over-week", head, dir, absInt(change)),
-			Detail:   fmt.Sprintf("%d in the last 7 days vs %d the week before.", last7, prev7),
+			Detail:   qualify(fmt.Sprintf("%d in the last 7 days vs %d the week before.", last7, prev7), prev7),
 		})
 	}
 
@@ -134,7 +157,7 @@ func Generate(evs []event.Event) []Finding {
 	// observed day N count (the retention-triangle rule).
 	d1, size1 := retention.DayN(rr, 1, now)
 	d7, size7 := retention.DayN(rr, 7, now)
-	if size1 > 0 {
+	if size1 >= minSample {
 		p1 := int(float64(d1)/float64(size1)*100 + 0.5)
 		sev := "info"
 		if p1 < 20 {
@@ -142,12 +165,12 @@ func Generate(evs []event.Event) []Finding {
 		}
 		title := fmt.Sprintf("Day-1 retention %d%%", p1)
 		detail := fmt.Sprintf("of %d users past day 1, based on %q activity.", size1, retEv)
-		if size7 > 0 {
+		if size7 >= minSample {
 			p7 := int(float64(d7)/float64(size7)*100 + 0.5)
 			title = fmt.Sprintf("Day-1 retention %d%%, day-7 %d%%", p1, p7)
 			detail = fmt.Sprintf("of %d users past day 1 (%d past day 7), based on %q activity.", size1, size7, retEv)
 		}
-		out = append(out, Finding{Severity: sev, Title: title, Detail: detail})
+		out = append(out, Finding{Severity: sev, Title: title, Detail: qualify(detail, size1)})
 	}
 
 	// warnings first
@@ -193,7 +216,7 @@ func anomalies(evs []event.Event, names []string, now time.Time) []Finding {
 			continue
 		}
 		baseDaily := float64(s.baseTotal) / 7.0
-		if baseDaily < 3 { // not enough normal volume to trust a percentage swing
+		if s.baseTotal < minSample || baseDaily < 3 { // not enough normal volume to trust a percentage swing
 			continue
 		}
 		dev := (float64(s.last24) - baseDaily) / baseDaily
@@ -216,6 +239,7 @@ func anomalies(evs []event.Event, names []string, now time.Time) []Finding {
 				Detail:   fmt.Sprintf("%d in the last 24h vs ~%.0f/day normally.", s.last24, baseDaily),
 			}
 		}
+		best.Detail = qualify(best.Detail, s.baseTotal)
 	}
 	if found {
 		return []Finding{best}

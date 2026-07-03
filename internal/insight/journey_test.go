@@ -59,11 +59,11 @@ func TestSegmentBlame(t *testing.T) {
 				Properties: map[string]any{"source": src}})
 		}
 	}
-	// google: 20 users, 80% convert. tiktok: 15 users, 13% convert.
+	// google: 20 users, 80% convert. tiktok: 20 users, 10% convert.
 	for i := 0; i < 20; i++ {
 		mk(i, "google", i < 16)
 	}
-	for i := 0; i < 15; i++ {
+	for i := 0; i < 20; i++ {
 		mk(i, "tiktok", i < 2)
 	}
 	f := segmentBlame(evs, "signup", "activate")

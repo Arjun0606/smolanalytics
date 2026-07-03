@@ -105,7 +105,7 @@ func segmentBlame(evs []event.Event, from, to string) *Finding {
 		return nil
 	}
 	overall := stepRate(evs, from, to, nil)
-	if overall.entered < 20 || overall.rate() <= 0 {
+	if overall.entered < minSample || overall.rate() <= 0 {
 		return nil // too thin to blame anyone
 	}
 
@@ -122,7 +122,7 @@ func segmentBlame(evs []event.Event, from, to string) *Finding {
 	worstRate := overall.rate()
 	for val := range values {
 		seg := stepRate(evs, from, to, []query.Filter{{Property: prop, Op: query.Eq, Value: val}})
-		if seg.entered < 10 {
+		if seg.entered < minSample {
 			continue // not enough users in the segment to conclude anything
 		}
 		r := seg.rate()
@@ -131,8 +131,8 @@ func segmentBlame(evs []event.Event, from, to string) *Finding {
 			worst = &Finding{
 				Severity: "warn",
 				Title:    fmt.Sprintf("%s=%s converts far worse at %s → %s", prop, val, from, to),
-				Detail: fmt.Sprintf("%d%% vs %d%% overall (%d of %d users continue). Fix this segment first.",
-					int(r*100+0.5), int(overall.rate()*100+0.5), seg.converted, seg.entered),
+				Detail: qualify(fmt.Sprintf("%d%% vs %d%% overall (%d of %d users continue). Fix this segment first.",
+					int(r*100+0.5), int(overall.rate()*100+0.5), seg.converted, seg.entered), seg.entered),
 			}
 		}
 	}

@@ -44,6 +44,9 @@ func TestAnomalyDropDetected(t *testing.T) {
 	if !ok || f.Severity != "warn" || !strings.Contains(f.Title, "dropped") {
 		t.Fatalf("expected a drop anomaly (warn), got %+v (ok=%v)", f, ok)
 	}
+	if strings.Contains(f.Detail, "small sample") { // 140 baseline events clear smallSample
+		t.Fatalf("base of 140 must not be qualified: %q", f.Detail)
+	}
 }
 
 func TestAnomalySpikeDetected(t *testing.T) {
@@ -52,6 +55,9 @@ func TestAnomalySpikeDetected(t *testing.T) {
 	f, ok := findAnomaly(Generate(evs))
 	if !ok || f.Severity != "info" || !strings.Contains(f.Title, "jumped") {
 		t.Fatalf("expected a spike anomaly (info), got %+v (ok=%v)", f, ok)
+	}
+	if !strings.Contains(f.Detail, "(n=70 — small sample)") { // 70 baseline events: past the floor, under smallSample
+		t.Fatalf("thin base must carry the qualifier: %q", f.Detail)
 	}
 }
 

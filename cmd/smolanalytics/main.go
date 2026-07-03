@@ -66,6 +66,10 @@ func main() {
 		connect(arg)
 	case "gsc":
 		gscCmd(os.Args[2:])
+	case "import":
+		importCmd(os.Args[2:])
+	case "brief":
+		briefCmd(os.Args[2:])
 	case "scrub":
 		// verify the cold tier's invariants (every segment readable, CRC-clean, counts
 		// match) and clean up orphaned blobs left by failed deletes. Exit 1 on problems.
@@ -102,6 +106,8 @@ func main() {
 		fmt.Println("  smolanalytics scrub   verify the cold tier (every segment readable, CRC-clean,")
 		fmt.Println("                        counts match) and remove orphaned blobs")
 		fmt.Println("  smolanalytics gsc     connect Google Search Console (auth / status)")
+		fmt.Println("  smolanalytics brief   print the morning digest: pulse + what to look at")
+		fmt.Println("                        (--json, --webhook=URL for Slack, --days=7 — cron it)")
 		fmt.Println()
 		fmt.Println("  ADDR                      listen address (default 127.0.0.1:8080 = local only;")
 		fmt.Println("                            set 0.0.0.0:8080 to expose — then a password is required)")

@@ -28,9 +28,10 @@ func TestRetentionExcludesUnobservableCohorts(t *testing.T) {
 	now := time.Now().UTC()
 	var evs []event.Event
 
-	// old cohort: 10 users first seen 10 days ago, ALL return on day 1 and day 7.
+	// old cohort: 25 users first seen 10 days ago, ALL return on day 1 and day 7.
+	// (25, not fewer — the cohort must clear the minSample floor to produce a finding.)
 	base := now.Add(-10 * 24 * time.Hour)
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 25; i++ {
 		id := fmt.Sprintf("old_%d", i)
 		evs = append(evs,
 			uev("open", id, base),
@@ -48,7 +49,7 @@ func TestRetentionExcludesUnobservableCohorts(t *testing.T) {
 		t.Fatal("expected a retention finding")
 	}
 	// truth: 100% day-1 and 100% day-7 among users old enough to observe. With the young
-	// cohort wrongly in the denominator it would read ~10%.
+	// cohort wrongly in the denominator it would read ~22%.
 	if !strings.Contains(f.Title, "Day-1 retention 100%") || !strings.Contains(f.Title, "day-7 100%") {
 		t.Fatalf("young cohort polluted the denominator: %q (%s)", f.Title, f.Detail)
 	}
