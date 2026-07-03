@@ -20,6 +20,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/audit"
 	"github.com/Arjun0606/smolanalytics/internal/cohort"
 	"github.com/Arjun0606/smolanalytics/internal/demo"
+	"github.com/Arjun0606/smolanalytics/internal/goal"
 	"github.com/Arjun0606/smolanalytics/internal/insight"
 	"github.com/Arjun0606/smolanalytics/internal/insights"
 	"github.com/Arjun0606/smolanalytics/internal/mcp"
@@ -269,6 +270,11 @@ func serve(st store.Store, closeStore func() error, guardPublic bool) {
 	} else {
 		log.Printf("smolanalytics: tracking plan disabled (%v)", err)
 	}
+	if gl, err := goal.Open(dataPath() + ".goals.json"); err == nil {
+		app.SetGoals(gl)
+	} else {
+		log.Printf("smolanalytics: goals disabled (%v)", err)
+	}
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           app.Handler(),
@@ -405,6 +411,9 @@ func runMCP() {
 	}
 	if tp, err := trackplan.Open(dataPath() + ".trackplan.json"); err == nil {
 		m.SetTrackPlan(tp)
+	}
+	if gl, err := goal.Open(dataPath() + ".goals.json"); err == nil {
+		m.SetGoals(gl)
 	}
 	if err := m.ServeStdio(); err != nil {
 		log.Fatal(err)

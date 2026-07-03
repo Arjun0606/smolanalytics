@@ -24,6 +24,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/engagement"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
+	"github.com/Arjun0606/smolanalytics/internal/goal"
 	"github.com/Arjun0606/smolanalytics/internal/groups"
 	"github.com/Arjun0606/smolanalytics/internal/insight"
 	"github.com/Arjun0606/smolanalytics/internal/insights"
@@ -60,6 +61,7 @@ type Server struct {
 	alerts    *alert.Store
 	settings  *settings.Store
 	trackplan *trackplan.Store
+	goals     *goal.Store
 }
 
 // SetSettings / SetTrackPlan attach the instance-control stores.
@@ -430,6 +432,9 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		}
 		if handled, out, cerr := s.callControl(name, args); handled {
 			return out, cerr
+		}
+		if handled, out, gerr := s.callGoals(name, args); handled {
+			return out, gerr
 		}
 		return "", fmt.Errorf("unknown tool: %s", name)
 	}

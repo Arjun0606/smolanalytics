@@ -102,8 +102,8 @@ func TestManifestEnvelopeAndLegacy(t *testing.T) {
 func TestVerifyAndScrub(t *testing.T) {
 	s, _, b := openTemp(t, 2)
 	base := time.Date(2026, 7, 2, 0, 0, 0, 0, time.UTC)
-	_ = s.Ingest(ev("a", "u1", base), ev("b", "u2", base.Add(time.Minute)))    // segment 1
-	_ = s.Ingest(ev("c", "u1", base.Add(2*time.Minute)))                       // stays hot
+	_ = s.Ingest(ev("a", "u1", base), ev("b", "u2", base.Add(time.Minute))) // segment 1
+	_ = s.Ingest(ev("c", "u1", base.Add(2*time.Minute)))                    // stays hot
 
 	r := s.Verify()
 	if len(r.Problems) != 0 || r.Segments != 1 || r.Events != 2 || r.HotEvents != 1 {

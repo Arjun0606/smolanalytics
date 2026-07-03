@@ -122,8 +122,8 @@ type dashVM struct {
 	// the web-analytics glance (from $pageview autocapture) — present only when
 	// pageviews exist, so product-only (backend) instances see nothing extra
 	// multi-site: observed `site` values + the currently selected one ("" = all)
-	Sites []string
-	Site  string
+	Sites     []string
+	Site      string
 	HasWeb    bool
 	LiveNow   int
 	Visitors  int // unique visitors, 30d

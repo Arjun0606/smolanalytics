@@ -26,6 +26,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/cohort"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
+	"github.com/Arjun0606/smolanalytics/internal/goal"
 	"github.com/Arjun0606/smolanalytics/internal/insights"
 	"github.com/Arjun0606/smolanalytics/internal/mcp"
 	"github.com/Arjun0606/smolanalytics/internal/query"
@@ -79,6 +80,9 @@ func (s *Server) SetInsights(st *insights.Store) { s.insights = st; s.mcp.SetIns
 
 // SetCohorts swaps in a persistent cohort store (shared with MCP).
 func (s *Server) SetCohorts(st *cohort.Store) { s.cohorts = st; s.mcp.SetCohorts(st) }
+
+// SetGoals attaches the goals store (shared with the MCP goal tools).
+func (s *Server) SetGoals(g *goal.Store) { s.mcp.SetGoals(g) }
 
 // SetAudit swaps in a persistent audit log.
 func (s *Server) SetAudit(l *audit.Log) { s.audit = l }

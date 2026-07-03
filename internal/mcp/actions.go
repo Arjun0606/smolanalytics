@@ -14,7 +14,9 @@ import (
 
 	"github.com/Arjun0606/smolanalytics/internal/alert"
 	"github.com/Arjun0606/smolanalytics/internal/cohort"
+	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/insights"
+	"github.com/Arjun0606/smolanalytics/internal/query"
 	"github.com/Arjun0606/smolanalytics/internal/webhook"
 )
 
@@ -322,6 +324,10 @@ func (s *Server) knownEvent(name string) error {
 	}
 	return fmt.Errorf("unknown event %q — tracked events are: %s", name, strings.Join(names, ", "))
 }
+
+// applyDefaultScope runs the query layer's default production scope (excludes
+// env=development) without any extra filters.
+func applyDefaultScope(evs []event.Event) []event.Event { return query.Apply(evs, nil) }
 
 func jsonStr(v any) string {
 	b, _ := json.Marshal(v)
