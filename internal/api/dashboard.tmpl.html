@@ -28,6 +28,9 @@
   .ask input:focus{border-color:var(--accent)}
   .ask .k{position:absolute;left:13px;top:50%;transform:translateY(-50%);color:var(--mut2)}
   .ask .hint{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--mut2);font-family:var(--mono);font-size:11px}
+  .askchips{display:flex;gap:8px;padding:8px 0 0}
+  .chip{font-family:var(--mono);font-size:11px;color:var(--mut);border:1px solid var(--line);padding:4px 10px;cursor:pointer;transition:.15s}
+  .chip:hover{color:var(--accent);border-color:var(--accent)}
   .updated{color:var(--mut2);font-family:var(--mono);font-size:11px;white-space:nowrap}
   .navlink{color:var(--mut);font-family:var(--mono);font-size:12px;text-decoration:none;white-space:nowrap}
   .navlink:hover{color:var(--accent)}
@@ -108,6 +111,12 @@
   .wstat .v{font-family:var(--mono);font-size:24px;font-weight:700;margin-top:4px;letter-spacing:-.02em}
   .wstat .v.acc{color:var(--accent)}
   .webcols{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .goalrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+  .goalcard{background:var(--surface2);border:1px solid var(--line);padding:12px 14px}
+  .gname{font-size:13px;color:var(--mut)}
+  .gnum{font-family:var(--mono);font-size:22px;font-weight:700;margin-top:2px}
+  .gpct{font-size:13px;color:var(--accent)}
+  .gchan{font-family:var(--mono);font-size:11px;color:var(--mut2);margin-top:4px}
   .wcolh{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--mut2);margin-bottom:8px}
   @media(max-width:860px){.webcols{grid-template-columns:1fr}.webstats{grid-template-columns:1fr}}
   .sc{flex:1}
@@ -191,7 +200,11 @@
   <a class="navlink" href="https://smolanalytics.com" target="_blank" title="hosted, for your team, with email briefs" style="color:var(--accent)">Cloud ↗</a>
   <a class="navlink" href="/settings" title="settings">settings</a>
 </div>
-<div class="wrap"><div id="askresult" class="askresult" hidden></div></div>
+<div class="wrap"><div class="askchips" id="askchips">
+  <span class="chip" data-q="where do users drop off?">where do users drop off?</span>
+  <span class="chip" data-q="which channel converts best?">which channel converts best?</span>
+  <span class="chip" data-q="how is retention trending?">how is retention trending?</span>
+</div><div id="askresult" class="askresult" hidden></div></div>
 </header>
 
 <main class="wrap">
@@ -270,6 +283,18 @@
         {{range .SearchRows}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
       </div>{{end}}
     </div>
+    {{if .Goals}}
+    <div class="wcolh" style="margin-top:18px">goals · last 30 days</div>
+    <div class="goalrow">
+      {{range .Goals}}
+      <div class="goalcard">
+        <div class="gname">{{.Name}}</div>
+        <div class="gnum">{{.Conversions}} <span class="gpct">{{.Pct}}%</span></div>
+        {{if .TopChannel}}<div class="gchan">top channel: {{.TopChannel}}</div>{{end}}
+      </div>
+      {{end}}
+    </div>
+    {{end}}
   </div>
   {{end}}
 
@@ -402,6 +427,8 @@
 <script>
   (function(){
     var f=document.getElementById('askform'),q=document.getElementById('askq'),res=document.getElementById('askresult');
+    var chips=document.getElementById('askchips');
+    if(chips){chips.addEventListener('click',function(e){var c=e.target.closest('.chip');if(!c)return;q.value=c.getAttribute('data-q');f.dispatchEvent(new Event('submit',{cancelable:true}));});}
     f.addEventListener('submit',function(e){
       e.preventDefault();
       var question=q.value.trim(); if(!question) return;

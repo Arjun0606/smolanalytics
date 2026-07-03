@@ -223,6 +223,15 @@ func isLoopbackBind(addr string) bool {
 }
 
 func serve(st store.Store, closeStore func() error, guardPublic bool) {
+	demoMode := !guardPublic
+	// demo must be a zero-footprint experience: sidecar stores live in memory,
+	// nothing is written to the visitor's working directory.
+	sp := func(suffix string) string {
+		if demoMode {
+			return ""
+		}
+		return dataPath() + suffix
+	}
 	addr := os.Getenv("ADDR")
 	if addr == "" {
 		addr = "127.0.0.1:8080" // local-only by default; set ADDR=0.0.0.0:8080 to expose (needs a password)
@@ -230,7 +239,7 @@ func serve(st store.Store, closeStore func() error, guardPublic bool) {
 	// identity stitching: wrap the store so every read canonicalizes ids through the
 	// alias map (and GDPR erasure fans out across a user's anonymous trail).
 	var aliasMap *alias2.Map
-	if am, err := alias2.Open(dataPath() + ".aliases.json"); err == nil {
+	if am, err := alias2.Open(sp(".aliases.json")); err == nil {
 		aliasMap = am
 		st = alias2.Wrap(st, am)
 	} else {
@@ -241,18 +250,18 @@ func serve(st store.Store, closeStore func() error, guardPublic bool) {
 		app.SetAliases(aliasMap)
 	}
 	app.SetWriteKey(os.Getenv("SMOLANALYTICS_WRITE_KEY"))
-	if ins, err := insights.Open(dataPath() + ".insights.json"); err == nil {
+	if ins, err := insights.Open(sp(".insights.json")); err == nil {
 		app.SetInsights(ins)
 	} else {
 		log.Printf("smolanalytics: saved reports disabled (%v)", err)
 	}
-	if coh, err := cohort.Open(dataPath() + ".cohorts.json"); err == nil {
+	if coh, err := cohort.Open(sp(".cohorts.json")); err == nil {
 		app.SetCohorts(coh)
 	} else {
 		log.Printf("smolanalytics: cohorts disabled (%v)", err)
 	}
 	hasAccount := false // an in-app dashboard account counts as auth too, not just the env password
-	if set, err := settings.Open(dataPath() + ".settings.json"); err == nil {
+	if set, err := settings.Open(sp(".settings.json")); err == nil {
 		// Default retention from env (the cloud sets this per plan) — only if the
 		// operator hasn't already chosen one in the dashboard, which persists and wins.
 		if d := envInt("SMOLANALYTICS_RETAIN_DAYS"); d > 0 && set.RetainDays() == 0 {
@@ -266,40 +275,55 @@ func serve(st store.Store, closeStore func() error, guardPublic bool) {
 	} else {
 		log.Printf("smolanalytics: settings persistence disabled (%v)", err)
 	}
-	if al, err := audit.Open(dataPath() + ".audit.jsonl"); err == nil {
+	if al, err := audit.Open(sp(".audit.jsonl")); err == nil {
 		app.SetAudit(al)
 	} else {
 		log.Printf("smolanalytics: audit log disabled (%v)", err)
 	}
-	if wh, err := webhook.Open(dataPath() + ".webhooks.json"); err == nil {
+	if wh, err := webhook.Open(sp(".webhooks.json")); err == nil {
 		app.SetWebhooks(wh)
 		go dailyBrief(st, wh)
 	} else {
 		log.Printf("smolanalytics: webhooks disabled (%v)", err)
 	}
-	if al, err := alert.Open(dataPath() + ".alerts.json"); err == nil {
+	if al, err := alert.Open(sp(".alerts.json")); err == nil {
 		app.SetAlerts(al)
 		go alertLoop(app)
 	} else {
 		log.Printf("smolanalytics: alerts disabled (%v)", err)
 	}
-	if tp, err := trackplan.Open(dataPath() + ".trackplan.json"); err == nil {
+	if tp, err := trackplan.Open(sp(".trackplan.json")); err == nil {
 		app.SetTrackPlan(tp)
 	} else {
 		log.Printf("smolanalytics: tracking plan disabled (%v)", err)
 	}
-	if gl, err := goal.Open(dataPath() + ".goals.json"); err == nil {
+	if gl, err := goal.Open(sp(".goals.json")); err == nil {
 		app.SetGoals(gl)
+		if demoMode {
+			_, _ = gl.Save(goal.Definition{Name: "Signed up", Kind: "event", Value: "signup"})
+			_, _ = gl.Save(goal.Definition{Name: "Paid", Kind: "event", Value: "checkout"})
+		}
 	} else {
 		log.Printf("smolanalytics: goals disabled (%v)", err)
 	}
-	if sh, err := share.Open(dataPath() + ".shares.json"); err == nil {
+	if sh, err := share.Open(sp(".shares.json")); err == nil {
 		app.SetShares(sh)
 	} else {
 		log.Printf("smolanalytics: share links disabled (%v)", err)
 	}
-	if gs, err := gsc.Open(dataPath() + ".gsc.json"); err == nil {
+	if gs, err := gsc.Open(sp(".gsc.json")); err == nil {
 		app.SetGSC(gs)
+		if demoMode {
+			// the demo shows every card populated — including search
+			_ = gs.SetGrant("demo", "sc-domain:demo.example")
+			_ = gs.SetRows([]gsc.Row{
+				{Query: "self hosted analytics", Clicks: 212, Impressions: 4900, CTRPct: 4.3, Position: 3.1},
+				{Query: "plausible alternative", Clicks: 140, Impressions: 3800, CTRPct: 3.7, Position: 4.6},
+				{Query: "analytics in one binary", Clicks: 96, Impressions: 1400, CTRPct: 6.9, Position: 2.2},
+				{Query: "ask analytics in cursor", Clicks: 74, Impressions: 900, CTRPct: 8.2, Position: 1.8},
+				{Query: "posthog too heavy", Clicks: 33, Impressions: 700, CTRPct: 4.7, Position: 5.9},
+			})
+		}
 		if creds, ok := gsc.CredsFromEnv(); ok && gs.Connected() {
 			go func() { // pull now if stale, then every 12h
 				for {

@@ -59,6 +59,7 @@ type Server struct {
 	shares   *share.Store
 	aliases  *alias.Map
 	gsc      *gsc.Store
+	goals    *goal.Store
 	writeKey string // if set, POST /v1/events requires Authorization: Bearer <writeKey>
 	// autocaptured events dropped because the UA was a known crawler/bot — surfaced in
 	// /v1/usage so "why is my dashboard lower than GA?" has a visible, honest answer.
@@ -93,8 +94,8 @@ func (s *Server) SetAliases(a *alias.Map) { s.aliases = a }
 // SetGSC attaches the Search Console store (dashboard card + MCP report).
 func (s *Server) SetGSC(g *gsc.Store) { s.gsc = g; s.mcp.SetGSC(g) }
 
-// SetGoals attaches the goals store (shared with the MCP goal tools).
-func (s *Server) SetGoals(g *goal.Store) { s.mcp.SetGoals(g) }
+// SetGoals attaches the goals store (dashboard card + MCP goal tools).
+func (s *Server) SetGoals(g *goal.Store) { s.goals = g; s.mcp.SetGoals(g) }
 
 // SetAudit swaps in a persistent audit log.
 func (s *Server) SetAudit(l *audit.Log) { s.audit = l }

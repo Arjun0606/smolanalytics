@@ -13,6 +13,7 @@ import (
 
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
+	"github.com/Arjun0606/smolanalytics/internal/goal"
 	"github.com/Arjun0606/smolanalytics/internal/query"
 	"github.com/Arjun0606/smolanalytics/internal/trends"
 	"github.com/Arjun0606/smolanalytics/internal/web"
@@ -141,6 +142,15 @@ type dashVM struct {
 	// search console (when the operator connected it)
 	HasSearch  bool
 	SearchRows []segRow // query → clicks, bar-scaled
+	// named goals, resolved over the trailing 30 days
+	Goals []goalCard
+}
+
+type goalCard struct {
+	Name        string
+	Conversions int
+	Pct         int
+	TopChannel  string
 }
 
 func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
@@ -300,6 +310,17 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	vm.ShowProduct = true // default; flipped to tabbed mode below when web data exists
+	if s.goals != nil {
+		for _, d := range s.goals.List() {
+			rep := goal.Resolve(evs, d, 30, time.Time{})
+			gc := goalCard{Name: d.Name, Conversions: rep.Conversions, Pct: rep.ConversionPct}
+			if len(rep.ByReferrer) > 0 {
+				gc.TopChannel = rep.ByReferrer[0].Value
+			}
+			vm.Goals = append(vm.Goals, gc)
+		}
+	}
+
 	if s.gsc != nil && s.gsc.Connected() {
 		rows, _, _, _ := s.gsc.Snapshot()
 		top := 0
