@@ -456,7 +456,7 @@
     }
     pollLive(); setInterval(pollLive, 4000);
 
-    {{if .HasData}}
+    {{if and .HasData .ShowProduct}}
     // explore — run any report on the user's own events (only wired when there's data;
     // the empty-state dashboard omits these sections)
     var exType=document.getElementById('exType'),exA=document.getElementById('exA'),
