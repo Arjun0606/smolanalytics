@@ -1,0 +1,74 @@
+package api
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/Arjun0606/smolanalytics/internal/event"
+	"github.com/Arjun0606/smolanalytics/internal/query"
+	"github.com/Arjun0606/smolanalytics/internal/store/memory"
+)
+
+// Bot UAs must have their autocaptured ($-prefixed) events dropped and counted —
+// while backend events on the same request survive (server SDKs send bot-looking UAs).
+func TestIngestBotFiltering(t *testing.T) {
+	st := memory.New()
+	s := New(st)
+	h := s.Handler()
+
+	send := func(ua, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest("POST", "/v1/events", strings.NewReader(body))
+		req.Header.Set("User-Agent", ua)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		return w
+	}
+
+	// a crawler sending a pageview → dropped, counted, still 202
+	w := send("Mozilla/5.0 (compatible; GPTBot/1.0)", `[{"name":"$pageview","distinct_id":"u1"},{"name":"$click","distinct_id":"u1"}]`)
+	if w.Code != http.StatusAccepted || !strings.Contains(w.Body.String(), `"bots_filtered":2`) {
+		t.Fatalf("bot pageviews should be dropped+counted: %d %s", w.Code, w.Body.String())
+	}
+	// same bot UA carrying a BACKEND event → the backend event survives
+	w = send("Go-http-client/1.1 bot/monitor", `{"name":"signup","distinct_id":"u2"}`)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("backend event with bot-ish UA must not be dropped: %d %s", w.Code, w.Body.String())
+	}
+	evs, _ := st.Range(time.Time{}, time.Time{})
+	if len(evs) != 1 || evs[0].Name != "signup" {
+		t.Fatalf("store should hold exactly the backend signup, got %+v", evs)
+	}
+	if got := s.botsFiltered.Load(); got != 2 {
+		t.Fatalf("bots_filtered counter = %d, want 2", got)
+	}
+	// a real browser is never filtered
+	w = send("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/126 Safari/537.36", `{"name":"$pageview","distinct_id":"u3"}`)
+	if w.Code != http.StatusAccepted {
+		t.Fatal("real browsers must pass")
+	}
+	evs, _ = st.Range(time.Time{}, time.Time{})
+	if len(evs) != 2 {
+		t.Fatalf("want 2 stored events, got %d", len(evs))
+	}
+}
+
+// The production scope: env=development events are excluded from every report by
+// default, included the moment a filter explicitly references env.
+func TestEnvDefaultScope(t *testing.T) {
+	now := time.Now().UTC()
+	evs := []event.Event{
+		{ID: "1", Name: "signup", DistinctID: "u1", Timestamp: now, Properties: map[string]any{"env": "production"}},
+		{ID: "2", Name: "signup", DistinctID: "u2", Timestamp: now, Properties: map[string]any{"env": "development"}},
+		{ID: "3", Name: "signup", DistinctID: "u3", Timestamp: now}, // unstamped (backend) = kept
+	}
+	if got := len(query.Apply(evs, nil)); got != 2 {
+		t.Fatalf("default scope should keep prod+unstamped only, got %d", got)
+	}
+	dev := query.Apply(evs, []query.Filter{{Property: "env", Op: query.Eq, Value: "development"}})
+	if len(dev) != 1 || dev[0].ID != "2" {
+		t.Fatalf("explicit env filter must reach dev events, got %+v", dev)
+	}
+}

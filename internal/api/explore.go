@@ -9,6 +9,7 @@ import (
 
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/insight"
+	"github.com/Arjun0606/smolanalytics/internal/query"
 )
 
 // notable returns the proactive "what's broken / what to look at" digest — the
@@ -26,6 +27,8 @@ func (s *Server) notable(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	evs = query.Apply(evs, nil) // production scope: dev-env events excluded by default
+
 	writeJSON(w, http.StatusOK, map[string]any{"findings": insight.Generate(evs)})
 }
 
@@ -58,11 +61,12 @@ func (s *Server) usage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"total_events": total,
-		"events_30d":   events30d,
-		"events_month": eventsMonth,
-		"period":       month,
-		"users":        len(users),
+		"total_events":  total,
+		"events_30d":    events30d,
+		"events_month":  eventsMonth,
+		"period":        month,
+		"users":         len(users),
+		"bots_filtered": s.botsFiltered.Load(),
 	})
 }
 

@@ -65,13 +65,28 @@ func Validate(filters []Filter) error {
 	return nil
 }
 
-// Apply returns the events matching ALL filters (empty filters = passthrough).
+// Apply returns the events matching ALL filters — and enforces the one default
+// scope of the whole query layer: events stamped env=development are EXCLUDED
+// unless the filters explicitly reference "env". Localhost traffic polluting
+// production funnels is the classic silent report-corruptor; asking for dev data
+// stays one filter away (env eq development). Living inside Apply means every
+// surface (HTTP API, MCP, dashboard) inherits the same rule — the agreement test
+// depends on that.
 func Apply(events []event.Event, filters []Filter) []event.Event {
-	if len(filters) == 0 {
-		return events
+	filtersTouchEnv := false
+	for _, f := range filters {
+		if f.Property == "env" {
+			filtersTouchEnv = true
+			break
+		}
 	}
 	out := make([]event.Event, 0, len(events))
 	for _, e := range events {
+		if !filtersTouchEnv {
+			if v, ok := e.Properties["env"]; ok && v == "development" {
+				continue
+			}
+		}
 		keep := true
 		for _, f := range filters {
 			if !f.match(e) {

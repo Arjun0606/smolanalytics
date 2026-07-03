@@ -15,16 +15,20 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/alert"
 	"github.com/Arjun0606/smolanalytics/internal/audit"
+	"github.com/Arjun0606/smolanalytics/internal/botua"
 	"github.com/Arjun0606/smolanalytics/internal/cohort"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
 	"github.com/Arjun0606/smolanalytics/internal/insights"
 	"github.com/Arjun0606/smolanalytics/internal/mcp"
+	"github.com/Arjun0606/smolanalytics/internal/query"
 	"github.com/Arjun0606/smolanalytics/internal/retention"
 	"github.com/Arjun0606/smolanalytics/internal/settings"
 	"github.com/Arjun0606/smolanalytics/internal/store"
@@ -49,6 +53,9 @@ type Server struct {
 	webhooks *webhook.Store
 	alerts   *alert.Store
 	writeKey string // if set, POST /v1/events requires Authorization: Bearer <writeKey>
+	// autocaptured events dropped because the UA was a known crawler/bot — surfaced in
+	// /v1/usage so "why is my dashboard lower than GA?" has a visible, honest answer.
+	botsFiltered atomic.Int64
 }
 
 // SetSettings swaps in a persistent settings store (project, keys, session secret).
@@ -93,6 +100,8 @@ func (s *Server) EvaluateAlerts() {
 	if err != nil {
 		return
 	}
+	evs = query.Apply(evs, nil) // production scope: dev-env events excluded by default
+
 	now := time.Now().UTC()
 	for _, a := range s.alerts.List() {
 		if !a.Enabled {
@@ -309,6 +318,31 @@ func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusRequestEntityTooLarge, "too many events in one batch — max 10000")
 		return
 	}
+
+	// Bot filtering: crawlers/unfurlers/headless agents inflate every report, so
+	// autocaptured web events ($-prefixed) from a bot UA are dropped — counted, never
+	// stored. Backend events are exempt (server SDKs legitimately send curl/Go UAs).
+	// SMOLANALYTICS_KEEP_BOTS=1 disables the filter.
+	if os.Getenv("SMOLANALYTICS_KEEP_BOTS") == "" && botua.IsBot(r.UserAgent()) {
+		kept := batch[:0:0]
+		dropped := 0
+		for _, e := range batch {
+			if strings.HasPrefix(e.Name, "$") {
+				dropped++
+				continue
+			}
+			kept = append(kept, e)
+		}
+		if dropped > 0 {
+			s.botsFiltered.Add(int64(dropped))
+			batch = kept
+		}
+		if len(batch) == 0 {
+			writeJSON(w, http.StatusAccepted, map[string]any{"accepted": 0, "bots_filtered": dropped})
+			return
+		}
+	}
+
 	now := time.Now().UTC()
 	maxFuture := now.Add(time.Hour) // tolerate client clock skew, no more
 	for i := range batch {

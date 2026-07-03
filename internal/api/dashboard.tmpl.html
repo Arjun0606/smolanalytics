@@ -149,6 +149,8 @@
   .skl{font-family:var(--mono);font-size:11px;color:var(--mut);text-transform:uppercase;margin-top:4px}
 
   /* live events feed */
+  .siteselect{background:var(--surface2);border:1px solid var(--line);color:var(--fg);font-family:var(--mono);font-size:12px;padding:5px 8px;outline:none;max-width:180px}
+  .siteselect:focus{border-color:var(--accent)}
   .livedot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--ok);margin-left:6px;animation:pulse 1.6s infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
   .live{font-family:var(--mono);font-size:12px;max-height:260px;overflow:auto}
@@ -177,6 +179,10 @@
     <input id="askq" autocomplete="off" placeholder="ask anything   —   what's my conversion rate? where do users drop off? top sources?" aria-label="ask">
     <span class="hint">⏎ ask</span>
   </form>
+  {{if gt (len .Sites) 1}}<select class="siteselect" onchange="location.href=this.value?('/?site='+encodeURIComponent(this.value)):'/'" title="scope every report to one site">
+    <option value="">all sites</option>
+    {{range .Sites}}<option value="{{.}}" {{if eq . $.Site}}selected{{end}}>{{.}}</option>{{end}}
+  </select>{{end}}
   <div class="updated">updated {{.Updated}}</div>
   <a class="navlink" href="https://smolanalytics.com" target="_blank" title="hosted, for your team, with email briefs" style="color:var(--accent)">Cloud ↗</a>
   <a class="navlink" href="/settings" title="settings">settings</a>

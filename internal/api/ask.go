@@ -36,6 +36,8 @@ func (s *Server) ask(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	evs = query.Apply(evs, nil) // production scope: dev-env events excluded by default
+
 	writeJSON(w, http.StatusOK, map[string]string{"answer": answer(q, evs)})
 }
 

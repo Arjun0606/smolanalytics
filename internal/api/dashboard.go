@@ -121,6 +121,9 @@ type dashVM struct {
 	HasSource      bool
 	// the web-analytics glance (from $pageview autocapture) — present only when
 	// pageviews exist, so product-only (backend) instances see nothing extra
+	// multi-site: observed `site` values + the currently selected one ("" = all)
+	Sites []string
+	Site  string
 	HasWeb    bool
 	LiveNow   int
 	Visitors  int // unique visitors, 30d
@@ -138,6 +141,28 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	evs = query.Apply(evs, nil) // production scope: dev-env events excluded by default
+
+	// multi-site: every event carries `site` (the SDK stamps hostname). One global
+	// selector scopes the WHOLE dashboard — every report below inherits it.
+	siteSet := map[string]bool{}
+	for _, e := range evs {
+		if v, ok := e.Properties["site"].(string); ok && v != "" {
+			siteSet[v] = true
+		}
+	}
+	var sites []string
+	for v := range siteSet {
+		sites = append(sites, v)
+	}
+	sort.Strings(sites)
+	if len(sites) > 20 {
+		sites = sites[:20]
+	}
+	site := r.URL.Query().Get("site")
+	if site != "" {
+		evs = query.Apply(evs, []query.Filter{{Property: "site", Op: query.Eq, Value: site}})
 	}
 
 	names, _ := s.store.Names()
@@ -166,6 +191,8 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		Events:         names,
 		Updated:        time.Now().UTC().Format("Jan 2, 15:04 MST"),
 		HasData:        len(evs) > 0,
+		Sites:          sites,
+		Site:           site,
 		Base:           baseURL(r),
 		FunnelTitle:    ftitle,
 		ConvLabel:      convLabel,

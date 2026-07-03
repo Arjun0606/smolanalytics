@@ -16,6 +16,7 @@
   var queue = [];
   var did = null;
   var anon = false; // cookieless mode: nothing stored on the device, no banner needed
+  var envName = "production"; // "development" on localhost, or whatever init({env}) says
   var timer = null;
   var captured = false; // autocapture wired once, even if the snippet loads twice
   var warnedAuth = false; // warn once on a bad key, don't spam the console
@@ -89,11 +90,17 @@
   }
 
   function enqueue(name, props) {
+    props = props || {};
+    // site + env stamped on EVERY event, so multi-site filtering and the
+    // exclude-dev-traffic default work across all reports with zero setup.
+    // Overridable per event; env also settable at init ({ env: "staging" }).
+    if (props.site === undefined) props.site = location.hostname;
+    if (props.env === undefined) props.env = envName;
     queue.push({
       name: name,
       distinct_id: distinctId(),
       timestamp: new Date().toISOString(),
-      properties: props || {},
+      properties: props,
     });
     if (queue.length >= 20) flush();
   }
@@ -167,6 +174,7 @@
       // derives a daily-rotating anonymous id instead. identify() still works after
       // login if you want real user analytics for signed-in users.
       anon = !!opts.anonymous;
+      envName = opts.env || (/^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])$/.test(location.hostname) ? "development" : "production");
       distinctId();
       if (opts.autocapture !== false) {
         setupAutocapture(); // pageviews + clicks, zero manual instrumentation
