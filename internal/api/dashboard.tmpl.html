@@ -149,6 +149,9 @@
   .skl{font-family:var(--mono);font-size:11px;color:var(--mut);text-transform:uppercase;margin-top:4px}
 
   /* live events feed */
+  .tabs{display:flex;border:1px solid var(--line);font-family:var(--mono);font-size:12px}
+  .tabs a{padding:6px 14px;color:var(--mut);text-decoration:none}
+  .tabs a.on{background:var(--surface2);color:var(--accent)}
   .siteselect{background:var(--surface2);border:1px solid var(--line);color:var(--fg);font-family:var(--mono);font-size:12px;padding:5px 8px;outline:none;max-width:180px}
   .siteselect:focus{border-color:var(--accent)}
   .livedot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--ok);margin-left:6px;animation:pulse 1.6s infinite}
@@ -179,6 +182,7 @@
     <input id="askq" autocomplete="off" placeholder="ask anything   —   what's my conversion rate? where do users drop off? top sources?" aria-label="ask">
     <span class="hint">⏎ ask</span>
   </form>
+  {{if .HasWeb}}<nav class="tabs"><a href="/{{if .Site}}?site={{.Site}}{{end}}" {{if not .ShowProduct}}class="on"{{end}}>Web</a><a href="/?view=product{{if .Site}}&site={{.Site}}{{end}}" {{if .ShowProduct}}class="on"{{end}}>Product</a></nav>{{end}}
   {{if gt (len .Sites) 1}}<select class="siteselect" onchange="location.href=this.value?('/?site='+encodeURIComponent(this.value)):'/'" title="scope every report to one site">
     <option value="">all sites</option>
     {{range .Sites}}<option value="{{.}}" {{if eq . $.Site}}selected{{end}}>{{.}}</option>{{end}}
@@ -233,11 +237,13 @@
   </details>
 
   {{if .HasData}}
-  <div class="stats">
+  {{if .ShowProduct}}<div class="stats">
     <div class="stat"><div class="l">Users</div><div class="v">{{.TotalUsers}}</div></div>
     <div class="stat"><div class="l">{{.StatEventLabel}} (30d)</div><div class="v">{{.Signups}}</div></div>
     <div class="stat"><div class="l">{{.ConvLabel}}</div><div class="v acc">{{.OverallConv}}%</div></div>
   </div>
+
+  {{end}}
 
   {{if .HasWeb}}
   <div class="card">
@@ -263,7 +269,7 @@
   </div>
   {{end}}
 
-  <div class="card explore">
+  {{if .ShowProduct}}<div class="card explore">
     <h2>Explore · run any report on your own events</h2>
     <div class="exrow">
       <select id="exType">
@@ -383,6 +389,8 @@
       </div>
     </div>
   </div>
+  {{end}}
+
   {{end}}
 
   <div class="foot">metered by smolanalytics · one binary, your data</div>

@@ -102,8 +102,15 @@ func (s *Server) authMW(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		// the stats API: a valid API key reads any GET /v1/* report programmatically
+		// (scripts, CI, cron) — same key that authorizes ingest and MCP. Writes and
+		// settings stay session-only.
+		if r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/") && s.keyAuthed(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
 		if strings.HasPrefix(r.URL.Path, "/v1/") {
-			writeErr(w, http.StatusUnauthorized, "login required")
+			writeErr(w, http.StatusUnauthorized, "login required (or pass Authorization: Bearer <api key> on GET endpoints)")
 			return
 		}
 		http.Redirect(w, r, "/login", http.StatusFound)

@@ -72,3 +72,40 @@ func TestEnvDefaultScope(t *testing.T) {
 		t.Fatalf("explicit env filter must reach dev events, got %+v", dev)
 	}
 }
+
+// The stats API: with auth enabled, a valid key reads GET /v1/* reports; writes,
+// settings, and bad keys stay locked out.
+func TestStatsAPIKeyAuth(t *testing.T) {
+	t.Setenv("SMOLANALYTICS_PASSWORD", "op-pass-1234")
+	st := memory.New()
+	_ = st.Ingest(event.Event{ID: "1", Name: "signup", DistinctID: "u1", Timestamp: time.Now().UTC()})
+	s := New(st)
+	s.SetWriteKey("sk_test")
+	h := s.Handler()
+
+	req := func(method, path, key string) int {
+		r := httptest.NewRequest(method, path, nil)
+		if key != "" {
+			r.Header.Set("Authorization", "Bearer "+key)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code
+	}
+
+	if got := req("GET", "/v1/trends?event=signup", "sk_test"); got != 200 {
+		t.Fatalf("key should read reports, got %d", got)
+	}
+	if got := req("GET", "/v1/trends?event=signup", "wrong"); got != http.StatusUnauthorized {
+		t.Fatalf("bad key must 401, got %d", got)
+	}
+	if got := req("GET", "/v1/trends?event=signup", ""); got != http.StatusUnauthorized {
+		t.Fatalf("no auth must 401, got %d", got)
+	}
+	if got := req("POST", "/v1/settings/clear", "sk_test"); got != http.StatusUnauthorized {
+		t.Fatalf("keys must never unlock writes/settings, got %d", got)
+	}
+	if got := req("GET", "/v1/export", "sk_test"); got != 200 {
+		t.Fatalf("export is a GET report, got %d", got)
+	}
+}

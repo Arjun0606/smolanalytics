@@ -122,14 +122,17 @@ type dashVM struct {
 	// the web-analytics glance (from $pageview autocapture) — present only when
 	// pageviews exist, so product-only (backend) instances see nothing extra
 	// multi-site: observed `site` values + the currently selected one ("" = all)
-	Sites     []string
-	Site      string
-	HasWeb    bool
-	LiveNow   int
-	Visitors  int // unique visitors, 30d
-	Pageviews int // 30d
-	TopPages  []segRow
-	Referrers []segRow
+	Sites []string
+	Site  string
+	// web-first screen one, full product view behind the tab; product-only
+	// instances (no pageviews) always see the product view.
+	ShowProduct bool
+	HasWeb      bool
+	LiveNow     int
+	Visitors    int // unique visitors, 30d
+	Pageviews   int // 30d
+	TopPages    []segRow
+	Referrers   []segRow
 	// engagement + the AI channel (shown only when measurable / present)
 	HasEngagement bool
 	EngagedSecs   int
@@ -165,6 +168,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	if len(sites) > 20 {
 		sites = sites[:20]
 	}
+	view := r.URL.Query().Get("view")
 	site := r.URL.Query().Get("site")
 	if site != "" {
 		evs = query.Apply(evs, []query.Filter{{Property: "site", Op: query.Eq, Value: site}})
@@ -292,11 +296,13 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		vm.ConvBySeg = funnelBySegment(evs, segProp, fsteps)
 	}
 
+	vm.ShowProduct = true // default; flipped to tabbed mode below when web data exists
 	// the web glance — live now, visitors, top pages, referrers (30d). Only shown
 	// when $pageview data exists; a backend-only instance stays product-only.
 	wv := web.Compute(evs, 30, time.Time{})
 	if wv.Pageviews > 0 {
 		vm.HasWeb = true
+		vm.ShowProduct = view == "product"
 		vm.LiveNow = wv.LiveNow
 		vm.Visitors = wv.Visitors
 		vm.Pageviews = wv.Pageviews
