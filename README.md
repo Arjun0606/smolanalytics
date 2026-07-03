@@ -113,6 +113,13 @@ Your model gets **43 tools + 3 built-in prompts** — the editor runs the *whole
 - **Verify the instrumentation** (built for AI-assisted building): the agent that wires your tracking declares it with `set_tracking_plan`, then `instrumentation_health` checks reality against the plan — which events are flowing, which never arrived, which expected properties are missing. The loop closes: *build → instrument → verify → watch*, all in the editor.
 - **Prompts:** `instrument-my-app` (full setup, end to end), `whats-broken-today` (the morning check), `weekly-review` (founder-grade recap) — surfaced natively by MCP clients.
 
+### Shipping with an agent? Make tracking automatic
+If Claude Code or Cursor writes your features, it can write your instrumentation too:
+one block in your repo's `CLAUDE.md` / `AGENTS.md` / `.cursorrules` tells your agent to
+add `track()` for every feature it ships, keep `smolanalytics.plan.json` current, and
+verify events actually flow with `smolanalytics plan check` after each deploy. The
+copy-paste block and the full build → instrument → verify loop: [docs/agents.md](docs/agents.md).
+
 ## Send events (2 minutes, zero instrumentation)
 Drop the snippet in — it **autocaptures pageviews + clicks instantly**, so you get real data with no manual event tagging. Add `track()` for the key moments (signup, checkout) when you want funnels.
 
@@ -226,6 +233,8 @@ Config (all env): `ADDR` (default `127.0.0.1:8080`), `SMOLANALYTICS_DB` (event l
 0 8 * * * SMOLANALYTICS_DB=/data/smolanalytics.data smolanalytics brief | mail -s "analytics brief" you@example.com
 0 8 * * * SMOLANALYTICS_DB=/data/smolanalytics.data smolanalytics brief --webhook=https://hooks.slack.com/services/XXX/YYY/ZZZ
 ```
+
+Running several products into one instance? The SDK stamps each event's `site`, and once more than one site reports the brief adds a per-product breakdown: ship monthly, one brief covers them all.
 
 Manage everything from **Settings** (`/settings`): account + password, API keys, data retention, event taxonomy, exports, webhooks, threshold alerts, and an audit log.
 

@@ -53,7 +53,10 @@ func TestInstrumentationHealth(t *testing.T) {
 		t.Fatal(err)
 	}
 	var r struct {
-		Healthy   bool             `json:"healthy"`
+		Healthy bool `json:"healthy"`
+		Plan    struct {
+			Events []trackplan.PlannedEvent `json:"events"`
+		} `json:"plan"`
 		Planned   []map[string]any `json:"planned"`
 		Unplanned []string         `json:"unplanned_events"`
 	}
@@ -62,6 +65,10 @@ func TestInstrumentationHealth(t *testing.T) {
 	}
 	if r.Healthy {
 		t.Fatal("checkout missing + signup missing 'source' → must be unhealthy")
+	}
+	// the declared plan must ride along verbatim — `plan pull` reads it from here
+	if len(r.Plan.Events) != 2 || r.Plan.Events[0].Name != "signup" || len(r.Plan.Events[0].Properties) != 2 {
+		t.Fatalf("health payload must carry the declared plan: %+v", r.Plan)
 	}
 	byEvent := map[string]map[string]any{}
 	for _, row := range r.Planned {

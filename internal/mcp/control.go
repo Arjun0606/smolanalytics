@@ -95,7 +95,7 @@ func init() {
 		},
 		map[string]any{
 			"name":        "instrumentation_health",
-			"description": "Verify instrumentation against the tracking plan: per planned event — is it arriving (count, last seen), are its expected properties present? Plus events arriving that aren't in the plan. THE tool to run after wiring or changing tracking code; also great for 'is my tracking broken?'.",
+			"description": "Verify instrumentation against the tracking plan: per planned event — is it arriving (count, last seen), are its expected properties present? Plus events arriving that aren't in the plan, and the declared plan itself. THE tool to run after wiring or changing tracking code; also great for 'is my tracking broken?'.",
 			"inputSchema": map[string]any{
 				"type":       "object",
 				"properties": map[string]any{"window_hours": map[string]any{"type": "integer", "description": "Only look at events in the last N hours (default: all time)"}},
@@ -315,8 +315,11 @@ func (s *Server) callControl(name string, args json.RawMessage) (bool, string, e
 			}
 		}
 		sort.Strings(unplanned)
+		// the declared plan rides along so `smolanalytics plan pull` (and any agent)
+		// can read the intent itself, not just the verdict against it.
 		return true, jsonStr(map[string]any{
 			"healthy":          healthy,
+			"plan":             plan,
 			"planned":          report,
 			"unplanned_events": unplanned,
 			"note":             "MISSING = tracking code for that event isn't firing (or hasn't run yet); missing_properties = the event arrives without keys the plan expects.",

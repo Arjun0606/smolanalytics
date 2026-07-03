@@ -31,7 +31,7 @@ Batch = JSON array (up to 10k events). Use a stable distinct_id per user.
 `smolanalytics connect` wires Claude Desktop / Claude Code / Cursor / Windsurf / VS Code / Cline
 automatically. Manual stdio config: command `smolanalytics`, args `["mcp"]`, env
 `SMOLANALYTICS_DB=<path>`. Remote: Streamable HTTP at `POST https://YOUR_HOST/mcp` with
-`Authorization: Bearer <write key>`. 34 tools + 3 prompts. Read (overview, funnel,
+`Authorization: Bearer <write key>`. 43 tools + 3 prompts. Read (overview, funnel,
 retention, trends, breakdown, web_overview, paths, lifecycle, stickiness, whats_notable, …),
 act (create_alert, add_webhook, create_cohort, save_report + list/delete), and control the
 instance (set_project, set_retention, create/revoke API keys).
