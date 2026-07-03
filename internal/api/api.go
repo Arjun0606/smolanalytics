@@ -28,6 +28,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
 	"github.com/Arjun0606/smolanalytics/internal/goal"
+	"github.com/Arjun0606/smolanalytics/internal/gsc"
 	"github.com/Arjun0606/smolanalytics/internal/insights"
 	"github.com/Arjun0606/smolanalytics/internal/mcp"
 	"github.com/Arjun0606/smolanalytics/internal/query"
@@ -57,6 +58,7 @@ type Server struct {
 	alerts   *alert.Store
 	shares   *share.Store
 	aliases  *alias.Map
+	gsc      *gsc.Store
 	writeKey string // if set, POST /v1/events requires Authorization: Bearer <writeKey>
 	// autocaptured events dropped because the UA was a known crawler/bot — surfaced in
 	// /v1/usage so "why is my dashboard lower than GA?" has a visible, honest answer.
@@ -87,6 +89,9 @@ func (s *Server) SetCohorts(st *cohort.Store) { s.cohorts = st; s.mcp.SetCohorts
 
 // SetAliases attaches the identity-stitching map (ingest records anon→user on $identify).
 func (s *Server) SetAliases(a *alias.Map) { s.aliases = a }
+
+// SetGSC attaches the Search Console store (dashboard card + MCP report).
+func (s *Server) SetGSC(g *gsc.Store) { s.gsc = g; s.mcp.SetGSC(g) }
 
 // SetGoals attaches the goals store (shared with the MCP goal tools).
 func (s *Server) SetGoals(g *goal.Store) { s.mcp.SetGoals(g) }

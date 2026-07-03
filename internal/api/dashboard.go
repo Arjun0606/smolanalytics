@@ -138,6 +138,9 @@ type dashVM struct {
 	EngagedSecs   int
 	BouncePct     int
 	AIVisitors    int
+	// search console (when the operator connected it)
+	HasSearch  bool
+	SearchRows []segRow // query → clicks, bar-scaled
 }
 
 func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
@@ -297,6 +300,25 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	vm.ShowProduct = true // default; flipped to tabbed mode below when web data exists
+	if s.gsc != nil && s.gsc.Connected() {
+		rows, _, _, _ := s.gsc.Snapshot()
+		top := 0
+		if len(rows) > 0 {
+			top = rows[0].Clicks
+		}
+		if len(rows) > 8 {
+			rows = rows[:8]
+		}
+		for _, r := range rows {
+			sr := segRow{Value: r.Query, Count: r.Clicks}
+			if top > 0 {
+				sr.BarPct = int(math.Round(float64(r.Clicks) / float64(top) * 100))
+			}
+			vm.SearchRows = append(vm.SearchRows, sr)
+		}
+		vm.HasSearch = len(vm.SearchRows) > 0
+	}
+
 	// the web glance — live now, visitors, top pages, referrers (30d). Only shown
 	// when $pageview data exists; a backend-only instance stays product-only.
 	wv := web.Compute(evs, 30, time.Time{})

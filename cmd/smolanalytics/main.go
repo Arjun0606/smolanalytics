@@ -22,6 +22,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/cohort"
 	"github.com/Arjun0606/smolanalytics/internal/demo"
 	"github.com/Arjun0606/smolanalytics/internal/goal"
+	"github.com/Arjun0606/smolanalytics/internal/gsc"
 	"github.com/Arjun0606/smolanalytics/internal/insight"
 	"github.com/Arjun0606/smolanalytics/internal/insights"
 	"github.com/Arjun0606/smolanalytics/internal/mcp"
@@ -63,6 +64,8 @@ func main() {
 			arg = os.Args[2]
 		}
 		connect(arg)
+	case "gsc":
+		gscCmd(os.Args[2:])
 	case "scrub":
 		// verify the cold tier's invariants (every segment readable, CRC-clean, counts
 		// match) and clean up orphaned blobs left by failed deletes. Exit 1 on problems.
@@ -98,6 +101,7 @@ func main() {
 		fmt.Println("                        Windsurf, VS Code, Cline) in one command, then ask")
 		fmt.Println("  smolanalytics scrub   verify the cold tier (every segment readable, CRC-clean,")
 		fmt.Println("                        counts match) and remove orphaned blobs")
+		fmt.Println("  smolanalytics gsc     connect Google Search Console (auth / status)")
 		fmt.Println()
 		fmt.Println("  ADDR                      listen address (default 127.0.0.1:8080 = local only;")
 		fmt.Println("                            set 0.0.0.0:8080 to expose — then a password is required)")
@@ -294,6 +298,23 @@ func serve(st store.Store, closeStore func() error, guardPublic bool) {
 	} else {
 		log.Printf("smolanalytics: share links disabled (%v)", err)
 	}
+	if gs, err := gsc.Open(dataPath() + ".gsc.json"); err == nil {
+		app.SetGSC(gs)
+		if creds, ok := gsc.CredsFromEnv(); ok && gs.Connected() {
+			go func() { // pull now if stale, then every 12h
+				for {
+					ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+					if err := gs.Poll(ctx, creds); err != nil {
+						log.Printf("smolanalytics: gsc poll failed (%v)", err)
+					}
+					cancel()
+					time.Sleep(12 * time.Hour)
+				}
+			}()
+		}
+	} else {
+		log.Printf("smolanalytics: search console disabled (%v)", err)
+	}
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           app.Handler(),
@@ -439,6 +460,9 @@ func runMCP() {
 	}
 	if sh, err := share.Open(dataPath() + ".shares.json"); err == nil {
 		m.SetShares(sh)
+	}
+	if gs, err := gsc.Open(dataPath() + ".gsc.json"); err == nil {
+		m.SetGSC(gs)
 	}
 	if err := m.ServeStdio(); err != nil {
 		log.Fatal(err)

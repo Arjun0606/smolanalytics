@@ -15,6 +15,20 @@ import (
 
 func (s *Server) SetGoals(g *goal.Store) { s.goals = g }
 
+// plannedEvent reports whether the tracking plan declares this event — planned
+// events are valid goal targets before their first event ever arrives.
+func (s *Server) plannedEvent(name string) bool {
+	if s.trackplan == nil {
+		return false
+	}
+	for _, pe := range s.trackplan.Get().Events {
+		if pe.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
 func init() {
 	toolList = append(toolList,
 		map[string]any{
@@ -66,8 +80,11 @@ func (s *Server) callGoals(name string, args json.RawMessage) (bool, string, err
 			return true, "", err
 		}
 		if p.Kind == "event" {
-			if err := s.knownEvent(p.Value); err != nil {
-				return true, "", err
+			// a goal may reference an event that hasn't fired yet IF it's declared in
+			// the tracking plan — customers wire goals during instrumentation, before
+			// any traffic exists (dogfood finding #4). Everything else stays strict.
+			if err := s.knownEvent(p.Value); err != nil && !s.plannedEvent(p.Value) {
+				return true, "", fmt.Errorf("%v (or declare it in set_tracking_plan first — planned events are accepted before their first event arrives)", err)
 			}
 		}
 		d, err := s.goals.Save(goal.Definition{Name: p.Name, Kind: p.Kind, Value: p.Value})

@@ -43,7 +43,21 @@ export default function App({ Component, pageProps }) {
 ```
 </details>
 
-## 2. Track the moments that matter (client)
+## 2. Track the moments that matter
+
+TypeScript note: the SDK attaches itself to `window`, so give yourself a tiny typed
+helper once and call it from any client component:
+
+```ts
+// lib/analytics.ts
+export function track(name: string, props?: Record<string, unknown>) {
+  if (typeof window !== "undefined") (window as any).smolanalytics?.track(name, props);
+}
+export function identify(userId: string) {
+  if (typeof window !== "undefined") (window as any).smolanalytics?.identify(userId);
+}
+```
+ (client)
 
 Anywhere in a client component (`"use client"`), the SDK is on `window`:
 

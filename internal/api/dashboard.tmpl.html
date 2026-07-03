@@ -265,6 +265,10 @@
         <div class="wcolh">referrers</div>
         {{range .Referrers}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
       </div>
+      {{if .HasSearch}}<div>
+        <div class="wcolh">google search queries (28d clicks)</div>
+        {{range .SearchRows}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
+      </div>{{end}}
     </div>
   </div>
   {{end}}

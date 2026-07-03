@@ -6,6 +6,12 @@ generated id stored in Keychain / SharedPreferences) so their events tie togethe
 
 ## iOS (Swift)
 
+> Adding a new `.swift` file from outside Xcode? Make sure it's added to the app
+> target (File → Add Files…, or check Target Membership in the File Inspector) —
+> on older non-synchronized project formats a file dropped into the folder alone
+> won't compile into the app.
+
+
 ```swift
 func track(_ name: String, _ props: [String: Any] = [:], distinctId: String) {
     var req = URLRequest(url: URL(string: "\(host)/v1/events")!)

@@ -22,8 +22,23 @@ echo "downloading $BIN $TAG ($OS/$ARCH)..."
 TMP=$(mktemp -d)
 curl -fsSL "$URL" | tar -xz -C "$TMP"
 
+# prefer /usr/local/bin; fall back to ~/.local/bin without sudo (CI, coding
+# agents, users without root). PREFIX overrides everything.
 DEST="${PREFIX:-/usr/local/bin}"
-if [ -w "$DEST" ]; then mv "$TMP/$BIN" "$DEST/$BIN"; else sudo mv "$TMP/$BIN" "$DEST/$BIN"; fi
+if [ -w "$DEST" ]; then
+  mv "$TMP/$BIN" "$DEST/$BIN"
+elif [ -z "${PREFIX:-}" ] && [ -t 0 ] && command -v sudo >/dev/null 2>&1; then
+  echo "installing to $DEST needs sudo (or re-run with PREFIX=\$HOME/.local/bin)"
+  sudo mv "$TMP/$BIN" "$DEST/$BIN"
+else
+  DEST="$HOME/.local/bin"
+  mkdir -p "$DEST"
+  mv "$TMP/$BIN" "$DEST/$BIN"
+  case ":$PATH:" in
+    *":$DEST:"*) ;;
+    *) echo "note: $DEST is not on your PATH — add:  export PATH=\"$DEST:\$PATH\"" ;;
+  esac
+fi
 rm -rf "$TMP"
 
 echo "installed $BIN -> $DEST/$BIN"
