@@ -32,6 +32,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/query"
 	"github.com/Arjun0606/smolanalytics/internal/retention"
 	"github.com/Arjun0606/smolanalytics/internal/settings"
+	"github.com/Arjun0606/smolanalytics/internal/share"
 	"github.com/Arjun0606/smolanalytics/internal/store"
 	"github.com/Arjun0606/smolanalytics/internal/trackplan"
 	"github.com/Arjun0606/smolanalytics/internal/trends"
@@ -53,6 +54,7 @@ type Server struct {
 	audit    *audit.Log
 	webhooks *webhook.Store
 	alerts   *alert.Store
+	shares   *share.Store
 	writeKey string // if set, POST /v1/events requires Authorization: Bearer <writeKey>
 	// autocaptured events dropped because the UA was a known crawler/bot — surfaced in
 	// /v1/usage so "why is my dashboard lower than GA?" has a visible, honest answer.
@@ -179,6 +181,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /v1/cohorts/{id}", s.deleteCohort)
 	mux.HandleFunc("GET /v1/cohorts/{id}/users", s.cohortUsers)
 	mux.HandleFunc("POST /mcp", s.handleMCP)
+	mux.HandleFunc("GET /share/{token}", s.sharePage) // public read-only web overview (token-gated)
 	// account + settings (the operational staple)
 	mux.HandleFunc("GET /login", s.login)
 	mux.HandleFunc("POST /login", s.login)

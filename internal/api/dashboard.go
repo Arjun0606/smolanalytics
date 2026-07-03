@@ -130,6 +130,11 @@ type dashVM struct {
 	Pageviews int // 30d
 	TopPages  []segRow
 	Referrers []segRow
+	// engagement + the AI channel (shown only when measurable / present)
+	HasEngagement bool
+	EngagedSecs   int
+	BouncePct     int
+	AIVisitors    int
 }
 
 func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
@@ -295,6 +300,10 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		vm.LiveNow = wv.LiveNow
 		vm.Visitors = wv.Visitors
 		vm.Pageviews = wv.Pageviews
+		vm.HasEngagement = wv.HasEngagement
+		vm.EngagedSecs = wv.AvgEngagedSecs
+		vm.BouncePct = wv.BounceRatePct
+		vm.AIVisitors = wv.AIVisitors
 		toRows := func(rows []web.Row, n int) []segRow {
 			top := 0
 			if len(rows) > 0 {

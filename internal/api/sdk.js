@@ -21,6 +21,13 @@
   var captured = false; // autocapture wired once, even if the snippet loads twice
   var warnedAuth = false; // warn once on a bad key, don't spam the console
   var lifecycleBound = false; // flush-on-unload listeners bound once, even on re-init
+  // engagement: accumulate time the page is visible AND focused, reported as a
+  // $engagement event when the visitor leaves the page (route change or unload).
+  // This is what makes bounce/duration honest — a tab open in the background is
+  // not engagement.
+  var engStart = null;
+  var engAccum = 0;
+  var engPath = null;
 
   function uid() {
     return "a-" + Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -89,6 +96,31 @@
     }
   }
 
+  function engActive() {
+    return document.visibilityState === "visible" && (typeof document.hasFocus !== "function" || document.hasFocus());
+  }
+  function engTick() {
+    if (engActive()) {
+      if (engStart === null) engStart = Date.now();
+    } else if (engStart !== null) {
+      engAccum += Date.now() - engStart;
+      engStart = null;
+    }
+  }
+  function engReport() {
+    if (engStart !== null) {
+      engAccum += Date.now() - engStart;
+      engStart = engActive() ? Date.now() : null;
+    }
+    var ms = Math.round(engAccum);
+    engAccum = 0;
+    // ignore sub-second blips and absurd values (clock jumps, day-long zombie tabs)
+    if (engPath && ms >= 1000 && ms < 4 * 60 * 60 * 1000) {
+      enqueue("$engagement", { path: engPath, engaged_ms: ms });
+    }
+    engPath = location.pathname;
+  }
+
   function enqueue(name, props) {
     props = props || {};
     // site + env stamped on EVERY event, so multi-site filtering and the
@@ -114,7 +146,9 @@
     var lastPath = null;
     function pageview() {
       if (location.pathname === lastPath) return;
+      if (lastPath !== null) engReport(); // attribute engaged time to the page being left
       lastPath = location.pathname;
+      if (engPath === null) engPath = location.pathname;
       var props = webContext();
       props.path = location.pathname;
       props.referrer = document.referrer;
@@ -184,10 +218,21 @@
       if (!lifecycleBound) {
         // bind once — a second init() must not stack duplicate flush-on-unload listeners
         lifecycleBound = true;
-        window.addEventListener("visibilitychange", function () {
-          if (document.visibilityState === "hidden") flush();
+        document.addEventListener("visibilitychange", function () {
+          engTick();
+          if (document.visibilityState === "hidden") {
+            engReport();
+            flush();
+          }
         });
-        window.addEventListener("pagehide", flush);
+        window.addEventListener("focus", engTick);
+        window.addEventListener("blur", engTick);
+        window.addEventListener("pagehide", function () {
+          engReport();
+          flush();
+        });
+        engPath = location.pathname;
+        engTick();
       }
       return smol;
     },

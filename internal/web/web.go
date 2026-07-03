@@ -29,6 +29,15 @@ type Result struct {
 	Referrers   []Row `json:"referrers"`    // grouped by host, "" → "direct"
 	UTMSources  []Row `json:"utm_sources"`  // only when utm_source is present
 	DeviceSplit []Row `json:"device_split"` // mobile / desktop
+	// engagement — from $engagement events (SDK measures visible+focused time).
+	// Omitted (zero) when the SDK predates engagement tracking.
+	HasEngagement  bool `json:"has_engagement"`
+	AvgEngagedSecs int  `json:"avg_engaged_secs"` // mean engaged time per engaged visitor
+	BounceRatePct  int  `json:"bounce_rate_pct"`  // 1 pageview AND <10s engaged
+	// the AI channel — humans arriving FROM AI assistants (chatgpt/claude/perplexity...).
+	// distinct from AI crawlers, which the bot filter drops before storage.
+	AIVisitors  int   `json:"ai_visitors"`
+	AIReferrers []Row `json:"ai_referrers"`
 }
 
 const pageview = "$pageview"
@@ -54,23 +63,45 @@ func Compute(evs []event.Event, days int, asof time.Time) Result {
 		a.visitors[user] = true
 	}
 
-	pages, refs, utms, devices := map[string]*agg{}, map[string]*agg{}, map[string]*agg{}, map[string]*agg{}
-	visitors, live := map[string]bool{}, map[string]bool{}
+	pages, refs, utms, devices, aiRefs := map[string]*agg{}, map[string]*agg{}, map[string]*agg{}, map[string]*agg{}, map[string]*agg{}
+	visitors, live, aiVisitors := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	pv := 0
+	pvPerUser := map[string]int{}
+	engagedMs := map[string]float64{}
+	hasEngagement := false
 
 	for _, e := range evs {
-		if e.Name != pageview || e.Timestamp.Before(cutoff) || e.Timestamp.After(asof) {
+		if e.Timestamp.Before(cutoff) || e.Timestamp.After(asof) {
+			continue
+		}
+		if e.Name == "$engagement" {
+			if ms, ok := e.Properties["engaged_ms"].(float64); ok && ms > 0 {
+				hasEngagement = true
+				engagedMs[e.DistinctID] += ms
+			}
+			continue
+		}
+		if e.Name != pageview {
 			continue
 		}
 		pv++
 		visitors[e.DistinctID] = true
+		pvPerUser[e.DistinctID]++
 		if !e.Timestamp.Before(liveCutoff) {
 			live[e.DistinctID] = true
 		}
 		if p, _ := e.Properties["path"].(string); p != "" {
 			bump(pages, p, e.DistinctID)
 		}
-		bump(refs, refHost(e.Properties["referrer"]), e.DistinctID)
+		host := refHost(e.Properties["referrer"])
+		bump(refs, host, e.DistinctID)
+		if aiHosts[host] {
+			aiVisitors[e.DistinctID] = true
+			bump(aiRefs, host, e.DistinctID)
+		} else if u, _ := e.Properties["utm_source"].(string); aiHosts[refHostString(u)] {
+			aiVisitors[e.DistinctID] = true
+			bump(aiRefs, refHostString(u), e.DistinctID)
+		}
 		if u, _ := e.Properties["utm_source"].(string); u != "" {
 			bump(utms, u, e.DistinctID)
 		}
@@ -79,7 +110,7 @@ func Compute(evs []event.Event, days int, asof time.Time) Result {
 		}
 	}
 
-	return Result{
+	r := Result{
 		PeriodDays:  days,
 		Visitors:    len(visitors),
 		Pageviews:   pv,
@@ -88,7 +119,50 @@ func Compute(evs []event.Event, days int, asof time.Time) Result {
 		Referrers:   rank(refs, 10),
 		UTMSources:  rank(utms, 10),
 		DeviceSplit: rank(devices, 4),
+		AIVisitors:  len(aiVisitors),
+		AIReferrers: rank(aiRefs, 6),
 	}
+	if hasEngagement {
+		r.HasEngagement = true
+		var total float64
+		engaged := 0
+		for _, ms := range engagedMs {
+			total += ms
+			engaged++
+		}
+		if engaged > 0 {
+			r.AvgEngagedSecs = int(total / float64(engaged) / 1000)
+		}
+		// bounce: a visitor with exactly one pageview who engaged under 10 seconds.
+		// Only measurable once engagement events exist — never fabricated before that.
+		bounced := 0
+		for u, n := range pvPerUser {
+			if n == 1 && engagedMs[u] < 10_000 {
+				bounced++
+			}
+		}
+		if len(pvPerUser) > 0 {
+			r.BounceRatePct = int(float64(bounced)/float64(len(pvPerUser))*100 + 0.5)
+		}
+	}
+	return r
+}
+
+// aiHosts are the AI assistants real humans click out of — the 2026 acquisition
+// channel worth naming. AI *crawlers* (GPTBot etc.) never get this far: the bot
+// filter drops them at ingest.
+var aiHosts = map[string]bool{
+	"chatgpt.com": true, "chat.openai.com": true, "claude.ai": true,
+	"perplexity.ai": true, "gemini.google.com": true, "copilot.microsoft.com": true,
+	"you.com": true, "poe.com": true, "phind.com": true, "kagi.com": true,
+}
+
+// refHostString normalizes a bare string (e.g. a utm_source like "chatgpt.com").
+func refHostString(s string) string {
+	if s == "" {
+		return ""
+	}
+	return refHost(s)
 }
 
 // refHost reduces a raw document.referrer to its host ("" → "direct"), so a

@@ -25,6 +25,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/insights"
 	"github.com/Arjun0606/smolanalytics/internal/mcp"
 	"github.com/Arjun0606/smolanalytics/internal/settings"
+	"github.com/Arjun0606/smolanalytics/internal/share"
 	"github.com/Arjun0606/smolanalytics/internal/store"
 	"github.com/Arjun0606/smolanalytics/internal/store/blob"
 	"github.com/Arjun0606/smolanalytics/internal/store/file"
@@ -275,6 +276,11 @@ func serve(st store.Store, closeStore func() error, guardPublic bool) {
 	} else {
 		log.Printf("smolanalytics: goals disabled (%v)", err)
 	}
+	if sh, err := share.Open(dataPath() + ".shares.json"); err == nil {
+		app.SetShares(sh)
+	} else {
+		log.Printf("smolanalytics: share links disabled (%v)", err)
+	}
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           app.Handler(),
@@ -414,6 +420,9 @@ func runMCP() {
 	}
 	if gl, err := goal.Open(dataPath() + ".goals.json"); err == nil {
 		m.SetGoals(gl)
+	}
+	if sh, err := share.Open(dataPath() + ".shares.json"); err == nil {
+		m.SetShares(sh)
 	}
 	if err := m.ServeStdio(); err != nil {
 		log.Fatal(err)

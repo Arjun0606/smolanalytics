@@ -103,7 +103,7 @@
   /* segmented funnel conversion */
   .segconv{display:flex;gap:18px}
   /* web glance */
-  .webstats{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:16px}
+  .webstats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:14px;margin-bottom:16px}
   .wstat .l{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--mut)}
   .wstat .v{font-family:var(--mono);font-size:24px;font-weight:700;margin-top:4px;letter-spacing:-.02em}
   .wstat .v.acc{color:var(--accent)}
@@ -246,6 +246,9 @@
       <div class="wstat"><div class="l">Live now</div><div class="v acc">{{.LiveNow}}</div></div>
       <div class="wstat"><div class="l">Visitors (30d)</div><div class="v">{{.Visitors}}</div></div>
       <div class="wstat"><div class="l">Pageviews (30d)</div><div class="v">{{.Pageviews}}</div></div>
+      {{if .HasEngagement}}<div class="wstat"><div class="l">Avg engaged</div><div class="v">{{.EngagedSecs}}s</div></div>
+      <div class="wstat"><div class="l">Bounce</div><div class="v">{{.BouncePct}}%</div></div>{{end}}
+      {{if gt .AIVisitors 0}}<div class="wstat"><div class="l">From AI assistants</div><div class="v acc">{{.AIVisitors}}</div></div>{{end}}
     </div>
     <div class="webcols">
       <div>

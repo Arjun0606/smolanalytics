@@ -32,6 +32,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/query"
 	"github.com/Arjun0606/smolanalytics/internal/retention"
 	"github.com/Arjun0606/smolanalytics/internal/settings"
+	"github.com/Arjun0606/smolanalytics/internal/share"
 	"github.com/Arjun0606/smolanalytics/internal/store"
 	"github.com/Arjun0606/smolanalytics/internal/trackplan"
 	"github.com/Arjun0606/smolanalytics/internal/trends"
@@ -62,6 +63,7 @@ type Server struct {
 	settings  *settings.Store
 	trackplan *trackplan.Store
 	goals     *goal.Store
+	shares    *share.Store
 }
 
 // SetSettings / SetTrackPlan attach the instance-control stores.
@@ -435,6 +437,9 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		}
 		if handled, out, gerr := s.callGoals(name, args); handled {
 			return out, gerr
+		}
+		if handled, out, serr := s.callShares(name, args); handled {
+			return out, serr
 		}
 		return "", fmt.Errorf("unknown tool: %s", name)
 	}
