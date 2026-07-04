@@ -6,6 +6,7 @@ later, when the data you need has a hole in it.
 
 smolanalytics closes that gap with a tracking plan that lives in your repo:
 `smolanalytics.plan.json`, committed next to the code that implements it.
+(To make your coding agent write the plan and the `track()` calls as it builds, see [docs/agents.md](agents.md).)
 
 ## Why a file in the repo
 
@@ -101,6 +102,65 @@ jobs:
 
 Pushing before checking keeps the instance's plan in lockstep with the default
 branch, so the check always verifies against what the repo currently intends.
+
+## Already on PostHog?
+
+You don't need a smolanalytics server — or any migration — to get the drift gate.
+`plan check --source=posthog` verifies the same `smolanalytics.plan.json` against
+your **existing PostHog project**, over PostHog's own query API:
+
+```sh
+smolanalytics plan check --source=posthog \
+  --ph-key=$POSTHOG_PERSONAL_API_KEY \
+  --ph-project=$POSTHOG_PROJECT_ID
+```
+
+- `--ph-key` is a **personal API key** with the `query:read` scope (PostHog →
+  Settings → Personal API keys), not a project API key.
+- `--ph-project` is the numeric project id (PostHog → Settings → Project).
+- `--ph-host` defaults to `https://us.posthog.com`; EU cloud projects need
+  `--ph-host=https://eu.posthog.com`. Self-hosted: your instance URL.
+- `--window` defaults to **168** (a week) for this source — wide enough that
+  weekly events don't false-alarm; tighten to `--window=24` on high-traffic apps.
+
+Same report, same exit code: `✓` per flowing event, `✗` when a planned event never
+arrived or arrives without an expected property, exit 1 on any `✗`. One difference,
+stated in the output: unplanned events are not listed — the check queries PostHog
+only about the events your plan declares, it doesn't enumerate your project.
+
+How it works, honestly: the CLI sends two read-only HogQL queries to *your* PostHog
+host and renders the result. Your data goes from PostHog to the machine running the
+command and nowhere else — there is no smolanalytics server in the loop, so
+smolanalytics never sees it.
+
+The CI variant — two secrets, `PH_KEY` and `PH_PROJECT`, no push step (there is no
+instance to push to; the repo file is the plan):
+
+```yaml
+name: tracking-plan
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  plan-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install smolanalytics
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/Arjun0606/smolanalytics/main/install.sh | PREFIX="$HOME/.local/bin" sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Verify PostHog traffic matches the plan
+        run: smolanalytics plan check --source=posthog --ph-key="$PH_KEY" --ph-project="$PH_PROJECT"
+        env:
+          PH_KEY: ${{ secrets.PH_KEY }}
+          PH_PROJECT: ${{ secrets.PH_PROJECT }}
+```
+
+If you later migrate ([docs/migration.md](migration.md)), the plan file doesn't
+change — drop `--source=posthog`, point `--host` at your instance, done.
 
 ## When to run it, honestly
 

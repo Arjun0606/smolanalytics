@@ -36,6 +36,10 @@ the README.
 
 ## From PostHog (`--format=posthog`)
 
+Not ready to migrate? You can still run the instrumentation drift gate against
+PostHog directly — `plan check --source=posthog` needs no server and moves no data
+([docs/agents-ci.md](agents-ci.md#already-on-posthog)).
+
 Where the export lives: in PostHog, open **Activity** (the raw events list), set
 the date range and any filters, then use the **Export** button and pick CSV. Large
 projects may need several date-ranged exports; the importer is happy to run once
@@ -123,3 +127,6 @@ For everything else. Header row required, then:
 | `distinct_id` (or `user_id` / `anonymous_id`) | yes | who did it |
 | `time` (or `timestamp`) | no | RFC3339, `YYYY-MM-DD HH:MM:SS`, or unix seconds/millis; missing means "now" |
 | everything else | no | becomes a string property under its column name |
+
+Once your history is in, keep tracking correct from here on: your coding agent maintains
+the plan ([docs/agents.md](agents.md)) and CI gates it ([docs/agents-ci.md](agents-ci.md)).

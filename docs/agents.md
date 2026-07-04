@@ -62,6 +62,7 @@ One-time setup, then it runs itself:
    properties the plan expects. It fails when tracking is broken, so a deploy that
    silently kills your signup event fails the pipeline instead of costing you a week of
    data. Same check as the `instrumentation_health` MCP tool, runnable without an agent.
+   The copy-paste GitHub Actions job (and the PostHog variant) is in [docs/agents-ci.md](agents-ci.md).
 7. **Ask, in the editor.** "did activation improve this week?" — your agent calls the
    deterministic report tools and answers with the computed numbers.
 8. **The morning brief, across everything.** Point every product you run at the same
@@ -71,6 +72,7 @@ One-time setup, then it runs itself:
    [README](../README.md#deploy-it-production).
 
 Build → instrument → verify → watch, and every step happens where you already work.
+(Adopting this on an app whose history lives in PostHog or Umami? Replay it in first: [docs/migration.md](migration.md).)
 
 ## 3. Ask patterns that already work
 

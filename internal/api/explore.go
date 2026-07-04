@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/brief"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/insight"
 	"github.com/Arjun0606/smolanalytics/internal/query"
@@ -30,6 +31,30 @@ func (s *Server) notable(w http.ResponseWriter, r *http.Request) {
 	evs = query.Apply(evs, nil) // production scope: dev-env events excluded by default
 
 	writeJSON(w, http.StatusOK, map[string]any{"findings": insight.Generate(evs)})
+}
+
+// apiBrief returns the full morning digest — pulse, per-product portfolio split,
+// findings — computed by the same internal/brief the CLI renders, so the cloud's
+// email, `smolanalytics brief`, and this endpoint can never disagree. Session or
+// key auth for the same reason as notable: the control plane polls with the key.
+func (s *Server) apiBrief(w http.ResponseWriter, r *http.Request) {
+	if s.authEnabled() && !s.validSession(r) && !s.keyAuthed(r) {
+		writeErr(w, http.StatusUnauthorized, "login or a valid key required")
+		return
+	}
+	days := 7
+	if d := r.URL.Query().Get("days"); d != "" {
+		if n, err := strconv.Atoi(d); err == nil && n >= 1 && n <= 90 {
+			days = n
+		}
+	}
+	evs, err := s.store.Range(time.Time{}, time.Time{})
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	evs = query.Apply(evs, nil) // production scope: dev-env events excluded by default
+	writeJSON(w, http.StatusOK, brief.Build(evs, days, time.Now().UTC()))
 }
 
 // usage reports this instance's event + user counts so a control plane (the Cloud)

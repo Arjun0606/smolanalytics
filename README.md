@@ -43,11 +43,11 @@ Every analytics tool now has an AI assistant — but it's bolted *inside their a
 - **Google Search Console, built in.** `smolanalytics gsc auth` (BYO OAuth client, two env vars) and your top search queries — clicks, impressions, position, biggest movers — appear on the dashboard, in the `search_console_report` MCP tool, next to what those visitors did after landing.
 - **Real product analytics AND web analytics — one tool.** Funnels, retention, trends, segmentation, lifecycle, stickiness, paths, cohorts, B2B accounts — plus the Plausible-shaped web view (visitors, live-now, top pages, referrers, UTM sources, devices). The usual answer is "run Plausible AND something heavier"; this is both, in one binary.
 - **One binary, not a cluster.** No Kafka/ClickHouse/Redis, no 12-hours-debugging-self-host. `docker run` and it's up. Your data never leaves your box and never trains anyone's model.
-- **One instance, all your projects.** The SDK stamps every event with its site's hostname — point every product you run at the same instance, switch sites on the dashboard, filter any report (or any MCP question) by site. You do not need a server per project.
+- **One instance, all your projects.** The SDK stamps every event with its site's hostname — point every product you run at the same instance, switch sites on the dashboard, filter any report (or any MCP question) by site, and the morning brief breaks down per product. You do not need a server per project.
 - **Beautiful by default.** Server-rendered, instant, opinionated — looks designed, not assembled.
 - **Open source (MIT), genuinely self-hostable.** Own the whole thing — no paywalled features stripped from the self-hosted edition.
 
-**Why not just use Mixpanel or PostHog?** They're deeper — but there are three things they *structurally can't* match, because it would break their business: (1) **the AI is yours, so it's free** — they meter theirs; (2) **answers come from exact reports, not generated SQL** — and CI enforces that they match the dashboard, which their own MCP docs don't promise; (3) **your data never leaves your box** — theirs lives in their cloud. Same funnels/retention, a fraction of the price, and it tells you what to fix instead of making you dig.
+**Why not just use Mixpanel or PostHog?** They're deeper — but there are three things they *structurally can't* match, because it would break their business: (1) **the AI is yours, so it's free** — they meter theirs; (2) **answers come from exact reports, not generated SQL** — and CI enforces that they match the dashboard, which their own MCP docs don't promise; (3) **your data never leaves your box** — theirs lives in their cloud. Same funnels/retention, a fraction of the price, and it tells you what to fix instead of making you dig. You can even try it before moving anything: `plan check --source=posthog` runs our tracking-drift gate against your existing PostHog project, and when you switch, `smolanalytics import` replays your history with original timestamps ([docs/migration.md](docs/migration.md)).
 
 ## The most private analytics you can run
 Every hosted analytics tool, the privacy-first ones included, still asks you to trust *their* servers with your users' data. smolanalytics keeps no cloud in the loop: it's a binary on your own box, so the data physically never leaves your infrastructure.
@@ -119,6 +119,8 @@ one block in your repo's `CLAUDE.md` / `AGENTS.md` / `.cursorrules` tells your a
 add `track()` for every feature it ships, keep `smolanalytics.plan.json` current, and
 verify events actually flow with `smolanalytics plan check` after each deploy. The
 copy-paste block and the full build → instrument → verify loop: [docs/agents.md](docs/agents.md).
+Already on PostHog? `plan check --source=posthog` runs the same gate against your
+existing PostHog project — no server, no migration ([docs/agents-ci.md](docs/agents-ci.md#already-on-posthog)).
 
 ## Send events (2 minutes, zero instrumentation)
 Drop the snippet in — it **autocaptures pageviews + clicks instantly**, so you get real data with no manual event tagging. Add `track()` for the key moments (signup, checkout) when you want funnels.
@@ -227,7 +229,7 @@ fly launch --copy-config && fly deploy
 
 Config (all env): `ADDR` (default `127.0.0.1:8080`), `SMOLANALYTICS_DB` (event log path), `SMOLANALYTICS_WRITE_KEY` (require a key on ingestion + MCP), `SMOLANALYTICS_PASSWORD` (dashboard login — required to expose the server), `SMOLANALYTICS_RETAIN_DAYS` (drop events older than N days — default: keep forever), `SMOLANALYTICS_MAX_EVENTS` (keep only the newest N events resident — a memory guardrail so a flood degrades to compaction instead of an OOM). Health at `/healthz`, build at `/version`.
 
-**The morning brief, self-hosted:** `smolanalytics brief` prints the pulse (visitors + events vs the prior week) and the "what to look at" findings from the same event log the server uses (set `SMOLANALYTICS_DB` to the same path). Cron it and the digest arrives every morning:
+**The morning brief, self-hosted:** `smolanalytics brief` prints the pulse (visitors + events vs the prior week) and the "what to look at" findings from the same event log the server uses (set `SMOLANALYTICS_DB` to the same path). A running server also serves the same digest as JSON at `GET /v1/brief`, for your own delivery. Cron it and it arrives every morning:
 ```sh
 # 8am daily — by email, or straight into Slack
 0 8 * * * SMOLANALYTICS_DB=/data/smolanalytics.data smolanalytics brief | mail -s "analytics brief" you@example.com
@@ -244,7 +246,7 @@ Manage everything from **Settings** (`/settings`): account + password, API keys,
 ```sh
 0 3 * * * curl -s -H "Authorization: Bearer $KEY" "https://YOUR_HOST/v1/export?format=jsonl" | gzip > /backups/events-$(date +\%F).jsonl.gz
 ```
-The JSONL round-trips straight back into `/v1/events`, so a restore is one curl too — into this tool or away from it.
+A restore is one curl back into `/v1/events` — into this tool or away from it.
 
 **If we disappear:** nothing happens to you. The MIT binary keeps running forever, your events live in plain files on *your* disk or *your* bucket, and exports are one curl. There is no phone-home, no license server, and no closed control plane your data depends on. The binary you run in dev is production — there's no separate "self-host mode" that's secretly the second-class version. Don't take our word for it: the on-disk format and its compatibility guarantees are written down in [STABILITY.md](STABILITY.md) and [docs/design/storage.md](docs/design/storage.md) — you can verify the exit paths before you send a single event.
 
@@ -271,7 +273,7 @@ There is exactly one writer — your instance — which is why this needs no con
 - `internal/store` — the `Store` interface with three backends behind it: in-memory, the durable append-log (single box), and the columnar segment tier (`store/segment` + `store/blob`) that seals into compressed segments on local disk or S3/R2 — billions of events on flat memory, ~7 bytes/event.
 - `internal/mcp` — the MCP server (stdio + Streamable HTTP): the "ask with your own AI" layer.
 - `internal/api` — the single-binary HTTP server: ingestion, SDK, dashboard, Explore, settings, auth, webhooks, alerts, audit.
-- `cmd/smolanalytics` — the binary (`serve`, `demo`, `mcp`, `connect`).
+- `cmd/smolanalytics` — the binary (`serve`, `demo`, `mcp`, `connect`, `gsc`, `import`, `brief`, `plan`, `scrub`).
 
 ```sh
 make demo    # seed + serve

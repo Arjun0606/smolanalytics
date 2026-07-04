@@ -53,9 +53,19 @@ func planCmd(args []string) {
 	file := fs.String("file", "smolanalytics.plan.json", "plan file (keep it in the repo)")
 	host := fs.String("host", "http://localhost:8080", "running smolanalytics server")
 	key := fs.String("key", "", "API key (sent as Authorization: Bearer)")
-	window := fs.Int("window", 0, "check: only verify events from the last N hours (0 = all time)")
+	window := fs.Int("window", 0, "check: only verify events from the last N hours (0 = all time; posthog default 168)")
 	asJSON := fs.Bool("json", false, "check: print the raw health payload instead of the report")
+	source := fs.String("source", "", `check: verify against "posthog" instead of a smolanalytics server`)
+	phKey := fs.String("ph-key", "", "check --source=posthog: PostHog personal API key with the query:read scope")
+	phProject := fs.String("ph-project", "", "check --source=posthog: PostHog project id")
+	phHost := fs.String("ph-host", "https://us.posthog.com", "check --source=posthog: PostHog API host (EU cloud: https://eu.posthog.com)")
 	_ = fs.Parse(args)
+	windowSet := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "window" {
+			windowSet = true
+		}
+	})
 
 	var err error
 	switch sub {
@@ -66,7 +76,20 @@ func planCmd(args []string) {
 	case "pull":
 		err = runPlanPull(*file, *host, *key, os.Stdout)
 	case "check":
-		err = runPlanCheck(*host, *key, *window, *asJSON, os.Stdout)
+		switch *source {
+		case "":
+			err = runPlanCheck(*host, *key, *window, *asJSON, os.Stdout)
+		case "posthog":
+			if !windowSet {
+				// all-time is the right default against our own instance (it holds
+				// exactly the app's history) but an unbounded scan of a PostHog
+				// project is slow and stale; a week of traffic is the honest window.
+				*window = 168
+			}
+			err = runPlanCheckPostHog(*file, *phHost, *phKey, *phProject, *window, *asJSON, os.Stdout)
+		default:
+			err = fmt.Errorf("unknown --source=%q — supported: posthog (omit the flag to check a smolanalytics server via --host)", *source)
+		}
 	default:
 		if sub != "" && sub != "help" {
 			fmt.Fprintf(os.Stderr, "plan: unknown subcommand %q\n\n", sub)
@@ -94,6 +117,15 @@ func planUsage(w io.Writer) {
 	fmt.Fprintln(w, "  --key=KEY      API key, sent as Authorization: Bearer")
 	fmt.Fprintln(w, "  --window=N     check: only verify the last N hours (nightly CI: 24)")
 	fmt.Fprintln(w, "  --json         check: raw health payload instead of the report")
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Already on PostHog? `plan check` runs the same gate against your existing")
+	fmt.Fprintln(w, "PostHog project — no server, no migration (docs/agents-ci.md):")
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "  --source=posthog   check the plan file against PostHog's query API")
+	fmt.Fprintln(w, "  --ph-key=KEY       personal API key with the query:read scope")
+	fmt.Fprintln(w, "  --ph-project=ID    project id (PostHog → Settings → Project)")
+	fmt.Fprintln(w, "  --ph-host=URL      default https://us.posthog.com (EU: https://eu.posthog.com)")
+	fmt.Fprintln(w, "  --window=N         defaults to 168 (a week) for this source")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Commit the file: instrumentation intent gets code-reviewed with the code that")
 	fmt.Fprintln(w, "implements it, and `plan check` in CI catches tracking that silently broke.")
@@ -175,6 +207,15 @@ func runPlanCheck(host, key string, windowHours int, asJSON bool, out io.Writer)
 	if err != nil {
 		return err
 	}
+	return renderAndGate(text, asJSON, "", out)
+}
+
+// renderAndGate parses a health payload, renders the report (or echoes the raw
+// JSON), and returns the CI error when anything planned is broken. Every check
+// source (a smolanalytics instance, --source=posthog) funnels through here, so
+// the report format and the exit-code contract can never drift between sources.
+// note, when set, is one extra informational line under the report.
+func renderAndGate(text string, asJSON bool, note string, out io.Writer) error {
 	var h healthReport
 	if err := json.Unmarshal([]byte(text), &h); err != nil {
 		return fmt.Errorf("unreadable health payload: %w", err)
@@ -184,8 +225,11 @@ func runPlanCheck(host, key string, windowHours int, asJSON bool, out io.Writer)
 		fmt.Fprintln(out, text)
 	} else {
 		broken = renderPlanCheck(h, out)
+		if note != "" {
+			fmt.Fprintf(out, "  %s\n", note)
+		}
 	}
-	// ✗ rows and the server's healthy verdict must agree; failing on either keeps
+	// ✗ rows and the payload's healthy verdict must agree; failing on either keeps
 	// the exit code honest even if one side drifts.
 	if broken > 0 || !h.Healthy {
 		return fmt.Errorf("%d of %d planned events broken", brokenCount(h), len(h.Planned))
@@ -353,4 +397,12 @@ func trimBody(b []byte) string {
 		s = s[:200] + "…"
 	}
 	return s
+}
+
+// plural: report lines read as prose — "1 event", not "1 events".
+func plural(n int, word string) string {
+	if n == 1 {
+		return fmt.Sprintf("%d %s", n, word)
+	}
+	return fmt.Sprintf("%d %ss", n, word)
 }

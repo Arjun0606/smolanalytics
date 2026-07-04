@@ -24,6 +24,9 @@ curl -H "Authorization: Bearer $KEY" "$HOST/v1/breakdown?event=signup&property=s
 curl -H "Authorization: Bearer $KEY" "$HOST/v1/notable"
 curl -H "Authorization: Bearer $KEY" "$HOST/v1/usage"
 
+# the morning brief as JSON — pulse + findings, per-site breakdown (?days=1..90, default 7)
+curl -H "Authorization: Bearer $KEY" "$HOST/v1/brief?days=7"
+
 # full export — CSV or JSONL (JSONL round-trips straight back into /v1/events)
 curl -H "Authorization: Bearer $KEY" "$HOST/v1/export?format=jsonl" -o events.jsonl
 ```

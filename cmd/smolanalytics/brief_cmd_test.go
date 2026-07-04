@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/brief"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/insight"
 	"github.com/Arjun0606/smolanalytics/internal/store/memory"
@@ -80,7 +81,7 @@ func TestBuildBriefSites(t *testing.T) {
 	cases := []struct {
 		name    string
 		batches []batch
-		want    []siteLine
+		want    []brief.SiteLine
 	}{
 		{
 			name: "sorted by current events, stray no-site folds under 2%",
@@ -90,7 +91,7 @@ func TestBuildBriefSites(t *testing.T) {
 				{"", "u3", 1, 24 * time.Hour}, // 1 of 99 events ≈ 1% — folded
 				{"pile.app", "u1", 40, 9 * 24 * time.Hour},
 			},
-			want: []siteLine{
+			want: []brief.SiteLine{
 				{Site: "pile.app", Visitors: 1, Events: 60, PriorVisitors: 1, PriorEvents: 40},
 				{Site: "smolbill.dev", Visitors: 1, Events: 38},
 			},
@@ -102,7 +103,7 @@ func TestBuildBriefSites(t *testing.T) {
 				{"smolbill.dev", "u2", 2, 24 * time.Hour},
 				{"", "u3", 1, 24 * time.Hour}, // 1 of 6 events — shown
 			},
-			want: []siteLine{
+			want: []brief.SiteLine{
 				{Site: "pile.app", Visitors: 1, Events: 3},
 				{Site: "smolbill.dev", Visitors: 1, Events: 2},
 				{Site: "(no site)", Visitors: 1, Events: 1},
@@ -138,13 +139,13 @@ func TestFormatBrief(t *testing.T) {
 	at := time.Date(2026, 7, 3, 8, 0, 0, 0, time.UTC)
 	cases := []struct {
 		name string
-		b    brief
+		b    briefDigest
 		want []string
 		not  []string
 	}{
 		{
 			name: "findings and delta",
-			b: brief{GeneratedAt: at, Days: 7, Visitors: 2, Events: 3, PriorVisitors: 1, PriorEvents: 2,
+			b: briefDigest{GeneratedAt: at, Days: 7, Visitors: 2, Events: 3, PriorVisitors: 1, PriorEvents: 2,
 				Findings: []insight.Finding{
 					{Severity: "warn", Title: "Biggest drop-off: signup → activate", Detail: "only 40% continue."},
 					{Severity: "info", Title: "signup is up 100% week-over-week", Detail: "2 vs 1."},
@@ -161,14 +162,14 @@ func TestFormatBrief(t *testing.T) {
 		},
 		{
 			name: "no prior data, no findings",
-			b:    brief{GeneratedAt: at, Days: 7, Visitors: 1, Events: 1},
+			b:    briefDigest{GeneratedAt: at, Days: 7, Visitors: 1, Events: 1},
 			want: []string{"1 visitor · 1 event", "(no prior data to compare)", "nothing notable"},
 			not:  []string{"%", "\x1b", "By product:"}, // no zero-baseline percentage, no ANSI escapes, no portfolio block without sites
 		},
 		{
 			name: "portfolio block: aligned columns, grouped counts, (new) baseline",
-			b: brief{GeneratedAt: at, Days: 7, Visitors: 450, Events: 2005, PriorVisitors: 400, PriorEvents: 1445,
-				Sites: []siteLine{
+			b: briefDigest{GeneratedAt: at, Days: 7, Visitors: 450, Events: 2005, PriorVisitors: 400, PriorEvents: 1445,
+				Sites: []brief.SiteLine{
 					{Site: "pile.app", Visitors: 412, Events: 1893, PriorVisitors: 380, PriorEvents: 1445},
 					{Site: "smolbill.dev", Visitors: 38, Events: 112},
 				}},
@@ -180,7 +181,7 @@ func TestFormatBrief(t *testing.T) {
 		},
 		{
 			name: "portfolio block caps at 12 sites",
-			b: brief{GeneratedAt: at, Days: 7, Visitors: 91, Events: 910, PriorVisitors: 13, PriorEvents: 13,
+			b: briefDigest{GeneratedAt: at, Days: 7, Visitors: 91, Events: 910, PriorVisitors: 13, PriorEvents: 13,
 				Sites: manySites(13)},
 			want: []string{"s01", "s12", "…and 1 more"},
 			not:  []string{"s13"},
@@ -202,10 +203,10 @@ func TestFormatBrief(t *testing.T) {
 }
 
 // manySites builds n site lines in descending event order for the cap case.
-func manySites(n int) []siteLine {
-	lines := make([]siteLine, n)
+func manySites(n int) []brief.SiteLine {
+	lines := make([]brief.SiteLine, n)
 	for i := range lines {
-		lines[i] = siteLine{Site: fmt.Sprintf("s%02d", i+1), Visitors: n - i, Events: (n - i) * 10, PriorEvents: 1}
+		lines[i] = brief.SiteLine{Site: fmt.Sprintf("s%02d", i+1), Visitors: n - i, Events: (n - i) * 10, PriorEvents: 1}
 	}
 	return lines
 }
