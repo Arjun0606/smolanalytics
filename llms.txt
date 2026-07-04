@@ -51,4 +51,4 @@ The `instrument-my-app` MCP prompt walks this exact loop.
 - Unknown event/property names return corrective errors listing valid names (never silent zeros).
 - One static binary, zero dependencies, MIT. Data stays on your infrastructure.
 - Docs: https://github.com/Arjun0606/smolanalytics (framework guides in /docs).
-- Hosted version: https://smolanalytics-cloud.vercel.app (14-day full trial, then from $9/mo).
+- Hosted version: https://smolanalytics.com (14-day full trial, then from $9/mo).

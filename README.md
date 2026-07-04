@@ -281,14 +281,14 @@ make race    # tests with the race detector
 ```
 
 ## Don't want to run it? → smolanalytics Cloud
-**Self-hosting is the free tier — unlimited, forever.** If you'd rather not run a server — or you're a **team** — the [hosted Cloud](https://smolanalytics-cloud.vercel.app) does the parts a single binary can't:
+**Self-hosting is the free tier — unlimited, forever.** If you'd rather not run a server — or you're a **team** — the [hosted Cloud](https://smolanalytics.com) does the parts a single binary can't:
 
 - **Zero ops** — we host an isolated instance per project; scale, backups, and uptime are ours.
 - **Your whole team** — invites, roles, shared projects (the OSS is single-operator by design).
 - **The brief, delivered** — your "what to fix" digest by email + Slack every morning, without you keeping a server up or wiring cron (self-host equivalent: `smolanalytics brief` + cron).
 - **Scale + retention** — millions of events, longer history, no ops.
 
-Cloud pricing is simple: a **14-day full-product trial** (every feature, no credit card), then from **$9/mo**. Overage never locks your dashboard. Same product, same "ask in your editor," same own-your-data — just managed. **[Start the trial →](https://smolanalytics-cloud.vercel.app)**
+Cloud pricing is simple: a **14-day full-product trial** (every feature, no credit card), then from **$9/mo**. Overage never locks your dashboard. Same product, same "ask in your editor," same own-your-data — just managed. **[Start the trial →](https://smolanalytics.com)**
 
 ## Contributing
 PRs welcome — keep it small, correct, and dependency-free. See [CONTRIBUTING.md](CONTRIBUTING.md). Security issues: [SECURITY.md](SECURITY.md).
