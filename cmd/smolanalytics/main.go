@@ -324,15 +324,8 @@ func serve(st store.Store, closeStore func() error, guardPublic bool) {
 	if gs, err := gsc.Open(sp(".gsc.json")); err == nil {
 		app.SetGSC(gs)
 		if demoMode {
-			// the demo shows every card populated — including search
-			_ = gs.SetGrant("demo", "sc-domain:demo.example")
-			_ = gs.SetRows([]gsc.Row{
-				{Query: "self hosted analytics", Clicks: 212, Impressions: 4900, CTRPct: 4.3, Position: 3.1},
-				{Query: "plausible alternative", Clicks: 140, Impressions: 3800, CTRPct: 3.7, Position: 4.6},
-				{Query: "analytics in one binary", Clicks: 96, Impressions: 1400, CTRPct: 6.9, Position: 2.2},
-				{Query: "ask analytics in cursor", Clicks: 74, Impressions: 900, CTRPct: 8.2, Position: 1.8},
-				{Query: "posthog too heavy", Clicks: 33, Impressions: 700, CTRPct: 4.7, Position: 5.9},
-			})
+			// the demo shows every card populated — including search + money pages
+			_ = demo.SeedGSC(gs)
 		}
 		if creds, ok := gsc.CredsFromEnv(); ok && gs.Connected() {
 			go func() { // pull now if stale, then every 12h

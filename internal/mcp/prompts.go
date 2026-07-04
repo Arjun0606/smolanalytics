@@ -55,6 +55,10 @@ var promptList = []map[string]any{
 		"name":        "growth-experiments",
 		"description": "Exactly 3 measurable experiments from real baselines — hypothesis, metric, tracking-plan additions, and the alert that catches the result.",
 	},
+	{
+		"name":        "money-pages",
+		"description": "The page-level SEO wins already in reach: near-page-1 quick wins, snippets that rank but don't earn the click, and pages cannibalizing each other.",
+	},
 }
 
 var promptText = map[string]string{
@@ -136,6 +140,16 @@ Output one line per product — visitors, headline number, delta — then the ve
 2. Find the 3 softest numbers a plausible change could actually move.
 Propose exactly 3 experiments, each with: a falsifiable one-sentence hypothesis; the metric and its current baseline (the real number you just measured); the tracking additions needed — new events or properties, declared via set_tracking_plan; and the create_alert that will catch the result moving.
 No experiment without a baseline: if the data is too thin, say which experiment to skip and what volume unlocks it.`,
+
+	"money-pages": `Find my money pages — the SEO wins already within reach (needs Search Console — say so and stop if it isn't connected):
+1. search_console_report — read the money_pages section. If it says page data isn't fetched yet, relay that note and stop.
+2. quick_wins are page/query pairs ranking 4-15: proven relevant, one push from page-1 clicks.
+3. ctr_problems rank fine but the snippet doesn't earn the click. cannibalization is one query split across competing pages.
+Output three lists:
+- Quick wins: page | query | position | impressions — plus the ONE change to try (title/meta rewrite, add the query's exact phrasing, internal links to the page, or a content refresh — pick per row, don't say "improve SEO").
+- CTR problems: page | query | expected vs actual CTR — the ranking is earned, the title/description isn't; propose the rewrite.
+- Cannibalization: query | the competing pages | which page to consolidate into (usually the one with more clicks) and what to do with the loser (redirect, canonical, or retarget it).
+Skip rows with too few impressions to mean anything. Rank each list by impressions at stake.`,
 }
 
 // dispatchPrompts handles prompts/list and prompts/get. Returns nil when the method

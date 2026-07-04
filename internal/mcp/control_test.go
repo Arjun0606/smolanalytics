@@ -139,6 +139,7 @@ func TestPromptsDispatch(t *testing.T) {
 		"monthly-report", "search-performance", "content-gaps",
 		"funnel-leak", "channel-review", "retention-review",
 		"launch-day", "portfolio-review", "growth-experiments",
+		"money-pages",
 	}
 
 	resp := s.Dispatch(request{JSONRPC: "2.0", ID: json.RawMessage("1"), Method: "prompts/list"})
@@ -180,6 +181,11 @@ func TestPromptsDispatch(t *testing.T) {
 	if !strings.Contains(string(b), "search_console_report") {
 		t.Fatalf("content-gaps prompt should name search_console_report: %s", b)
 	}
+	resp = s.Dispatch(request{JSONRPC: "2.0", ID: json.RawMessage("6"), Method: "prompts/get", Params: json.RawMessage(`{"name":"money-pages"}`)})
+	b, _ = json.Marshal(resp.Result)
+	if !strings.Contains(string(b), "money_pages") || !strings.Contains(string(b), "search_console_report") {
+		t.Fatalf("money-pages prompt should drive search_console_report's money_pages section: %s", b)
+	}
 
 	resp = s.Dispatch(request{JSONRPC: "2.0", ID: json.RawMessage("5"), Method: "prompts/get", Params: json.RawMessage(`{"name":"nope"}`)})
 	if resp.Error == nil {
@@ -201,8 +207,11 @@ func TestPromptsOnlyNameRealTools(t *testing.T) {
 			if !strings.Contains(tok, "_") || strings.HasPrefix(tok, "_") || strings.HasSuffix(tok, "_") {
 				continue // only tool-shaped tokens like web_overview
 			}
-			if tok == "utm_source" || tok == "distinct_id" || tok == "window_hours" || tok == "missing_properties" {
+			switch tok {
+			case "utm_source", "distinct_id", "window_hours", "missing_properties":
 				continue // property/argument names, not tools
+			case "money_pages", "quick_wins", "ctr_problems":
+				continue // search_console_report payload fields, not tools
 			}
 			if !strings.Contains(tools, `"`+tok+`"`) {
 				t.Errorf("prompt %s references %q which is not in tools/list", name, tok)

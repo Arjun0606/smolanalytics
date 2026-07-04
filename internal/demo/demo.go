@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/event"
+	"github.com/Arjun0606/smolanalytics/internal/gsc"
 	"github.com/Arjun0606/smolanalytics/internal/store"
 )
 
@@ -128,4 +129,34 @@ func Seed(s store.Store) error {
 		}
 	}
 	return nil
+}
+
+// SeedGSC populates the search store so the demo shows the Search card and the
+// money_pages report working. The page rows are engineered to hit each bucket:
+// two clean quick wins (position 4-15), one CTR problem (position 3 earning a
+// fraction of a top-3 CTR), and one cannibalization pair (the same query earning
+// clicks on two pages).
+func SeedGSC(gs *gsc.Store) error {
+	if err := gs.SetGrant("demo", "sc-domain:demo.example"); err != nil {
+		return err
+	}
+	if err := gs.SetRows([]gsc.Row{
+		{Query: "self hosted analytics", Clicks: 212, Impressions: 4900, CTRPct: 4.3, Position: 3.1},
+		{Query: "plausible alternative", Clicks: 140, Impressions: 3800, CTRPct: 3.7, Position: 4.6},
+		{Query: "analytics in one binary", Clicks: 96, Impressions: 1400, CTRPct: 6.9, Position: 2.2},
+		{Query: "ask analytics in cursor", Clicks: 74, Impressions: 900, CTRPct: 8.2, Position: 1.8},
+		{Query: "posthog too heavy", Clicks: 33, Impressions: 700, CTRPct: 4.7, Position: 5.9},
+	}); err != nil {
+		return err
+	}
+	return gs.SetPageRows([]gsc.PageRow{
+		// quick wins: ranking 4-15 with real impressions
+		{Page: "/blog/self-hosted-analytics-tools", Query: "self hosted analytics tools", Clicks: 88, Impressions: 2600, Position: 6.4},
+		{Page: "/compare/plausible", Query: "plausible alternative", Clicks: 41, Impressions: 1900, Position: 8.2},
+		// CTR problem: a top-3 position typically earns ~8% — this earns 1.2%
+		{Page: "/", Query: "self hosted analytics", Clicks: 60, Impressions: 4900, Position: 2.9},
+		// cannibalization: one query, two pages, both getting clicks
+		{Page: "/", Query: "analytics in one binary", Clicks: 60, Impressions: 700, Position: 4.8},
+		{Page: "/blog/one-binary-analytics", Query: "analytics in one binary", Clicks: 52, Impressions: 640, Position: 5.2},
+	})
 }

@@ -1,6 +1,6 @@
 # The prompt library
 
-smolanalytics ships 12 built-in prompts — complete analytics workflows, not one-liners.
+smolanalytics ships 13 built-in prompts — complete analytics workflows, not one-liners.
 In Claude Code, Cursor, or any MCP client that supports prompts, they surface natively:
 type `/`, pick one, and the whole routine runs — the model calls the right tools in the
 right order and gives you the read, not a data dump.
@@ -137,7 +137,7 @@ The shift to make: <one line>.
 
 ## Search
 
-Both of these need Search Console connected — one-time `smolanalytics gsc auth`.
+All three need Search Console connected — one-time `smolanalytics gsc auth`.
 
 ### search-performance
 
@@ -170,6 +170,22 @@ Gap: "<query>" — M impressions at position P, only N clicks; no page targets i
 Improve: <path> ranks P for "<query>" — M impressions, X% CTR.
 Extend: <path> already pulls N visitors across K adjacent queries.
 Next page to write: "<working title>" — targets <query cluster>, M combined impressions.
+```
+
+### money-pages
+
+When you want the SEO wins already within reach — no new content required.
+
+Reads the page-level cut of Search Console: pages ranking 4-15 (one push from page-1
+clicks), pages that rank fine but whose snippet doesn't earn the click, and queries
+split across competing pages.
+
+`search_console_report`
+
+```
+Quick win: <path> — "<query>" at position P with M impressions; try <one change>.
+CTR problem: <path> — "<query>" earns X% CTR where position P typically earns Y%; rewrite the title.
+Cannibalization: "<query>" splits between <path> (N clicks) and <path> (M clicks) — consolidate into the first.
 ```
 
 ## Big days, many products

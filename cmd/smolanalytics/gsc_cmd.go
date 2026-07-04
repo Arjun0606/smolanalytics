@@ -137,6 +137,13 @@ func gscAuth(store *gsc.Store) {
 	if err := store.SetRows(rows); err != nil {
 		log.Fatal(err)
 	}
+	// page-level rows power the money_pages section — best-effort, queries already landed
+	if pages, err := gsc.FetchPages(ctx, creds, refresh, site, 28); err != nil {
+		_ = store.SetPageFetchError(err.Error())
+		fmt.Printf("page-level pull failed (%v) — the server will retry on its 12h schedule\n", err)
+	} else if err := store.SetPageRows(pages); err != nil {
+		log.Fatal(err)
+	}
 	fmt.Printf("%d queries cached ✓ — ask your AI `search_console_report`, or open the dashboard\n", len(rows))
 }
 
