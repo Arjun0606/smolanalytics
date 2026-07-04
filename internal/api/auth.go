@@ -88,6 +88,8 @@ func isPublic(r *http.Request) bool {
 		return true
 	case strings.HasPrefix(p, "/share/"): // read-only share pages carry their own token auth
 		return true
+	case strings.HasPrefix(p, "/export/"): // one-time export downloads carry their own single-use token
+		return true
 	case r.Method == http.MethodOptions:
 		return true
 	}
@@ -106,6 +108,14 @@ func (s *Server) authMW(next http.Handler) http.Handler {
 		// (scripts, CI, cron) — same key that authorizes ingest and MCP. Writes and
 		// settings stay session-only.
 		if r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/") && s.keyAuthed(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		// one POST exception: firing a webhook TEST delivery changes no state, and the
+		// MCP test_webhook tool + scripts need it under the same key that reads reports.
+		// Creating/deleting webhooks stays session-only.
+		if r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v1/webhooks/") &&
+			strings.HasSuffix(r.URL.Path, "/test") && s.keyAuthed(r) {
 			next.ServeHTTP(w, r)
 			return
 		}

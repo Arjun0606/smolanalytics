@@ -21,6 +21,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/audit"
 	"github.com/Arjun0606/smolanalytics/internal/cohort"
 	"github.com/Arjun0606/smolanalytics/internal/demo"
+	"github.com/Arjun0606/smolanalytics/internal/exportlink"
 	"github.com/Arjun0606/smolanalytics/internal/goal"
 	"github.com/Arjun0606/smolanalytics/internal/gsc"
 	"github.com/Arjun0606/smolanalytics/internal/insight"
@@ -321,6 +322,11 @@ func serve(st store.Store, closeStore func() error, guardPublic bool) {
 	} else {
 		log.Printf("smolanalytics: share links disabled (%v)", err)
 	}
+	if ex, err := exportlink.Open(sp(".exportlinks.json")); err == nil {
+		app.SetExportLinks(ex)
+	} else {
+		log.Printf("smolanalytics: export links disabled (%v)", err)
+	}
 	if gs, err := gsc.Open(sp(".gsc.json")); err == nil {
 		app.SetGSC(gs)
 		if demoMode {
@@ -420,12 +426,13 @@ func dailyBrief(st store.Store, wh *webhook.Store) {
 		if len(findings) == 0 {
 			continue
 		}
+		text := insight.Text(findings)
 		wh.DeliverAll(map[string]any{
 			"type":     "daily_brief",
-			"text":     insight.Text(findings),
+			"text":     text,
 			"findings": findings,
 			"at":       time.Now().UTC(),
-		})
+		}, text)
 	}
 }
 
@@ -458,10 +465,18 @@ func runMCP() {
 		}
 		st = m
 	}
+	var aliasMap *alias2.Map
 	if am, err := alias2.Open(dataPath() + ".aliases.json"); err == nil {
+		aliasMap = am
 		st = alias2.Wrap(st, am)
 	}
 	m := mcp.New(st)
+	if aliasMap != nil {
+		m.SetAliases(aliasMap) // import_events stitches $identify like the server would
+	}
+	// export links stay unwired on stdio ON PURPOSE: a download URL only works when
+	// the HTTP server that will serve (and burn) the token minted it — a stdio-minted
+	// token would be a dead link. The tool's error points at connecting over HTTP.
 	// action tools (create_alert, save_report, …) write the same sidecar files the
 	// server uses, so anything created from the editor shows up on the dashboard.
 	if ins, err := insights.Open(dataPath() + ".insights.json"); err == nil {

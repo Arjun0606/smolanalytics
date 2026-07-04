@@ -20,9 +20,11 @@ import (
 	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/alert"
+	"github.com/Arjun0606/smolanalytics/internal/alias"
 	"github.com/Arjun0606/smolanalytics/internal/cohort"
 	"github.com/Arjun0606/smolanalytics/internal/engagement"
 	"github.com/Arjun0606/smolanalytics/internal/event"
+	"github.com/Arjun0606/smolanalytics/internal/exportlink"
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
 	"github.com/Arjun0606/smolanalytics/internal/goal"
 	"github.com/Arjun0606/smolanalytics/internal/groups"
@@ -51,7 +53,7 @@ How to work:
 - Answer like an analyst, not a database. Lead with the number, say what it means, then offer the most useful next cut. If conversion dropped, find the step; if a segment underperforms, name it; if retention is flat, say so plainly.
 - Be concrete and honest. Quote the real figures. If the data is too thin to conclude, say that instead of guessing.
 - For open-ended asks ("how's the product doing?"), proactively pull the 2-3 most telling reports and synthesize a short read.
-- You can also DO things, not just read: create_alert ("tell me if signups drop below 10/day" → op=lt, window_hours=24), add_webhook (Slack/HTTPS endpoint the alerts and daily digest fire to), create_cohort (define a user group once, reuse anywhere), save_report (pin a funnel/trend/breakdown to their dashboard). When the user says "watch this", "alert me", "save that" — reach for these, then confirm what you created by echoing it back.`
+- You can also DO things, not just read: create_alert ("tell me if signups drop below 10/day" → op=lt, window_hours=24), add_webhook (Slack/HTTPS endpoint the alerts and daily digest fire to; Slack URLs get readable text messages) then test_webhook (prove the delivery lands), create_cohort (define a user group once, reuse anywhere), save_report (pin a funnel/trend/breakdown to their dashboard). When the user says "watch this", "alert me", "save that" — reach for these, then confirm what you created by echoing it back.`
 
 type Server struct {
 	store store.Store
@@ -66,6 +68,8 @@ type Server struct {
 	goals     *goal.Store
 	shares    *share.Store
 	gsc       *gsc.Store
+	exports   *exportlink.Store
+	aliases   *alias.Map // identity stitching for imported $identify events
 }
 
 // SetSettings / SetTrackPlan attach the instance-control stores.
@@ -130,7 +134,13 @@ func (s *Server) Dispatch(req request) *response {
 			Name      string          `json:"name"`
 			Arguments json.RawMessage `json:"arguments"`
 		}
-		_ = json.Unmarshal(req.Params, &p)
+		// a mis-shaped params envelope must be an explicit error, not an empty tool
+		// name that dispatches nowhere.
+		if len(req.Params) > 0 {
+			if err := json.Unmarshal(req.Params, &p); err != nil {
+				return fail(-32602, "invalid params: "+err.Error())
+			}
+		}
 		text, err := s.callTool(p.Name, p.Arguments)
 		if err != nil {
 			return reply(map[string]any{
@@ -234,11 +244,13 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		return jsonText(map[string]any{"events": names})
 	case "funnel":
 		var a struct {
-			Steps       []string       `json:"steps"`
-			WindowHours float64        `json:"window_hours"`
-			Filters     []query.Filter `json:"filters"`
+			Steps       []string  `json:"steps"`
+			WindowHours float64   `json:"window_hours"`
+			Filters     FilterSet `json:"filters"`
 		}
-		_ = json.Unmarshal(args, &a)
+		if err := unmarshalArgs(args, &a); err != nil {
+			return "", err
+		}
 		if len(a.Steps) < 2 {
 			return "", fmt.Errorf("funnel needs at least two steps (event names), e.g. [\"signup\",\"checkout\"]")
 		}
@@ -261,11 +273,13 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		return jsonText(funnel.Compute(query.Apply(evs, a.Filters), steps, window))
 	case "retention":
 		var a struct {
-			Event   string         `json:"event"`
-			Days    int            `json:"days"`
-			Filters []query.Filter `json:"filters"`
+			Event   string    `json:"event"`
+			Days    int       `json:"days"`
+			Filters FilterSet `json:"filters"`
 		}
-		_ = json.Unmarshal(args, &a)
+		if err := unmarshalArgs(args, &a); err != nil {
+			return "", err
+		}
 		if a.Days <= 0 {
 			a.Days = 7
 		}
@@ -281,12 +295,14 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		return jsonText(summarizeRetention(retention.Compute(query.Apply(evs, a.Filters), a.Days, a.Event)))
 	case "trends":
 		var a struct {
-			Event     string         `json:"event"`
-			Unique    bool           `json:"unique"`
-			Breakdown string         `json:"breakdown"`
-			Filters   []query.Filter `json:"filters"`
+			Event     string    `json:"event"`
+			Unique    bool      `json:"unique"`
+			Breakdown string    `json:"breakdown"`
+			Filters   FilterSet `json:"filters"`
 		}
-		_ = json.Unmarshal(args, &a)
+		if err := unmarshalArgs(args, &a); err != nil {
+			return "", err
+		}
 		if err := s.checkEvents(a.Event); err != nil {
 			return "", err
 		}
@@ -301,11 +317,13 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		return jsonText(trends.Compute(ev, a.Event, time.Time{}, time.Time{}, a.Unique))
 	case "breakdown":
 		var a struct {
-			Event    string         `json:"event"`
-			Property string         `json:"property"`
-			Filters  []query.Filter `json:"filters"`
+			Event    string    `json:"event"`
+			Property string    `json:"property"`
+			Filters  FilterSet `json:"filters"`
 		}
-		_ = json.Unmarshal(args, &a)
+		if err := unmarshalArgs(args, &a); err != nil {
+			return "", err
+		}
 		if a.Property == "" {
 			return "", fmt.Errorf("breakdown needs a property to group by, e.g. \"source\"")
 		}
@@ -334,10 +352,12 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		return jsonText(map[string]any{"event": a.Event, "property": a.Property, "groups": rows})
 	case "web_overview":
 		var a struct {
-			Days    int            `json:"days"`
-			Filters []query.Filter `json:"filters"`
+			Days    int       `json:"days"`
+			Filters FilterSet `json:"filters"`
 		}
-		_ = json.Unmarshal(args, &a)
+		if err := unmarshalArgs(args, &a); err != nil {
+			return "", err
+		}
 		if err := query.Validate(a.Filters); err != nil {
 			return "", err
 		}
@@ -346,7 +366,9 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		var a struct {
 			Limit int `json:"limit"`
 		}
-		_ = json.Unmarshal(args, &a)
+		if err := unmarshalArgs(args, &a); err != nil {
+			return "", err
+		}
 		if a.Limit <= 0 {
 			a.Limit = 20
 		}
@@ -361,17 +383,21 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		var a struct {
 			DistinctID string `json:"distinct_id"`
 		}
-		_ = json.Unmarshal(args, &a)
+		if err := unmarshalArgs(args, &a); err != nil {
+			return "", err
+		}
 		if a.DistinctID == "" {
 			return "", fmt.Errorf("user_activity needs a distinct_id")
 		}
 		return jsonText(userProfile(evs, a.DistinctID))
 	case "lifecycle":
 		var a struct {
-			Days    int            `json:"days"`
-			Filters []query.Filter `json:"filters"`
+			Days    int       `json:"days"`
+			Filters FilterSet `json:"filters"`
 		}
-		_ = json.Unmarshal(args, &a)
+		if err := unmarshalArgs(args, &a); err != nil {
+			return "", err
+		}
 		if a.Days <= 0 {
 			a.Days = 30
 		}
@@ -381,9 +407,11 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		return jsonText(map[string]any{"days": engagement.ComputeLifecycle(query.Apply(evs, a.Filters), a.Days)})
 	case "stickiness":
 		var a struct {
-			Filters []query.Filter `json:"filters"`
+			Filters FilterSet `json:"filters"`
 		}
-		_ = json.Unmarshal(args, &a)
+		if err := unmarshalArgs(args, &a); err != nil {
+			return "", err
+		}
 		if err := query.Validate(a.Filters); err != nil {
 			return "", err
 		}
@@ -392,11 +420,13 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		return jsonText(map[string]any{"findings": insight.Generate(evs)})
 	case "paths":
 		var a struct {
-			Start   string         `json:"start"`
-			Depth   int            `json:"depth"`
-			Filters []query.Filter `json:"filters"`
+			Start   string    `json:"start"`
+			Depth   int       `json:"depth"`
+			Filters FilterSet `json:"filters"`
 		}
-		_ = json.Unmarshal(args, &a)
+		if err := unmarshalArgs(args, &a); err != nil {
+			return "", err
+		}
 		if a.Start == "" {
 			return "", fmt.Errorf("paths needs a start event")
 		}
@@ -412,11 +442,13 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		return jsonText(paths.After(query.Apply(evs, a.Filters), a.Start, a.Depth))
 	case "groups":
 		var a struct {
-			Property string         `json:"property"`
-			Limit    int            `json:"limit"`
-			Filters  []query.Filter `json:"filters"`
+			Property string    `json:"property"`
+			Limit    int       `json:"limit"`
+			Filters  FilterSet `json:"filters"`
 		}
-		_ = json.Unmarshal(args, &a)
+		if err := unmarshalArgs(args, &a); err != nil {
+			return "", err
+		}
 		if a.Property == "" {
 			return "", fmt.Errorf("groups needs a group property, e.g. \"company\"")
 		}
@@ -445,6 +477,12 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		}
 		if handled, out, gserr := s.callGSC(name, args); handled {
 			return out, gserr
+		}
+		if handled, out, ierr := s.callImport(name, args); handled {
+			return out, ierr
+		}
+		if handled, out, xerr := s.callExportLink(name, args); handled {
+			return out, xerr
 		}
 		return "", fmt.Errorf("unknown tool: %s", name)
 	}

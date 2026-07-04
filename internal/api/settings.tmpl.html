@@ -67,6 +67,8 @@
     <a href="/settings/keys" class="{{if eq .Section "keys"}}on{{end}}">API keys</a>
     <a href="/settings/install" class="{{if eq .Section "install"}}on{{end}}">Install &amp; connect</a>
     <a href="/settings/data" class="{{if eq .Section "data"}}on{{end}}">Data</a>
+    <a href="/settings/goals" class="{{if eq .Section "goals"}}on{{end}}">Goals</a>
+    <a href="/settings/shares" class="{{if eq .Section "shares"}}on{{end}}">Share links</a>
     <a href="/settings/webhooks" class="{{if eq .Section "webhooks"}}on{{end}}">Webhooks</a>
     <a href="/settings/alerts" class="{{if eq .Section "alerts"}}on{{end}}">Alerts</a>
     <a href="/settings/audit" class="{{if eq .Section "audit"}}on{{end}}">Audit log</a>
@@ -168,6 +170,46 @@
       <h2 style="color:var(--warn)">Danger zone</h2>
       <div class="note">Permanently delete all stored events. This cannot be undone.</div>
       <button class="danger" id="clear" style="margin-top:14px">Clear all data</button><span class="msg" id="clearMsg"></span>
+    </div>
+  {{end}}
+
+  {{if eq .Section "goals"}}
+    <div class="card">
+      <h2>Goals</h2>
+      <div class="note">A goal names what counts as success — an event (<code>signup</code>) or a page-path glob (<code>/thanks*</code>, matched against pageviews). Goals resolve on the dashboard over the trailing 30 days with first-touch channel attribution.</div>
+      <div id="goals" style="margin-top:12px">
+        {{range .Goals}}<div class="keyrow" data-id="{{.ID}}"><span class="nm">{{.Name}}</span><span class="kv">{{.Kind}} · {{.Value}}</span><span class="x" title="delete">delete</span></div>
+        {{else}}<div class="note" id="noGoals">no goals yet</div>{{end}}
+      </div>
+      <datalist id="evNames">{{range .EventStats}}<option value="{{.Name}}">{{end}}</datalist>
+      <div class="row" style="margin-top:14px">
+        <div><label>Name</label><input id="gName" placeholder="Signed up"></div>
+        <div><label>Event or path</label><input id="gValue" list="evNames" placeholder="signup — or /thanks*"></div>
+        <button id="gCreate" class="ghost">Add</button>
+      </div>
+      <div class="note">A value starting with <code>/</code> is matched as a page path; anything else is an event name.</div>
+      <span class="msg" id="gMsg"></span>
+    </div>
+  {{end}}
+
+  {{if eq .Section "shares"}}
+    <div class="card">
+      <h2>Share links</h2>
+      <div class="note">A share link grants exactly one thing: the read-only traffic overview (live, visitors, top pages, referrers) — no actions, no settings, no raw events. Tokens are stored hashed, so the URL is shown once at creation; revoking kills it immediately.</div>
+      <div id="shares" style="margin-top:12px">
+        {{range .Shares}}<div class="keyrow" data-id="{{.ID}}"><span class="nm">{{.Name}}</span><span class="kv">created {{.Created.Format "Jan 2, 2006"}}</span><span class="x" title="revoke">revoke</span></div>
+        {{else}}<div class="note" id="noShares">no share links yet</div>{{end}}
+      </div>
+      <div class="row" style="margin-top:14px">
+        <div><label>Who it's for</label><input id="shName" placeholder="investor update"></div>
+        <button id="shCreate" class="ghost">Create link</button>
+      </div>
+      <div id="shNew" hidden style="margin-top:12px">
+        <pre class="code" id="shUrl"></pre>
+        <button class="copy" data-c="shUrl">copy</button>
+        <div class="note">shown once — copy it now. The token is stored hashed and cannot be recovered.</div>
+      </div>
+      <span class="msg" id="shMsg"></span>
     </div>
   {{end}}
 
@@ -305,6 +347,41 @@
       var row=document.createElement('div');row.className='keyrow';row.setAttribute('data-id',a.id);
       row.innerHTML='<span class="nm">'+esc(a.name)+'</span><span class="kv">'+esc(a.event)+' '+esc(a.op)+' '+a.threshold+' / '+a.window_hours+'h</span><span class="x" title="delete">delete</span>';
       alerts.appendChild(row);bindAlert(row);document.getElementById('alName').value='';document.getElementById('alEvent').value='';flash('alMsg','added ✓');
+    });
+  });
+
+  // goals
+  var goals=document.getElementById('goals');
+  function bindGoal(row){var d=row.querySelector('.x');if(d)d.onclick=function(){if(!confirm('Delete this goal? The dashboard card stops tracking it.'))return;J('/v1/goals/'+row.getAttribute('data-id'),'DELETE').then(function(){row.remove();});};}
+  if(goals)Array.prototype.forEach.call(goals.querySelectorAll('.keyrow'),bindGoal);
+  on('gCreate',function(){
+    var name=document.getElementById('gName').value.trim(),val=document.getElementById('gValue').value.trim();
+    if(!name||!val){flash('gMsg','a name and an event-or-path are both required',true);return;}
+    J('/v1/goals','POST',{name:name,value:val}).then(function(r){
+      if(!r.ok){flash('gMsg',r.j.error||'failed',true);return;}
+      var no=document.getElementById('noGoals');if(no)no.remove();
+      var row=document.createElement('div');row.className='keyrow';row.setAttribute('data-id',r.j.id);
+      row.innerHTML='<span class="nm">'+esc(r.j.name)+'</span><span class="kv">'+esc(r.j.kind)+' · '+esc(r.j.value)+'</span><span class="x" title="delete">delete</span>';
+      goals.appendChild(row);bindGoal(row);document.getElementById('gName').value='';document.getElementById('gValue').value='';flash('gMsg','added ✓');
+    });
+  });
+
+  // share links — the minted URL renders ONCE (tokens are stored hashed)
+  var shares=document.getElementById('shares');
+  function bindShare(row){var d=row.querySelector('.x');if(d)d.onclick=function(){if(!confirm('Revoke this link? Anyone holding it loses access immediately.'))return;J('/v1/shares/'+row.getAttribute('data-id'),'DELETE').then(function(){row.remove();});};}
+  if(shares)Array.prototype.forEach.call(shares.querySelectorAll('.keyrow'),bindShare);
+  on('shCreate',function(){
+    var name=document.getElementById('shName').value.trim();
+    if(!name){flash('shMsg','name it after who it\'s for (used to identify it when revoking)',true);return;}
+    J('/v1/shares','POST',{name:name}).then(function(r){
+      if(!r.ok){flash('shMsg',r.j.error||'failed',true);return;}
+      var no=document.getElementById('noShares');if(no)no.remove();
+      var row=document.createElement('div');row.className='keyrow';row.setAttribute('data-id',r.j.id);
+      row.innerHTML='<span class="nm">'+esc(r.j.name)+'</span><span class="kv">created just now</span><span class="x" title="revoke">revoke</span>';
+      shares.appendChild(row);bindShare(row);
+      document.getElementById('shUrl').textContent=location.origin+r.j.path;
+      document.getElementById('shNew').hidden=false;
+      document.getElementById('shName').value='';flash('shMsg','created ✓');
     });
   });
 </script>

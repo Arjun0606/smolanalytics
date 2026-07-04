@@ -5,7 +5,9 @@ package api
 // verified against hashes; everything else on the server stays gated.
 
 import (
+	"encoding/json"
 	"html/template"
+	"io"
 	"net/http"
 	"time"
 
@@ -15,6 +17,48 @@ import (
 )
 
 func (s *Server) SetShares(st *share.Store) { s.shares = st; s.mcp.SetShares(st) }
+
+// createShare mints a share link from the dashboard/settings. The raw token is
+// returned ONCE (only its hash is stored), as a ready-to-send /share/<token> path —
+// the client prepends its own origin. Session-gated by authMW like every /v1 write.
+func (s *Server) createShare(w http.ResponseWriter, r *http.Request) {
+	if s.shares == nil {
+		writeErr(w, http.StatusServiceUnavailable, "share links unavailable")
+		return
+	}
+	var req struct {
+		Name string `json:"name"`
+	}
+	body, _ := io.ReadAll(io.LimitReader(r.Body, 16<<10))
+	_ = json.Unmarshal(body, &req)
+	l, token, err := s.shares.Create(req.Name)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	s.rec("share.created", l.Name)
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"id":      l.ID,
+		"name":    l.Name,
+		"created": l.Created,
+		"path":    "/share/" + token,
+		"note":    "shown once — the token is stored hashed and cannot be recovered; revoke in settings → share links",
+	})
+}
+
+// deleteShare revokes a link by id — the URL stops working immediately.
+func (s *Server) deleteShare(w http.ResponseWriter, r *http.Request) {
+	if s.shares == nil {
+		writeErr(w, http.StatusServiceUnavailable, "share links unavailable")
+		return
+	}
+	if err := s.shares.Delete(r.PathValue("id")); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.rec("share.revoked", r.PathValue("id"))
+	writeJSON(w, http.StatusOK, map[string]string{"revoked": r.PathValue("id")})
+}
 
 var shareTmpl = template.Must(template.New("share").Parse(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">

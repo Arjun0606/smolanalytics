@@ -20,14 +20,6 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/webhook"
 )
 
-// unmarshalArgs decodes tool arguments; empty args decode to zero values.
-func unmarshalArgs(args json.RawMessage, v any) error {
-	if len(args) == 0 {
-		return nil
-	}
-	return json.Unmarshal(args, v)
-}
-
 func zeroTime() time.Time { return time.Time{} }
 
 // SetInsights / SetCohorts / SetWebhooks / SetAlerts attach the persistent stores.
@@ -66,25 +58,31 @@ func init() {
 		},
 		map[string]any{
 			"name":        "add_webhook",
-			"description": "Register a webhook endpoint that receives the daily digest and alert fires as signed JSON (X-Smolanalytics-Signature, HMAC-SHA256). Use a Slack incoming-webhook URL or any HTTPS endpoint. Returns the signing secret — show it to the user once.",
+			"description": "Register a webhook endpoint that receives the daily digest and alert fires. Slack incoming-webhook URLs (hooks.slack.com) are auto-detected and get Slack's {\"text\": ...} format with a plain-text rendering; any other HTTPS endpoint gets signed JSON (X-Smolanalytics-Signature, HMAC-SHA256) and the response includes the signing secret — show it to the user once. Follow up with test_webhook to prove the URL actually receives deliveries.",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"name": map[string]any{"type": "string", "description": "Label, e.g. 'slack #alerts'"},
-					"url":  map[string]any{"type": "string", "description": "HTTPS endpoint to POST to"},
+					"name":   map[string]any{"type": "string", "description": "Label, e.g. 'slack #alerts'"},
+					"url":    map[string]any{"type": "string", "description": "HTTPS endpoint to POST to"},
+					"format": map[string]any{"type": "string", "enum": []string{"slack"}, "description": "Force Slack text format for Slack-compatible receivers on other hosts (Mattermost, Rocket.Chat). hooks.slack.com URLs get it automatically."},
 				},
 				"required": []string{"name", "url"},
 			},
 		},
 		map[string]any{
 			"name":        "list_webhooks",
-			"description": "List registered webhook endpoints (secrets redacted).",
+			"description": "List registered webhook endpoints with their delivery format (secrets redacted).",
 			"inputSchema": map[string]any{"type": "object", "properties": map[string]any{}},
 		},
 		map[string]any{
 			"name":        "delete_webhook",
 			"description": "Delete a webhook endpoint by id (get ids from list_webhooks).",
 			"inputSchema": map[string]any{"type": "object", "properties": map[string]any{"id": map[string]any{"type": "string"}}, "required": []string{"id"}},
+		},
+		map[string]any{
+			"name":        "test_webhook",
+			"description": "Fire a REAL test delivery to a webhook — same format, signing, and network path as alerts and the daily digest — and report the HTTP status the endpoint answered with. Use it right after add_webhook to prove the URL works, or when the user says alerts aren't arriving. Get ids from list_webhooks or the add_webhook response.",
+			"inputSchema": map[string]any{"type": "object", "properties": map[string]any{"id": map[string]any{"type": "string", "description": "Webhook id to test"}}, "required": []string{"id"}},
 		},
 		map[string]any{
 			"name":        "create_cohort",
@@ -186,18 +184,31 @@ func (s *Server) callAction(name string, args json.RawMessage) (bool, string, er
 		if s.webhooks == nil {
 			return true, "", fmt.Errorf(noStore, "webhook")
 		}
-		var p struct{ Name, URL string }
+		var p struct {
+			Name   string `json:"name"`
+			URL    string `json:"url"`
+			Format string `json:"format"` // "" = auto-detect (hooks.slack.com → slack), "slack" to force — same contract as the HTTP API
+		}
 		if err := unmarshalArgs(args, &p); err != nil {
 			return true, "", err
 		}
-		ep, err := s.webhooks.Add(p.Name, p.URL)
+		ep, err := s.webhooks.Add(p.Name, p.URL, p.Format)
 		if err != nil {
 			return true, "", err
 		}
+		created := map[string]any{"id": ep.ID, "name": ep.Name, "url": ep.URL, "format": formatOf(ep)}
+		if ep.SlackFormat() {
+			// no secret: Slack can't verify signature headers, so deliveries are plain
+			// {"text": ...} messages and there is nothing for the user to store.
+			return true, jsonStr(map[string]any{
+				"created": created,
+				"note":    "Slack-format endpoint — deliveries are sent as Slack {\"text\": ...} messages (alerts and the daily digest rendered as plain text), not signed JSON. Run test_webhook with this id next to confirm the channel receives it.",
+			}), nil
+		}
 		return true, jsonStr(map[string]any{
-			"created": map[string]any{"id": ep.ID, "name": ep.Name, "url": ep.URL},
+			"created": created,
 			"secret":  ep.Secret,
-			"note":    "payloads are signed with this secret (X-Smolanalytics-Signature, HMAC-SHA256 hex). Shown once — tell the user to store it if they verify signatures.",
+			"note":    "payloads are signed with this secret (X-Smolanalytics-Signature, HMAC-SHA256 hex). Shown once — tell the user to store it if they verify signatures. Run test_webhook with this id to confirm delivery.",
 		}), nil
 
 	case "list_webhooks":
@@ -207,12 +218,47 @@ func (s *Server) callAction(name string, args json.RawMessage) (bool, string, er
 		list := s.webhooks.List()
 		out := make([]map[string]any, 0, len(list))
 		for _, e := range list {
-			out = append(out, map[string]any{"id": e.ID, "name": e.Name, "url": e.URL, "enabled": e.Enabled})
+			out = append(out, map[string]any{"id": e.ID, "name": e.Name, "url": e.URL, "format": formatOf(e), "enabled": e.Enabled})
 		}
 		return true, jsonStr(map[string]any{"webhooks": out}), nil
 
 	case "delete_webhook":
 		return s.deleteByID(args, "webhook", func(id string) error { return s.webhooks.Delete(id) }, s.webhooks == nil)
+
+	case "test_webhook":
+		if s.webhooks == nil {
+			return true, "", fmt.Errorf(noStore, "webhook")
+		}
+		var p struct{ ID string }
+		if err := unmarshalArgs(args, &p); err != nil {
+			return true, "", err
+		}
+		if strings.TrimSpace(p.ID) == "" {
+			return true, "", fmt.Errorf("id is required — list_webhooks to get ids")
+		}
+		ep, ok := s.webhooks.Get(p.ID)
+		if !ok {
+			return true, "", fmt.Errorf("no webhook with id %q — list_webhooks to see what exists", p.ID)
+		}
+		status, err := webhook.SendTest(ep)
+		who := "the endpoint"
+		if ep.SlackFormat() {
+			who = "Slack"
+		}
+		if err != nil {
+			if status == 0 {
+				return true, "", fmt.Errorf("test delivery to %q got no HTTP response (%v) — check the URL is reachable from this server", ep.Name, err)
+			}
+			if ep.SlackFormat() && status == 404 {
+				return true, "", fmt.Errorf("404: the URL looks revoked — recreate it in Slack (workspace settings → Incoming Webhooks), then add_webhook the new URL and delete_webhook %s", ep.ID)
+			}
+			return true, "", fmt.Errorf("%s said %d — the delivery reached it but was rejected; check the receiver's logs (delete_webhook + add_webhook if the URL changed)", who, status)
+		}
+		return true, jsonStr(map[string]any{
+			"delivered": true,
+			"status":    status,
+			"result":    fmt.Sprintf("%s said %d — deliveries to %q work.", who, status, ep.Name),
+		}), nil
 
 	case "create_cohort":
 		if s.cohorts == nil {
@@ -290,6 +336,15 @@ func (s *Server) callAction(name string, args json.RawMessage) (bool, string, er
 		return s.deleteByID(args, "saved report", func(id string) error { return s.insights.Delete(id) }, s.insights == nil)
 	}
 	return false, "", nil
+}
+
+// formatOf names an endpoint's delivery contract for tool output: "slack"
+// ({"text": ...} plain-text messages) or "json" (signed JSON).
+func formatOf(e webhook.Endpoint) string {
+	if e.SlackFormat() {
+		return "slack"
+	}
+	return "json"
 }
 
 // deleteByID is the shared shape of every delete tool: parse id, guard nil store, delete.

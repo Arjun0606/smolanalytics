@@ -105,7 +105,7 @@ ai  ▸ Activation is 62% (657 of 1,051 signups reach "activate").
       Pro converts 2.4× better end-to-end — 45% signup→checkout vs 19% on free.
       The leak is activate→checkout on free (only 31% continue). Want the paths after activate?
 ```
-Your model gets **43 tools + 13 built-in prompts** — the editor runs the *whole thing*, not just queries:
+Your model gets **47 tools + 13 built-in prompts** — the editor runs the *whole thing*, not just queries:
 
 - **Ask:** `whats_notable` (the *what-to-fix* verdict), `overview`, `list_events`, `funnel`, `retention`, `trends`, `breakdown`, `web_overview` (traffic at a glance), `lifecycle`, `stickiness`, `paths`, `groups` (B2B accounts), `recent_events`, `user_activity` — every one filterable by property (`plan=pro`, `source=hn`, …).
 - **Do:** *"alert me if signups drop below 10 a day"* → `create_alert`; *"send alerts to Slack"* → `add_webhook`; *"track paying users as a group"* → `create_cohort`; *"pin that funnel to my dashboard"* → `save_report` — plus list/delete for each. Everything created in your editor appears on the dashboard instantly (same stores, one source of truth).

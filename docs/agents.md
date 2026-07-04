@@ -93,7 +93,7 @@ Exact phrasings you can use today, and what answers them:
 Also built in: 13 prompts that run whole routines — `whats-broken-today` for the morning
 check, `weekly-review` and `monthly-report` for founder-grade recaps, `funnel-leak`,
 `launch-day`, and the rest. The full prompt library, with what each one reads and the
-shape of its answer, is in [docs/prompts.md](prompts.md). Your model gets 43 tools
+shape of its answer, is in [docs/prompts.md](prompts.md). Your model gets 47 tools
 total — the full list is in the
 [README](../README.md#ask-it-in-your-editor-the-whole-point).
 

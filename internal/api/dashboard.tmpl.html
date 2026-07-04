@@ -175,7 +175,7 @@
 
   /* the ask answer panel */
   .askresult{margin:0 0 4px;padding:14px 16px 14px 38px;background:var(--surface2);border:1px solid var(--accent);
-    border-top:none;font-size:14px;line-height:1.6;color:var(--fg);position:relative}
+    border-top:none;font-size:14px;line-height:1.6;color:var(--fg);position:relative;white-space:pre-line}
   .askresult::before{content:"✦";position:absolute;left:14px;top:14px;color:var(--accent)}
   .askresult.load{color:var(--mut)}
 
@@ -197,6 +197,7 @@
     {{range .Sites}}<option value="{{.}}" {{if eq . $.Site}}selected{{end}}>{{.}}</option>{{end}}
   </select>{{end}}
   <div class="updated">updated {{.Updated}}</div>
+  {{if .HasShares}}<a class="navlink" href="/settings/shares" id="shareBtn" title="mint a revocable read-only link to your traffic overview">share</a>{{end}}
   <a class="navlink" href="https://smolanalytics.com" target="_blank" title="hosted, for your team, with email briefs" style="color:var(--accent)">Cloud ↗</a>
   <a class="navlink" href="/settings" title="settings">settings</a>
 </div>
@@ -204,7 +205,8 @@
   <span class="chip" data-q="where do users drop off?">where do users drop off?</span>
   <span class="chip" data-q="which channel converts best?">which channel converts best?</span>
   <span class="chip" data-q="how is retention trending?">how is retention trending?</span>
-</div><div id="askresult" class="askresult" hidden></div></div>
+  <span class="chip" data-q="what happened this week?">what happened this week?</span>
+</div><div id="askresult" class="askresult" hidden></div><div id="shareresult" class="askresult" hidden></div></div>
 </header>
 
 <main class="wrap">
@@ -212,6 +214,11 @@
   <div class="card verdict">
     <h2>What to look at <span class="vdot"></span></h2>
     <div id="verdict"><div class="vmuted">reading your data…</div></div>
+  </div>
+
+  <div class="card">
+    <h2>Your week · this week vs last</h2>
+    <div id="brief"><div class="vmuted">computing your week…</div></div>
   </div>
   {{end}}
 
@@ -294,6 +301,14 @@
       </div>
       {{end}}
     </div>
+    {{else if .HasGoalsStore}}
+    <div class="wcolh" style="margin-top:18px">goals · last 30 days</div>
+    <div class="exrow" style="margin-bottom:0">
+      <input id="gName" autocomplete="off" placeholder="goal name (e.g. Signed up)">
+      <input id="gValue" autocomplete="off" placeholder="event name (signup) or path glob (/thanks*)">
+      <button id="gCreate">Create goal</button>
+    </div>
+    <div class="obnote" id="gNote">no goals yet — name what counts as success. A value starting with <code>/</code> is matched as a page path; anything else is an event name.</div>
     {{end}}
   </div>
   {{end}}
@@ -635,6 +650,75 @@
     };
     refreshCohorts();
     {{end}}
+
+    // share — mint a revocable read-only link from the header; the URL is shown
+    // ONCE (the server stores only its hash), with a copy button + settings pointer
+    var shareBtn=document.getElementById('shareBtn'),shareRes=document.getElementById('shareresult');
+    if(shareBtn&&shareRes){
+      shareBtn.onclick=function(e){
+        e.preventDefault();
+        var name=prompt('Who is this link for? (e.g. "investor update" — used to identify it when revoking)');
+        if(!name)return;
+        shareRes.hidden=false; shareRes.className='askresult load'; shareRes.textContent='minting link…';
+        fetch('/v1/shares',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name})})
+          .then(function(r){return r.json()})
+          .then(function(j){
+            shareRes.className='askresult';
+            if(!j.path){shareRes.textContent=j.error||'could not create the link';return;}
+            var url=location.origin+j.path;
+            shareRes.innerHTML='read-only traffic link for “'+esc(j.name)+'” — shown once, revoke any time in '+
+              '<a href="/settings/shares" style="color:var(--accent)">settings → share links</a>:<br>'+
+              '<span style="font-family:var(--mono);font-size:12px;word-break:break-all">'+esc(url)+'</span> '+
+              '<button class="copy" id="shareCopy" style="margin-left:8px">copy</button>';
+            document.getElementById('shareCopy').onclick=function(){
+              var b=this;
+              if(navigator.clipboard){navigator.clipboard.writeText(url).then(function(){b.textContent='copied ✓';setTimeout(function(){b.textContent='copy';},1200);});}
+            };
+          })
+          .catch(function(){shareRes.className='askresult';shareRes.textContent='could not reach the server — try again';});
+      };
+    }
+
+    // your week — the same digest as `smolanalytics brief` and the cloud email,
+    // rendered in the verdict card's visual grammar (pulse, per-product, findings)
+    var bEl=document.getElementById('brief');
+    if(bEl){
+      fetch('/v1/brief').then(function(r){return r.json()}).then(function(j){
+        if(!j||j.error){bEl.innerHTML='<div class="vmuted">'+esc((j&&j.error)||'could not load')+'</div>';return;}
+        // signed % vs the prior window; "new" over a zero baseline instead of a
+        // fabricated percentage — same rule as the CLI brief
+        function pc(cur,prior){return prior===0?'new':((cur>=prior?'+':'')+Math.round((cur-prior)/prior*100)+'%');}
+        var h='';
+        var cmp=j.prior_events===0?'no prior data to compare'
+          :'visitors '+pc(j.visitors,j.prior_visitors)+', events '+pc(j.events,j.prior_events)+' vs the prior '+j.days+' days';
+        h+='<div class="vrow"><span class="vt">Last '+j.days+' days</span><span class="vd">'+j.visitors+' visitors · '+j.events+' events — '+cmp+'</span></div>';
+        (j.sites||[]).forEach(function(s){
+          h+='<div class="vrow"><span class="vt">'+esc(s.site)+'</span><span class="vd">'+s.visitors+' visitors · '+s.events+' events ('+pc(s.events,s.prior_events)+')</span></div>';
+        });
+        var fs=j.findings||[];
+        if(!fs.length){h+='<div class="vmuted">nothing notable — no big swings, funnel leaks, or retention flags.</div>';}
+        fs.forEach(function(f){
+          h+='<div class="vrow'+(f.severity==='warn'?' warn':'')+'"><span class="vt">'+esc(f.title)+'</span><span class="vd">'+esc(f.detail)+'</span></div>';
+        });
+        bEl.innerHTML=h;
+      }).catch(function(){bEl.innerHTML='<div class="vmuted">could not load.</div>';});
+    }
+
+    // goals empty state — create the first goal right where the card will render
+    var gCreate=document.getElementById('gCreate');
+    if(gCreate){
+      gCreate.onclick=function(){
+        var name=document.getElementById('gName').value.trim(),val=document.getElementById('gValue').value.trim(),note=document.getElementById('gNote');
+        if(!name||!val){note.textContent='both fields are required — a name, and the event or /path that counts as this goal';return;}
+        fetch('/v1/goals',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,value:val})})
+          .then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j};});})
+          .then(function(r){
+            if(!r.ok){note.textContent=r.j.error||'could not create the goal';return;}
+            location.reload(); // the card is server-rendered — reload shows it resolved
+          })
+          .catch(function(){note.textContent='could not reach the server — try again';});
+      };
+    }
 
     // verdict — proactive "what to look at", the front door
     var vEl=document.getElementById('verdict');

@@ -144,6 +144,10 @@ type dashVM struct {
 	SearchRows []segRow // query → clicks, bar-scaled
 	// named goals, resolved over the trailing 30 days
 	Goals []goalCard
+	// store-presence flags: the share affordance and the goals empty-state form
+	// only render when the wrapped store actually exists (no vapor buttons)
+	HasShares     bool
+	HasGoalsStore bool
 }
 
 type goalCard struct {
@@ -224,6 +228,8 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		HasConvBy:      segProp != "",
 		HasSource:      srcProp != "",
 		SourceTitle:    trendEvent + " by " + srcProp,
+		HasShares:      s.shares != nil,
+		HasGoalsStore:  s.goals != nil,
 	}
 
 	for i, st := range fr.Steps {

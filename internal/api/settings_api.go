@@ -12,7 +12,9 @@ import (
 
 	"github.com/Arjun0606/smolanalytics/internal/alert"
 	"github.com/Arjun0606/smolanalytics/internal/audit"
+	"github.com/Arjun0606/smolanalytics/internal/goal"
 	"github.com/Arjun0606/smolanalytics/internal/settings"
+	"github.com/Arjun0606/smolanalytics/internal/share"
 	"github.com/Arjun0606/smolanalytics/internal/webhook"
 )
 
@@ -48,13 +50,15 @@ type settingsVM struct {
 	Audit       []audit.Entry
 	Webhooks    []webhook.Endpoint
 	Alerts      []alert.Alert
+	Goals       []goal.Definition
+	Shares      []share.Link
 	AuthEnabled bool
 	EnvKeySet   bool
 }
 
 var settingsSections = map[string]bool{
-	"account": true, "project": true, "keys": true, "install": true,
-	"data": true, "webhooks": true, "alerts": true, "audit": true, "about": true,
+	"account": true, "project": true, "keys": true, "install": true, "data": true,
+	"goals": true, "shares": true, "webhooks": true, "alerts": true, "audit": true, "about": true,
 }
 
 func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
@@ -110,6 +114,20 @@ func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
 				vm.EventStats = append(vm.EventStats, eventStat{Name: n})
 			}
 		}
+	}
+	if section == "goals" {
+		if s.goals != nil {
+			vm.Goals = s.goals.List()
+		}
+		if len(vm.EventStats) == 0 { // event-name suggestions for the goal form
+			names, _ := s.store.Names()
+			for _, n := range names {
+				vm.EventStats = append(vm.EventStats, eventStat{Name: n})
+			}
+		}
+	}
+	if section == "shares" && s.shares != nil {
+		vm.Shares = s.shares.List()
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

@@ -26,6 +26,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/botua"
 	"github.com/Arjun0606/smolanalytics/internal/cohort"
 	"github.com/Arjun0606/smolanalytics/internal/event"
+	"github.com/Arjun0606/smolanalytics/internal/exportlink"
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
 	"github.com/Arjun0606/smolanalytics/internal/goal"
 	"github.com/Arjun0606/smolanalytics/internal/gsc"
@@ -60,6 +61,7 @@ type Server struct {
 	aliases  *alias.Map
 	gsc      *gsc.Store
 	goals    *goal.Store
+	exports  *exportlink.Store
 	writeKey string // if set, POST /v1/events requires Authorization: Bearer <writeKey>
 	// autocaptured events dropped because the UA was a known crawler/bot — surfaced in
 	// /v1/usage so "why is my dashboard lower than GA?" has a visible, honest answer.
@@ -88,8 +90,9 @@ func (s *Server) SetInsights(st *insights.Store) { s.insights = st; s.mcp.SetIns
 // SetCohorts swaps in a persistent cohort store (shared with MCP).
 func (s *Server) SetCohorts(st *cohort.Store) { s.cohorts = st; s.mcp.SetCohorts(st) }
 
-// SetAliases attaches the identity-stitching map (ingest records anon→user on $identify).
-func (s *Server) SetAliases(a *alias.Map) { s.aliases = a }
+// SetAliases attaches the identity-stitching map (ingest records anon→user on
+// $identify; the MCP import tool does the same for imported history).
+func (s *Server) SetAliases(a *alias.Map) { s.aliases = a; s.mcp.SetAliases(a) }
 
 // SetGSC attaches the Search Console store (dashboard card + MCP report).
 func (s *Server) SetGSC(g *gsc.Store) { s.gsc = g; s.mcp.SetGSC(g) }
@@ -145,7 +148,15 @@ func (s *Server) EvaluateAlerts() {
 				"window_hours": a.WindowHours, "fired_at": now,
 			}
 			if s.webhooks != nil {
-				s.webhooks.DeliverAll(payload)
+				// plain-text rendering for Slack-format endpoints — same tight
+				// "⚠ title — detail" shape the daily brief uses
+				verb := "above"
+				if a.Op == "lt" {
+					verb = "below"
+				}
+				text := fmt.Sprintf("⚠ %s — %s: %g events in the last %dh, %s threshold %g",
+					a.Name, a.Event, count, a.WindowHours, verb, a.Threshold)
+				s.webhooks.DeliverAll(payload, text)
 			}
 			s.rec("alert.fired", fmt.Sprintf("%s — %s %s %g (value %g)", a.Name, a.Event, a.Op, a.Threshold, count))
 		}
@@ -193,7 +204,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /v1/cohorts/{id}", s.deleteCohort)
 	mux.HandleFunc("GET /v1/cohorts/{id}/users", s.cohortUsers)
 	mux.HandleFunc("POST /mcp", s.handleMCP)
-	mux.HandleFunc("GET /share/{token}", s.sharePage) // public read-only web overview (token-gated)
+	mux.HandleFunc("GET /share/{token}", s.sharePage)       // public read-only web overview (token-gated)
+	mux.HandleFunc("GET /export/{token}", s.exportDownload) // one-time full-export download (token burns on use)
 	// account + settings (the operational staple)
 	mux.HandleFunc("GET /login", s.login)
 	mux.HandleFunc("POST /login", s.login)
@@ -215,6 +227,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/webhooks/{id}/test", s.testWebhook)
 	mux.HandleFunc("POST /v1/alerts", s.createAlert)
 	mux.HandleFunc("DELETE /v1/alerts/{id}", s.deleteAlert)
+	mux.HandleFunc("POST /v1/shares", s.createShare)
+	mux.HandleFunc("DELETE /v1/shares/{id}", s.deleteShare)
+	mux.HandleFunc("POST /v1/goals", s.createGoal)
+	mux.HandleFunc("DELETE /v1/goals/{id}", s.deleteGoal)
 	mux.HandleFunc("GET /", s.dashboard)
 	return recoverMW(s.authMW(mux))
 }

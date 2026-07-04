@@ -2,9 +2,9 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
-	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/alert"
 	"github.com/Arjun0606/smolanalytics/internal/webhook"
@@ -18,12 +18,13 @@ func (s *Server) createWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Name string `json:"name"`
-		URL  string `json:"url"`
+		Name   string `json:"name"`
+		URL    string `json:"url"`
+		Format string `json:"format"` // "" = auto-detect (hooks.slack.com → slack), or "slack" to force Slack text format
 	}
 	body, _ := io.ReadAll(io.LimitReader(r.Body, 16<<10))
 	_ = json.Unmarshal(body, &req)
-	ep, err := s.webhooks.Add(req.Name, req.URL)
+	ep, err := s.webhooks.Add(req.Name, req.URL, req.Format)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -55,12 +56,12 @@ func (s *Server) testWebhook(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "webhook not found")
 		return
 	}
-	body, _ := json.Marshal(map[string]any{"type": "test", "message": "smolanalytics test webhook", "at": time.Now().UTC()})
-	if err := webhook.Send(ep, body); err != nil {
-		writeErr(w, http.StatusBadGateway, "delivery failed: "+err.Error())
+	status, err := webhook.SendTest(ep)
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, fmt.Sprintf("delivery failed (endpoint status %d): %v", status, err))
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "delivered"})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "delivered", "endpoint_status": status})
 }
 
 // --- alerts ---

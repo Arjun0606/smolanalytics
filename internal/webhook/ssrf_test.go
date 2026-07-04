@@ -13,7 +13,7 @@ func TestSSRFBlocksInternalTargets(t *testing.T) {
 		"http://[::1]:80/",                    // ipv6 loopback
 	}
 	for _, u := range blocked {
-		err := Send(Endpoint{URL: u, Secret: "s"}, []byte("{}"))
+		_, err := Send(Endpoint{URL: u, Secret: "s"}, []byte("{}"), "")
 		if err == nil {
 			t.Fatalf("SSRF guard let a request through to %s", u)
 		}
@@ -23,11 +23,11 @@ func TestSSRFBlocksInternalTargets(t *testing.T) {
 func TestSchemeValidation(t *testing.T) {
 	s := &Store{}
 	for _, bad := range []string{"file:///etc/passwd", "gopher://x", "ftp://x", "notaurl"} {
-		if _, err := s.Add("x", bad); err == nil {
+		if _, err := s.Add("x", bad, ""); err == nil {
 			t.Fatalf("accepted a non-http(s) webhook url: %s", bad)
 		}
 	}
-	if _, err := s.Add("ok", "https://example.com/hook"); err != nil {
+	if _, err := s.Add("ok", "https://example.com/hook", ""); err != nil {
 		t.Fatalf("rejected a valid https url: %v", err)
 	}
 }

@@ -22,10 +22,19 @@ func init() {
 				"limit": map[string]any{"type": "integer", "description": "Top N queries (default 20)"},
 			}},
 		},
+		map[string]any{
+			"name":        "gsc_status",
+			"description": "Google Search Console connection status — read-only, touches nothing: whether GSC is connected, which property (site), when query data was last fetched, how many query and page rows are cached, and the last page-level fetch error if one is recorded. Use it to diagnose an empty or stale search_console_report before telling the user anything about their search data.",
+			"inputSchema": map[string]any{"type": "object", "properties": map[string]any{}},
+		},
 	)
 }
 
 func (s *Server) callGSC(name string, args json.RawMessage) (bool, string, error) {
+	if name == "gsc_status" {
+		out, err := s.gscStatus()
+		return true, out, err
+	}
 	if name != "search_console_report" {
 		return false, "", nil
 	}
@@ -99,6 +108,38 @@ func (s *Server) callGSC(name string, args json.RawMessage) (bool, string, error
 		"top_movers":  movers,
 		"money_pages": money,
 	}), nil
+}
+
+// gscStatus reports the gsc store's state exactly as persisted — computed from
+// the sidecar file, never inferred. Every "empty" has its reason spelled out so
+// the model can tell the user what to do next instead of guessing.
+func (s *Server) gscStatus() (string, error) {
+	if s.gsc == nil {
+		return "", fmt.Errorf(noStore, "search-console")
+	}
+	if !s.gsc.Connected() {
+		return jsonStr(map[string]any{
+			"connected": false,
+			"note":      "not connected — the operator runs `smolanalytics gsc auth` once (setup: `smolanalytics gsc`)",
+		}), nil
+	}
+	rows, _, site, fetched := s.gsc.Snapshot()
+	pageRows, _, pageErr := s.gsc.PageSnapshot()
+	out := map[string]any{
+		"connected":  true,
+		"site":       site,
+		"query_rows": len(rows),
+		"page_rows":  len(pageRows),
+	}
+	if fetched.IsZero() {
+		out["note"] = "connected but no data fetched yet — the server polls every 12h (or restart it to pull now)"
+	} else {
+		out["fetched_at"] = fetched
+	}
+	if pageErr != "" {
+		out["last_page_fetch_error"] = pageErr + " — pages retry on the next 12h poll"
+	}
+	return jsonStr(out), nil
 }
 
 // quickWin is a page/query pair ranking 4-15: already proven relevant, one
