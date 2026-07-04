@@ -134,19 +134,80 @@ func TestControlSettingsTools(t *testing.T) {
 
 func TestPromptsDispatch(t *testing.T) {
 	s := controlServer(t)
+	all := []string{
+		"instrument-my-app", "whats-broken-today", "weekly-review",
+		"monthly-report", "search-performance", "content-gaps",
+		"funnel-leak", "channel-review", "retention-review",
+		"launch-day", "portfolio-review", "growth-experiments",
+	}
+
 	resp := s.Dispatch(request{JSONRPC: "2.0", ID: json.RawMessage("1"), Method: "prompts/list"})
 	b, _ := json.Marshal(resp.Result)
-	if !strings.Contains(string(b), "instrument-my-app") {
-		t.Fatalf("prompts/list missing instrument-my-app: %s", b)
+	var list struct {
+		Prompts []struct{ Name, Description string } `json:"prompts"`
 	}
-	resp = s.Dispatch(request{JSONRPC: "2.0", ID: json.RawMessage("2"), Method: "prompts/get", Params: json.RawMessage(`{"name":"weekly-review"}`)})
+	if err := json.Unmarshal(b, &list); err != nil {
+		t.Fatalf("prompts/list result: %v", err)
+	}
+	if len(list.Prompts) != len(all) {
+		t.Fatalf("prompts/list returned %d prompts, want %d: %s", len(list.Prompts), len(all), b)
+	}
+	for _, name := range all {
+		if !strings.Contains(string(b), `"`+name+`"`) {
+			t.Fatalf("prompts/list missing %s: %s", name, b)
+		}
+	}
+
+	for _, name := range all {
+		resp = s.Dispatch(request{JSONRPC: "2.0", ID: json.RawMessage("2"), Method: "prompts/get", Params: json.RawMessage(`{"name":"` + name + `"}`)})
+		if resp.Error != nil {
+			t.Fatalf("prompts/get %s errored: %+v", name, resp.Error)
+		}
+		b, _ = json.Marshal(resp.Result)
+		if !strings.Contains(string(b), `"messages"`) || !strings.Contains(string(b), `"text"`) {
+			t.Fatalf("prompts/get %s should return a text message: %s", name, b)
+		}
+	}
+
+	// spot-check content: the prompt bodies drive the intended tools
+	resp = s.Dispatch(request{JSONRPC: "2.0", ID: json.RawMessage("3"), Method: "prompts/get", Params: json.RawMessage(`{"name":"weekly-review"}`)})
 	b, _ = json.Marshal(resp.Result)
 	if !strings.Contains(string(b), "retention") {
 		t.Fatalf("weekly-review prompt should mention retention: %s", b)
 	}
-	resp = s.Dispatch(request{JSONRPC: "2.0", ID: json.RawMessage("3"), Method: "prompts/get", Params: json.RawMessage(`{"name":"nope"}`)})
+	resp = s.Dispatch(request{JSONRPC: "2.0", ID: json.RawMessage("4"), Method: "prompts/get", Params: json.RawMessage(`{"name":"content-gaps"}`)})
+	b, _ = json.Marshal(resp.Result)
+	if !strings.Contains(string(b), "search_console_report") {
+		t.Fatalf("content-gaps prompt should name search_console_report: %s", b)
+	}
+
+	resp = s.Dispatch(request{JSONRPC: "2.0", ID: json.RawMessage("5"), Method: "prompts/get", Params: json.RawMessage(`{"name":"nope"}`)})
 	if resp.Error == nil {
 		t.Fatal("unknown prompt must error")
+	}
+}
+
+// TestPromptsOnlyNameRealTools guards the contract that every prompt body references
+// tools that actually exist: extract tool_-ish tokens and check them against tools/list.
+func TestPromptsOnlyNameRealTools(t *testing.T) {
+	s := controlServer(t)
+	resp := s.Dispatch(request{JSONRPC: "2.0", ID: json.RawMessage("1"), Method: "tools/list"})
+	b, _ := json.Marshal(resp.Result)
+	tools := string(b)
+	for name, text := range promptText {
+		for _, tok := range strings.FieldsFunc(text, func(r rune) bool {
+			return !(r == '_' || r >= 'a' && r <= 'z')
+		}) {
+			if !strings.Contains(tok, "_") || strings.HasPrefix(tok, "_") || strings.HasSuffix(tok, "_") {
+				continue // only tool-shaped tokens like web_overview
+			}
+			if tok == "utm_source" || tok == "distinct_id" || tok == "window_hours" || tok == "missing_properties" {
+				continue // property/argument names, not tools
+			}
+			if !strings.Contains(tools, `"`+tok+`"`) {
+				t.Errorf("prompt %s references %q which is not in tools/list", name, tok)
+			}
+		}
 	}
 }
 

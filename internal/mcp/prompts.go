@@ -19,6 +19,42 @@ var promptList = []map[string]any{
 		"name":        "weekly-review",
 		"description": "A founder-grade weekly product review: growth, conversion, retention, traffic — with the one thing to fix next week.",
 	},
+	{
+		"name":        "monthly-report",
+		"description": "A client-grade monthly report: growth deltas, funnel, retention, traffic, search winners and losers — ending in 3 next-month actions.",
+	},
+	{
+		"name":        "search-performance",
+		"description": "Search Console deep read: query movers, the pages they land on, what searchers do next — output as ranked opportunities.",
+	},
+	{
+		"name":        "content-gaps",
+		"description": "Queries earning impressions without rank, crossed against existing pages — a prioritized content list with the query data as evidence.",
+	},
+	{
+		"name":        "funnel-leak",
+		"description": "Find the biggest drop-off, isolate the segment driving it, and leave with one measurable fix.",
+	},
+	{
+		"name":        "channel-review",
+		"description": "Which acquisition channel actually converts — a keep/cut/watch table with honest sample sizes.",
+	},
+	{
+		"name":        "retention-review",
+		"description": "The honest retention read: D1/D7, lifecycle, stickiness, what retained users do differently — ending in 2 levers.",
+	},
+	{
+		"name":        "launch-day",
+		"description": "Live launch monitoring: real-time traffic and referrers, today vs baseline, and a drop alert as the safety net.",
+	},
+	{
+		"name":        "portfolio-review",
+		"description": "For multi-product instances: compare every site's pulse and name the product that earned the week's attention.",
+	},
+	{
+		"name":        "growth-experiments",
+		"description": "Exactly 3 measurable experiments from real baselines — hypothesis, metric, tracking-plan additions, and the alert that catches the result.",
+	},
 }
 
 var promptText = map[string]string{
@@ -41,6 +77,65 @@ Then give me the read like an analyst: what changed, what's broken (product vs t
 3. retention — is day-1/day-7 improving for recent cohorts?
 4. web_overview — traffic mix shifts worth knowing.
 Synthesize: 3-5 bullets a founder actually needs, each with the number and what it means. End with THE one thing to fix next week, and offer to save the most useful view with save_report.`,
+
+	"monthly-report": `Build my monthly report — founder-grade, client-ready:
+1. overview to orient, then trends on the headline events, this month vs last — lead with the deltas that matter.
+2. funnel on the core path — conversion now vs last month.
+3. retention — did this month's cohorts stick better than earlier ones?
+4. web_overview (days=30) — traffic, top pages, referrer-mix shifts.
+5. search_console_report — the winning and losing queries (skip quietly if GSC isn't connected).
+Write it in sections a client could read cold: the number, the delta, one line of meaning. End with exactly 3 bullets under "Do this next month", each tied to a number above.`,
+
+	"search-performance": `Deep-read my search performance (needs Search Console — say so and stop if it isn't connected):
+1. search_console_report (limit 50) — top queries plus the movers: which are gaining or losing clicks, and where position shifted.
+2. web_overview — the top pages those searchers land on.
+3. paths (start "$pageview") and funnel from landing to the signup-shaped event, filtered to search traffic (referrer contains google) — what do those visitors actually do?
+Output ranked opportunities: query → its click/position trend → the landing page → what visitors did there → the one change that captures more of them. Ignore queries with too few impressions to mean anything.`,
+
+	"content-gaps": `Find the content I should create next (needs Search Console — say so and stop if it isn't connected):
+1. search_console_report (limit 50) — keep the queries with real impressions but weak position (roughly 8 or worse): demand we're not capturing.
+2. web_overview — the pages that exist today. Cross-reference: which of those queries has no dedicated page answering it?
+Output a prioritized content list — for each: the target query, impressions, current position, the nearest existing page (or "none"), and the page to build. Rank by impressions x position gap. The query data IS the evidence — cite it under every item.`,
+
+	"funnel-leak": `Find my biggest funnel leak and assign blame:
+1. whats_notable — it names the biggest drop-off and the worst segment through it.
+2. funnel on the core steps for the exact numbers, then re-run it with filters by source, device, and plan (breakdown first to see which properties exist) — is one segment dragging the average?
+3. paths from the leaking step — what do drop-offs do instead?
+Output three lines: THE leak (step → step, rate), the segment driving it (its rate vs everyone else), and one measurable fix with the number that should move. Offer create_alert on the leaking step's event.`,
+
+	"channel-review": `Tell me which acquisition channel actually converts:
+1. goal_report on the main conversion goal (create_goal on the signup-shaped event first if none exists) — conversions with first-touch attribution by referrer and utm_source.
+2. breakdown of that conversion event by source for the raw split.
+3. web_overview — the referrer mix including the AI-assistant channel (chatgpt/claude/perplexity), so volume sits next to conversions.
+Be honest about sample size: a channel with 5 visitors proves nothing — mark it "watch", don't rank it.
+Output a table: channel | visitors | conversions | rate | keep/cut/watch.`,
+
+	"retention-review": `Give me the honest retention read:
+1. retention (7 days) — the real day-1/day-7 numbers for recent cohorts.
+2. lifecycle — new vs returning vs resurrected vs dormant: are we filling the bucket faster than it leaks?
+3. stickiness — DAU/WAU/MAU and the DAU/MAU ratio.
+4. paths from the signup event — what do users who come back do early that churned users don't?
+Output: the day-1/day-7 verdict in one line, then exactly 2 retention levers — each naming the early behavior to push and the retention number that proves it worked.`,
+
+	"launch-day": `It's launch day — be my situation room:
+1. web_overview — LIVE visitors right now, and the referrers: where is the spike actually coming from?
+2. trends on signups and $pageview, today vs the trailing week — how big is this, really?
+3. recent_events — eyeball the stream; breakage under load shows up here first.
+4. Safety net: create_alert for a signup drop on a short window (op=lt); add_webhook to Slack if I give you a URL.
+Give me a running situation read each pass: traffic vs baseline, top source, and whether signups keep pace with visitors — conversion lagging traffic is the launch-day bug signal, flag it immediately.`,
+
+	"portfolio-review": `Review my whole portfolio (every product reports here — the SDK stamps each event with its site):
+1. breakdown (property "site") — the activity split across products.
+2. web_overview per product with filters [{"property":"site","op":"eq","value":"<site>"}] — visitors, referrers, live-now for each.
+3. trends on each site's headline event (same site filter) — growing, flat, or fading?
+4. whats_notable — attribute anything anomalous to its product where the event mix allows.
+Output one line per product — visitors, headline number, delta — then the verdict: which product earned this week's attention, and the single number that says why.`,
+
+	"growth-experiments": `Design my next growth experiments from measured baselines, not vibes:
+1. overview, funnel, retention — pull the current numbers: volume, per-step conversion, day-1/day-7.
+2. Find the 3 softest numbers a plausible change could actually move.
+Propose exactly 3 experiments, each with: a falsifiable one-sentence hypothesis; the metric and its current baseline (the real number you just measured); the tracking additions needed — new events or properties, declared via set_tracking_plan; and the create_alert that will catch the result moving.
+No experiment without a baseline: if the data is too thin, say which experiment to skip and what volume unlocks it.`,
 }
 
 // dispatchPrompts handles prompts/list and prompts/get. Returns nil when the method
