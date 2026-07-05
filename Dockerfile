@@ -10,6 +10,7 @@ RUN CGO_ENABLED=0 go build -trimpath \
     -o /smolanalytics ./cmd/smolanalytics
 
 FROM gcr.io/distroless/static-debian12
+LABEL io.modelcontextprotocol.server.name="io.github.Arjun0606/smolanalytics"
 COPY --from=build /smolanalytics /smolanalytics
 # containers must bind the wildcard for `-p` port mapping to work. `serve` on a public
 # bind requires a password (set SMOLANALYTICS_PASSWORD); `demo` is exempt (throwaway data).

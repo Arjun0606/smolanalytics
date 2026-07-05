@@ -6,11 +6,11 @@
     "url": "https://github.com/Arjun0606/smolanalytics",
     "source": "github"
   },
-  "version": "0.8.1",
+  "version": "0.8.2",
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/arjun0606/smolanalytics:v0.8.1",
+      "identifier": "ghcr.io/arjun0606/smolanalytics:v0.8.2",
       "transport": {
         "type": "stdio"
       },
