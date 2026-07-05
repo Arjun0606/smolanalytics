@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "smolanalytics": {
+      "command": "smolanalytics",
+      "args": ["mcp"],
+      "env": {
+        "SMOLANALYTICS_DB": "${SMOLANALYTICS_DB:-./events.log}"
+      }
+    }
+  }
+}
