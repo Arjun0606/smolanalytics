@@ -5,9 +5,9 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/Arjun0606/smolanalytics)](https://goreportcard.com/report/github.com/Arjun0606/smolanalytics)
 [![release](https://img.shields.io/github/v/release/Arjun0606/smolanalytics?color=f5a623)](https://github.com/Arjun0606/smolanalytics/releases)
 
-**The analytics that tells you what to fix. Ask it in plain English, right in the editor you already code in. One binary you run yourself, your own AI so it's free, and your data never leaves your box.**
+**your ai assistant admits it hallucinates your numbers. mine can't. it's a ci test.**
 
-You ship a feature in Cursor or Claude Code, then ask *"did activation improve this week?"* right there. Your model answers from your real data over [MCP](https://modelcontextprotocol.io). We run no model, so the AI part costs you nothing. And because it's a binary on your machine, no one else ever sees your users' data.
+The only analytics whose AI answer provably matches the dashboard: [the agreement test](internal/api/agreement_test.go) runs in CI and fails the build if they ever differ. Ask *"did activation improve this week?"* right in Cursor or Claude Code and your own model answers from your real data over [MCP](https://modelcontextprotocol.io), so there is no AI bill and no black box. It opens with a verdict that tells you what to fix. One MIT binary you run yourself, and your data never leaves your box.
 
 ![smolanalytics in 25 seconds: the verdict finds your biggest drop-off, you ask "which channel converts best?" and get the exact computed answer, then the full product view — funnels, retention, cohorts.](docs/demo.gif)
 
@@ -60,6 +60,15 @@ Every hosted analytics tool, the privacy-first ones included, still asks you to 
 - **Private by architecture, not by policy.** It isn't private because of a promise on a privacy page; it's private because there's no one else in the loop.
 
 Plausible, Fathom, and Simple Analytics are lovely, and far more private than Google. But they're still a cloud you send data to. Self-hosting is the version where the data never leaves at all.
+
+## Built to outlive its maker
+Betting on a small tool shouldn't mean betting on the person behind it. The architecture makes us unnecessary:
+
+- **MIT, no CLA.** There is no license to revoke and no relicense lever to pull ([LICENSE](LICENSE)). Fork it the day you stop liking us.
+- **One static binary, no external services.** It calls no hosted API, has no license server, and never phones home. It does not know we exist.
+- **Your data is open files on your own disk.** An append-only log that seals into columnar segments, with the format and its compatibility guarantees written down in [STABILITY.md](STABILITY.md) and [docs/design/storage.md](docs/design/storage.md).
+- **Export any time.** `GET /v1/export` hands you everything as CSV or JSONL, and the JSONL round-trips straight back into `/v1/events`.
+- **Works forever without us.** If this repo went dark tomorrow, your instance would not notice.
 
 ## Ask it in your editor (the whole point)
 The AI you already code with reads your real analytics and answers. Connect once:
