@@ -229,7 +229,7 @@
         <div class="obh">1 · Install — drop this in your app</div>
         <pre class="code" id="c1">&lt;script src="{{.Base}}/sdk.js"&gt;&lt;/script&gt;
 &lt;script&gt;
-  smolanalytics.init("YOUR_WRITE_KEY", {{"{"}} host: "{{.Base}}" {{"}"}});
+  smolanalytics.init("{{if .WriteKey}}{{.WriteKey}}{{else}}YOUR_WRITE_KEY{{end}}", {{"{"}} host: "{{.Base}}" {{"}"}});
   smolanalytics.track("signup", {{"{"}} plan: "pro" {{"}"}});
 &lt;/script&gt;</pre>
         <button class="copy" data-c="c1">copy</button>
@@ -237,7 +237,7 @@
 
       <div class="obstep">
         <div class="obh">…or let your AI do it — paste into Cursor / Claude Code</div>
-        <pre class="code" id="c2">Add smolanalytics product analytics to this app. Load the script {{.Base}}/sdk.js and call smolanalytics.init("YOUR_WRITE_KEY", {{"{"}} host: "{{.Base}}" {{"}"}}). Then call smolanalytics.track(event, props) at the key moments — "signup" on account creation, "activate" at the core aha moment, "checkout" on payment — and smolanalytics.identify(userId) on login. Put the calls in the right places in the codebase.</pre>
+        <pre class="code" id="c2">Add smolanalytics product analytics to this app. Load the script {{.Base}}/sdk.js and call smolanalytics.init("{{if .WriteKey}}{{.WriteKey}}{{else}}YOUR_WRITE_KEY{{end}}", {{"{"}} host: "{{.Base}}" {{"}"}}). Then call smolanalytics.track(event, props) at the key moments — "signup" on account creation, "activate" at the core aha moment, "checkout" on payment — and smolanalytics.identify(userId) on login. Put the calls in the right places in the codebase.</pre>
         <button class="copy" data-c="c2">copy</button>
       </div>
 
@@ -245,7 +245,7 @@
         <div class="obh">2 · Ask it anything — connect your own AI over MCP</div>
         <pre class="code" id="c3">{{"{"}}
   "mcpServers": {{"{"}}
-    "smolanalytics": {{"{"}} "url": "{{.Base}}/mcp" {{"}"}}
+    "smolanalytics": {{"{"}} "url": "{{.Base}}/mcp"{{if .WriteKey}}, "headers": {{"{"}} "Authorization": "Bearer {{.WriteKey}}" {{"}"}}{{end}} {{"}"}}
   {{"}"}}
 {{"}"}}</pre>
         <button class="copy" data-c="c3">copy</button>

@@ -111,6 +111,7 @@ type dashVM struct {
 	Updated       string
 	HasData       bool   // false on a fresh install → show the big onboarding
 	Base          string // this server's base URL, for ready-to-paste snippets
+	WriteKey      string // this instance's write key — real snippets, not placeholders (key is public-by-design: it ships in tracked pages' HTML)
 	// adaptive labels — the default dashboard reflects the user's OWN events
 	FunnelTitle    string
 	ConvLabel      string // "<first> → <last>" of the detected funnel
@@ -220,6 +221,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		Sites:          sites,
 		Site:           site,
 		Base:           baseURL(r),
+		WriteKey:       s.writeKey,
 		FunnelTitle:    ftitle,
 		ConvLabel:      convLabel,
 		StatEventLabel: trendEvent,
