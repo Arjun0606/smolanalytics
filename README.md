@@ -82,6 +82,13 @@ already have). Target one with `smolanalytics connect <name>`:
 
 Any MCP client works — it's a standard stdio + Streamable-HTTP server.
 
+**Building with Lovable, Bolt, v0, or Replit instead?** You don't need any of the above.
+[Sign up](https://smolanalytics.com), create a project, and it hands you one prompt to
+paste into your app builder — the builder's AI installs the snippet and wires your key
+events itself. From then on the dashboard answers questions in plain English and the
+morning brief lands by email: zero code, zero terminal. More at
+[smolanalytics.com/for/lovable](https://smolanalytics.com/for/lovable).
+
 <details><summary>Wire it up by hand (or point at a running/remote server over HTTP)</summary>
 
 **stdio** (local, no server needed — reads your data file directly):
