@@ -28,7 +28,8 @@
   .ask input:focus{border-color:var(--accent)}
   .ask .k{position:absolute;left:13px;top:50%;transform:translateY(-50%);color:var(--mut2)}
   .ask .hint{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--mut2);font-family:var(--mono);font-size:11px}
-  .askchips{display:flex;gap:8px;padding:8px 0 0}
+  .askchips{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 0 0}
+  .chiplbl{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut2)}
   .chip{font-family:var(--mono);font-size:11px;color:var(--mut);border:1px solid var(--line);padding:4px 10px;cursor:pointer;transition:.15s}
   .chip:hover{color:var(--accent);border-color:var(--accent)}
   .updated{color:var(--mut2);font-family:var(--mono);font-size:11px;white-space:nowrap}
@@ -188,7 +189,7 @@
   <div class="logo">smol<b>analytics</b></div>
   <form class="ask" id="askform">
     <span class="k">›</span>
-    <input id="askq" autocomplete="off" placeholder="ask anything   —   what's my conversion rate? where do users drop off? top sources?" aria-label="ask">
+    <input id="askq" autocomplete="off" placeholder="ask anything   —   how many signups this week? visitors to /pricing? where do users drop off?" aria-label="ask">
     <span class="hint">⏎ ask</span>
   </form>
   {{if .HasWeb}}<nav class="tabs"><a href="/{{if .Site}}?site={{.Site}}{{end}}" {{if not .ShowProduct}}class="on"{{end}}>Web</a><a href="/?view=product{{if .Site}}&site={{.Site}}{{end}}" {{if .ShowProduct}}class="on"{{end}}>Product</a></nav>{{end}}
@@ -206,7 +207,10 @@
   <span class="chip" data-q="which channel converts best?">which channel converts best?</span>
   <span class="chip" data-q="how is retention trending?">how is retention trending?</span>
   <span class="chip" data-q="what happened this week?">what happened this week?</span>
-</div><div id="askresult" class="askresult" hidden></div><div id="shareresult" class="askresult" hidden></div></div>
+</div>
+{{if .ProductEvents}}<div class="askchips"><span class="chiplbl">your events</span>{{range .ProductEvents}}<span class="chip" data-q="how many {{.}} this week?" title="ask about the {{.}} event">{{.}}</span>{{end}}</div>{{end}}
+{{if .TopPages}}<div class="askchips"><span class="chiplbl">your pages</span>{{range .TopPages}}<span class="chip" data-q="visitors to {{.Value}}" title="traffic to {{.Value}}">{{.Value}}</span>{{end}}</div>{{end}}
+<div id="askresult" class="askresult" hidden></div><div id="shareresult" class="askresult" hidden></div></div>
 </header>
 
 <main class="wrap">
@@ -442,8 +446,9 @@
 <script>
   (function(){
     var f=document.getElementById('askform'),q=document.getElementById('askq'),res=document.getElementById('askresult');
-    var chips=document.getElementById('askchips');
-    if(chips){chips.addEventListener('click',function(e){var c=e.target.closest('.chip');if(!c)return;q.value=c.getAttribute('data-q');f.dispatchEvent(new Event('submit',{cancelable:true}));});}
+    // delegate across every .askchips row (examples + your events + your pages) so a
+    // click on any chip carrying data-q runs it; the [data-q] filter skips plain labels.
+    document.addEventListener('click',function(e){var c=e.target.closest('.askchips .chip[data-q]');if(!c)return;q.value=c.getAttribute('data-q');f.dispatchEvent(new Event('submit',{cancelable:true}));});
     f.addEventListener('submit',function(e){
       e.preventDefault();
       var question=q.value.trim(); if(!question) return;

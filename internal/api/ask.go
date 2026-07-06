@@ -124,6 +124,17 @@ func answer(q string, evs []event.Event, now time.Time) string {
 	volAll := eventsByVolume(evs) // event NAMES come from the full schema, metrics from the window
 	scoped := scope(evs, win)
 
+	// Explicit page-path or event-name mentions answer about exactly what the user named,
+	// taking priority over the generic intents. This is what lets the "your pages" and
+	// "your events" discovery chips resolve to a real answer instead of a generic one, and
+	// what makes "visitors to /pricing" and "how many checkout this week" just work.
+	if path := extractPath(q); path != "" {
+		return answerPage(scoped, path, win)
+	}
+	if ev := namedEvent(q, volAll); ev != "" && countish(q) {
+		return answerEvent(scoped, ev, win)
+	}
+
 	switch intent {
 	case intentRetention:
 		return answerRetention(scoped, volAll, win, now)
@@ -518,6 +529,108 @@ func answerActive(evs []event.Event, win askWindow, now time.Time) string {
 		}
 	}
 	return fmt.Sprintf("%d total users, %d active in the last 7 days.", total, len(recent))
+}
+
+// answerEvent counts one named event over the window — the resolver for "how many
+// checkout this week?" and the "your events" discovery chips. Mirrors answerSignups
+// but for the exact event the user named rather than the picked default.
+func answerEvent(evs []event.Event, ev string, win askWindow) string {
+	tr := trends.Compute(evs, ev, win.from, win.to, false)
+	days := len(tr.Points)
+	if tr.Total == 0 {
+		if win.scoped() {
+			return fmt.Sprintf("No %q events %s. Widen the window, or drop the time phrase for all history.", ev, win.label)
+		}
+		return fmt.Sprintf("No %q events recorded yet.", ev)
+	}
+	per := tr.Total
+	if days > 0 {
+		per = tr.Total / days
+	}
+	if win.scoped() {
+		return fmt.Sprintf("%d %q events %s, about %d/day.", tr.Total, ev, win.label, per)
+	}
+	return fmt.Sprintf("%d %q events over the last %d days, about %d/day.", tr.Total, ev, days, per)
+}
+
+// answerPage answers "visitors to /pricing" / "how many pageviews for /pqr" from
+// autocaptured $pageview events. Path match is case- and trailing-slash-insensitive
+// so the user never has to remember the exact casing.
+func answerPage(evs []event.Event, path string, win askWindow) string {
+	target := normPath(path)
+	visitors := map[string]bool{}
+	views := 0
+	for _, e := range evs {
+		if e.Name != "$pageview" {
+			continue
+		}
+		p, _ := e.Properties["path"].(string)
+		if normPath(p) != target {
+			continue
+		}
+		views++
+		if e.DistinctID != "" {
+			visitors[e.DistinctID] = true
+		}
+	}
+	if views == 0 {
+		return fmt.Sprintf("No pageviews for %s%s. Double-check the path, or ask \"top pages\" to see what's tracked.", path, winSuffix(win))
+	}
+	return fmt.Sprintf("%s%s: %d visitors, %d pageviews.", path, winSuffix(win), len(visitors), views)
+}
+
+// extractPath pulls a URL path token ("/pricing") out of a question, so "visitors to
+// /pricing?" resolves to /pricing. Returns "" when no path is mentioned.
+func extractPath(q string) string {
+	for _, w := range strings.Fields(q) {
+		if strings.HasPrefix(w, "/") && len(w) > 1 {
+			return strings.TrimRight(w, "?.,!\"')")
+		}
+	}
+	return ""
+}
+
+// normPath lower-cases and strips a trailing slash so "/Pricing" and "/pricing/"
+// both match the stored "/pricing".
+func normPath(p string) string {
+	p = strings.ToLower(strings.TrimSpace(p))
+	if len(p) > 1 {
+		p = strings.TrimRight(p, "/")
+	}
+	return p
+}
+
+// namedEvent returns the first (highest-volume) real event name the question mentions
+// as a whole token. Skips $-prefixed internal events (those are pages, handled by path).
+func namedEvent(q string, vol []string) string {
+	toks := map[string]bool{}
+	for _, w := range strings.Fields(q) {
+		toks[strings.Trim(w, "?.,!\"'()")] = true
+	}
+	for _, ev := range vol {
+		if strings.HasPrefix(ev, "$") {
+			continue
+		}
+		if toks[strings.ToLower(ev)] {
+			return ev
+		}
+	}
+	return ""
+}
+
+// countish reports whether the question is asking for a count/volume, so a bare
+// event mention ("how is checkout doing") still falls through to the funnel intent.
+func countish(q string) bool {
+	return hasAny(q, "how many", "how much", "count", "number of", "total", "mau", "dau", "wau",
+		"monthly active", "daily active", "weekly active")
+}
+
+// winSuffix renders " <label>" for a scoped window, "" otherwise.
+func winSuffix(w askWindow) string {
+	if w.scoped() && w.label != "" {
+		return " " + w.label
+	}
+	return ""
 }
 
 func hasAny(s string, subs ...string) bool {

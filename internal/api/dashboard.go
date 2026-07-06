@@ -108,6 +108,7 @@ type dashVM struct {
 	BySource      []segRow
 	ConvBySeg     []segConv
 	Events        []string
+	ProductEvents []string // real named events (no $-prefixed internals) for the "your events" ask chips
 	Updated       string
 	HasData       bool   // false on a fresh install → show the big onboarding
 	Base          string // this server's base URL, for ready-to-paste snippets
@@ -216,6 +217,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		Signups:        sig30,
 		OverallConv:    pct(fr.OverallConversion),
 		Events:         names,
+		ProductEvents:  productEvents(names, 8),
 		Updated:        time.Now().UTC().Format("Jan 2, 15:04 MST"),
 		HasData:        len(evs) > 0,
 		Sites:          sites,
@@ -441,6 +443,23 @@ func hasName(names []string, n string) bool {
 		}
 	}
 	return false
+}
+
+// productEvents filters the event vocabulary down to real, named product events
+// (dropping $-prefixed internals like $pageview) and caps the list, for the
+// "your events" discovery chips in the ask bar.
+func productEvents(names []string, max int) []string {
+	out := make([]string, 0, max)
+	for _, n := range names {
+		if strings.HasPrefix(n, "$") {
+			continue
+		}
+		out = append(out, n)
+		if len(out) >= max {
+			break
+		}
+	}
+	return out
 }
 
 func pickEvent(vol []string, preferred string) string {

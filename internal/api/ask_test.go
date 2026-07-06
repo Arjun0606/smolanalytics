@@ -236,3 +236,40 @@ func TestParseWindow(t *testing.T) {
 		})
 	}
 }
+
+// TestAskNamedEventAndPage covers the discovery-chip resolvers: a named event and a
+// page path answer about exactly what the user named, taking priority over the generic
+// intents, while generic questions are untouched.
+func TestAskNamedEventAndPage(t *testing.T) {
+	now := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
+	mk := func(user, name, path string) event.Event {
+		e := event.Event{Name: name, DistinctID: user, Timestamp: now}
+		if path != "" {
+			e.Properties = map[string]any{"path": path}
+		}
+		return e
+	}
+	evs := []event.Event{
+		mk("u1", "$pageview", "/pricing"), mk("u2", "$pageview", "/pricing"), mk("u1", "$pageview", "/pricing"),
+		mk("u3", "$pageview", "/"),
+		mk("u1", "checkout", ""), mk("u2", "checkout", ""),
+		mk("u1", "signup", ""),
+	}
+
+	// named event: "checkout" resolves even though the generic classifier would call it a funnel
+	if got := answer("how many checkout events?", evs, now); !strings.Contains(got, "checkout") || !strings.Contains(got, "2") {
+		t.Errorf("named-event ask: got %q, want a count of 2 checkout events", got)
+	}
+	// page path: visitors + pageviews to /pricing (case/slash-insensitive)
+	if got := answer("visitors to /Pricing/", evs, now); !strings.Contains(got, "2 visitors") || !strings.Contains(got, "3 pageviews") {
+		t.Errorf("page ask: got %q, want 2 visitors / 3 pageviews for /pricing", got)
+	}
+	// a bare event mention without a count word still falls through to the funnel intent
+	if got := answer("how is checkout doing", evs, now); strings.Contains(got, "pageviews") {
+		t.Errorf("non-count event mention should not hit the page/event resolver: %q", got)
+	}
+	// unknown path answers honestly, not a fake zero passed off as data
+	if got := answer("visitors to /nope", evs, now); !strings.Contains(got, "No pageviews for /nope") {
+		t.Errorf("unknown path: got %q, want an honest no-data message", got)
+	}
+}
