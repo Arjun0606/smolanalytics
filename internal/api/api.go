@@ -4,6 +4,7 @@
 package api
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -337,10 +338,20 @@ func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 	}
 	var batch []event.Event
 	if len(body) > 0 && body[0] == '[' {
-		if err := json.Unmarshal(body, &batch); err != nil {
+		// Decode the array element-by-element and stop the instant it exceeds the cap,
+		// so a 100k-event body doesn't get fully parsed into a giant slice before the
+		// 413 — an abusive/misconfigured client can't buy multi-second parse work per
+		// rejected request. Bounds allocation to maxBatchEvents regardless of body size.
+		b, overCap, err := decodeBatch(body)
+		if err != nil {
 			writeErr(w, http.StatusBadRequest, "invalid JSON array of events")
 			return
 		}
+		if overCap {
+			writeErr(w, http.StatusRequestEntityTooLarge, "too many events in one batch — max 10000")
+			return
+		}
+		batch = b
 	} else {
 		var one event.Event
 		if err := json.Unmarshal(body, &one); err != nil {
@@ -348,10 +359,6 @@ func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		batch = []event.Event{one}
-	}
-	if len(batch) > maxBatchEvents {
-		writeErr(w, http.StatusRequestEntityTooLarge, "too many events in one batch — max 10000")
-		return
 	}
 
 	// Bot filtering: crawlers/unfurlers/headless agents inflate every report, so
@@ -499,6 +506,34 @@ func readLimited(r *http.Request, limit int64) (body []byte, tooLarge bool, err 
 		return b[:limit], true, nil
 	}
 	return b, false, nil
+}
+
+// decodeBatch stream-decodes a JSON array of events, short-circuiting the moment it
+// reads past maxBatchEvents so an oversized batch is rejected without parsing the whole
+// thing into memory. overCap is true (with a nil error) when the array has more than the
+// cap; err is non-nil only for malformed JSON.
+func decodeBatch(body []byte) (batch []event.Event, overCap bool, err error) {
+	dec := json.NewDecoder(bytes.NewReader(body))
+	// consume the opening '['
+	if _, err := dec.Token(); err != nil {
+		return nil, false, err
+	}
+	batch = make([]event.Event, 0, 256)
+	for dec.More() {
+		if len(batch) >= maxBatchEvents {
+			return nil, true, nil // over the cap — stop before decoding the rest
+		}
+		var e event.Event
+		if err := dec.Decode(&e); err != nil {
+			return nil, false, err
+		}
+		batch = append(batch, e)
+	}
+	// consume the closing ']' so trailing garbage after the array is still rejected
+	if _, err := dec.Token(); err != nil {
+		return nil, false, err
+	}
+	return batch, false, nil
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

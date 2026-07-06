@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -37,6 +38,43 @@ func TestIngestOpenWhenNoKey(t *testing.T) {
 	s.Handler().ServeHTTP(r, httptest.NewRequest("POST", "/v1/events", strings.NewReader(`{"name":"x","distinct_id":"u1"}`)))
 	if r.Code != http.StatusAccepted {
 		t.Fatalf("open ingest: got %d, want 202", r.Code)
+	}
+}
+
+// TestIngestBatchCap pins the batch-size guard: a batch over the cap is rejected with
+// 413 (and — per the F4 fix — short-circuited, never fully parsed), a batch exactly at
+// the cap is accepted, and a malformed array is a clean 400.
+func TestIngestBatchCap(t *testing.T) {
+	h := New(memory.New()).Handler()
+	post := func(body string) int {
+		r := httptest.NewRecorder()
+		h.ServeHTTP(r, httptest.NewRequest("POST", "/v1/events", strings.NewReader(body)))
+		return r.Code
+	}
+	batch := func(n int) string {
+		var b strings.Builder
+		b.WriteByte('[')
+		for i := 0; i < n; i++ {
+			if i > 0 {
+				b.WriteByte(',')
+			}
+			fmt.Fprintf(&b, `{"name":"x","distinct_id":"u%d"}`, i)
+		}
+		b.WriteByte(']')
+		return b.String()
+	}
+
+	if code := post(batch(maxBatchEvents)); code != http.StatusAccepted {
+		t.Fatalf("at cap (%d events): got %d, want 202", maxBatchEvents, code)
+	}
+	if code := post(batch(maxBatchEvents + 1)); code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("over cap (%d events): got %d, want 413", maxBatchEvents+1, code)
+	}
+	if code := post(`[{"name":"x","distinct_id":"u1"},`); code != http.StatusBadRequest {
+		t.Fatalf("malformed array: got %d, want 400", code)
+	}
+	if code := post(`[]`); code != http.StatusAccepted {
+		t.Fatalf("empty array: got %d, want 202", code)
 	}
 }
 

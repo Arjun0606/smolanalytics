@@ -134,6 +134,14 @@ func answer(q string, evs []event.Event, now time.Time) string {
 	if ev := namedEvent(q, volAll); ev != "" && countish(q) {
 		return answerEvent(scoped, ev, win)
 	}
+	// If the user explicitly named an event ("the X event", "X events fire") that we
+	// DON'T have, say so with the nearest real name — never silently fall through to a
+	// default event and hand back an authoritative count for something they didn't ask
+	// about. That substitution is the exact "trust your numbers" failure this product
+	// sells against.
+	if miss := unknownNamedEvent(q, volAll); miss != "" {
+		return answerUnknownEvent(miss, volAll)
+	}
 
 	switch intent {
 	case intentRetention:
@@ -616,6 +624,137 @@ func namedEvent(q string, vol []string) string {
 		}
 	}
 	return ""
+}
+
+// unknownNamedEvent returns an event-shaped token the user explicitly asked about
+// ("the flibbergibbet event", "how many zorptastic events fired") that is NOT in the
+// dataset — so the caller can answer honestly instead of substituting a default event.
+// It only fires on the explicit "<token> event(s)" pattern to avoid bouncing generic
+// asks ("how many signups"): the word "event"/"events" must sit next to the token, and
+// the token must not itself be a known event (that case is answerEvent's) or a generic
+// metric/filler word.
+func unknownNamedEvent(q string, vol []string) string {
+	known := map[string]bool{}
+	for _, ev := range vol {
+		known[strings.ToLower(ev)] = true
+	}
+	words := strings.Fields(q)
+	for i, w := range words {
+		bare := strings.ToLower(strings.Trim(w, "?.,!\"'()"))
+		if bare != "event" && bare != "events" {
+			continue
+		}
+		// the candidate is the neighbouring noun: "the X event" (before) or
+		// "X events fire" (also before). Fall back to the word after when the word
+		// before is filler ("the", "an").
+		var cand string
+		if i > 0 {
+			cand = strings.ToLower(strings.Trim(words[i-1], "?.,!\"'()"))
+		}
+		if (cand == "" || isFillerWord(cand)) && i+1 < len(words) {
+			cand = strings.ToLower(strings.Trim(words[i+1], "?.,!\"'()"))
+		}
+		if cand == "" || isFillerWord(cand) || known[cand] || cand == "event" || cand == "events" {
+			continue
+		}
+		return cand
+	}
+	return ""
+}
+
+// isFillerWord skips articles/generic nouns so "the ... event" resolves to the real
+// name token, not to "the" or "many".
+func isFillerWord(w string) bool {
+	switch w {
+	case "the", "a", "an", "any", "each", "this", "that", "my", "your", "which",
+		"what", "how", "many", "much", "number", "count", "total", "of", "did",
+		"does", "do", "fire", "fired", "fires", "named", "called", "custom":
+		return true
+	}
+	return false
+}
+
+// answerUnknownEvent tells the user the named event doesn't exist and points at the
+// nearest real name (and the discovery chips) rather than answering a substitute.
+func answerUnknownEvent(name string, vol []string) string {
+	real := make([]string, 0, len(vol))
+	for _, ev := range vol {
+		if !strings.HasPrefix(ev, "$") {
+			real = append(real, ev)
+		}
+	}
+	if len(real) == 0 {
+		return fmt.Sprintf("No event named %q — in fact no product events are recorded yet. Send some with track(), then ask again.", name)
+	}
+	if near := nearestEvent(name, real); near != "" {
+		return fmt.Sprintf("No event named %q. Did you mean %q? Your tracked events: %s.", name, near, strings.Join(cap8(real), ", "))
+	}
+	return fmt.Sprintf("No event named %q. Your tracked events: %s. Ask about one of those.", name, strings.Join(cap8(real), ", "))
+}
+
+// cap8 trims a listing to eight names so the answer stays one line.
+func cap8(names []string) []string {
+	if len(names) > 8 {
+		return names[:8]
+	}
+	return names
+}
+
+// nearestEvent returns the closest real event name to the mistyped one by edit
+// distance, but only when it's a plausible typo (distance ≤ 40% of the name) — a
+// wild miss ("flibbergibbet") gets no misleading suggestion.
+func nearestEvent(name string, real []string) string {
+	best, bestD := "", 1<<30
+	for _, ev := range real {
+		d := levenshtein(name, strings.ToLower(ev))
+		if d < bestD {
+			best, bestD = ev, d
+		}
+	}
+	if best == "" {
+		return ""
+	}
+	limit := len(name) * 2 / 5
+	if limit < 1 {
+		limit = 1
+	}
+	if bestD <= limit {
+		return best
+	}
+	return ""
+}
+
+// levenshtein is the standard edit distance, small strings only (event names), so a
+// simple two-row DP is plenty.
+func levenshtein(a, b string) int {
+	ra, rb := []rune(a), []rune(b)
+	prev := make([]int, len(rb)+1)
+	cur := make([]int, len(rb)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(ra); i++ {
+		cur[0] = i
+		for j := 1; j <= len(rb); j++ {
+			cost := 1
+			if ra[i-1] == rb[j-1] {
+				cost = 0
+			}
+			cur[j] = min3(cur[j-1]+1, prev[j]+1, prev[j-1]+cost)
+		}
+		prev, cur = cur, prev
+	}
+	return prev[len(rb)]
+}
+
+func min3(a, b, c int) int {
+	if b < a {
+		a = b
+	}
+	if c < a {
+		a = c
+	}
+	return a
 }
 
 // countish reports whether the question is asking for a count/volume, so a bare

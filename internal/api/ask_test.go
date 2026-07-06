@@ -272,4 +272,22 @@ func TestAskNamedEventAndPage(t *testing.T) {
 	if got := answer("visitors to /nope", evs, now); !strings.Contains(got, "No pageviews for /nope") {
 		t.Errorf("unknown path: got %q, want an honest no-data message", got)
 	}
+
+	// an explicitly-named event we DON'T have must NOT silently answer a default event
+	// (the trust-breaking substitution). Say it doesn't exist, name the real events.
+	if got := answer("how many times did the flibbergibbet_zorptastic event fire last week?", evs, now); !strings.Contains(got, "No event named") || strings.Contains(got, "events last week") {
+		// must say no-such-event, and must NOT report a real event's count for the window
+		t.Errorf("unknown named event: got %q, want an honest no-such-event message", got)
+	}
+	if got := answer("how many flibbergibbet_zorptastic events?", evs, now); !strings.Contains(got, "No event named") {
+		t.Errorf("unknown named event (plural): got %q, want an honest no-such-event message", got)
+	}
+	// a near-typo of a real event should suggest the nearest name
+	if got := answer("how many chekout events?", evs, now); !strings.Contains(got, "No event named") || !strings.Contains(got, `Did you mean "checkout"`) {
+		t.Errorf("typo'd event: got %q, want a nearest-match suggestion", got)
+	}
+	// a correctly-named event must still count (not misfire as unknown)
+	if got := answer("how many checkout events?", evs, now); strings.Contains(got, "No event named") {
+		t.Errorf("known event mislabeled as unknown: %q", got)
+	}
 }
