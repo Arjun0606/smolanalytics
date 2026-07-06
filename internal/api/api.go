@@ -511,6 +511,23 @@ func writeErr(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }
 
+// serverError renders a branded HTML 500 for browser-facing routes and logs the
+// real error server-side. The raw internal error is NEVER echoed to the client —
+// especially on public routes (e.g. the unauthenticated share page), where it would
+// leak internals to anyone holding a link. `where` is a short server-side tag for
+// the log line; it is not shown to the user.
+func serverError(w http.ResponseWriter, where string, err error) {
+	log.Printf("smolanalytics: %s: %v", where, err)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusInternalServerError)
+	_, _ = io.WriteString(w, `<!doctype html><meta charset="utf-8">`+
+		`<title>something went wrong · smolanalytics</title>`+
+		`<style>html{background:#0A0A0A;color:#FAFAFA;font-family:ui-monospace,Menlo,monospace}`+
+		`body{min-height:100vh;margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px}`+
+		`a{color:#F5A623;text-decoration:none}.b{font-weight:800;letter-spacing:-.02em;font-size:18px;font-family:Inter,sans-serif}.b i{color:#F5A623;font-style:normal}</style>`+
+		`<div class="b">smol<i>analytics</i></div><div style="color:#8E8E8E">500 · something went wrong on our end</div><a href="/">← back to dashboard</a>`)
+}
+
 // distinctUsers counts unique DistinctIDs across events.
 func distinctUsers(evs []event.Event) int {
 	seen := map[string]bool{}

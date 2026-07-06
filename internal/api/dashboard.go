@@ -165,7 +165,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	evs, err := s.store.Range(time.Time{}, time.Time{})
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		serverError(w, "dashboard store.Range", err)
 		return
 	}
 	evs = query.Apply(evs, nil) // production scope: dev-env events excluded by default

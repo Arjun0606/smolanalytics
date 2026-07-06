@@ -140,7 +140,8 @@ func (s *Server) sharePage(w http.ResponseWriter, r *http.Request) {
 	}
 	evs, err := s.store.Range(time.Time{}, time.Time{})
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		// public route — never echo the internal error to an unauthenticated visitor
+		serverError(w, "sharePage store.Range", err)
 		return
 	}
 	evs = query.Apply(evs, nil) // production scope, same as every surface
