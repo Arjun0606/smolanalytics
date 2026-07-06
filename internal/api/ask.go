@@ -20,11 +20,11 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/trends"
 )
 
-// ask answers a plain-English question about the data with zero dependencies —
+// ask answers a plain-English question about the data with zero dependencies,
 // it routes common questions (conversion, retention, signups, channels, active
 // users, the weekly brief) deterministically, right in the dashboard, no model
 // required. For arbitrary questions the user connects smolanalytics to their
-// OWN Claude / Cursor over MCP (we never call a model ourselves) — see internal/mcp.
+// OWN Claude / Cursor over MCP (we never call a model ourselves), see internal/mcp.
 func (s *Server) ask(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	var req struct {
@@ -46,7 +46,7 @@ func (s *Server) ask(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"answer": answer(q, evs, time.Now().UTC())})
 }
 
-// askIntent is the deterministic route the ask bar picked for a question — a
+// askIntent is the deterministic route the ask bar picked for a question, a
 // named type (not bare strings) so the router and its tests cannot drift apart.
 type askIntent string
 
@@ -63,7 +63,7 @@ const (
 
 // classifyAsk routes a lowercased question to one intent. Order is the whole
 // game: action-y asks must never fall through to a metric ("alert me if signups
-// drop" mentions both), and specific phrasings outrank generic keywords —
+// drop" mentions both), and specific phrasings outrank generic keywords,
 // "which channel converts best" is a channel question, not a funnel one, and
 // "how many active users" is a user count, not a signup trend.
 func classifyAsk(q string) askIntent {
@@ -89,7 +89,7 @@ func classifyAsk(q string) askIntent {
 	}
 }
 
-// isAction spots asks that want to CHANGE something. The ask bar is read-only —
+// isAction spots asks that want to CHANGE something. The ask bar is read-only,
 // these must never come back as a metric that pretends the change happened.
 func isAction(q string) bool {
 	if hasAny(q, "alert", "notify", "rename", "configure", "turn on", "turn off",
@@ -116,9 +116,9 @@ func answer(q string, evs []event.Event, now time.Time) string {
 
 	win, unsupported := parseWindow(q, now)
 	if unsupported != "" {
-		return fmt.Sprintf("I can't scope to %q from the ask bar — supported windows: today, yesterday, "+
+		return fmt.Sprintf("I can't scope to %q from the ask bar, supported windows: today, yesterday, "+
 			"this/last week, this/last month, and \"last N days\". Re-ask with one of those, or drop the "+
-			"time phrase for all recorded history. For arbitrary ranges, ask your agent over MCP — the "+
+			"time phrase for all recorded history. For arbitrary ranges, ask your agent over MCP, the "+
 			"trends and funnel tools take exact dates.", unsupported)
 	}
 	volAll := eventsByVolume(evs) // event NAMES come from the full schema, metrics from the window
@@ -148,31 +148,31 @@ func answer(q string, evs []event.Event, now time.Time) string {
 		return answerSignups(scoped, volAll, win)
 	default:
 		return "I can answer about your conversion funnel, channels (with per-source conversion), retention, " +
-			"signups/growth, active users, and \"what happened this week\" right here — scoped to today, " +
+			"signups/growth, active users, and \"what happened this week\" right here, scoped to today, " +
 			"yesterday, this/last week, this/last month, or last N days. For anything else, connect " +
-			"smolanalytics to your own Claude or Cursor over MCP and just ask — your model reads the same " +
+			"smolanalytics to your own Claude or Cursor over MCP and just ask, your model reads the same " +
 			"data through our tools."
 	}
 }
 
 // answerAction is honest guidance for change requests: the ask bar computes
 // answers, it does not flip switches. Every branch names where the change
-// actually lives — the Settings section and the MCP tool an agent can call.
+// actually lives, the Settings section and the MCP tool an agent can call.
 func answerAction(q string) string {
 	switch {
 	case hasAny(q, "alert", "notify", "watch"):
-		return "I can't create alerts from here — the ask bar only reads data. Set one up in Settings → Alerts " +
+		return "I can't create alerts from here, the ask bar only reads data. Set one up in Settings → Alerts " +
 			"(wire a Slack/HTTPS destination under Settings → Webhooks first). In Cursor/Claude Code your " +
 			"agent can do it directly: create_alert (\"tell me if signups drop below 10/day\")."
 	case hasAny(q, "retention", "retain"):
-		return "I can't change settings from here — data retention lives in Settings → Retention. " +
+		return "I can't change settings from here, data retention lives in Settings → Retention. " +
 			"In Cursor/Claude Code your agent can: set_retention."
 	case strings.Contains(q, "rename"):
-		return "I can't rename events from here — event names come from your instrumentation. Rename it where " +
+		return "I can't rename events from here, event names come from your instrumentation. Rename it where " +
 			"you call track(), then declare the new name in your tracking plan (set_tracking_plan in " +
 			"Cursor/Claude Code) so drift gets flagged under Settings → Events tracked."
 	default:
-		return "The ask bar computes answers from your data — it can't change anything. Settings has the knobs " +
+		return "The ask bar computes answers from your data, it can't change anything. Settings has the knobs " +
 			"(retention, alerts, webhooks, API keys), and in Cursor/Claude Code your agent has the action " +
 			"tools: create_alert, set_retention, create_goal, save_report."
 	}
@@ -193,7 +193,7 @@ func briefDays(q string) int {
 }
 
 // answerBrief renders the SAME computation as `smolanalytics brief` (pulse +
-// deltas + the verdict engine's findings) tight enough for the ask panel — one
+// deltas + the verdict engine's findings) tight enough for the ask panel, one
 // Brief struct feeds both, so the ask bar and the morning digest can never disagree.
 func answerBrief(evs []event.Event, days int, now time.Time) string {
 	b := brief.Build(evs, days, now)
@@ -210,7 +210,7 @@ func answerBrief(evs []event.Event, days int, now time.Time) string {
 			visitors, pctChange(b.Events, b.PriorEvents))
 	}
 	if len(b.Findings) == 0 {
-		s.WriteString(" Nothing notable — no big swings, funnel leaks, or retention flags.")
+		s.WriteString(" Nothing notable, no big swings, funnel leaks, or retention flags.")
 		return s.String()
 	}
 	s.WriteString("\nWhat to look at:")
@@ -219,12 +219,12 @@ func answerBrief(evs []event.Event, days int, now time.Time) string {
 		if f.Severity == "warn" {
 			mark = "⚠"
 		}
-		fmt.Fprintf(&s, "\n%s %s — %s", mark, f.Title, f.Detail)
+		fmt.Fprintf(&s, "\n%s %s, %s", mark, f.Title, f.Detail)
 	}
 	return s.String()
 }
 
-// pctChange mirrors brief's signed delta — direction must be unmissable.
+// pctChange mirrors brief's signed delta, direction must be unmissable.
 func pctChange(cur, prior int) int {
 	return int(math.Round(float64(cur-prior) / float64(prior) * 100))
 }
@@ -241,7 +241,7 @@ type askWindow struct {
 func (w askWindow) scoped() bool { return !w.from.IsZero() || !w.to.IsZero() }
 
 // windowClause weaves the computed window into a sentence: " this week (since
-// Mon Jun 22, UTC)" — or "" for all-time.
+// Mon Jun 22, UTC)", or "" for all-time.
 func windowClause(w askWindow) string {
 	if !w.scoped() {
 		return ""
@@ -295,7 +295,7 @@ func parseWindow(q string, now time.Time) (win askWindow, unsupported string) {
 	return askWindow{}, ""
 }
 
-// mondayOffset is days since the most recent Monday (0 on a Monday) — Go's
+// mondayOffset is days since the most recent Monday (0 on a Monday), Go's
 // time.Weekday puts Sunday at 0, one off from a Monday-start week.
 func mondayOffset(t time.Time) int { return (int(t.Weekday()) + 6) % 7 }
 
@@ -312,7 +312,7 @@ func unsupportedTimePhrase(q string) string {
 	return ""
 }
 
-// containsWord reports whether tok appears as a whole word — "month" must not
+// containsWord reports whether tok appears as a whole word, "month" must not
 // fire on "monthly", or every trend question would bounce as an unsupported window.
 func containsWord(q, tok string) bool {
 	isSep := func(r rune) bool { return !('a' <= r && r <= 'z' || '0' <= r && r <= '9') }
@@ -324,7 +324,7 @@ func containsWord(q, tok string) bool {
 	return false
 }
 
-// scope keeps events inside [from, to) — the end is exclusive so "yesterday"
+// scope keeps events inside [from, to), the end is exclusive so "yesterday"
 // and "last week" never double-count the boundary instant.
 func scope(evs []event.Event, w askWindow) []event.Event {
 	if !w.scoped() {
@@ -348,15 +348,15 @@ func answerFunnel(evs []event.Event, vol []string, win askWindow) string {
 	fr := funnel.Compute(evs, fsteps, 7*24*time.Hour)
 	if len(fr.Steps) == 0 || fr.Steps[0].Count == 0 {
 		if win.scoped() {
-			return "No events " + win.label + " to build a funnel from — widen the window, or drop the time phrase for all history."
+			return "No events " + win.label + " to build a funnel from, widen the window, or drop the time phrase for all history."
 		}
 		return "No events yet to build a funnel from."
 	}
 	if len(fr.Steps) < 2 {
-		// a single distinct event name means there's no funnel to measure yet — a bare
+		// a single distinct event name means there's no funnel to measure yet, a bare
 		// "signup → signup" would print an empty drop-off step with a -1 count. Answer
 		// honestly and name the next action instead.
-		return fmt.Sprintf("%d users did %q%s — that's the only event type tracked, so there's no funnel to measure yet. Add a later step (activate, checkout) to see where users drop off.",
+		return fmt.Sprintf("%d users did %q%s, that's the only event type tracked, so there's no funnel to measure yet. Add a later step (activate, checkout) to see where users drop off.",
 			fr.Steps[0].Count, fr.Steps[0].Event, windowClause(win))
 	}
 	worst, worstDrop := "", -1
@@ -365,7 +365,7 @@ func answerFunnel(evs []event.Event, vol []string, win askWindow) string {
 			worstDrop, worst = st.DroppedFromPrev, st.Event
 		}
 	}
-	return fmt.Sprintf("%d of %d users (%d%%) complete %s%s. The biggest drop-off is at \"%s\" — %d users fall off there.",
+	return fmt.Sprintf("%d of %d users (%d%%) complete %s%s. The biggest drop-off is at \"%s\", %d users fall off there.",
 		fr.Steps[len(fr.Steps)-1].Count, fr.Steps[0].Count, pct(fr.OverallConversion), ftitle, windowClause(win), worst, worstDrop)
 }
 
@@ -375,10 +375,10 @@ func answerRetention(evs []event.Event, vol []string, win askWindow, now time.Ti
 	d1, size1 := retention.DayN(rr, 1, now)
 	if size1 == 0 {
 		if win.scoped() {
-			return "Not enough history " + win.label + " to measure retention — day-1 retention needs users past " +
+			return "Not enough history " + win.label + " to measure retention, day-1 retention needs users past " +
 				"their first day. Widen the window, or drop the time phrase for all history."
 		}
-		return "Not enough history yet to measure retention — check back once users are past their first day."
+		return "Not enough history yet to measure retention, check back once users are past their first day."
 	}
 	out := fmt.Sprintf("Day-1 retention is %d%% (of %d users past day 1).",
 		int(float64(d1)/float64(size1)*100+0.5), size1)
@@ -394,17 +394,17 @@ func answerRetention(evs []event.Event, vol []string, win askWindow, now time.Ti
 
 // answerChannels answers "which channel converts best" the way goal_report does:
 // first-touch attribution per user, then per-source conversion to the site's
-// conversion event — NOT the funnel, which ignores sources entirely.
+// conversion event, NOT the funnel, which ignores sources entirely.
 func answerChannels(evs []event.Event, vol []string, win askWindow) string {
 	if len(evs) == 0 {
 		if win.scoped() {
-			return "No events " + win.label + " to attribute — widen the window, or drop the time phrase for all history."
+			return "No events " + win.label + " to attribute, widen the window, or drop the time phrase for all history."
 		}
 		return "No events recorded yet."
 	}
 	srcProp := detectProp(evs, "source")
 	if srcProp == "" {
-		return "Your events don't carry any properties to attribute a channel from yet — send a " +
+		return "Your events don't carry any properties to attribute a channel from yet, send a " +
 			"source/referrer/utm_source property with your events and ask again."
 	}
 	conv := pickConversion(evs, vol)
@@ -504,19 +504,19 @@ func answerSignups(evs []event.Event, vol []string, win askWindow) string {
 		return "No events recorded yet."
 	}
 	if tr.Total == 0 && win.scoped() {
-		return fmt.Sprintf("No \"%s\" events %s — widen the window, or drop the time phrase for all history.", ev, win.label)
+		return fmt.Sprintf("No \"%s\" events %s, widen the window, or drop the time phrase for all history.", ev, win.label)
 	}
 	if win.scoped() {
-		return fmt.Sprintf("%d \"%s\" events %s — about %d/day.", tr.Total, ev, win.label, tr.Total/days)
+		return fmt.Sprintf("%d \"%s\" events %s, about %d/day.", tr.Total, ev, win.label, tr.Total/days)
 	}
-	return fmt.Sprintf("%d \"%s\" events over the last %d days — about %d/day.", tr.Total, ev, days, tr.Total/days)
+	return fmt.Sprintf("%d \"%s\" events over the last %d days, about %d/day.", tr.Total, ev, days, tr.Total/days)
 }
 
 func answerActive(evs []event.Event, win askWindow, now time.Time) string {
 	if win.scoped() {
 		users := distinctUsers(evs)
 		if users == 0 {
-			return "No active users " + win.label + " — widen the window, or drop the time phrase for all history."
+			return "No active users " + win.label + ", widen the window, or drop the time phrase for all history."
 		}
 		return fmt.Sprintf("%d active users %s, across %d events.", users, win.label, len(evs))
 	}
@@ -531,7 +531,7 @@ func answerActive(evs []event.Event, win askWindow, now time.Time) string {
 	return fmt.Sprintf("%d total users, %d active in the last 7 days.", total, len(recent))
 }
 
-// answerEvent counts one named event over the window — the resolver for "how many
+// answerEvent counts one named event over the window, the resolver for "how many
 // checkout this week?" and the "your events" discovery chips. Mirrors answerSignups
 // but for the exact event the user named rather than the picked default.
 func answerEvent(evs []event.Event, ev string, win askWindow) string {

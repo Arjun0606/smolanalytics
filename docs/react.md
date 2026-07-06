@@ -6,7 +6,7 @@ clicks; add `track()` for funnels.
 
 ## 1. Load the SDK
 
-Simplest — add to `index.html`:
+Simplest: add to `index.html`:
 
 ```html
 <!-- index.html -->
@@ -29,7 +29,7 @@ export function initAnalytics() {
 ```
 
 Pageviews and clicks are now captured, and SPA navigations (React Router, TanStack Router,
-etc.) are picked up automatically — no per-route wiring.
+etc.) are picked up automatically, no per-route wiring.
 
 ## 2. Track the moments that matter
 
@@ -56,5 +56,5 @@ export const useTrack = () => (name: string, props?: object) => window.smolanaly
 smolanalytics connect      # wires it into Cursor / Claude Code / VS Code / …
 ```
 Then ask, right where you code: *"how's activation this week, and is the paid plan
-converting better than free?"* Your own model answers from your real data — no dashboards to
+converting better than free?"* Your own model answers from your real data, no dashboards to
 build. Full report list in the [main README](../README.md).

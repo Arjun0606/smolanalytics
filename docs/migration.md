@@ -37,7 +37,7 @@ the README.
 ## From PostHog (`--format=posthog`)
 
 Not ready to migrate? You can still run the instrumentation drift gate against
-PostHog directly — `plan check --source=posthog` needs no server and moves no data
+PostHog directly: `plan check --source=posthog` needs no server and moves no data
 ([docs/agents-ci.md](agents-ci.md#already-on-posthog)).
 
 Where the export lives: in PostHog, open **Activity** (the raw events list), set

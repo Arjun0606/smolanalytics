@@ -25,7 +25,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 }
 ```
 
-That's it — pageviews and clicks are now captured on every route, App Router or Pages
+That's it: pageviews and clicks are now captured on every route, App Router or Pages
 Router (SPA navigations included).
 
 <details><summary>Pages Router</summary>
@@ -67,7 +67,7 @@ declare global { interface Window { smolanalytics: any } }
 
 // on signup
 window.smolanalytics.track("signup", { plan: "pro" });
-// on login — ties this user's events together
+// on login: ties this user's events together
 window.smolanalytics.identify("user_123", { email: "a@b.com" });
 // at your core aha moment
 window.smolanalytics.track("activate");
@@ -75,7 +75,7 @@ window.smolanalytics.track("activate");
 
 ## 3. Server-side events (Route Handlers, Server Actions, webhooks)
 
-Things that happen on the server — a Stripe webhook, a payment — post directly:
+Things that happen on the server (a Stripe webhook, a payment) post directly:
 
 ```ts
 // app/api/checkout/route.ts (or a Server Action)

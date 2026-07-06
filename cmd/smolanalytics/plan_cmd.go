@@ -266,7 +266,7 @@ func renderPlanCheck(h healthReport, out io.Writer) int {
 		}
 	}
 	for _, u := range h.UnplannedEvents {
-		fmt.Fprintf(out, "  • %s — seen but not in the plan (informational)\n", u)
+		fmt.Fprintf(out, "  • %s: seen but not in the plan (informational)\n", u)
 	}
 	return broken
 }

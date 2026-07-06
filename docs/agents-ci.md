@@ -23,7 +23,7 @@ smolanalytics closes that gap with a tracking plan that lives in your repo:
 ## The three commands
 
 ```sh
-smolanalytics plan init     # write a starter smolanalytics.plan.json — edit, commit
+smolanalytics plan init     # write a starter smolanalytics.plan.json, edit, commit
 smolanalytics plan push     # declare the file's plan on your running instance
 smolanalytics plan check    # verify real traffic matches; exit 1 if not
 ```
@@ -61,7 +61,7 @@ tracking plan: 3 events declared
   ✓ signup       1035 events · last seen 2026-07-03T23:44:00Z
   ✗ checkout     flowing (309 events) but missing properties: amount
   ✗ invite_sent  planned but never arrived
-  • activate — seen but not in the plan (informational)
+  • activate: seen but not in the plan (informational)
 ```
 
 ## The CI job
@@ -105,7 +105,7 @@ branch, so the check always verifies against what the repo currently intends.
 
 ## Already on PostHog?
 
-You don't need a smolanalytics server — or any migration — to get the drift gate.
+You don't need a smolanalytics server, or any migration, to get the drift gate.
 `plan check --source=posthog` verifies the same `smolanalytics.plan.json` against
 your **existing PostHog project**, over PostHog's own query API:
 
@@ -120,20 +120,20 @@ smolanalytics plan check --source=posthog \
 - `--ph-project` is the numeric project id (PostHog → Settings → Project).
 - `--ph-host` defaults to `https://us.posthog.com`; EU cloud projects need
   `--ph-host=https://eu.posthog.com`. Self-hosted: your instance URL.
-- `--window` defaults to **168** (a week) for this source — wide enough that
+- `--window` defaults to **168** (a week) for this source, wide enough that
   weekly events don't false-alarm; tighten to `--window=24` on high-traffic apps.
 
 Same report, same exit code: `✓` per flowing event, `✗` when a planned event never
 arrived or arrives without an expected property, exit 1 on any `✗`. One difference,
-stated in the output: unplanned events are not listed — the check queries PostHog
+stated in the output: unplanned events are not listed. The check queries PostHog
 only about the events your plan declares, it doesn't enumerate your project.
 
 How it works, honestly: the CLI sends two read-only HogQL queries to *your* PostHog
 host and renders the result. Your data goes from PostHog to the machine running the
-command and nowhere else — there is no smolanalytics server in the loop, so
+command and nowhere else: there is no smolanalytics server in the loop, so
 smolanalytics never sees it.
 
-The CI variant — two secrets, `PH_KEY` and `PH_PROJECT`, no push step (there is no
+The CI variant: two secrets, `PH_KEY` and `PH_PROJECT`, no push step (there is no
 instance to push to; the repo file is the plan):
 
 ```yaml
@@ -160,7 +160,7 @@ jobs:
 ```
 
 If you later migrate ([docs/migration.md](migration.md)), the plan file doesn't
-change — drop `--source=posthog`, point `--host` at your instance, done.
+change: drop `--source=posthog`, point `--host` at your instance, done.
 
 ## When to run it, honestly
 

@@ -9,6 +9,13 @@ No incumbent closes this loop. Their AI lives inside their web app; your agent l
 your repo. smolanalytics is an MCP server, so the agent that ships the feature is the
 same one that instruments it and checks it worked.
 
+This is the surface that knows your code. The built-in dashboard ask bar answers questions
+about your data (it lists your real event names and pages so you never guess what to type),
+but it does not read your repo. Your coding agent does: it has your code, the tracking plan,
+and smolanalytics over MCP, so it can translate a codebase concept ("the PQR page", "the
+flow I shipped yesterday") to the right analytics query. Data questions in the dashboard,
+codebase-aware questions in your editor.
+
 ## 1. Make your agent track as it builds
 
 Paste this into your repo's `CLAUDE.md`, `AGENTS.md`, or `.cursorrules`. From then on,
@@ -45,14 +52,14 @@ test that tracking still works.
 One-time setup, then it runs itself:
 
 1. **New repo.** Run `smolanalytics connect` once. It wires the MCP server into every
-   coding assistant you have installed (Claude Code, Cursor, Windsurf, VS Code, Cline —
+   coding assistant you have installed (Claude Code, Cursor, Windsurf, VS Code, Cline;
    see the [connect table](../README.md#ask-it-in-your-editor-the-whole-point)).
 2. **Paste the block above** into `CLAUDE.md` / `AGENTS.md` / `.cursorrules`.
 3. **Build.** Your agent adds `smolanalytics.track()` for each feature's key moment and
    records it in `smolanalytics.plan.json`. (Or start with the `instrument-my-app` MCP
    prompt, which sets up tracking end to end.)
 4. **Push the plan.** `smolanalytics plan push` sends `smolanalytics.plan.json` to your
-   instance as its tracking plan — the same plan the `set_tracking_plan` MCP tool writes,
+   instance as its tracking plan, the same plan the `set_tracking_plan` MCP tool writes,
    now version-controlled next to the code that implements it. (`smolanalytics plan pull`
    goes the other way: it writes the instance's current plan into the repo file, which is
    how you bootstrap on an app that's already instrumented.)
@@ -63,8 +70,10 @@ One-time setup, then it runs itself:
    silently kills your signup event fails the pipeline instead of costing you a week of
    data. Same check as the `instrumentation_health` MCP tool, runnable without an agent.
    The copy-paste GitHub Actions job (and the PostHog variant) is in [docs/agents-ci.md](agents-ci.md).
-7. **Ask, in the editor.** "did activation improve this week?" — your agent calls the
-   deterministic report tools and answers with the computed numbers.
+7. **Ask, in the editor.** "did activation improve this week?" Your agent calls the
+   deterministic report tools and answers with the computed numbers. Because it has your
+   code and the tracking plan, it also resolves codebase names to analytics: ask "what's
+   the MAU for the PQR page" and it knows PQR is the `/pqr` route and queries for it.
 8. **The morning brief, across everything.** Point every product you run at the same
    instance (the SDK stamps each event with its site's hostname), cron
    `smolanalytics brief`, and the "what to fix" digest for your whole portfolio lands
@@ -78,29 +87,32 @@ Build → instrument → verify → watch, and every step happens where you alre
 
 Exact phrasings you can use today, and what answers them:
 
-- **"which of my products grew this week"** — breakdown by site. Every event carries its
+- **"which of my products grew this week"**: breakdown by site. Every event carries its
   site's hostname, so one instance holds all your products and the answer is one
   `breakdown`/`trends` call split by `site`.
-- **"did the deploy break tracking"** — `instrumentation_health`. Per planned event:
+- **"did the deploy break tracking"**: `instrumentation_health`. Per planned event:
   flowing (count, last seen), MISSING, or arriving without expected properties, plus any
   unplanned events that showed up.
-- **"where do users drop off in `<product>`"** — `funnel` with a site filter. Step-by-step
+- **"where do users drop off in `<product>`"**: `funnel` with a site filter. Step-by-step
   conversion for that product only.
-- **"alert me if signups drop"** — `create_alert` (threshold on a rolling window, checked
+- **"alert me if signups drop"**: `create_alert` (threshold on a rolling window, checked
   every 5 minutes) plus `add_webhook` to deliver it to Slack. Set up entirely from the
   editor; it appears on the dashboard instantly.
+- **"pin this so I see it every day"**: `save_report`. Build a funnel, trend, breakdown,
+  or retention once and your agent saves it; it renders on the dashboard on every visit,
+  so a recurring metric never has to be re-typed.
 
-Also built in: 13 prompts that run whole routines — `whats-broken-today` for the morning
+Also built in: 13 prompts that run whole routines: `whats-broken-today` for the morning
 check, `weekly-review` and `monthly-report` for founder-grade recaps, `funnel-leak`,
 `launch-day`, and the rest. The full prompt library, with what each one reads and the
 shape of its answer, is in [docs/prompts.md](prompts.md). Your model gets 47 tools
-total — the full list is in the
+total. The full list is in the
 [README](../README.md#ask-it-in-your-editor-the-whole-point).
 
 ## 4. Why an agent can trust the numbers
 
 The MCP tools are deterministic reports, not generated SQL. When your agent asks for a
-funnel, it calls the exact same computation the dashboard renders — same engine, same
+funnel, it calls the exact same computation the dashboard renders: same engine, same
 defaults, same time windows. The model chooses which question to ask; it cannot invent
 the answer. Unknown event or property names return corrective errors listing the valid
 names, never silent zeros, so a typo surfaces instead of masquerading as "no users did

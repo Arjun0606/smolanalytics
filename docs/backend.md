@@ -1,6 +1,6 @@
 # smolanalytics from your backend
 
-No SDK needed — ingestion is one endpoint, `POST /v1/events`. Send server-side events (the
+No SDK needed: ingestion is one endpoint, `POST /v1/events`. Send server-side events (the
 ones the browser never sees: payments, webhooks, cron jobs, API usage) from any language.
 
 Use the **same `distinct_id`** you use client-side so a user's browser and server events
@@ -77,4 +77,4 @@ curl_exec($ch);
 ## Then ask it in your editor
 
 `smolanalytics connect`, then: *"what's the conversion from signup to checkout, and how long
-does it take?"* — your own model, your real data. See the [main README](../README.md).
+does it take?"* Your own model, your real data. See the [main README](../README.md).

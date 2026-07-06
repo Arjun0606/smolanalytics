@@ -1,13 +1,13 @@
 # smolanalytics for mobile
 
-No heavy SDK. Ingestion is one endpoint — `POST /v1/events` — so a native app sends events
+No heavy SDK. Ingestion is one endpoint, `POST /v1/events`, so a native app sends events
 with the HTTP client it already has. Use a stable `distinct_id` per user (your user id, or a
 generated id stored in Keychain / SharedPreferences) so their events tie together.
 
 ## iOS (Swift)
 
 > Adding a new `.swift` file from outside Xcode? Make sure it's added to the app
-> target (File → Add Files…, or check Target Membership in the File Inspector) —
+> target (File → Add Files…, or check Target Membership in the File Inspector);
 > on older non-synchronized project formats a file dropped into the folder alone
 > won't compile into the app.
 
@@ -57,11 +57,11 @@ export const track = (name: string, props = {}, distinctId: string) =>
 ## Tips
 
 - **Batch to save battery/network.** POST an array (up to 10k events) instead of one request
-  per event — queue them and flush on background/foreground.
+  per event: queue them and flush on background/foreground.
 - **Screens are events too.** `track("screen", { name: "Checkout" }, ...)` gives you
   screen-flow paths, the mobile version of pageviews.
 
 ## Then ask it in your editor
 
-`smolanalytics connect`, then: *"what's my activation rate on iOS vs Android?"* — answered by
+`smolanalytics connect`, then: *"what's my activation rate on iOS vs Android?"* answered by
 your own model from your real data. See the [main README](../README.md).

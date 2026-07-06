@@ -13,7 +13,7 @@ Add to `index.html`:
 <script>smolanalytics.init("YOUR_WRITE_KEY", { host: "https://YOUR_HOST" });</script>
 ```
 
-**Nuxt** — add it in `nuxt.config.ts`:
+**Nuxt**: add it in `nuxt.config.ts`:
 
 ```ts
 export default defineNuxtConfig({
@@ -29,7 +29,7 @@ Pageviews and clicks are captured, Vue Router navigations included.
 ## 2. Track the moments that matter
 
 ```ts
-// anywhere — the SDK is on window
+// anywhere: the SDK is on window
 window.smolanalytics.identify(userId);            // on login
 window.smolanalytics.track("signup", { plan: "pro" });
 window.smolanalytics.track("activate");           // core aha moment
@@ -40,5 +40,5 @@ window.smolanalytics.track("activate");           // core aha moment
 ```sh
 smolanalytics connect
 ```
-Then: *"where are users dropping off, and which traffic source converts best?"* — answered
+Then: *"where are users dropping off, and which traffic source converts best?"* answered
 by your own model, from your real data. See the [main README](../README.md).
