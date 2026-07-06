@@ -119,6 +119,8 @@ func TestMCPAPIAgreement(t *testing.T) {
 		{"retention", "/v1/retention?days=7&event=signup", "retention", `{"days":7,"event":"signup"}`, true},
 		{"retention capped at 90 both sides", "/v1/retention?days=500&event=signup", "retention", `{"days":500,"event":"signup"}`, true},
 		{"web overview", "/v1/web?days=30", "web_overview", `{"days":30}`, false},
+		{"lifecycle capped at 180 both sides", "/v1/lifecycle?days=500", "lifecycle", `{"days":500}`, false},
+		{"paths capped at 10 both sides", "/v1/paths?start=signup&depth=50", "paths", `{"start":"signup","depth":50}`, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

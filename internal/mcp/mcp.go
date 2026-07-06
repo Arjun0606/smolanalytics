@@ -401,6 +401,9 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		if a.Days <= 0 {
 			a.Days = 30
 		}
+		if a.Days > 180 { // same cap as GET /v1/lifecycle — surfaces must agree
+			a.Days = 180
+		}
 		if err := query.Validate(a.Filters); err != nil {
 			return "", err
 		}
@@ -438,6 +441,9 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		}
 		if a.Depth <= 0 {
 			a.Depth = 3
+		}
+		if a.Depth > 10 { // same cap as GET /v1/paths — surfaces must agree
+			a.Depth = 10
 		}
 		return jsonText(paths.After(query.Apply(evs, a.Filters), a.Start, a.Depth))
 	case "groups":

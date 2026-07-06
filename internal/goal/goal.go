@@ -70,6 +70,17 @@ func (s *Store) Save(d Definition) (Definition, error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// reject an exact duplicate so a double-click (or re-adding a forgotten goal) can't
+	// clutter the goals row with two identical, indistinguishable cards. The handler
+	// maps this error to a 400 the create form surfaces inline.
+	for _, existing := range s.items {
+		if strings.EqualFold(strings.TrimSpace(existing.Name), strings.TrimSpace(d.Name)) {
+			return Definition{}, fmt.Errorf("a goal named %q already exists", strings.TrimSpace(d.Name))
+		}
+		if existing.Kind == d.Kind && existing.Value == d.Value {
+			return Definition{}, fmt.Errorf("a goal for that %s already exists", d.Kind)
+		}
+	}
 	d.ID = newID()
 	d.Created = time.Now().UTC()
 	s.items = append(s.items, d)

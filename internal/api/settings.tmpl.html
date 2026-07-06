@@ -124,6 +124,7 @@
       <div class="row" style="margin-top:14px">
         <div><label>New key name</label><input id="kName" placeholder="production"></div>
         <button id="kCreate" class="ghost">Create key</button>
+        <span class="msg" id="kMsg"></span>
       </div>
     </div>
   {{end}}
@@ -277,7 +278,7 @@
 </div>
 
 <script>
-  function J(u,m,b){return fetch(u,{method:m||'GET',headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined}).then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j};});});}
+  function J(u,m,b){return fetch(u,{method:m||'GET',headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined}).then(function(r){return r.text().then(function(t){var j={};try{j=t?JSON.parse(t):{};}catch(e){j={error:'unexpected response from the server ('+r.status+') — try again in a moment'};}return {ok:r.ok,j:j};});}).catch(function(){return {ok:false,j:{error:'network error — check your connection and try again'}};});}
   function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
   function flash(id,t,bad){var m=document.getElementById(id);if(!m)return;m.textContent=t;m.style.color=bad?'var(--warn)':'var(--ok)';if(!bad)setTimeout(function(){m.textContent='';},1800);}
   function on(id,fn){var e=document.getElementById(id);if(e)e.onclick=fn;}
@@ -294,10 +295,10 @@
     J('/v1/settings/signout-all','POST').then(function(){location.href='/login';});
   });
   on('pSave',function(){
-    J('/v1/settings','POST',{name:document.getElementById('pName').value,timezone:document.getElementById('pTz').value}).then(function(){flash('pMsg','saved ✓');});
+    J('/v1/settings','POST',{name:document.getElementById('pName').value,timezone:document.getElementById('pTz').value}).then(function(r){flash('pMsg',r.ok?'saved ✓':(r.j.error||'failed'),!r.ok);});
   });
   on('rSave',function(){
-    J('/v1/settings/retention','POST',{days:parseInt(document.getElementById('rDays').value,10)||0}).then(function(){flash('rMsg','saved ✓');});
+    J('/v1/settings/retention','POST',{days:parseInt(document.getElementById('rDays').value,10)||0}).then(function(r){flash('rMsg',r.ok?'saved ✓':(r.j.error||'failed'),!r.ok);});
   });
   var keys=document.getElementById('keys');
   function bindRevoke(row){row.querySelector('.x').onclick=function(){if(!confirm('Revoke this key? Apps using it stop sending.'))return;J('/v1/settings/keys/'+row.getAttribute('data-id'),'DELETE').then(function(){row.remove();});};}
@@ -305,6 +306,7 @@
   on('kCreate',function(){
     var nm=document.getElementById('kName').value.trim()||'default';
     J('/v1/settings/keys','POST',{name:nm}).then(function(r){
+      if(!r.ok){flash('kMsg',r.j.error||'failed',true);return;}
       var no=document.getElementById('noKeys');if(no)no.remove();
       var row=document.createElement('div');row.className='keyrow';row.setAttribute('data-id',r.j.id);
       row.innerHTML='<span class="nm">'+esc(r.j.name)+'</span><span class="kv">'+esc(r.j.key)+'</span><span class="x" title="revoke">revoke</span>';

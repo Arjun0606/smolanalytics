@@ -341,6 +341,13 @@ func answerFunnel(evs []event.Event, vol []string, win askWindow) string {
 		}
 		return "No events yet to build a funnel from."
 	}
+	if len(fr.Steps) < 2 {
+		// a single distinct event name means there's no funnel to measure yet — a bare
+		// "signup → signup" would print an empty drop-off step with a -1 count. Answer
+		// honestly and name the next action instead.
+		return fmt.Sprintf("%d users did %q%s — that's the only event type tracked, so there's no funnel to measure yet. Add a later step (activate, checkout) to see where users drop off.",
+			fr.Steps[0].Count, fr.Steps[0].Event, windowClause(win))
+	}
 	worst, worstDrop := "", -1
 	for _, st := range fr.Steps[1:] {
 		if st.DroppedFromPrev > worstDrop {

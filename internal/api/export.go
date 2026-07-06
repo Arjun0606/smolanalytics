@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/csv"
 	"encoding/json"
+	"log"
 	"net/http"
 	"time"
 
@@ -78,8 +79,15 @@ func (s *Server) streamExport(w http.ResponseWriter, format string) {
 			}
 			return nil
 		})
+		if err != nil {
+			// headers + 200 are already sent, so we can't change the status. A silent
+			// truncation would look identical to a complete export — write a visible
+			// sentinel row so a partial dump can never masquerade as the whole history.
+			log.Printf("export: csv scan failed after %d rows: %v", n, err)
+			s.rec("export.failed", "csv scan error: "+err.Error())
+			_ = cw.Write([]string{"# EXPORT INCOMPLETE", err.Error(), "", "", ""})
+		}
 		cw.Flush()
-		_ = err
 		return
 	}
 
@@ -88,7 +96,7 @@ func (s *Server) streamExport(w http.ResponseWriter, format string) {
 	w.Header().Set("Content-Disposition", "attachment; filename=smolanalytics-export.jsonl")
 	enc := json.NewEncoder(w)
 	n := 0
-	_ = s.store.Scan(time.Time{}, time.Time{}, func(e event.Event) error {
+	err := s.store.Scan(time.Time{}, time.Time{}, func(e event.Event) error {
 		if err := enc.Encode(e); err != nil {
 			return err
 		}
@@ -97,4 +105,11 @@ func (s *Server) streamExport(w http.ResponseWriter, format string) {
 		}
 		return nil
 	})
+	if err != nil {
+		// same as the CSV branch: 200 is already sent, so mark the truncation inline
+		// with a final line the caller can grep — never a silent partial dump.
+		log.Printf("export: jsonl scan failed after %d rows: %v", n, err)
+		s.rec("export.failed", "jsonl scan error: "+err.Error())
+		_ = enc.Encode(map[string]string{"_export_error": err.Error()})
+	}
 }
