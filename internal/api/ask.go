@@ -55,6 +55,8 @@ const (
 	intentBrief     askIntent = "brief"
 	intentRetention askIntent = "retention"
 	intentChannels  askIntent = "channels"
+	intentTopPages  askIntent = "toppages"
+	intentWeb       askIntent = "web"
 	intentFunnel    askIntent = "funnel"
 	intentActive    askIntent = "active"
 	intentSignups   askIntent = "signups"
@@ -70,14 +72,31 @@ func classifyAsk(q string) askIntent {
 	switch {
 	case isAction(q):
 		return intentAction
+	// "what should I fix" is the product's own tagline — it, and every health-check
+	// phrasing, must land on the verdict, never the capabilities menu.
 	case hasAny(q, "how are things", "how's it going", "how is it going", "what happened",
-		"weekly report", "week in review", "summary", "overview", "digest", "brief"):
+		"weekly report", "week in review", "summary", "overview", "digest", "brief",
+		"what should i fix", "what to fix", "needs fixing", "fix first", "broken",
+		"what's wrong", "whats wrong", "going wrong", "wrong with", "problem",
+		"needs attention", "what should i do", "priorit", "red flag", "biggest issue"):
 		return intentBrief
 	case hasAny(q, "retention", "retain", "come back", "comeback", "returning", "stick"):
 		return intentRetention
-	case hasAny(q, "channel", "source", "acquisition", "referr", "utm", "campaign", "traffic",
-		"come from", "coming from", "came from"):
+	// top-pages must outrank both channels ("which pages" ≠ "which sources") and the
+	// web-volume case below.
+	case hasAny(q, "top page", "top pages", "most visited", "popular page", "most viewed",
+		"which page", "best page", "top url", "top path", "top content"):
+		return intentTopPages
+	// channels = WHERE traffic comes from (sources), not how much of it there is.
+	case hasAny(q, "channel", "source", "acquisition", "referr", "utm", "campaign",
+		"come from", "coming from", "came from", "where do my", "where are my visitors"):
 		return intentChannels
+	// web volume = pageviews / visitors / traffic counts. After channels so "where do
+	// visitors come from" stays a channel question, but BEFORE signups so "how many
+	// pageviews" is never answered as a signup count (the confidently-wrong bug).
+	case hasAny(q, "pageview", "page view", "traffic", "visits", "visitor", "unique visitor",
+		"how many views"):
+		return intentWeb
 	case hasAny(q, "convert", "conversion", "funnel", "drop", "checkout", "activat"):
 		return intentFunnel
 	case hasAny(q, "active", "dau", "wau", "total users", "how many users", "user count"):
@@ -148,6 +167,10 @@ func answer(q string, evs []event.Event, now time.Time) string {
 		return answerRetention(scoped, volAll, win, now)
 	case intentChannels:
 		return answerChannels(scoped, volAll, win)
+	case intentTopPages:
+		return answerTopPages(scoped, win)
+	case intentWeb:
+		return answerWeb(scoped, win)
 	case intentFunnel:
 		return answerFunnel(scoped, volAll, win)
 	case intentActive:
@@ -155,8 +178,11 @@ func answer(q string, evs []event.Event, now time.Time) string {
 	case intentSignups:
 		return answerSignups(scoped, volAll, win)
 	default:
-		return "I can answer about your conversion funnel, channels (with per-source conversion), retention, " +
-			"signups/growth, active users, and \"what happened this week\" right here, scoped to today, " +
+		// An unrecognized question leads with the verdict (the single most useful default
+		// and what the homepage promises), THEN names what else can be asked. Never a bare
+		// capabilities menu — that reads as "the demo doesn't do what the tagline says".
+		return answerBrief(evs, 7, now) + "\n\nThat's the current read. You can also ask about your " +
+			"funnel, channels, retention, signups, active users, top pages, or pageviews, scoped to today, " +
 			"yesterday, this/last week, this/last month, or last N days. For anything else, connect " +
 			"smolanalytics to your own Claude or Cursor over MCP and just ask, your model reads the same " +
 			"data through our tools."
@@ -585,6 +611,74 @@ func answerPage(evs []event.Event, path string, win askWindow) string {
 		return fmt.Sprintf("No pageviews for %s%s. Double-check the path, or ask \"top pages\" to see what's tracked.", path, winSuffix(win))
 	}
 	return fmt.Sprintf("%s%s: %d visitors, %d pageviews.", path, winSuffix(win), len(visitors), views)
+}
+
+// answerWeb answers "how many pageviews / visitors / traffic" from autocaptured
+// $pageview events — the fix for the router answering a signup count when the user
+// asked about pageviews. Counts views and the distinct visitors behind them.
+func answerWeb(evs []event.Event, win askWindow) string {
+	visitors := map[string]bool{}
+	views := 0
+	for _, e := range evs {
+		if e.Name != "$pageview" {
+			continue
+		}
+		views++
+		if e.DistinctID != "" {
+			visitors[e.DistinctID] = true
+		}
+	}
+	if views == 0 {
+		if win.scoped() {
+			return "No pageviews " + win.label + ". The browser snippet autocaptures $pageview events — widen the window, or drop the time phrase for all history."
+		}
+		return "No pageviews recorded yet. The browser snippet autocaptures $pageview events — check it's installed on your site."
+	}
+	return fmt.Sprintf("%d pageviews from %d visitors%s.", views, len(visitors), winSuffix(win))
+}
+
+// answerTopPages ranks the most-viewed paths from $pageview events — the answer for
+// "top pages" / "most visited", which used to deflect to the capabilities menu.
+func answerTopPages(evs []event.Event, win askWindow) string {
+	views := map[string]int{}
+	for _, e := range evs {
+		if e.Name != "$pageview" {
+			continue
+		}
+		p, _ := e.Properties["path"].(string)
+		if p == "" {
+			p = "(no path)"
+		}
+		views[normPath(p)]++
+	}
+	if len(views) == 0 {
+		if win.scoped() {
+			return "No pageviews " + win.label + " to rank. Widen the window, or drop the time phrase for all history."
+		}
+		return "No pageviews recorded yet to rank. The browser snippet autocaptures $pageview events."
+	}
+	type pageRow struct {
+		path string
+		n    int
+	}
+	rows := make([]pageRow, 0, len(views))
+	for p, n := range views {
+		rows = append(rows, pageRow{p, n})
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].n != rows[j].n {
+			return rows[i].n > rows[j].n
+		}
+		return rows[i].path < rows[j].path
+	})
+	parts := []string{}
+	for i, r := range rows {
+		if i >= 5 {
+			break
+		}
+		parts = append(parts, fmt.Sprintf("%s (%d)", r.path, r.n))
+	}
+	return fmt.Sprintf("Top pages by pageviews%s: %s.", winSuffix(win), strings.Join(parts, ", "))
 }
 
 // extractPath pulls a URL path token ("/pricing") out of a question, so "visitors to

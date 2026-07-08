@@ -179,6 +179,40 @@ func TestAskRouterAndAnswers(t *testing.T) {
 			intent:   intentSignups,
 			contains: []string{`6 "signup" events over the last`},
 		},
+		// --- the tagline question must return the verdict, never a menu ---
+		{
+			q:           "what should i fix?",
+			intent:      intentBrief,
+			contains:    []string{"Last 7 days:"},
+			notContains: []string{"I can answer about"}, // never the capabilities menu
+		},
+		{
+			q:           "anything broken?",
+			intent:      intentBrief,
+			contains:    []string{"Last 7 days:"},
+		},
+		// --- pageviews/visitors must never be answered as a signup count ---
+		{
+			q:           "how many pageviews this month?",
+			intent:      intentWeb,
+			contains:    []string{"pageview"},
+			notContains: []string{`"signup" events`, "signup event"},
+		},
+		{
+			q:           "how much traffic did i get?",
+			intent:      intentWeb,
+			notContains: []string{`"signup" events`},
+		},
+		{
+			q:      "top pages?",
+			intent: intentTopPages,
+		},
+		// an unknown question leads with the verdict, not a dead-end menu
+		{
+			q:           "is my experiment variant b winning?",
+			intent:      intentUnknown,
+			contains:    []string{"Last 7 days:"},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.q, func(t *testing.T) {
@@ -263,6 +297,14 @@ func TestAskNamedEventAndPage(t *testing.T) {
 	// page path: visitors + pageviews to /pricing (case/slash-insensitive)
 	if got := answer("visitors to /Pricing/", evs, now); !strings.Contains(got, "2 visitors") || !strings.Contains(got, "3 pageviews") {
 		t.Errorf("page ask: got %q, want 2 visitors / 3 pageviews for /pricing", got)
+	}
+	// web volume: total pageviews + visitors, never mislabeled as a signup count
+	if got := answer("how many pageviews?", evs, now); !strings.Contains(got, "4 pageviews") || !strings.Contains(got, "3 visitors") || strings.Contains(got, "signup") {
+		t.Errorf("pageview ask: got %q, want 4 pageviews / 3 visitors and no signup", got)
+	}
+	// top pages ranks the most-viewed path, not the capabilities menu
+	if got := answer("top pages?", evs, now); !strings.Contains(got, "/pricing") || strings.Contains(got, "I can answer about") {
+		t.Errorf("top pages ask: got %q, want /pricing ranked", got)
 	}
 	// a bare event mention without a count word still falls through to the funnel intent
 	if got := answer("how is checkout doing", evs, now); strings.Contains(got, "pageviews") {

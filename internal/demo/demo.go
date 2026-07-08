@@ -7,21 +7,125 @@ package demo
 import (
 	"fmt"
 	"math/rand"
+	"sync"
 	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/gsc"
 	"github.com/Arjun0606/smolanalytics/internal/store"
+	"github.com/Arjun0606/smolanalytics/internal/store/memory"
 )
+
+// reseedEvery re-anchors the 30-day demo dataset to "today" so a long-running demo
+// process never goes stale (the biggest pre-signup trust killer: a dashboard that
+// shows a week-old snapshot and a fabricated "pageviews dropped 100%"). heartbeatEvery
+// keeps a trickle of visitors in the last few minutes so "Live now" is never 0.
+const (
+	reseedEvery    = 3 * time.Hour
+	heartbeatEvery = 90 * time.Second
+)
+
+// Live returns a demo Store that stays fresh forever: it re-seeds a whole new 30-day
+// dataset every few hours (anchored to the current day) and injects a live visitor
+// every ~90s. The re-seed is an atomic pointer swap, so a dashboard request never sees
+// a half-built store. Use this for the long-running hosted demo; Seed alone is fine for
+// the one-shot CLI `smolanalytics demo`.
+func Live() (store.Store, error) {
+	first := memory.New()
+	if err := Seed(first); err != nil {
+		return nil, err
+	}
+	injectLive(first, time.Now().UTC(), 4) // so "Live now" is populated the instant we boot
+	ss := &swapStore{cur: first}
+
+	go func() { // re-anchor the full dataset to today, on a fresh store, then swap it in
+		t := time.NewTicker(reseedEvery)
+		defer t.Stop()
+		for range t.C {
+			fresh := memory.New()
+			if err := Seed(fresh); err != nil {
+				continue // keep serving the last good dataset
+			}
+			injectLive(fresh, time.Now().UTC(), 4)
+			ss.swap(fresh)
+		}
+	}()
+
+	go func() { // keep "Live now" alive between re-seeds
+		t := time.NewTicker(heartbeatEvery)
+		defer t.Stop()
+		for range t.C {
+			injectLive(ss, time.Now().UTC(), 1+rand.Intn(3))
+		}
+	}()
+
+	return ss, nil
+}
+
+// liveSeq numbers heartbeat visitors so their event IDs are unique within whatever
+// store is current (each fresh re-seed starts empty, and the counter only ever rises).
+var liveSeq struct {
+	sync.Mutex
+	n int
+}
+
+// injectLive adds a few "just now" pageviews so the demo's Live-now count and last-24h
+// window are always populated. Timestamps sit within the last 3 minutes (< the 5-minute
+// live window) so they count as live at request time.
+func injectLive(s store.Store, now time.Time, n int) {
+	srcs := []string{"google", "twitter", "hacker news", "direct", "reddit", "chatgpt", "claude", "perplexity"}
+	for i := 0; i < n; i++ {
+		liveSeq.Lock()
+		liveSeq.n++
+		seq := liveSeq.n
+		liveSeq.Unlock()
+		src := srcs[rand.Intn(len(srcs))]
+		ts := now.Add(-time.Duration(rand.Intn(180)) * time.Second)
+		dev := "desktop"
+		if rand.Float64() < 0.4 {
+			dev = "mobile"
+		}
+		_ = s.Ingest(event.Event{
+			ID: fmt.Sprintf("hb%d", seq), Name: "$pageview", DistinctID: fmt.Sprintf("live%d", seq),
+			Timestamp: ts, Properties: map[string]any{"path": "/", "source": src, "device": dev},
+		})
+	}
+}
+
+// swapStore delegates to a backing store.Store that can be replaced atomically, so the
+// demo can re-seed in the background with zero window where readers see partial data.
+type swapStore struct {
+	mu  sync.RWMutex
+	cur store.Store
+}
+
+func (s *swapStore) get() store.Store          { s.mu.RLock(); defer s.mu.RUnlock(); return s.cur }
+func (s *swapStore) swap(n store.Store)         { s.mu.Lock(); s.cur = n; s.mu.Unlock() }
+func (s *swapStore) Ingest(e ...event.Event) error { return s.get().Ingest(e...) }
+func (s *swapStore) Range(f, t time.Time) ([]event.Event, error) { return s.get().Range(f, t) }
+func (s *swapStore) Scan(f, t time.Time, fn func(event.Event) error) error {
+	return s.get().Scan(f, t, fn)
+}
+func (s *swapStore) Names() ([]string, error)          { return s.get().Names() }
+func (s *swapStore) Clear() error                      { return s.get().Clear() }
+func (s *swapStore) Prune(b time.Time) (int, error)    { return s.get().Prune(b) }
+func (s *swapStore) DeleteUser(id string) (int, error) { return s.get().DeleteUser(id) }
 
 // Seed populates the store with ~30 days of a SaaS signup→activate→checkout funnel
 // plus daily return ("open") activity for retention and trends.
 func Seed(s store.Store) error {
 	r := rand.New(rand.NewSource(42))
-	start := time.Now().UTC().AddDate(0, 0, -29).Truncate(24 * time.Hour)
+	now := time.Now().UTC()
+	start := now.AddDate(0, 0, -29).Truncate(24 * time.Hour)
 	sources := []string{"google", "twitter", "hacker news", "direct", "reddit", "chatgpt", "claude", "perplexity"}
 	id := 0
 	emit := func(name, user string, t time.Time, props map[string]any) error {
+		// A demo must never show future-dated events: the retention loop projects opens up
+		// to 14 days past each signup, which overshoots today for recent cohorts. Drop those
+		// instead of seeding an event strip that reads into the future.
+		if t.After(now) {
+			return nil
+		}
 		id++
 		return s.Ingest(event.Event{ID: fmt.Sprintf("e%d", id), Name: name, DistinctID: user, Timestamp: t, Properties: props})
 	}
