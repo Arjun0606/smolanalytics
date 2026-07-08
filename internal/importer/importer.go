@@ -1,5 +1,5 @@
 // Package importer brings history over from another tool so day one here isn't a
-// zero dashboard. It holds the format mappers (jsonl, csv, posthog, umami) and the
+// zero dashboard. It holds the format mappers (jsonl, csv, posthog, mixpanel, umami) and the
 // batching senders shared by the two import surfaces: the `smolanalytics import`
 // CLI (batches POSTed to /v1/events) and the MCP import_events tool (batches
 // ingested straight into the running server's store). One parser, one batcher —

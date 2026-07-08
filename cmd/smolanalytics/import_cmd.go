@@ -28,12 +28,12 @@ import (
 
 func importCmd(args []string) {
 	fs := flag.NewFlagSet("import", flag.ExitOnError)
-	format := fs.String("format", "", "source format: jsonl | csv | posthog | umami")
+	format := fs.String("format", "", "source format: jsonl | csv | posthog | mixpanel | umami")
 	host := fs.String("host", "http://localhost:8080", "smolanalytics server to import into")
 	key := fs.String("key", "", "write key (sent as Authorization: Bearer)")
 	dryRun := fs.Bool("dry-run", false, "parse and validate only; print the summary, send nothing")
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: smolanalytics import --format=jsonl|csv|posthog|umami [--host=URL] [--key=KEY] [--dry-run] FILE")
+		fmt.Fprintln(os.Stderr, "usage: smolanalytics import --format=jsonl|csv|posthog|mixpanel|umami [--host=URL] [--key=KEY] [--dry-run] FILE")
 		fs.PrintDefaults()
 	}
 	_ = fs.Parse(args)

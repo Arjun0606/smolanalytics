@@ -27,11 +27,11 @@ func init() {
 	toolList = append(toolList,
 		map[string]any{
 			"name":        "import_events",
-			"description": "Import historical events from another tool into this instance. `path` must be a file on the MACHINE THE SERVER RUNS ON — this tool reads server-local files; it cannot receive file contents through the conversation. Formats: jsonl (this instance's own /v1/export shape — ids preserved, so re-runs are idempotent), csv (generic: name/event + distinct_id/user_id columns), posthog (events CSV export), umami (website_event CSV export). Rows that can't be mapped are skipped and counted per reason; one bad row never aborts the import. ALWAYS run with dry_run=true first: it parses everything, writes nothing, and returns the first 3 mapped events to eyeball. Returns the summary only — row data is never streamed back through the conversation.",
+			"description": "Import historical events from another tool into this instance. `path` must be a file on the MACHINE THE SERVER RUNS ON — this tool reads server-local files; it cannot receive file contents through the conversation. Formats: jsonl (this instance's own /v1/export shape — ids preserved, so re-runs are idempotent), csv (generic: name/event + distinct_id/user_id columns), posthog (events CSV export), mixpanel (Raw Event Export JSONL: name/time/distinct_id live inside properties; $insert_id preserved so re-runs are idempotent), umami (website_event CSV export). Rows that can't be mapped are skipped and counted per reason; one bad row never aborts the import. ALWAYS run with dry_run=true first: it parses everything, writes nothing, and returns the first 3 mapped events to eyeball. Returns the summary only — row data is never streamed back through the conversation.",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"format":  map[string]any{"type": "string", "enum": []string{"jsonl", "csv", "posthog", "umami"}, "description": "The source file's format"},
+					"format":  map[string]any{"type": "string", "enum": []string{"jsonl", "csv", "posthog", "mixpanel", "umami"}, "description": "The source file's format"},
 					"path":    map[string]any{"type": "string", "description": "Path to the export file on the server's machine"},
 					"dry_run": map[string]any{"type": "boolean", "description": "Parse and validate only; write nothing (do this first)"},
 				},
@@ -54,7 +54,7 @@ func (s *Server) callImport(name string, args json.RawMessage) (bool, string, er
 		return true, "", err
 	}
 	if p.Format == "" {
-		return true, "", fmt.Errorf("format is required — one of jsonl, csv, posthog, umami")
+		return true, "", fmt.Errorf("format is required — one of jsonl, csv, posthog, mixpanel, umami")
 	}
 	if p.Path == "" {
 		return true, "", fmt.Errorf("path is required — the export file's location on the machine the smolanalytics server runs on")
@@ -86,7 +86,7 @@ func (s *Server) callImport(name string, args json.RawMessage) (bool, string, er
 		out["note"] = "nothing was written — re-run with dry_run=false to import"
 	} else {
 		out["sent"] = sum.Sent
-		out["note"] = "events with an already-stored id were deduped by the store; jsonl re-runs are idempotent, csv/posthog/umami rows get fresh ids so a re-run duplicates them"
+		out["note"] = "events with an already-stored id were deduped by the store; jsonl and mixpanel (via $insert_id) re-runs are idempotent, csv/posthog/umami rows get fresh ids so a re-run duplicates them"
 	}
 	return true, jsonStr(out), nil
 }
