@@ -223,6 +223,19 @@ func TestMapPostHog(t *testing.T) {
 			},
 		},
 		{
+			name:  "uuid column becomes the event id (idempotent re-import) and is not a property",
+			input: "uuid,event,distinct_id,timestamp\n01890-abc,signup,u1,2024-03-01 10:00:00\n",
+			wantN: 1,
+			check: func(t *testing.T, evs []event.Event) {
+				if evs[0].ID != "01890-abc" {
+					t.Errorf("id = %q, want the uuid so a re-run dedupes", evs[0].ID)
+				}
+				if _, ok := evs[0].Properties["uuid"]; ok {
+					t.Errorf("uuid leaked into properties: %v", evs[0].Properties)
+				}
+			},
+		},
+		{
 			name:  "no properties column at all",
 			input: "event,distinct_id,timestamp\nsignup,u2,2024-03-01T10:00:00Z\n",
 			wantN: 1,

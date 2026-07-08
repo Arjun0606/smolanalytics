@@ -86,7 +86,7 @@ func (s *Server) callImport(name string, args json.RawMessage) (bool, string, er
 		out["note"] = "nothing was written — re-run with dry_run=false to import"
 	} else {
 		out["sent"] = sum.Sent
-		out["note"] = "events with an already-stored id were deduped by the store; jsonl and mixpanel (via $insert_id) re-runs are idempotent, csv/posthog/umami rows get fresh ids so a re-run duplicates them"
+		out["note"] = "events with an already-stored id were deduped by the store; jsonl, mixpanel ($insert_id), and posthog/csv exports carrying a uuid/event_id are idempotent on re-run; umami and id-less csv rows get fresh ids, so re-running those duplicates them"
 	}
 	return true, jsonStr(out), nil
 }
@@ -100,11 +100,7 @@ func (s *Server) callImport(name string, args json.RawMessage) (bool, string, er
 func (s *Server) normalizeImported(batch []event.Event, now time.Time) {
 	maxFuture := now.Add(time.Hour) // tolerate clock skew in the source data, no more
 	for i := range batch {
-		if s.aliases != nil && batch[i].Name == "$identify" {
-			if prev, ok := batch[i].Properties["$anon_distinct_id"].(string); ok {
-				_ = s.aliases.Add(prev, batch[i].DistinctID)
-			}
-		}
+		alias.RecordFrom(s.aliases, batch[i]) // $identify + $create_alias, same as HTTP ingest
 		if batch[i].ID == "" {
 			batch[i].ID = newEventID()
 		}

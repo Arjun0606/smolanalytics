@@ -50,10 +50,34 @@ smolanalytics import --format=posthog --host=https://your-host --key=$KEY postho
 ```
 
 Mapping: `event` becomes the event name, `distinct_id` stays `distinct_id`,
-`timestamp` is preserved. Properties are handled in both shapes PostHog exports:
-an embedded-JSON `properties` column, or flattened `properties.$browser`-style
-columns (the prefix is stripped). When both carry the same key, the JSON column
-wins because it keeps the original types.
+`timestamp` is preserved, and PostHog's per-event `uuid` (when the export includes
+it) becomes the event id, so re-running the import dedupes instead of duplicating.
+Properties are handled in both shapes PostHog exports: an embedded-JSON `properties`
+column, or flattened `properties.$browser`-style columns (the prefix is stripped).
+When both carry the same key, the JSON column wins because it keeps the original types.
+
+Identity stitching: include your `$identify` and `$create_alias` events in the export
+(don't filter them out). smolanalytics replays them, so the anonymous-then-logged-in
+journeys PostHog had merged into one person stay merged here, and your retention and
+funnels match what you saw in PostHog instead of splitting one human into two users.
+If the export can't include them, user-level reports treat each `distinct_id` as its
+own user until those identities are re-stitched.
+
+## From Mixpanel (`--format=mixpanel`)
+
+Where the export lives: use Mixpanel's **Raw Event Export** (Project Settings, or the
+`/api/2.0/export` endpoint), which produces JSONL, one event per line shaped
+`{"event":"...","properties":{"time":...,"distinct_id":"...","$insert_id":"..."}}`.
+
+```sh
+smolanalytics import --format=mixpanel --host=https://your-host --key=$KEY export.jsonl
+```
+
+Mapping: `event` becomes the event name, and because Mixpanel keeps the rest inside
+`properties`, the importer lifts `time` (unix seconds or milliseconds) to the timestamp,
+`distinct_id` to the user id, and `$insert_id` to the event id, so re-running the same
+export dedupes instead of duplicating. Everything else in `properties` is preserved.
+Run with `--dry-run` first to preview the first few mapped events.
 
 ## From Umami (`--format=umami`)
 

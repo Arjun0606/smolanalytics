@@ -86,6 +86,7 @@ func MapCSV(r io.Reader, emit EmitFn, skip SkipFn) error {
 	nameIdx := findCol(hdr, "name", "event")
 	idIdx := findCol(hdr, "distinct_id", "user_id", "anonymous_id")
 	timeIdx := findCol(hdr, "time", "timestamp")
+	eidIdx := findCol(hdr, "event_id", "uuid", "$insert_id") // a stable event id → idempotent re-import
 	if nameIdx < 0 {
 		return fmt.Errorf("csv: no event-name column (want a header named name or event; got %s)", strings.Join(hdr, ", "))
 	}
@@ -105,8 +106,9 @@ func MapCSV(r io.Reader, emit EmitFn, skip SkipFn) error {
 		if !takeTime(&e, cell(row, timeIdx), skip) {
 			return nil
 		}
+		e.ID = cell(row, eidIdx) // "" when absent → store assigns one
 		for i, h := range hdr {
-			if i == nameIdx || i == idIdx || i == timeIdx {
+			if i == nameIdx || i == idIdx || i == timeIdx || i == eidIdx {
 				continue
 			}
 			if v := cell(row, i); v != "" {
@@ -129,6 +131,7 @@ func MapPostHog(r io.Reader, emit EmitFn, skip SkipFn) error {
 	idIdx := findCol(hdr, "distinct_id")
 	timeIdx := findCol(hdr, "timestamp")
 	propsIdx := findCol(hdr, "properties")
+	uuidIdx := findCol(hdr, "uuid", "$insert_id") // PostHog stamps each event a uuid
 	if nameIdx < 0 || idIdx < 0 {
 		return fmt.Errorf("posthog: need event and distinct_id columns (got %s)", strings.Join(hdr, ", "))
 	}
@@ -145,9 +148,10 @@ func MapPostHog(r io.Reader, emit EmitFn, skip SkipFn) error {
 		if !takeTime(&e, cell(row, timeIdx), skip) {
 			return nil
 		}
+		e.ID = cell(row, uuidIdx) // "" when absent → store assigns one; present → re-import is idempotent
 		// flat extra columns first, then the JSON column, so its typed values win
 		for i, h := range hdr {
-			if i == nameIdx || i == idIdx || i == timeIdx || i == propsIdx {
+			if i == nameIdx || i == idIdx || i == timeIdx || i == propsIdx || i == uuidIdx {
 				continue
 			}
 			if v := cell(row, i); v != "" {

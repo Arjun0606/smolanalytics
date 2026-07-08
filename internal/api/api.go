@@ -399,14 +399,10 @@ func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 			// Plausible's model, made explicit via the $anon sentinel.
 			batch[i].DistinctID = s.anonID(r, now)
 		}
-		// identity stitching: the SDK's identify() carries the visitor's previous
-		// anonymous id — record anon→user so read-time canonicalization joins the
-		// pre-login journey to the account.
-		if s.aliases != nil && batch[i].Name == "$identify" {
-			if prev, ok := batch[i].Properties["$anon_distinct_id"].(string); ok {
-				_ = s.aliases.Add(prev, batch[i].DistinctID)
-			}
-		}
+		// identity stitching: identify() / $create_alias carry the visitor's other ids —
+		// record the edge so read-time canonicalization joins the pre-login journey to
+		// the account (and PostHog's own person merges survive an import).
+		alias.RecordFrom(s.aliases, batch[i])
 		if batch[i].DistinctID == "" {
 			// silently accepting these would merge every anonymous event into one
 			// phantom "user" and quietly corrupt funnels/retention/DAU forever.
