@@ -51,11 +51,14 @@ func main() {
 		}
 		serve(st, closeStore, true) // real data — guard against public bind without auth
 	case "demo":
-		st := memory.New()
-		if err := demo.Seed(st); err != nil {
+		// Live() keeps the dataset anchored to today and "Live now" populated for as long
+		// as the process runs — a hosted demo that seeds once at boot goes stale within a
+		// day and starts fabricating a "pageviews dropped 100%" verdict.
+		st, err := demo.Live()
+		if err != nil {
 			log.Fatal(err)
 		}
-		log.Printf("smolanalytics: seeded demo data (in-memory, not persisted)")
+		log.Printf("smolanalytics: seeded demo data (in-memory, self-refreshing, not persisted)")
 		serve(st, func() error { return nil }, false) // throwaway demo data — safe to expose
 	case "mcp":
 		runMCP()

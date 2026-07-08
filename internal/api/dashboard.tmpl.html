@@ -203,6 +203,7 @@
   <a class="navlink" href="/settings" title="settings">settings</a>
 </div>
 <div class="wrap"><div class="askchips" id="askchips">
+  <span class="chip" data-q="what should I fix?">what should I fix?</span>
   <span class="chip" data-q="where do users drop off?">where do users drop off?</span>
   <span class="chip" data-q="which channel converts best?">which channel converts best?</span>
   <span class="chip" data-q="how is retention trending?">how is retention trending?</span>
@@ -217,7 +218,7 @@
   {{if .HasData}}
   <div class="card verdict">
     <h2>What to look at <span class="vdot"></span></h2>
-    <div id="verdict"><div class="vmuted">reading your data…</div></div>
+    <div id="verdict">{{range .Verdict}}<div class="vrow{{if eq .Severity "warn"}} warn{{end}}"><span class="vt">{{.Title}}</span><span class="vd">{{.Detail}}</span></div>{{else}}<div class="vmuted">not enough data yet — send some events.</div>{{end}}</div>
   </div>
 
   <div class="card">

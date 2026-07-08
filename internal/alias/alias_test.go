@@ -14,6 +14,36 @@ func ev(id, user, name string, ts time.Time) event.Event {
 	return event.Event{ID: id, DistinctID: user, Name: name, Timestamp: ts}
 }
 
+// RecordFrom reads both identity conventions PostHog emits, so importing a PostHog
+// export reconstructs its person merges instead of splitting one human into two users.
+func TestRecordFrom(t *testing.T) {
+	am, _ := Open(filepath.Join(t.TempDir(), "aliases.json"))
+	base := time.Date(2026, 7, 3, 10, 0, 0, 0, time.UTC)
+
+	// $identify: prior anonymous id in $anon_distinct_id → resolves to the account
+	id := event.Event{Name: "$identify", DistinctID: "u42", Timestamp: base,
+		Properties: map[string]any{"$anon_distinct_id": "anon-1"}}
+	RecordFrom(am, id)
+	if got := am.Resolve("anon-1"); got != "u42" {
+		t.Fatalf("$identify: anon-1 resolved to %q, want u42", got)
+	}
+
+	// $create_alias: the merged id in the alias property → resolves to the account
+	ca := event.Event{Name: "$create_alias", DistinctID: "u42", Timestamp: base,
+		Properties: map[string]any{"alias": "anon-2"}}
+	RecordFrom(am, ca)
+	if got := am.Resolve("anon-2"); got != "u42" {
+		t.Fatalf("$create_alias: anon-2 resolved to %q, want u42", got)
+	}
+
+	// a normal event records nothing, and a nil map is a safe no-op
+	RecordFrom(am, event.Event{Name: "signup", DistinctID: "u99", Timestamp: base})
+	if got := am.Resolve("u99"); got != "u99" {
+		t.Fatalf("a non-identity event must not create an edge, got %q", got)
+	}
+	RecordFrom(nil, id) // must not panic
+}
+
 // The whole point: a funnel crossing the login boundary counts as ONE user.
 func TestStitchingJoinsTheJourney(t *testing.T) {
 	base := time.Date(2026, 7, 3, 10, 0, 0, 0, time.UTC)

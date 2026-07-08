@@ -61,6 +61,33 @@ func (a *Map) Add(anon, canonical string) error {
 	return a.persistLocked()
 }
 
+// RecordFrom records an identity edge from an identity event, so the HTTP ingest path
+// and the import path stitch the same way and can never drift. It understands both
+// conventions PostHog (and our own SDK) emit:
+//   - $identify: the logged-in event carries the visitor's prior anonymous id in
+//     $anon_distinct_id → Add(anon, user).
+//   - $create_alias: merges a second id into the person, carried in the alias property
+//     → Add(alias, user). PostHog uses this for its own person merges, so importing a
+//     PostHog export with these events reconstructs its stitched identities instead of
+//     splitting one human into two "users" (which silently corrupts retention/funnels).
+//
+// Any other event is ignored. A nil map is a no-op so callers needn't guard.
+func RecordFrom(a *Map, e event.Event) {
+	if a == nil {
+		return
+	}
+	switch e.Name {
+	case "$identify":
+		if prev, ok := e.Properties["$anon_distinct_id"].(string); ok {
+			_ = a.Add(prev, e.DistinctID)
+		}
+	case "$create_alias":
+		if al, ok := e.Properties["alias"].(string); ok {
+			_ = a.Add(al, e.DistinctID)
+		}
+	}
+}
+
 // Resolve returns the canonical id for any id (identity for unaliased ids).
 func (a *Map) Resolve(id string) string {
 	a.mu.RLock()

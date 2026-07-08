@@ -99,14 +99,59 @@ func (s *Server) apiTrends(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	unique := q.Get("unique") == "true"
 	event := q.Get("event")
+	from, to, werr := parseTrendWindow(r)
+	if werr != nil {
+		writeErr(w, http.StatusBadRequest, werr.Error())
+		return
+	}
 	if bd := q.Get("breakdown"); bd != "" {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"event": event, "breakdown": bd,
-			"series": trends.ComputeBreakdown(evs, event, bd, time.Time{}, time.Time{}, unique),
+			"series": trends.ComputeBreakdown(evs, event, bd, from, to, unique),
 		})
 		return
 	}
-	writeJSON(w, http.StatusOK, trends.Compute(evs, event, time.Time{}, time.Time{}, unique))
+	writeJSON(w, http.StatusOK, trends.Compute(evs, event, from, to, unique))
+}
+
+// parseTrendWindow reads the time scope for /v1/trends from the query: days=N is a
+// rolling window ending now (capped at a year); from/to accept RFC3339 or YYYY-MM-DD.
+// Zero times mean unbounded, so no params = all recorded history (the long-standing
+// default). Unparseable values are returned as an error the caller turns into a 400,
+// rather than silently answering over a different range — the trends endpoint used to
+// ignore these entirely, so days=7 and days=90 returned the same series.
+func parseTrendWindow(r *http.Request) (from, to time.Time, err error) {
+	q := r.URL.Query()
+	if v := q.Get("days"); v != "" {
+		n, e := strconv.Atoi(v)
+		if e != nil || n <= 0 {
+			return time.Time{}, time.Time{}, fmt.Errorf("days must be a positive integer")
+		}
+		if n > 365 {
+			n = 365
+		}
+		return time.Now().UTC().AddDate(0, 0, -n), time.Time{}, nil
+	}
+	parse := func(key string) (time.Time, error) {
+		v := q.Get(key)
+		if v == "" {
+			return time.Time{}, nil
+		}
+		if t, e := time.Parse(time.RFC3339, v); e == nil {
+			return t.UTC(), nil
+		}
+		if t, e := time.Parse("2006-01-02", v); e == nil {
+			return t.UTC(), nil
+		}
+		return time.Time{}, fmt.Errorf("%s must be RFC3339 or YYYY-MM-DD", key)
+	}
+	if from, err = parse("from"); err != nil {
+		return time.Time{}, time.Time{}, err
+	}
+	if to, err = parse("to"); err != nil {
+		return time.Time{}, time.Time{}, err
+	}
+	return from, to, nil
 }
 
 // GET /v1/breakdown?event=signup&property=source&filters=...

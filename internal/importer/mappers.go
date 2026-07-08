@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -33,12 +34,14 @@ func MapperFor(format string) (func(io.Reader, EmitFn, SkipFn) error, error) {
 		return MapCSV, nil
 	case "posthog":
 		return MapPostHog, nil
+	case "mixpanel":
+		return MapMixpanel, nil
 	case "umami":
 		return MapUmami, nil
 	case "":
-		return nil, fmt.Errorf("--format is required (jsonl, csv, posthog or umami)")
+		return nil, fmt.Errorf("--format is required (jsonl, csv, posthog, mixpanel or umami)")
 	default:
-		return nil, fmt.Errorf("unknown format %q (want jsonl, csv, posthog or umami)", format)
+		return nil, fmt.Errorf("unknown format %q (want jsonl, csv, posthog, mixpanel or umami)", format)
 	}
 }
 
@@ -83,6 +86,7 @@ func MapCSV(r io.Reader, emit EmitFn, skip SkipFn) error {
 	nameIdx := findCol(hdr, "name", "event")
 	idIdx := findCol(hdr, "distinct_id", "user_id", "anonymous_id")
 	timeIdx := findCol(hdr, "time", "timestamp")
+	eidIdx := findCol(hdr, "event_id", "uuid", "$insert_id") // a stable event id → idempotent re-import
 	if nameIdx < 0 {
 		return fmt.Errorf("csv: no event-name column (want a header named name or event; got %s)", strings.Join(hdr, ", "))
 	}
@@ -102,8 +106,9 @@ func MapCSV(r io.Reader, emit EmitFn, skip SkipFn) error {
 		if !takeTime(&e, cell(row, timeIdx), skip) {
 			return nil
 		}
+		e.ID = cell(row, eidIdx) // "" when absent → store assigns one
 		for i, h := range hdr {
-			if i == nameIdx || i == idIdx || i == timeIdx {
+			if i == nameIdx || i == idIdx || i == timeIdx || i == eidIdx {
 				continue
 			}
 			if v := cell(row, i); v != "" {
@@ -126,6 +131,7 @@ func MapPostHog(r io.Reader, emit EmitFn, skip SkipFn) error {
 	idIdx := findCol(hdr, "distinct_id")
 	timeIdx := findCol(hdr, "timestamp")
 	propsIdx := findCol(hdr, "properties")
+	uuidIdx := findCol(hdr, "uuid", "$insert_id") // PostHog stamps each event a uuid
 	if nameIdx < 0 || idIdx < 0 {
 		return fmt.Errorf("posthog: need event and distinct_id columns (got %s)", strings.Join(hdr, ", "))
 	}
@@ -142,9 +148,10 @@ func MapPostHog(r io.Reader, emit EmitFn, skip SkipFn) error {
 		if !takeTime(&e, cell(row, timeIdx), skip) {
 			return nil
 		}
+		e.ID = cell(row, uuidIdx) // "" when absent → store assigns one; present → re-import is idempotent
 		// flat extra columns first, then the JSON column, so its typed values win
 		for i, h := range hdr {
-			if i == nameIdx || i == idIdx || i == timeIdx || i == propsIdx {
+			if i == nameIdx || i == idIdx || i == timeIdx || i == propsIdx || i == uuidIdx {
 				continue
 			}
 			if v := cell(row, i); v != "" {
@@ -163,6 +170,103 @@ func MapPostHog(r io.Reader, emit EmitFn, skip SkipFn) error {
 		}
 		return emit(e)
 	})
+}
+
+// MapMixpanel reads Mixpanel's Raw Event Export (JSONL): one object per line shaped
+//
+//	{"event":"Signed up","properties":{"time":1704067200,"distinct_id":"u1","$insert_id":"z",...}}
+//
+// Unlike our own JSONL, the name/id/time live INSIDE properties and time is a unix stamp,
+// so feeding a Mixpanel export to --format=jsonl silently drops every row (no top-level
+// name). $insert_id becomes the event id, so re-importing the same export is idempotent.
+func MapMixpanel(r io.Reader, emit EmitFn, skip SkipFn) error {
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 64<<10), 4<<20)
+	for sc.Scan() {
+		line := bytes.TrimSpace(sc.Bytes())
+		if len(line) == 0 {
+			continue
+		}
+		var row struct {
+			Event      string         `json:"event"`
+			Properties map[string]any `json:"properties"`
+		}
+		if err := json.Unmarshal(line, &row); err != nil {
+			skip("invalid JSON line")
+			continue
+		}
+		if row.Event == "" {
+			skip("missing event name")
+			continue
+		}
+		props := row.Properties
+		if props == nil {
+			props = map[string]any{}
+		}
+		e := event.Event{Name: row.Event, DistinctID: mpStr(props["distinct_id"])}
+		if e.DistinctID == "" {
+			skip("missing distinct_id")
+			continue
+		}
+		if v, ok := props["time"]; ok {
+			t, ok := mixpanelTime(v)
+			if !ok {
+				skip("unparseable timestamp")
+				continue
+			}
+			e.Timestamp = t
+		}
+		e.ID = mpStr(props["$insert_id"]) // "" is fine — the store then assigns one
+		// everything except the fields we lifted into first-class columns becomes a property
+		for k, v := range props {
+			switch k {
+			case "distinct_id", "time", "$insert_id":
+				continue
+			}
+			setProp(&e, k, v)
+		}
+		if err := emit(e); err != nil {
+			return err
+		}
+	}
+	return sc.Err()
+}
+
+// mpStr renders a JSON scalar as the string our ids/properties use. JSON numbers decode
+// to float64, so an integer distinct_id keeps its integer form ("12345", not "1.2345e+04").
+func mpStr(v any) string {
+	switch x := v.(type) {
+	case string:
+		return x
+	case float64:
+		if x == math.Trunc(x) {
+			return strconv.FormatInt(int64(x), 10)
+		}
+		return strconv.FormatFloat(x, 'f', -1, 64)
+	case bool:
+		return strconv.FormatBool(x)
+	case nil:
+		return ""
+	default:
+		return fmt.Sprintf("%v", x)
+	}
+}
+
+// mixpanelTime reads properties.time — unix seconds (classic export) or millis (some
+// exports), as a JSON number or a numeric string.
+func mixpanelTime(v any) (time.Time, bool) {
+	switch x := v.(type) {
+	case float64:
+		n := int64(x)
+		if n >= 1e12 {
+			return time.UnixMilli(n).UTC(), true
+		}
+		return time.Unix(n, 0).UTC(), true
+	case string:
+		return parseEventTime(x)
+	default:
+		return time.Time{}, false
+	}
 }
 
 // MapUmami reads Umami's website_event CSV export. Rows without an event_name are

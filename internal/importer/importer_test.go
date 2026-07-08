@@ -223,6 +223,19 @@ func TestMapPostHog(t *testing.T) {
 			},
 		},
 		{
+			name:  "uuid column becomes the event id (idempotent re-import) and is not a property",
+			input: "uuid,event,distinct_id,timestamp\n01890-abc,signup,u1,2024-03-01 10:00:00\n",
+			wantN: 1,
+			check: func(t *testing.T, evs []event.Event) {
+				if evs[0].ID != "01890-abc" {
+					t.Errorf("id = %q, want the uuid so a re-run dedupes", evs[0].ID)
+				}
+				if _, ok := evs[0].Properties["uuid"]; ok {
+					t.Errorf("uuid leaked into properties: %v", evs[0].Properties)
+				}
+			},
+		},
+		{
 			name:  "no properties column at all",
 			input: "event,distinct_id,timestamp\nsignup,u2,2024-03-01T10:00:00Z\n",
 			wantN: 1,
@@ -310,6 +323,76 @@ func TestMapUmami(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			evs, skips := collectMapped(t, MapUmami, tt.input)
+			if len(evs) != tt.wantN {
+				t.Fatalf("mapped %d events, want %d", len(evs), tt.wantN)
+			}
+			checkSkips(t, skips, tt.wantSkips)
+			if tt.check != nil {
+				tt.check(t, evs)
+			}
+		})
+	}
+}
+
+func TestMapMixpanel(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		wantN     int
+		wantSkips map[string]int
+		check     func(t *testing.T, evs []event.Event)
+	}{
+		{
+			name:  "name/time/distinct_id lifted out of properties, unix seconds parsed",
+			input: `{"event":"Signed up","properties":{"time":1709287200,"distinct_id":"u1","$insert_id":"ins1","plan":"pro"}}`,
+			wantN: 1,
+			check: func(t *testing.T, evs []event.Event) {
+				e := evs[0]
+				if e.Name != "Signed up" || e.DistinctID != "u1" || e.ID != "ins1" {
+					t.Errorf("fields not lifted from properties: %+v", e)
+				}
+				if !e.Timestamp.Equal(time.Date(2024, 3, 1, 10, 0, 0, 0, time.UTC)) {
+					t.Errorf("unix time not parsed: %v", e.Timestamp)
+				}
+				if e.Properties["plan"] != "pro" {
+					t.Errorf("extra property lost: %v", e.Properties)
+				}
+				// the lifted keys must NOT linger in properties
+				if _, ok := e.Properties["distinct_id"]; ok {
+					t.Errorf("distinct_id leaked into properties: %v", e.Properties)
+				}
+				if _, ok := e.Properties["time"]; ok {
+					t.Errorf("time leaked into properties: %v", e.Properties)
+				}
+			},
+		},
+		{
+			name:  "numeric distinct_id keeps integer form, millis timestamp parsed",
+			input: `{"event":"open","properties":{"time":1709287200000,"distinct_id":12345}}`,
+			wantN: 1,
+			check: func(t *testing.T, evs []event.Event) {
+				if evs[0].DistinctID != "12345" {
+					t.Errorf("numeric distinct_id = %q, want 12345 (no float form)", evs[0].DistinctID)
+				}
+				if !evs[0].Timestamp.Equal(time.Date(2024, 3, 1, 10, 0, 0, 0, time.UTC)) {
+					t.Errorf("millis time = %v", evs[0].Timestamp)
+				}
+			},
+		},
+		{
+			name:      "a plain jsonl line is skipped — Mixpanel uses event/properties, not top-level name",
+			input:     `{"name":"signup","distinct_id":"u1"}`,
+			wantSkips: map[string]int{"missing event name": 1}, // no top-level "event" key
+		},
+		{
+			name:      "missing event name skipped",
+			input:     `{"properties":{"distinct_id":"u1"}}`,
+			wantSkips: map[string]int{"missing event name": 1},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			evs, skips := collectMapped(t, MapMixpanel, tt.input)
 			if len(evs) != tt.wantN {
 				t.Fatalf("mapped %d events, want %d", len(evs), tt.wantN)
 			}
@@ -465,7 +548,7 @@ func TestIngestSenderBatching(t *testing.T) {
 // an unknown format errors with the fix in the message before anything is read.
 func TestRunUnknownFormat(t *testing.T) {
 	_, err := Run("xml", false, strings.NewReader("x"), NewIngestSender(func([]event.Event) error { return nil }))
-	if err == nil || !strings.Contains(err.Error(), "jsonl, csv, posthog or umami") {
+	if err == nil || !strings.Contains(err.Error(), "jsonl, csv, posthog, mixpanel or umami") {
 		t.Fatalf("err = %v, want the format menu", err)
 	}
 }
