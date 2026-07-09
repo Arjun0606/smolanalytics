@@ -47,6 +47,12 @@
   .card{background:var(--surface);border:1px solid var(--line);padding:20px;margin-bottom:14px}
   .card h2{font-size:13px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.1em;color:var(--mut);margin:0 0 18px}
 
+  /* dev-data notice — surfaces localhost/development traffic that production reports hide */
+  .devnote{margin:16px 0 0;padding:10px 14px;border:1px solid var(--line);border-left:3px solid var(--accent);background:var(--surface);color:var(--mut);font-size:13px}
+  .devnote a{color:var(--accent);text-decoration:none;font-family:var(--mono);font-size:12px;white-space:nowrap}
+  .devnote a:hover{text-decoration:underline}
+  .devnote b{color:var(--fg);font-weight:600}
+
   /* verdict — the proactive "what to look at" front door */
   .verdict h2{display:flex;align-items:center}
   .vdot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent);margin-left:8px;animation:pulse 1.6s infinite}
@@ -215,6 +221,7 @@
 </header>
 
 <main class="wrap">
+  {{if .ShowingDev}}<div class="devnote">Showing <b>development</b> data (localhost / 127.0.0.1), the traffic production reports hide. <a href="/{{if .Site}}?site={{.Site}}{{end}}">← back to production</a></div>{{else if gt .DevHidden 0}}<div class="devnote">{{.DevHidden}} event{{if ne .DevHidden 1}}s{{end}} from localhost/development {{if eq .DevHidden 1}}is{{else}}are{{end}} hidden from these production reports. <a href="/?env=development{{if .Site}}&site={{.Site}}{{end}}">view dev data →</a></div>{{end}}
   {{if .HasData}}
   <div class="card verdict">
     <h2>What to look at <span class="vdot"></span></h2>

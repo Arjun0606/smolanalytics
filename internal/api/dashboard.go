@@ -113,6 +113,8 @@ type dashVM struct {
 	ProductEvents []string // real named events (no $-prefixed internals) for the "your events" ask chips
 	Updated       string
 	HasData       bool   // false on a fresh install → show the big onboarding
+	DevHidden     int    // count of env=development events hidden from production reports
+	ShowingDev    bool   // true when ?env=development — viewing the hidden dev traffic
 	Base          string // this server's base URL, for ready-to-paste snippets
 	WriteKey      string // this instance's write key — real snippets, not placeholders (key is public-by-design: it ships in tracked pages' HTML)
 	// adaptive labels — the default dashboard reflects the user's OWN events
@@ -166,12 +168,29 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		s.notFound(w, r)
 		return
 	}
-	evs, err := s.store.Range(time.Time{}, time.Time{})
+	evsAll, err := s.store.Range(time.Time{}, time.Time{})
 	if err != nil {
 		serverError(w, "dashboard store.Range", err)
 		return
 	}
-	evs = query.Apply(evs, nil) // production scope: dev-env events excluded by default
+	// Production scope hides env=development. The browser SDK stamps every localhost
+	// load as development (sdk.js), so a developer testing locally sends events that
+	// are ingested but invisible here — "I sent events and the dashboard shows nothing"
+	// is an unexplained trust-killer. Count what's hidden so the UI can SAY so, and
+	// support ?env=development as an opt-in view of exactly that traffic.
+	showDev := r.URL.Query().Get("env") == "development"
+	devHidden := 0
+	for _, e := range evsAll {
+		if v, _ := e.Properties["env"].(string); v == "development" {
+			devHidden++
+		}
+	}
+	var evs []event.Event
+	if showDev {
+		evs = query.Apply(evsAll, []query.Filter{{Property: "env", Op: query.Eq, Value: "development"}})
+	} else {
+		evs = query.Apply(evsAll, nil) // production scope: dev-env events excluded by default
+	}
 
 	// the verdict is computed here (global, before the site filter) so it matches
 	// /v1/notable exactly — the client refetch then replaces it with identical content
@@ -230,6 +249,8 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		Updated:        time.Now().UTC().Format("Jan 2, 15:04 MST"),
 		HasData:        len(evs) > 0,
 		Verdict:        verdict,
+		DevHidden:      devHidden,
+		ShowingDev:     showDev,
 		Sites:          sites,
 		Site:           site,
 		Base:           baseURL(r),
