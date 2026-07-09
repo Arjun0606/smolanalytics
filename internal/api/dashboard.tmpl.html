@@ -185,6 +185,9 @@
     border-top:none;font-size:14px;line-height:1.6;color:var(--fg);position:relative;white-space:pre-line}
   .askresult::before{content:"✦";position:absolute;left:14px;top:14px;color:var(--accent)}
   .askresult.load{color:var(--mut)}
+  /* the "show your work" receipt: the deterministic report behind an answer, so the
+     number is verifiable, not a model's guess */
+  .askmethod{margin-top:9px;padding-top:9px;border-top:1px solid var(--line);font-size:11px;line-height:1.5;color:var(--mut2);font-family:var(--mono)}
 
   .foot{color:var(--mut2);font-size:12px;text-align:center;padding:28px 0;font-family:var(--mono)}
   @media(max-width:860px){.grid{grid-template-columns:1fr}.stats{grid-template-columns:1fr}}
@@ -478,7 +481,13 @@
       res.hidden=false; res.className='askresult load'; res.textContent='thinking…';
       fetch('/v1/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:question})})
         .then(function(r){return r.json()})
-        .then(function(j){res.className='askresult'; res.textContent=j.answer||j.error||'no answer';})
+        .then(function(j){
+          res.className='askresult';
+          if(j.answer){
+            res.textContent=j.answer;
+            if(j.computed_by){ var m=document.createElement('div'); m.className='askmethod'; m.textContent=j.computed_by; res.appendChild(m); }
+          } else { res.textContent=j.error||'no answer'; }
+        })
         .catch(function(){res.className='askresult'; res.textContent='something went wrong';});
     });
 
