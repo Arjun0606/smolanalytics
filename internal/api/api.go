@@ -330,6 +330,42 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 
 // ingest accepts a single event or an array. Missing ID gets one (so the client
 // need not generate it); missing timestamp defaults to now. Idempotent on ID.
+// parseUA derives a coarse browser + OS from a User-Agent, dependency-free. It returns
+// "" for anything it doesn't recognize (backend HTTP clients, bots), so server-to-server
+// events are never mislabeled with a browser they didn't come from.
+func parseUA(ua string) (browser, os string) {
+	if ua == "" {
+		return "", ""
+	}
+	switch {
+	case strings.Contains(ua, "Windows"):
+		os = "Windows"
+	case strings.Contains(ua, "Mac OS X"), strings.Contains(ua, "Macintosh"):
+		os = "macOS"
+	case strings.Contains(ua, "CrOS"):
+		os = "ChromeOS"
+	case strings.Contains(ua, "Android"):
+		os = "Android"
+	case strings.Contains(ua, "iPhone"), strings.Contains(ua, "iPad"), strings.Contains(ua, "iOS"):
+		os = "iOS"
+	case strings.Contains(ua, "Linux"):
+		os = "Linux"
+	}
+	switch { // order matters: Edge/Opera/Chrome share the "Chrome" token
+	case strings.Contains(ua, "Edg/"):
+		browser = "Edge"
+	case strings.Contains(ua, "OPR/"), strings.Contains(ua, "Opera"):
+		browser = "Opera"
+	case strings.Contains(ua, "Firefox/"):
+		browser = "Firefox"
+	case strings.Contains(ua, "Chrome/"):
+		browser = "Chrome"
+	case strings.Contains(ua, "Version/") && strings.Contains(ua, "Safari/"):
+		browser = "Safari"
+	}
+	return browser, os
+}
+
 func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 	setCORS(w)
 	if !s.authorized(r) {
@@ -396,10 +432,25 @@ func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now().UTC()
 	maxFuture := now.Add(time.Hour) // tolerate client clock skew, no more
+	// parse the request UA once — the browser SDK's fetch carries the visitor's UA, so we
+	// derive browser + OS server-side with zero SDK weight. Unrecognized (backend/library)
+	// UAs return "", so server-to-server events are never stamped with a bogus browser.
+	uaBrowser, uaOS := parseUA(r.Header.Get("User-Agent"))
 	for i := range batch {
 		if batch[i].Name == "" {
 			writeErr(w, http.StatusBadRequest, "every event needs a name")
 			return
+		}
+		if uaBrowser != "" || uaOS != "" {
+			if batch[i].Properties == nil {
+				batch[i].Properties = map[string]any{}
+			}
+			if _, ok := batch[i].Properties["browser"]; !ok && uaBrowser != "" {
+				batch[i].Properties["browser"] = uaBrowser
+			}
+			if _, ok := batch[i].Properties["os"]; !ok && uaOS != "" {
+				batch[i].Properties["os"] = uaOS
+			}
 		}
 		if batch[i].DistinctID == "$anon" {
 			// cookieless mode: the SDK stored NOTHING on the device (no consent banner

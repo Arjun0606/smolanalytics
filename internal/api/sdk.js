@@ -59,8 +59,57 @@
         if (v) ctx[k] = v.slice(0, 80);
       });
     } catch (e) {}
-    ctx.device = /Mobi|Android|iPhone|iPad/.test(navigator.userAgent) ? "mobile" : "desktop";
+    var ua = navigator.userAgent || "";
+    ctx.device = /iPad|Tablet|PlayBook|Silk|Android(?!.*Mobile)/.test(ua)
+      ? "tablet"
+      : /Mobi|Android|iPhone|iPod/.test(ua)
+        ? "mobile"
+        : "desktop";
+    try {
+      if (window.screen && screen.width) {
+        ctx.screen_w = screen.width;
+        ctx.screen_h = screen.height;
+      }
+      if (window.innerWidth) {
+        ctx.viewport_w = window.innerWidth;
+        ctx.viewport_h = window.innerHeight;
+      }
+    } catch (e) {}
     return ctx;
+  }
+
+  // session + first-touch: a session id ties a visit's events together (path analysis),
+  // rotating after 30 minutes of inactivity; the initial referrer + utm are captured once
+  // per session so you can attribute a conversion to how the visit STARTED. Skipped in
+  // cookieless mode (nothing stored on the device).
+  var sess = null;
+  function ensureSession() {
+    if (anon) return;
+    var now = Date.now();
+    if (sess === null) {
+      try {
+        sess = JSON.parse(localStorage.getItem("smol_session"));
+      } catch (e) {
+        sess = null;
+      }
+    }
+    if (!sess || !sess.id || now - (sess.ts || 0) > 30 * 60 * 1000) {
+      var utm = {};
+      try {
+        var q = new URLSearchParams(location.search);
+        var u = q.get("utm_source");
+        if (u) utm.utm_source = u.slice(0, 80);
+      } catch (e) {}
+      sess = { id: "s-" + Math.random().toString(36).slice(2) + now.toString(36), ref: (document.referrer || "").slice(0, 200), utm: utm, ts: now };
+      persistSession();
+    }
+    sess.ts = now;
+  }
+  function persistSession() {
+    if (anon || !sess) return;
+    try {
+      localStorage.setItem("smol_session", JSON.stringify(sess));
+    } catch (e) {}
   }
 
   function flush() {
@@ -130,6 +179,12 @@
     // Overridable per event; env also settable at init ({ env: "staging" }).
     if (props.site === undefined) props.site = location.hostname;
     if (props.env === undefined) props.env = envName;
+    ensureSession();
+    if (sess) {
+      if (props.session_id === undefined) props.session_id = sess.id;
+      if (sess.ref && props.initial_referrer === undefined) props.initial_referrer = sess.ref;
+      if (sess.utm && sess.utm.utm_source && props.initial_utm_source === undefined) props.initial_utm_source = sess.utm.utm_source;
+    }
     queue.push({
       name: name,
       distinct_id: distinctId(),
@@ -403,6 +458,7 @@
         window.addEventListener("blur", engTick);
         window.addEventListener("pagehide", function () {
           engReport();
+          persistSession();
           flush();
         });
         engPath = location.pathname;
