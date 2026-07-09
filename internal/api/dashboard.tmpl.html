@@ -188,6 +188,9 @@
   /* the "show your work" receipt: the deterministic report behind an answer, so the
      number is verifiable, not a model's guess */
   .askmethod{margin-top:9px;padding-top:9px;border-top:1px solid var(--line);font-size:11px;line-height:1.5;color:var(--mut2);font-family:var(--mono)}
+  .asktrust{margin-top:8px;font-size:11px;line-height:1.5;color:var(--mut2);font-family:var(--mono)}
+  .asktrust a{color:var(--accent);text-decoration:none}
+  .asktrust a:hover{text-decoration:underline}
 
   .foot{color:var(--mut2);font-size:12px;text-align:center;padding:28px 0;font-family:var(--mono)}
   @media(max-width:860px){.grid{grid-template-columns:1fr}.stats{grid-template-columns:1fr}}
@@ -220,7 +223,8 @@
 </div>
 {{if .ProductEvents}}<div class="askchips"><span class="chiplbl">your events</span>{{range .ProductEvents}}<span class="chip" data-q="how many {{.}} this week?" title="ask about the {{.}} event">{{.}}</span>{{end}}</div>{{end}}
 {{if .TopPages}}<div class="askchips"><span class="chiplbl">your pages</span>{{range .TopPages}}<span class="chip" data-q="visitors to {{.Value}}" title="traffic to {{.Value}}">{{.Value}}</span>{{end}}</div>{{end}}
-<div id="askresult" class="askresult" hidden></div><div id="shareresult" class="askresult" hidden></div></div>
+<div id="askresult" class="askresult" hidden></div><div id="shareresult" class="askresult" hidden></div>
+<div class="asktrust">every answer here is a deterministic report, not written by a model. each one shows the exact report it ran (the "computed by" line), and a CI test asserts the ask bar, this dashboard, and your editor all return the same number. <a href="https://github.com/Arjun0606/smolanalytics/blob/main/internal/api/agreement_test.go" target="_blank" rel="noopener">read the test ↗</a></div></div>
 </header>
 
 <main class="wrap">
