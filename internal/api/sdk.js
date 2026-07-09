@@ -116,7 +116,9 @@
     engAccum = 0;
     // ignore sub-second blips and absurd values (clock jumps, day-long zombie tabs)
     if (engPath && ms >= 1000 && ms < 4 * 60 * 60 * 1000) {
-      enqueue("$engagement", { path: engPath, engaged_ms: ms });
+      var p = { path: engPath, engaged_ms: ms };
+      if (maxScroll > 0) p.scroll_pct = maxScroll; // how far down the page they got
+      enqueue("$engagement", p);
     }
     engPath = location.pathname;
   }
@@ -137,6 +139,153 @@
     if (queue.length >= 20) flush();
   }
 
+  // --- rich autocapture helpers ---
+
+  // classesOf reads a className whether it's a string or an SVGAnimatedString.
+  function classesOf(el) {
+    var c = el.className;
+    if (c && c.baseVal !== undefined) c = c.baseVal; // SVG elements
+    return (c && (c + "").trim()) || "";
+  }
+
+  // elemDesc snapshots ONE element: enough to re-identify it later for a retroactive
+  // named event, and for a coding agent to map an element to a business event. Metadata
+  // only, never input values.
+  function elemDesc(el) {
+    var d = { tag: el.tagName.toLowerCase() };
+    if (el.id) d.id = (el.id + "").slice(0, 80);
+    var cls = classesOf(el);
+    if (cls) d.classes = cls.slice(0, 160);
+    if (el.getAttribute) {
+      var role = el.getAttribute("role"); if (role) d.role = role.slice(0, 40);
+      var aria = el.getAttribute("aria-label"); if (aria) d.aria_label = aria.slice(0, 80);
+      var name = el.getAttribute("name"); if (name) d.name = name.slice(0, 80);
+    }
+    if (el.href) d.href = (el.href + "").slice(0, 300);
+    // data-* attributes (opt-in element identity; data-sa-* drive named events)
+    try {
+      if (el.dataset) {
+        for (var dk in el.dataset) {
+          var dv = el.dataset[dk];
+          if (dv) (d.data = d.data || {})[dk] = (dv + "").slice(0, 80);
+        }
+      }
+    } catch (e) {}
+    var t = ((el.innerText || el.value || "") + "").trim();
+    if (t) d.text = t.slice(0, 80);
+    if (el.parentElement) {
+      try {
+        var sibs = el.parentElement.children, n = 0, nt = 0;
+        for (var i = 0; i < sibs.length; i++) {
+          n++;
+          if (sibs[i].tagName === el.tagName) nt++;
+          if (sibs[i] === el) { d.nth_child = n; d.nth_of_type = nt; break; }
+        }
+      } catch (e) {}
+    }
+    return d;
+  }
+
+  // elemChain is the target plus up to 4 ancestors — Heap/PostHog-style $elements. This
+  // is the substrate for defining events retroactively from autocaptured clicks.
+  function elemChain(target) {
+    var chain = [], node = target, depth = 0;
+    while (node && node.tagName && depth < 5) {
+      chain.push(elemDesc(node));
+      node = node.parentElement;
+      depth++;
+    }
+    return chain;
+  }
+
+  // isClickable broadens capture beyond a/button so modern apps (clickable divs, cards,
+  // icons, role targets, cursor:pointer) aren't silently dropped.
+  function isClickable(node) {
+    var tag = node.tagName.toLowerCase();
+    if (tag === "a" || tag === "button" || tag === "select" || tag === "label" || tag === "summary") return true;
+    if (tag === "input" && /^(submit|button|checkbox|radio)$/.test(node.type || "")) return true;
+    if (node.getAttribute) {
+      var r = node.getAttribute("role");
+      if (r === "button" || r === "link" || r === "tab" || r === "menuitem" || r === "option") return true;
+    }
+    if (typeof node.onclick === "function") return true;
+    if (node.dataset && (node.dataset.saEvent || node.dataset.saName)) return true;
+    try { if (getComputedStyle(node).cursor === "pointer") return true; } catch (e) {}
+    return false;
+  }
+
+  // frustration + scroll state (all best-effort, never allowed to throw into capture)
+  var clickBuf = []; // recent click coords, for rage-click detection
+  var maxScroll = 0; // deepest scroll % reached on the current page
+  var errSeen = {}; // dedupe exceptions so one repeated error can't flood
+
+  function detectRage(e) {
+    var now = Date.now();
+    clickBuf.push({ t: now, x: e.clientX, y: e.clientY });
+    clickBuf = clickBuf.filter(function (c) { return now - c.t < 1000; });
+    var near = clickBuf.filter(function (c) { return Math.abs(c.x - e.clientX) < 30 && Math.abs(c.y - e.clientY) < 30; });
+    if (near.length >= 3) {
+      enqueue("$rageclick", { path: location.pathname, x: e.clientX, y: e.clientY, count: near.length });
+      clickBuf = [];
+    }
+  }
+
+  // armDeadClick fires $deadclick when a clickable element produces no DOM change and no
+  // navigation within ~1s — a broken control, exactly the "what to fix" signal.
+  function armDeadClick(target) {
+    var startPath = location.pathname, changed = false, obs = null;
+    try {
+      obs = new MutationObserver(function () { changed = true; if (obs) obs.disconnect(); });
+      obs.observe(document.documentElement, { childList: true, subtree: true });
+    } catch (e) { return; }
+    setTimeout(function () {
+      try { if (obs) obs.disconnect(); } catch (e) {}
+      if (!changed && location.pathname === startPath) {
+        enqueue("$deadclick", {
+          path: startPath,
+          tag: target.tagName.toLowerCase(),
+          text: ((target.innerText || "") + "").trim().slice(0, 80) || undefined,
+        });
+      }
+    }, 1000);
+  }
+
+  function onScroll() {
+    try {
+      var h = document.documentElement.scrollHeight - window.innerHeight;
+      var pct = h > 0 ? Math.min(100, Math.round((window.scrollY / h) * 100)) : 100;
+      if (pct > maxScroll) maxScroll = pct;
+    } catch (e) {}
+  }
+
+  function bindErrors() {
+    window.addEventListener("error", function (ev) {
+      try {
+        var msg = ((ev && ev.message) || "") + "";
+        if (!msg) return;
+        var k = msg + "|" + ((ev && ev.lineno) || 0);
+        if (errSeen[k]) return;
+        errSeen[k] = 1;
+        enqueue("$exception", {
+          message: msg.slice(0, 300),
+          source: ((ev && ev.filename) || "").slice(0, 200) || undefined,
+          lineno: (ev && ev.lineno) || undefined,
+          colno: (ev && ev.colno) || undefined,
+          path: location.pathname,
+        });
+      } catch (e) {}
+    });
+    window.addEventListener("unhandledrejection", function (ev) {
+      try {
+        var reason = ev && ev.reason;
+        var msg = ((reason && (reason.message || reason)) || "") + "";
+        if (!msg || errSeen[msg]) return;
+        errSeen[msg] = 1;
+        enqueue("$exception", { message: msg.slice(0, 300), kind: "unhandledrejection", path: location.pathname });
+      } catch (e) {}
+    });
+  }
+
   // autocapture: pageviews (incl. SPA route changes) + clicks on interactive
   // elements, so you get real data with zero manual instrumentation. Element
   // metadata only — never input values.
@@ -147,6 +296,7 @@
     function pageview() {
       if (location.pathname === lastPath) return;
       if (lastPath !== null) engReport(); // attribute engaged time to the page being left
+      maxScroll = 0; // reset scroll depth for the new page (engReport already read the old page's)
       lastPath = location.pathname;
       if (engPath === null) engPath = location.pathname;
       var props = webContext();
@@ -170,32 +320,56 @@
     document.addEventListener(
       "click",
       function (e) {
-        var node = e.target,
-          depth = 0;
-        while (node && node.tagName && depth < 4) {
-          var tag = node.tagName.toLowerCase();
-          var clickable =
-            tag === "a" ||
-            tag === "button" ||
-            (tag === "input" && /^(submit|button)$/.test(node.type || "")) ||
-            (node.getAttribute && node.getAttribute("role") === "button");
-          if (clickable) {
-            enqueue("$click", {
-              tag: tag,
-              text: ((node.innerText || node.value || "") + "").trim().slice(0, 80) || undefined,
-              id: node.id || undefined,
-              classes: (node.className && (node.className + "").slice(0, 120)) || undefined,
-              href: node.href || undefined,
-              path: location.pathname,
-            });
-            return;
+        try {
+          var node = e.target, depth = 0, target = null;
+          while (node && node.tagName && depth < 5) {
+            if (node.dataset && node.dataset.saIgnore !== undefined) return; // opt out of a subtree
+            if (isClickable(node)) { target = node; break; }
+            node = node.parentElement;
+            depth++;
           }
-          node = node.parentElement;
-          depth++;
-        }
+          detectRage(e); // frustration is about click cadence, independent of the target
+          if (!target) return;
+          // data-sa-event turns any element into a named business event with zero code
+          var name = (target.dataset && target.dataset.saEvent) ? target.dataset.saEvent : "$click";
+          var props = {
+            tag: target.tagName.toLowerCase(),
+            text: ((target.innerText || target.value || "") + "").trim().slice(0, 80) || undefined,
+            id: target.id || undefined,
+            classes: classesOf(target).slice(0, 160) || undefined,
+            href: target.href || undefined,
+            path: location.pathname,
+            x: e.clientX,
+            y: e.clientY,
+            $elements: elemChain(target), // the selector chain, for retroactive event definition
+          };
+          if (target.dataset && target.dataset.saName) props.name = target.dataset.saName;
+          enqueue(name, props);
+          armDeadClick(target);
+        } catch (err) {}
       },
       true,
     );
+    // form submits — metadata only, never field values
+    document.addEventListener(
+      "submit",
+      function (e) {
+        try {
+          var f = e.target;
+          if (!f || f.tagName !== "FORM" || (f.dataset && f.dataset.saIgnore !== undefined)) return;
+          enqueue("$form_submit", {
+            id: f.id || undefined,
+            name: (f.getAttribute && f.getAttribute("name")) || undefined,
+            action: f.action ? (f.action + "").slice(0, 200) : undefined,
+            fields: f.elements ? f.elements.length : undefined,
+            path: location.pathname,
+          });
+        } catch (err) {}
+      },
+      true,
+    );
+    window.addEventListener("scroll", onScroll, { passive: true });
+    bindErrors(); // $exception on window errors + unhandled rejections (deduped)
   }
 
   var smol = {
