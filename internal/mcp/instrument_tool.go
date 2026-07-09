@@ -42,6 +42,11 @@ func init() {
 			},
 		},
 		map[string]any{
+			"name":        "regenerate_plan_from_code",
+			"description": "Scan the repo for every smolanalytics.track(\"name\") call and return the tracking plan the code implies. Call this after wiring events, then pass the result to set_tracking_plan, so the declared plan always matches the code that implements it (no manual drift).",
+			"inputSchema": map[string]any{"type": "object", "properties": map[string]any{"repo_path": map[string]any{"type": "string", "description": "Path to the repo root (default: current directory)"}}},
+		},
+		map[string]any{
 			"name": "verify_instrumentation",
 			"description": "Prove the tracking is real: for every event in the tracking plan, cross-reference the code (is there a track() call?) with live traffic (has it fired?) and return a green/red table — FIRING, WIRED (call-site found, no traffic yet: run the app and exercise it), or MISSING (no call-site and no traffic: not wired). Call this after applying instrumentation to confirm the job is done. Pass repo_path so it can read the call-sites.",
 			"inputSchema": map[string]any{
@@ -85,6 +90,23 @@ func (s *Server) callInstrument(name string, args json.RawMessage) (bool, string
 			return true, "", fmt.Errorf("event is required — the planned event that isn't arriving")
 		}
 		b, _ := json.MarshalIndent(instrument.SuggestFixResult(orDot(p.RepoPath), p.Event), "", "  ")
+		return true, string(b), nil
+
+	case "regenerate_plan_from_code":
+		var p struct {
+			RepoPath string `json:"repo_path"`
+		}
+		_ = json.Unmarshal(args, &p)
+		found := instrument.FindAllTracked(orDot(p.RepoPath))
+		events := make([]map[string]any, 0, len(found))
+		for name, loc := range found {
+			events = append(events, map[string]any{"name": name, "at": fmt.Sprintf("%s:%d", loc.File, loc.Line)})
+		}
+		out := map[string]any{
+			"events": events,
+			"note":   "these are the track() calls in your code. Pass the names to set_tracking_plan to declare them, then plan check gates them in CI.",
+		}
+		b, _ := json.MarshalIndent(out, "", "  ")
 		return true, string(b), nil
 
 	case "verify_instrumentation":

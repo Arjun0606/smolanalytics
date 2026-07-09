@@ -360,6 +360,47 @@ func SuggestFixResult(root, event string) map[string]any {
 	return out
 }
 
+// FindAllTracked scans the repo for every smolanalytics.track("name") call and returns
+// each event name -> where it was first found. Backs `plan sync`: regenerate the tracking
+// plan from the code that actually implements it, so the two can't drift.
+func FindAllTracked(root string) map[string]TrackedEvent {
+	found := map[string]TrackedEvent{}
+	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if skipDir[d.Name()] || (strings.HasPrefix(d.Name(), ".") && d.Name() != ".") {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if !sourceExt[strings.ToLower(filepath.Ext(path))] {
+			return nil
+		}
+		if info, e := d.Info(); e != nil || info.Size() > 512*1024 {
+			return nil
+		}
+		b, e := os.ReadFile(path)
+		if e != nil {
+			return nil
+		}
+		rel, _ := filepath.Rel(root, path)
+		for i, line := range strings.Split(string(b), "\n") {
+			if m := trackCallRe.FindStringSubmatch(line); m != nil {
+				name := m[1]
+				if !strings.HasPrefix(name, "$") { // skip autocapture names
+					if _, seen := found[name]; !seen {
+						found[name] = TrackedEvent{Name: name, File: filepath.ToSlash(rel), Line: i + 1}
+					}
+				}
+			}
+		}
+		return nil
+	})
+	return found
+}
+
 // TrackedEvent is an event name found already wired in the code, and where.
 type TrackedEvent struct {
 	Name string `json:"name"`

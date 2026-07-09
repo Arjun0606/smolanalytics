@@ -24,6 +24,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -97,6 +98,8 @@ func planCmd(args []string) {
 		default:
 			err = fmt.Errorf("unknown --source=%q — supported: posthog (omit the flag to check a smolanalytics server via --host)", *source)
 		}
+	case "sync":
+		err = runPlanSync(*file, *dir, os.Stdout)
 	default:
 		if sub != "" && sub != "help" {
 			fmt.Fprintf(os.Stderr, "plan: unknown subcommand %q\n\n", sub)
@@ -118,6 +121,7 @@ func planUsage(w io.Writer) {
 	fmt.Fprintln(w, "  smolanalytics plan push    declare the file's plan on your instance")
 	fmt.Fprintln(w, "  smolanalytics plan pull    write the instance's plan into the file")
 	fmt.Fprintln(w, "  smolanalytics plan check   verify real traffic matches; exit 1 if not (CI gate)")
+	fmt.Fprintln(w, "  smolanalytics plan sync    add every track() call in your code to the plan (--dir)")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "  --file=PATH    plan file (default smolanalytics.plan.json)")
 	fmt.Fprintln(w, "  --host=URL     running server (default http://localhost:8080)")
@@ -190,6 +194,57 @@ func runPlanPull(file, host, key string, out io.Writer) error {
 		return err
 	}
 	fmt.Fprintf(out, "plan written: %s\n", plural(len(h.Plan.Events), "event"))
+	return nil
+}
+
+// runPlanSync rewrites the plan file to match the track() calls the code actually makes:
+// every discovered event is added (existing descriptions/properties preserved), and events
+// in the plan with no call-site are flagged as stale. Turns "keep the plan in sync" from
+// hope into one command — the agent writes track() calls, runs sync, commits both.
+func runPlanSync(file, dir string, out io.Writer) error {
+	pf, err := readPlanFile(file)
+	if err != nil {
+		if !os.IsNotExist(err) && !strings.Contains(err.Error(), "no ") {
+			return err
+		}
+		pf = planFile{} // no file yet — start from the code
+	}
+	existing := map[string]bool{}
+	for _, e := range pf.Events {
+		existing[e.Name] = true
+	}
+	found := instrument.FindAllTracked(dir)
+	added := 0
+	// stable order: sort discovered names so the file diffs cleanly
+	names := make([]string, 0, len(found))
+	for n := range found {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		if !existing[n] {
+			pf.Events = append(pf.Events, trackplan.PlannedEvent{Name: n})
+			fmt.Fprintf(out, "  + %s  (track() at %s:%d)\n", n, found[n].File, found[n].Line)
+			added++
+		}
+	}
+	var stale []string
+	for _, e := range pf.Events {
+		if _, ok := found[e.Name]; !ok {
+			stale = append(stale, e.Name)
+		}
+	}
+	if err := writePlanFile(file, pf); err != nil {
+		return err
+	}
+	if added == 0 {
+		fmt.Fprintf(out, "%s already matches the code (%s)\n", file, plural(len(pf.Events), "event"))
+	} else {
+		fmt.Fprintf(out, "\nsynced %s: added %d from the code, %s total\n", file, added, plural(len(pf.Events), "event"))
+	}
+	for _, s := range stale {
+		fmt.Fprintf(out, "  ! %s is in the plan but has no track() call — remove it or add the call\n", s)
+	}
 	return nil
 }
 
