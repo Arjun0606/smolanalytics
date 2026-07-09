@@ -66,9 +66,12 @@ func computedBy(q string, now time.Time) string {
 	if win.scoped() && win.label != "" {
 		scope = strings.TrimSpace(win.label)
 	}
+	if classifyAsk(q) == intentUnknown {
+		return "You asked about something with no matching event, so nothing was fabricated. I showed the weekly pulse instead, computed deterministically. Send that metric as an event and I'll report it."
+	}
 	var report string
 	switch classifyAsk(q) {
-	case intentBrief, intentUnknown:
+	case intentBrief:
 		report = "the verdict engine (notable-change detection + the weekly pulse)"
 	case intentFunnel:
 		report = "the funnel report"
@@ -222,14 +225,16 @@ func answer(q string, evs []event.Event, now time.Time) string {
 	case intentSignups:
 		return answerSignups(scoped, volAll, win)
 	default:
-		// An unrecognized question leads with the verdict (the single most useful default
-		// and what the homepage promises), THEN names what else can be asked. Never a bare
-		// capabilities menu — that reads as "the demo doesn't do what the tagline says".
-		return answerBrief(evs, 7, now) + "\n\nThat's the current read. You can also ask about your " +
-			"funnel, channels, retention, signups, active users, top pages, or pageviews, scoped to today, " +
-			"yesterday, this/last week, this/last month, or last N days. For anything else, connect " +
-			"smolanalytics to your own Claude or Cursor over MCP and just ask, your model reads the same " +
-			"data through our tools."
+		// An unrecognized question must NAME the boundary before answering — refusing to
+		// fabricate a metric we don't have is the single strongest trust move on the demo.
+		// "what's my MRR?" silently returning a weekly digest reads exactly like a model
+		// padding an answer, the very fear "plain-English analytics" triggers. So we say
+		// what we don't invent, then offer the closest real report.
+		return "I only answer from deterministic reports over the events you've sent, funnels, channels, " +
+			"retention, signups, active users, top pages, pageviews. I don't invent metrics you haven't " +
+			"tracked (revenue, MRR, churn) unless you send them as events. Here's the closest read I have:\n\n" +
+			answerBrief(evs, 7, now) + "\n\nAsk about any of those, scoped to today, yesterday, this/last week, " +
+			"this/last month, or last N days, or connect your own Claude/Cursor over MCP to go deeper."
 	}
 }
 
