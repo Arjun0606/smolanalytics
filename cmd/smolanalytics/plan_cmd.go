@@ -27,6 +27,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/instrument"
 	"github.com/Arjun0606/smolanalytics/internal/trackplan"
 )
 
@@ -59,6 +60,8 @@ func planCmd(args []string) {
 	phKey := fs.String("ph-key", "", "check --source=posthog: PostHog personal API key with the query:read scope")
 	phProject := fs.String("ph-project", "", "check --source=posthog: PostHog project id")
 	phHost := fs.String("ph-host", "https://us.posthog.com", "check --source=posthog: PostHog API host (EU cloud: https://eu.posthog.com)")
+	code := fs.Bool("code", false, "check: statically scan the repo for each planned event's track() call — no server, no traffic")
+	dir := fs.String("dir", ".", "check --code: repo root to scan")
 	_ = fs.Parse(args)
 	windowSet := false
 	fs.Visit(func(f *flag.Flag) {
@@ -76,10 +79,14 @@ func planCmd(args []string) {
 	case "pull":
 		err = runPlanPull(*file, *host, *key, os.Stdout)
 	case "check":
-		switch *source {
-		case "":
+		switch {
+		case *code:
+			// static gate: prove each planned event has a track() call in the code, at
+			// commit time, with no running server and no traffic needed.
+			err = runPlanCheckCode(*file, *dir, os.Stdout)
+		case *source == "":
 			err = runPlanCheck(*host, *key, *window, *asJSON, os.Stdout)
-		case "posthog":
+		case *source == "posthog":
 			if !windowSet {
 				// all-time is the right default against our own instance (it holds
 				// exactly the app's history) but an unbounded scan of a PostHog
@@ -116,6 +123,8 @@ func planUsage(w io.Writer) {
 	fmt.Fprintln(w, "  --host=URL     running server (default http://localhost:8080)")
 	fmt.Fprintln(w, "  --key=KEY      API key, sent as Authorization: Bearer")
 	fmt.Fprintln(w, "  --window=N     check: only verify the last N hours (nightly CI: 24)")
+	fmt.Fprintln(w, "  --code         check: statically scan the repo for each event's track() call")
+	fmt.Fprintln(w, "                 (no server, no traffic — catches drift in the PR); --dir sets the root")
 	fmt.Fprintln(w, "  --json         check: raw health payload instead of the report")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Already on PostHog? `plan check` runs the same gate against your existing")
@@ -181,6 +190,46 @@ func runPlanPull(file, host, key string, out io.Writer) error {
 		return err
 	}
 	fmt.Fprintf(out, "plan written: %s\n", plural(len(h.Plan.Events), "event"))
+	return nil
+}
+
+// runPlanCheckCode is the static drift gate: it scans the repo for each planned event's
+// track() call and fails when one has none — a deleted or renamed event caught in the PR,
+// at commit time, with no running server and no traffic. Complements the traffic-based
+// `plan check`, which only notices after a day of real events.
+func runPlanCheckCode(file, dir string, out io.Writer) error {
+	pf, err := readPlanFile(file)
+	if err != nil {
+		return err
+	}
+	if err := validatePlanFile(pf); err != nil {
+		return fmt.Errorf("%s: %w", file, err)
+	}
+	names := make([]string, len(pf.Events))
+	for i, e := range pf.Events {
+		names[i] = e.Name
+	}
+	wired := instrument.Wired(dir, names)
+	width := 0
+	for _, e := range pf.Events {
+		if len(e.Name) > width {
+			width = len(e.Name)
+		}
+	}
+	fmt.Fprintf(out, "tracking plan vs code: %s declared, scanning %s\n\n", plural(len(pf.Events), "event"), dir)
+	missing := 0
+	for _, e := range pf.Events {
+		if w, ok := wired[e.Name]; ok {
+			fmt.Fprintf(out, "  ✓ %-*s  track() at %s:%d\n", width, e.Name, w.File, w.Line)
+		} else {
+			fmt.Fprintf(out, "  ✗ %-*s  no track() call found in the code (deleted or renamed?)\n", width, e.Name)
+			missing++
+		}
+	}
+	if missing > 0 {
+		return fmt.Errorf("%d of %d planned events have no track() call in the code", missing, len(pf.Events))
+	}
+	fmt.Fprintf(out, "\nall %s wired ✓\n", plural(len(pf.Events), "planned event"))
 	return nil
 }
 
