@@ -20,6 +20,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/api"
 	"github.com/Arjun0606/smolanalytics/internal/audit"
 	"github.com/Arjun0606/smolanalytics/internal/cohort"
+	"github.com/Arjun0606/smolanalytics/internal/defined"
 	"github.com/Arjun0606/smolanalytics/internal/demo"
 	"github.com/Arjun0606/smolanalytics/internal/exportlink"
 	"github.com/Arjun0606/smolanalytics/internal/goal"
@@ -264,9 +265,21 @@ func serve(st store.Store, closeStore func() error, guardPublic bool) {
 	} else {
 		log.Printf("smolanalytics: identity stitching disabled (%v)", err)
 	}
+	// retroactive defined events (the Heap wedge): resolve named events from autocapture
+	// at read time, so a PM can turn captured clicks into "checkout" with zero code.
+	var definedStore *defined.Store
+	if ds, err := defined.Open(sp(".defined.json")); err == nil {
+		definedStore = ds
+		st = defined.Wrap(st, ds)
+	} else {
+		log.Printf("smolanalytics: defined events disabled (%v)", err)
+	}
 	app := api.New(st)
 	if aliasMap != nil {
 		app.SetAliases(aliasMap)
+	}
+	if definedStore != nil {
+		app.SetDefined(definedStore)
 	}
 	app.SetWriteKey(os.Getenv("SMOLANALYTICS_WRITE_KEY"))
 	if ins, err := insights.Open(sp(".insights.json")); err == nil {

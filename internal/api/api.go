@@ -26,6 +26,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/audit"
 	"github.com/Arjun0606/smolanalytics/internal/botua"
 	"github.com/Arjun0606/smolanalytics/internal/cohort"
+	"github.com/Arjun0606/smolanalytics/internal/defined"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/exportlink"
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
@@ -63,6 +64,7 @@ type Server struct {
 	gsc      *gsc.Store
 	goals    *goal.Store
 	exports  *exportlink.Store
+	defined  *defined.Store // retroactive zero-code events (Heap wedge)
 	writeKey string // if set, POST /v1/events requires Authorization: Bearer <writeKey>
 	// autocaptured events dropped because the UA was a known crawler/bot — surfaced in
 	// /v1/usage so "why is my dashboard lower than GA?" has a visible, honest answer.
@@ -94,6 +96,10 @@ func (s *Server) SetCohorts(st *cohort.Store) { s.cohorts = st; s.mcp.SetCohorts
 // SetAliases attaches the identity-stitching map (ingest records anon→user on
 // $identify; the MCP import tool does the same for imported history).
 func (s *Server) SetAliases(a *alias.Map) { s.aliases = a; s.mcp.SetAliases(a) }
+
+// SetDefined attaches the retroactive defined-events store (shared with MCP + the
+// dashboard "save as event" builder).
+func (s *Server) SetDefined(d *defined.Store) { s.defined = d; s.mcp.SetDefined(d) }
 
 // SetGSC attaches the Search Console store (dashboard card + MCP report).
 func (s *Server) SetGSC(g *gsc.Store) { s.gsc = g; s.mcp.SetGSC(g) }
@@ -203,6 +209,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/cohorts", s.listCohorts)
 	mux.HandleFunc("POST /v1/cohorts", s.saveCohort)
 	mux.HandleFunc("DELETE /v1/cohorts/{id}", s.deleteCohort)
+	mux.HandleFunc("GET /v1/defined", s.listDefined)
+	mux.HandleFunc("POST /v1/defined", s.saveDefined)
+	mux.HandleFunc("DELETE /v1/defined/{name}", s.deleteDefined)
 	mux.HandleFunc("GET /v1/cohorts/{id}/users", s.cohortUsers)
 	mux.HandleFunc("POST /mcp", s.handleMCP)
 	mux.HandleFunc("GET /share/{token}", s.sharePage)       // public read-only web overview (token-gated)

@@ -22,6 +22,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/alert"
 	"github.com/Arjun0606/smolanalytics/internal/alias"
 	"github.com/Arjun0606/smolanalytics/internal/cohort"
+	"github.com/Arjun0606/smolanalytics/internal/defined"
 	"github.com/Arjun0606/smolanalytics/internal/engagement"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/exportlink"
@@ -69,8 +70,12 @@ type Server struct {
 	shares    *share.Store
 	gsc       *gsc.Store
 	exports   *exportlink.Store
-	aliases   *alias.Map // identity stitching for imported $identify events
+	aliases   *alias.Map     // identity stitching for imported $identify events
+	defined   *defined.Store // retroactive zero-code events
 }
+
+// SetDefined attaches the retroactive defined-events store (the define_event tools).
+func (s *Server) SetDefined(d *defined.Store) { s.defined = d }
 
 // SetSettings / SetTrackPlan attach the instance-control stores.
 func (s *Server) SetSettings(st *settings.Store)   { s.settings = st }
@@ -492,6 +497,9 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		}
 		if handled, out, nerr := s.callInstrument(name, args); handled {
 			return out, nerr
+		}
+		if handled, out, derr := s.callDefined(name, args); handled {
+			return out, derr
 		}
 		return "", fmt.Errorf("unknown tool: %s", name)
 	}
