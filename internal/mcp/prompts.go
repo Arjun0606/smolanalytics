@@ -62,12 +62,12 @@ var promptList = []map[string]any{
 }
 
 var promptText = map[string]string{
-	"instrument-my-app": `Set up smolanalytics for this codebase, end to end:
-1. Look at the app and decide the 3-6 events that actually matter (a signup-shaped event, an activation moment, the revenue event; page/screen views come free via autocapture on web).
-2. Wire the tracking: the <script> snippet + smolanalytics.track() calls for web, or POST /v1/events for backend/mobile. Use a stable distinct_id per user; call identify() on login.
-3. Declare what you wired with set_tracking_plan (names, descriptions, expected properties).
-4. Tell me to run the app and click through the flows, then verify with instrumentation_health — chase down anything MISSING or any missing_properties until it's healthy.
-5. Finish by setting a sensible drop alert on the most important event (create_alert) and telling me exactly what you set up.`,
+	"instrument-my-app": `Instrument this codebase with smolanalytics, end to end. Don't hand-write the plan — let the tools read the repo and hand you the exact edits:
+1. Call propose_instrumentation (pass repo_path=the project root, plus the project's host + write key if you have them). It returns the base autocapture snippet and where it goes, plus the exact track() calls to add at the signup / login / checkout / activation call-sites it found — each with file, line, snippet, and properties.
+2. APPLY those edits with your editor: insert the snippet in the file it names, and add each track() call at the given file:line, filling property values from the surrounding code (stable distinct_id per user; identify() on login). Confirm anything low-confidence with me first.
+3. Declare what you wired with set_tracking_plan using the returned plan.
+4. Ask me to run the app and click through the flows, then call verify_instrumentation — it cross-references the code and live traffic and returns FIRING / WIRED / MISSING per event. For anything MISSING, call suggest_instrumentation_fix and apply the patch. Repeat until every planned event is FIRING.
+5. Finish by setting a drop alert on the most important event (create_alert) and telling me exactly what you set up. Autocapture already has pageviews, clicks, and engagement — this step is only the custom conversion events.`,
 
 	"whats-broken-today": `Run my morning check:
 1. whats_notable for the verdict (anomalies, biggest funnel leak, retention read).

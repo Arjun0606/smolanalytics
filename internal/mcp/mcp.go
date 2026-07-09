@@ -490,6 +490,9 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		if handled, out, xerr := s.callExportLink(name, args); handled {
 			return out, xerr
 		}
+		if handled, out, nerr := s.callInstrument(name, args); handled {
+			return out, nerr
+		}
 		return "", fmt.Errorf("unknown tool: %s", name)
 	}
 }

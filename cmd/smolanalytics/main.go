@@ -72,6 +72,8 @@ func main() {
 		gscCmd(os.Args[2:])
 	case "import":
 		importCmd(os.Args[2:])
+	case "instrument", "wizard":
+		instrumentCmd(os.Args[2:])
 	case "brief":
 		briefCmd(os.Args[2:])
 	case "plan":
