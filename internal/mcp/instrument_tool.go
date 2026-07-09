@@ -72,21 +72,7 @@ func (s *Server) callInstrument(name string, args json.RawMessage) (bool, string
 		if key == "" {
 			key = "<your-write-key>"
 		}
-		prop := instrument.Propose(root, host, key)
-		out := map[string]any{
-			"framework": prop.Framework,
-			"snippet":   prop.Snippet,
-			"events":    prop.Events,
-			"plan":      prop.PlanEvents(),
-			"notes":     prop.Notes,
-			"how_to_apply": "1) Insert the snippet from `snippet` into the file it names (autocapture starts immediately — pageviews, clicks, engagement, zero code). " +
-				"2) For each item in `events`, add the `snippet` near the given file:line where that action happens, filling the property values. " +
-				"3) Declare them with set_tracking_plan using `plan`. 4) Run verify_instrumentation to confirm each is wired and firing.",
-		}
-		if p.Host == "" || p.Key == "" {
-			out["heads_up"] = "host and/or key were not provided, so the snippet has placeholders. Pass the project's real host + write key (from the project page or `smolanalytics connect`) to get a copy-paste-ready snippet."
-		}
-		b, _ := json.MarshalIndent(out, "", "  ")
+		b, _ := json.MarshalIndent(instrument.ProposeResult(root, host, key), "", "  ")
 		return true, string(b), nil
 
 	case "suggest_instrumentation_fix":
@@ -98,23 +84,7 @@ func (s *Server) callInstrument(name string, args json.RawMessage) (bool, string
 		if strings.TrimSpace(p.Event) == "" {
 			return true, "", fmt.Errorf("event is required — the planned event that isn't arriving")
 		}
-		root := orDot(p.RepoPath)
-		prop := instrument.Propose(root, "<your-instance-host>", "<your-write-key>")
-		var matches []instrument.CallSite
-		for _, cs := range prop.Events {
-			if strings.EqualFold(cs.Event, p.Event) {
-				matches = append(matches, cs)
-			}
-		}
-		out := map[string]any{"event": p.Event}
-		if len(matches) > 0 {
-			out["found_call_sites"] = matches
-			out["fix"] = "Add the shown track() snippet at (one of) these call-sites, then re-run the app and verify_instrumentation."
-		} else {
-			out["found_call_sites"] = []any{}
-			out["fix"] = fmt.Sprintf("No obvious call-site for %q was found by pattern. Add smolanalytics.track(%q, {...}) (web) or a POST /v1/events with that name (backend) at the exact point the action happens, then verify_instrumentation.", p.Event, p.Event)
-		}
-		b, _ := json.MarshalIndent(out, "", "  ")
+		b, _ := json.MarshalIndent(instrument.SuggestFixResult(orDot(p.RepoPath), p.Event), "", "  ")
 		return true, string(b), nil
 
 	case "verify_instrumentation":

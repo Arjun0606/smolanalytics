@@ -27,7 +27,16 @@ type mcpClient struct {
 	key   string // top-level object key: "mcpServers" (most) or "servers" (VS Code)
 }
 
-func connect(target string) {
+func connect(args []string) {
+	host, key := parseHostKey(args)
+	target := ""
+	for _, a := range args { // the first bare (non-flag) arg is the editor
+		if !strings.HasPrefix(a, "-") {
+			target = a
+			break
+		}
+	}
+
 	bin, err := os.Executable()
 	if err != nil {
 		fmt.Println("couldn't find this binary's path:", err)
@@ -35,11 +44,17 @@ func connect(target string) {
 	}
 	bin, _ = filepath.Abs(bin)
 	data, _ := filepath.Abs(dataPath())
-	// stdio server config: run `smolanalytics mcp` pointed at this data file.
-	entry := map[string]any{
-		"command": bin,
-		"args":    []string{"mcp"},
-		"env":     map[string]string{"SMOLANALYTICS_DB": data},
+
+	// cloud mode (--host + --key): wire a local stdio proxy so the agent can instrument
+	// the local repo while data queries hit the cloud instance. Otherwise point `mcp` at
+	// the local data file (self-host).
+	cloud := host != "" && key != ""
+	var entry map[string]any
+	if cloud {
+		host = strings.TrimRight(host, "/")
+		entry = map[string]any{"command": bin, "args": []string{"mcp", "--host", host, "--key", key}}
+	} else {
+		entry = map[string]any{"command": bin, "args": []string{"mcp"}, "env": map[string]string{"SMOLANALYTICS_DB": data}}
 	}
 
 	explicit := target != "" && target != "all"
@@ -65,7 +80,7 @@ func connect(target string) {
 	}
 
 	// Claude Code configures via its own CLI (the documented path), not a file we edit.
-	if (!explicit || strings.EqualFold(target, "claude-code")) && addClaudeCode(bin, data) {
+	if (!explicit || strings.EqualFold(target, "claude-code")) && addClaudeCode(bin, data, host, key) {
 		fmt.Println("  ✓ Claude Code  (added via `claude mcp add`)")
 		wrote++
 	}
@@ -133,14 +148,20 @@ func mergeMCPConfig(path, key string, entry map[string]any) error {
 
 // addClaudeCode registers the server through the `claude` CLI (Claude Code's own way).
 // Returns true if it succeeded. Best-effort: no CLI, no problem.
-func addClaudeCode(bin, data string) bool {
+func addClaudeCode(bin, data, host, key string) bool {
 	if _, err := exec.LookPath("claude"); err != nil {
 		return false
 	}
 	// remove any prior entry so re-running connect is idempotent, then add.
 	_ = exec.Command("claude", "mcp", "remove", "smolanalytics", "-s", "user").Run()
-	cmd := exec.Command("claude", "mcp", "add", "smolanalytics", "-s", "user",
-		"-e", "SMOLANALYTICS_DB="+data, "--", bin, "mcp")
+	var cmd *exec.Cmd
+	if host != "" && key != "" { // cloud proxy
+		cmd = exec.Command("claude", "mcp", "add", "smolanalytics", "-s", "user",
+			"--", bin, "mcp", "--host", strings.TrimRight(host, "/"), "--key", key)
+	} else {
+		cmd = exec.Command("claude", "mcp", "add", "smolanalytics", "-s", "user",
+			"-e", "SMOLANALYTICS_DB="+data, "--", bin, "mcp")
+	}
 	return cmd.Run() == nil
 }
 

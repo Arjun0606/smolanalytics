@@ -61,13 +61,16 @@ func main() {
 		log.Printf("smolanalytics: seeded demo data (in-memory, self-refreshing, not persisted)")
 		serve(st, func() error { return nil }, false) // throwaway demo data — safe to expose
 	case "mcp":
-		runMCP()
-	case "connect":
-		arg := ""
-		if len(os.Args) >= 3 {
-			arg = os.Args[2]
+		// `mcp --host=<cloud> --key=<key>` runs the cloud-aware proxy (instrument tools
+		// read the local repo, everything else forwards to the cloud instance). Plain
+		// `mcp` serves the local data file.
+		if h, k := parseHostKey(os.Args[2:]); h != "" && k != "" {
+			runMCPProxy(h, k)
+		} else {
+			runMCP()
 		}
-		connect(arg)
+	case "connect":
+		connect(os.Args[2:])
 	case "gsc":
 		gscCmd(os.Args[2:])
 	case "import":

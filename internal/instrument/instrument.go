@@ -319,6 +319,47 @@ func (p Proposal) JSON() string {
 	return string(b)
 }
 
+// ProposeResult is the full propose_instrumentation payload. Both the MCP tool and the
+// cloud stdio proxy return this, so the two surfaces cannot drift.
+func ProposeResult(root, host, key string) map[string]any {
+	prop := Propose(root, host, key)
+	out := map[string]any{
+		"framework": prop.Framework,
+		"snippet":   prop.Snippet,
+		"events":    prop.Events,
+		"plan":      prop.PlanEvents(),
+		"notes":     prop.Notes,
+		"how_to_apply": "1) Insert the snippet from `snippet` into the file it names (autocapture starts immediately — pageviews, clicks, engagement, zero code). " +
+			"2) For each item in `events`, add the `snippet` near the given file:line where that action happens, filling the property values. " +
+			"3) Declare them with set_tracking_plan using `plan`. 4) Run verify_instrumentation to confirm each is wired and firing.",
+	}
+	if strings.Contains(host, "<") || strings.Contains(key, "<") {
+		out["heads_up"] = "host and/or key were not provided, so the snippet has placeholders. Pass the project's real host + write key (from the project page or `smolanalytics connect`) to get a copy-paste-ready snippet."
+	}
+	return out
+}
+
+// SuggestFixResult is the suggest_instrumentation_fix payload: the call-site(s) for one
+// event and the exact snippet to add there.
+func SuggestFixResult(root, event string) map[string]any {
+	prop := Propose(root, "<your-instance-host>", "<your-write-key>")
+	var matches []CallSite
+	for _, cs := range prop.Events {
+		if strings.EqualFold(cs.Event, event) {
+			matches = append(matches, cs)
+		}
+	}
+	out := map[string]any{"event": event}
+	if len(matches) > 0 {
+		out["found_call_sites"] = matches
+		out["fix"] = "Add the shown track() snippet at (one of) these call-sites, then re-run the app and verify_instrumentation."
+	} else {
+		out["found_call_sites"] = []any{}
+		out["fix"] = "No obvious call-site was found by pattern. Add smolanalytics.track(\"" + event + "\", {...}) (web) or a POST /v1/events with that name (backend) at the exact point the action happens, then verify_instrumentation."
+	}
+	return out
+}
+
 // TrackedEvent is an event name found already wired in the code, and where.
 type TrackedEvent struct {
 	Name string `json:"name"`
