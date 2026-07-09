@@ -369,6 +369,21 @@
     <div id="coList" class="saved"><div class="exsummary">no cohorts yet</div></div>
   </div>
 
+  <div class="card">
+    <h2>Defined events · name a business event from clicks you already captured — no code</h2>
+    <div class="exrow">
+      <input id="deName" autocomplete="off" placeholder="event name (e.g. checkout)">
+      <span class="exsummary">=</span>
+      <select id="deEvent"><option value="$click">$click</option><option value="$pageview">$pageview</option><option value="$form_submit">$form_submit</option></select>
+      <span class="exsummary">where</span>
+      <select id="deField"><option value="text">text</option><option value="path">path</option><option value="id">id</option><option value="href">href</option><option value="classes">classes</option></select>
+      <select id="deOp"><option value="contains">contains</option><option value="equals">equals</option><option value="prefix">starts with</option></select>
+      <input id="deValue" autocomplete="off" placeholder="value (e.g. Buy now)">
+      <button id="deCreate">Create</button>
+    </div>
+    <div id="deList" class="saved"><div class="exsummary">no defined events yet — turn a captured click into a named event, retroactive to install</div></div>
+  </div>
+
   <div class="grid">
     <div>
       <div class="card">
@@ -662,6 +677,34 @@
         .then(function(r){return r.json()}).then(function(){coName.value='';coEvents.value='';refreshCohorts();}).catch(function(){});
     };
     refreshCohorts();
+
+    // defined events — turn autocaptured clicks/pageviews into a named business event,
+    // retroactive and zero-code. Same primitive the define_event MCP tool writes.
+    var deName=document.getElementById('deName'),deEvent=document.getElementById('deEvent'),
+        deField=document.getElementById('deField'),deOp=document.getElementById('deOp'),
+        deValue=document.getElementById('deValue'),deList=document.getElementById('deList');
+    function renderDefined(items){
+      if(!items.length){deList.innerHTML='<div class="exsummary">no defined events yet — turn a captured click into a named event, retroactive to install</div>';return;}
+      deList.innerHTML='';
+      items.forEach(function(d){
+        var w=(d.where||[]).map(function(c){return c.field+' '+c.op+' "'+c.value+'"';}).join(' and ');
+        var chip=document.createElement('div'); chip.className='chip';
+        chip.innerHTML='<span>'+esc(d.name)+'</span><span class="t">'+esc(d.event)+' where '+esc(w)+'</span><span class="x">✕</span>';
+        chip.querySelector('.x').onclick=function(){ fetch('/v1/defined/'+encodeURIComponent(d.name),{method:'DELETE'}).then(refreshDefined); };
+        deList.appendChild(chip);
+      });
+    }
+    function refreshDefined(){
+      fetch('/v1/defined').then(function(r){return r.json()}).then(function(j){renderDefined(j.defined_events||[]);}).catch(function(){});
+    }
+    document.getElementById('deCreate').onclick=function(){
+      var name=deName.value.trim(); if(!name)return;
+      var value=deValue.value.trim(); if(!value){deValue.focus();return;}
+      fetch('/v1/defined',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({name:name,event:deEvent.value,where:[{field:deField.value,op:deOp.value,value:value}]})})
+        .then(function(r){return r.json()}).then(function(res){ if(res&&res.error){alert(res.error);return;} deName.value='';deValue.value='';refreshDefined(); }).catch(function(){});
+    };
+    refreshDefined();
     {{end}}
 
     // share — mint a revocable read-only link from the header; the URL is shown
