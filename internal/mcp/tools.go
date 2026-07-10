@@ -4,7 +4,7 @@ package mcp
 // AND-combined conditions over event properties — the full array form, or an
 // equality-shorthand map (decoded by FilterSet).
 var filtersSchema = map[string]any{
-	"description": "Optional segmentation. AND-combined conditions over event properties: an array like [{\"property\":\"plan\",\"op\":\"eq\",\"value\":\"pro\"}] (ops: eq, neq, contains, gt, lt), or an equality shorthand map like {\"plan\":\"pro\",\"source\":\"hn\"}.",
+	"description": "Optional segmentation. AND-combined conditions over event properties: an array like [{\"property\":\"plan\",\"op\":\"eq\",\"value\":\"pro\"}]. Ops: eq, neq, contains, gt, lt, in (value is a list — OR over one property, e.g. source in [\"hn\",\"twitter\"]), notin, set (property exists, no value), notset (property missing). Combine with AND for queries like \"pro users from HN or Twitter\": [{\"property\":\"plan\",\"op\":\"eq\",\"value\":\"pro\"},{\"property\":\"source\",\"op\":\"in\",\"value\":[\"hn\",\"twitter\"]}]. Or an equality shorthand map like {\"plan\":\"pro\"}.",
 	"anyOf": []map[string]any{
 		{
 			"type": "array",
@@ -12,7 +12,7 @@ var filtersSchema = map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"property": map[string]any{"type": "string"},
-					"op":       map[string]any{"type": "string", "enum": []string{"eq", "neq", "contains", "gt", "lt"}},
+					"op":       map[string]any{"type": "string", "enum": []string{"eq", "neq", "contains", "gt", "lt", "in", "notin", "set", "notset"}},
 					"value":    map[string]any{},
 				},
 			},

@@ -22,6 +22,10 @@ const (
 	Contains Op = "contains"
 	Gt       Op = "gt"
 	Lt       Op = "lt"
+	In       Op = "in"     // value is one of a list — expresses OR over one property (source in [hn, twitter])
+	NotIn    Op = "notin"  // value is none of a list (or the property is missing)
+	Set      Op = "set"    // the property exists on the event (value ignored)
+	NotSet   Op = "notset" // the property is missing (value ignored)
 )
 
 // Filter is a single predicate over an event property. Filters combine with AND.
@@ -44,6 +48,30 @@ func (f Filter) match(e event.Event) bool {
 		return ok && toNum(v) > toNum(f.Value)
 	case Lt:
 		return ok && toNum(v) < toNum(f.Value)
+	case In:
+		return ok && inList(v, f.Value)
+	case NotIn:
+		return !ok || !inList(v, f.Value)
+	case Set:
+		return ok
+	case NotSet:
+		return !ok
+	}
+	return false
+}
+
+// inList reports whether v (stringified) equals any element of list. list is a JSON array
+// (decoded to []any); a non-list value never matches.
+func inList(v any, list any) bool {
+	arr, ok := list.([]any)
+	if !ok {
+		return false
+	}
+	s := toStr(v)
+	for _, item := range arr {
+		if toStr(item) == s {
+			return true
+		}
 	}
 	return false
 }
@@ -54,9 +82,15 @@ func (f Filter) match(e event.Event) bool {
 func Validate(filters []Filter) error {
 	for _, f := range filters {
 		switch f.Op {
-		case Eq, Neq, Contains, Gt, Lt:
+		case Eq, Neq, Contains, Gt, Lt, Set, NotSet:
+		case In, NotIn:
+			// a list op with a non-list value would silently match nothing — reject it so a
+			// malformed "in" can't return a real-looking zero (the silent-wrong-number trap).
+			if _, ok := f.Value.([]any); !ok {
+				return fmt.Errorf("filter op %q on property %q needs a list value, e.g. \"value\": [\"a\", \"b\"]", f.Op, f.Property)
+			}
 		default:
-			return fmt.Errorf("unknown filter op %q on property %q — valid ops: eq, neq, contains, gt, lt", f.Op, f.Property)
+			return fmt.Errorf("unknown filter op %q on property %q — valid ops: eq, neq, contains, gt, lt, in, notin, set, notset", f.Op, f.Property)
 		}
 		if f.Property == "" {
 			return fmt.Errorf("filter is missing a property name")
