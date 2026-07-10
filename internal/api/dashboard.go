@@ -66,29 +66,28 @@ type segConv struct {
 	Conv  int // overall funnel conversion %, this segment
 }
 
-// funnelBySegment runs the funnel separately for each value of a property —
-// segmentation applied to a report, the core Mixpanel move.
+// funnelBySegment runs the funnel separately for each value of a property — segmentation
+// applied to a report, the core Mixpanel move. Uses funnel.ComputeBreakdown so a user is
+// segmented by the property on their FIRST step and carried through the whole funnel; the
+// old approach filtered EVENTS by the property, which dropped later steps that never carry
+// it (e.g. source set only at signup) and understated every segment's conversion.
 func funnelBySegment(evs []event.Event, property string, steps []funnel.Step) []segConv {
 	if len(steps) == 0 {
 		return nil
 	}
-	first := steps[0].Event
-	vals := map[string]bool{}
-	for _, e := range evs {
-		if e.Name == first {
-			if v, ok := e.Properties[property]; ok {
-				vals[toStr(v)] = true
-			}
+	segs := funnel.ComputeBreakdown(evs, steps, 7*24*time.Hour, property)
+	out := make([]segConv, 0, len(segs))
+	for _, s := range segs {
+		if s.Value == "(none)" {
+			continue // preserve prior behavior: only show segments where the property is set
 		}
+		users := 0
+		if len(s.Steps) > 0 {
+			users = s.Steps[0].Count
+		}
+		out = append(out, segConv{Value: s.Value, Users: users, Conv: pct(s.OverallConversion)})
 	}
-	out := make([]segConv, 0, len(vals))
-	for v := range vals {
-		seg := query.Apply(evs, []query.Filter{{Property: property, Op: query.Eq, Value: v}})
-		fr := funnel.Compute(seg, steps, 7*24*time.Hour)
-		out = append(out, segConv{Value: v, Users: fr.Steps[0].Count, Conv: pct(fr.OverallConversion)})
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Users > out[j].Users })
-	return out
+	return out // ComputeBreakdown already sorts by step-0 users descending
 }
 
 func toStr(v any) string {
