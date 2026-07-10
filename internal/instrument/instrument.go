@@ -91,6 +91,28 @@ var eventPattern = []struct {
 		regexp.MustCompile(`(?i)(\bactivate\b|onboard(ing|ed)?\b|complete[_-]?setup|first[_-]?run|getting[_-]?started|\bactivation\b)`)},
 }
 
+// nonAppFile reports whether a path is test / story / mock / fixture code. A "signup" in
+// a login.spec.ts or an "activate" in a mock is noise, not a real user event — this was
+// the single biggest source of false positives when the scanner ran on real third-party
+// repos, so it never proposes instrumenting them.
+func nonAppFile(rel string) bool {
+	segs := strings.Split(strings.ToLower(filepath.ToSlash(rel)), "/")
+	base := segs[len(segs)-1]
+	for _, m := range []string{".test.", ".spec.", ".stories.", ".story.", ".cy.", ".e2e.", ".mock.", ".fixture."} {
+		if strings.Contains(base, m) {
+			return true
+		}
+	}
+	for _, seg := range segs[:len(segs)-1] {
+		switch seg {
+		case "__tests__", "__mocks__", "test", "tests", "e2e", "cypress", "playwright",
+			"stories", "__fixtures__", "fixtures", "mocks", "spec", ".storybook":
+			return true
+		}
+	}
+	return false
+}
+
 // DetectFramework inspects the repo's manifests to name the stack and pick the file the
 // base snippet belongs in.
 func DetectFramework(root string) Framework {
@@ -220,6 +242,10 @@ func ScanCallSites(root string, fw Framework) []CallSite {
 		if !sourceExt[strings.ToLower(filepath.Ext(path))] {
 			return nil
 		}
+		rel, _ := filepath.Rel(root, path)
+		if nonAppFile(rel) { // test/story/mock files are noise, not app events
+			return nil
+		}
 		info, e := d.Info()
 		if e != nil || info.Size() > 512*1024 { // skip huge/generated files
 			return nil
@@ -228,7 +254,6 @@ func ScanCallSites(root string, fw Framework) []CallSite {
 		if e != nil {
 			return nil
 		}
-		rel, _ := filepath.Rel(root, path)
 		for i, raw := range strings.Split(string(b), "\n") {
 			line := strings.TrimSpace(raw)
 			if line == "" || len(line) > 400 || tracked.MatchString(line) {
