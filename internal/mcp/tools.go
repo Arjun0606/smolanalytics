@@ -44,7 +44,7 @@ var toolList = []map[string]any{
 	},
 	{
 		"name":        "funnel",
-		"description": "Compute an ordered conversion funnel: of the users who did the first step, how many went on to each later step, and where they drop off. Use for 'what's my conversion', 'where do users drop off', 'how many signups become customers'.",
+		"description": "Compute an ordered conversion funnel: of the users who did the first step, how many went on to each later step, where they drop off, and the median time to convert. Set breakdown to compare conversion across a segment (e.g. by source). Use for 'what's my conversion', 'where do users drop off', 'which source converts best', 'how long does signup to paid take'.",
 		"inputSchema": obj(map[string]any{
 			"steps": map[string]any{
 				"type":        "array",
@@ -54,6 +54,10 @@ var toolList = []map[string]any{
 			"window_hours": map[string]any{
 				"type":        "number",
 				"description": "Conversion window in hours from the first step (default 168 = 7 days).",
+			},
+			"breakdown": map[string]any{
+				"type":        "string",
+				"description": "Optional property to segment the funnel by (from the user's first step). Returns one funnel per value, e.g. breakdown \"source\" gives conversion by acquisition channel.",
 			},
 			"filters": filtersSchema,
 		}, []string{"steps"}),

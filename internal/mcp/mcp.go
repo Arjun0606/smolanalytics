@@ -251,6 +251,7 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		var a struct {
 			Steps       []string  `json:"steps"`
 			WindowHours float64   `json:"window_hours"`
+			Breakdown   string    `json:"breakdown"`
 			Filters     FilterSet `json:"filters"`
 		}
 		if err := unmarshalArgs(args, &a); err != nil {
@@ -274,6 +275,12 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		window := time.Duration(a.WindowHours * float64(time.Hour))
 		if window <= 0 {
 			window = 7 * 24 * time.Hour
+		}
+		// breakdown: conversion by a property (segment by the user's first step-0 value) —
+		// same shape as GET /v1/funnel?breakdown=, locked by agreement_test.
+		if a.Breakdown != "" {
+			return jsonText(map[string]any{"steps": a.Steps, "breakdown": a.Breakdown,
+				"segments": funnel.ComputeBreakdown(query.Apply(evs, a.Filters), steps, window, a.Breakdown)})
 		}
 		return jsonText(funnel.Compute(query.Apply(evs, a.Filters), steps, window))
 	case "retention":

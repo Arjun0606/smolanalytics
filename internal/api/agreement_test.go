@@ -118,6 +118,7 @@ func TestMCPAPIAgreement(t *testing.T) {
 		{"funnel default window", "/v1/funnel?steps=signup,activate,checkout", "funnel", `{"steps":["signup","activate","checkout"]}`, false},
 		{"funnel filtered", "/v1/funnel?steps=signup,activate&filters=" + urlEnc(filters), "funnel", `{"steps":["signup","activate"],"filters":` + filters + `}`, false},
 		{"funnel filtered in-list", "/v1/funnel?steps=signup,activate&filters=" + urlEnc(inFilters), "funnel", `{"steps":["signup","activate"],"filters":` + inFilters + `}`, false},
+		{"funnel breakdown by property", "/v1/funnel?steps=signup,activate&breakdown=plan", "funnel", `{"steps":["signup","activate"],"breakdown":"plan"}`, false},
 		{"trends", "/v1/trends?event=signup", "trends", `{"event":"signup"}`, false},
 		{"trends measure sum (revenue)", "/v1/trends?event=checkout&measure=sum&property=amount", "trends", `{"event":"checkout","measure":"sum","property":"amount"}`, false},
 		{"trends measure avg (AOV)", "/v1/trends?event=checkout&measure=avg&property=amount", "trends", `{"event":"checkout","measure":"avg","property":"amount"}`, false},

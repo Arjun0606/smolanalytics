@@ -503,6 +503,16 @@ func (s *Server) apiFunnel(w http.ResponseWriter, r *http.Request) {
 		writeQueryErr(w, err)
 		return
 	}
+	// breakdown=source runs the funnel per segment (conversion by property) — the same
+	// shape the MCP funnel tool returns, so agreement_test locks the two together.
+	if bd := r.URL.Query().Get("breakdown"); bd != "" {
+		names := make([]string, len(steps))
+		for i, st := range steps {
+			names[i] = st.Event
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"steps": names, "breakdown": bd, "segments": funnel.ComputeBreakdown(evs, steps, window, bd)})
+		return
+	}
 	writeJSON(w, http.StatusOK, funnel.Compute(evs, steps, window))
 }
 

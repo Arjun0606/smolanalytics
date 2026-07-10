@@ -6,6 +6,7 @@
 package funnel
 
 import (
+	"fmt"
 	"sort"
 	"time"
 
@@ -94,6 +95,81 @@ func Compute(events []event.Event, steps []Step, window time.Duration) Result {
 		res.OverallConversion = float64(counts[len(counts)-1]) / float64(counts[0])
 	}
 	return res
+}
+
+// SegmentResult is one value of a breakdown property and that segment's full funnel.
+type SegmentResult struct {
+	Value  string `json:"value"`
+	Result        // the funnel for users in this segment
+}
+
+// ComputeBreakdown runs the funnel separately for each segment, where a user's segment is
+// the value of `property` on their FIRST step-0 event. This is the correct Mixpanel
+// semantics: a source/plan set at signup carries the user through the whole funnel even if
+// later steps don't repeat the property, unlike filtering events by the property (which
+// would drop steps that never carry it and report a broken conversion). Segments are sorted
+// by step-0 users descending; users who never reach step 0 belong to no segment.
+func ComputeBreakdown(events []event.Event, steps []Step, window time.Duration, property string) []SegmentResult {
+	if len(steps) == 0 {
+		return nil
+	}
+	first := steps[0].Event
+	type u struct {
+		evs      []event.Event
+		seg      string
+		anchorTS time.Time
+		hasStep0 bool
+	}
+	byUser := map[string]*u{}
+	for _, e := range events {
+		x := byUser[e.DistinctID]
+		if x == nil {
+			x = &u{}
+			byUser[e.DistinctID] = x
+		}
+		x.evs = append(x.evs, e)
+		if e.Name == first && (!x.hasStep0 || e.Timestamp.Before(x.anchorTS)) {
+			x.hasStep0 = true
+			x.anchorTS = e.Timestamp
+			if v, ok := e.Properties[property]; ok {
+				x.seg = segValue(v)
+			} else {
+				x.seg = "(none)"
+			}
+		}
+	}
+	segEvents := map[string][]event.Event{}
+	for _, x := range byUser {
+		if x.hasStep0 {
+			segEvents[x.seg] = append(segEvents[x.seg], x.evs...)
+		}
+	}
+	out := make([]SegmentResult, 0, len(segEvents))
+	for val, evs := range segEvents {
+		out = append(out, SegmentResult{Value: val, Result: Compute(evs, steps, window)})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		ci, cj := stepZero(out[i].Result), stepZero(out[j].Result)
+		if ci != cj {
+			return ci > cj
+		}
+		return out[i].Value < out[j].Value
+	})
+	return out
+}
+
+func stepZero(r Result) int {
+	if len(r.Steps) > 0 {
+		return r.Steps[0].Count
+	}
+	return 0
+}
+
+func segValue(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return fmt.Sprintf("%v", v)
 }
 
 // furthestStep returns how many funnel steps a single user completed (0..len), the time
