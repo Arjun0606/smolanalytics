@@ -121,6 +121,8 @@ func TestMCPAPIAgreement(t *testing.T) {
 		{"trends measure avg (AOV)", "/v1/trends?event=checkout&measure=avg&property=amount", "trends", `{"event":"checkout","measure":"avg","property":"amount"}`, false},
 		{"trends measure p90", "/v1/trends?event=checkout&measure=p90&property=amount", "trends", `{"event":"checkout","measure":"p90","property":"amount"}`, false},
 		{"retention", "/v1/retention?days=7&event=signup", "retention", `{"days":7,"event":"signup"}`, true},
+		{"retention weekly bucket", "/v1/retention?days=4&event=signup&bucket=week", "retention", `{"days":4,"event":"signup","bucket":"week"}`, true},
+		{"retention rolling", "/v1/retention?days=7&event=signup&rolling=true", "retention", `{"days":7,"event":"signup","rolling":true}`, true},
 		{"retention capped at 90 both sides", "/v1/retention?days=500&event=signup", "retention", `{"days":500,"event":"signup"}`, true},
 		{"web overview", "/v1/web?days=30", "web_overview", `{"days":30}`, false},
 		{"lifecycle capped at 180 both sides", "/v1/lifecycle?days=500", "lifecycle", `{"days":500}`, false},

@@ -60,7 +60,7 @@ var toolList = []map[string]any{
 	},
 	{
 		"name":        "retention",
-		"description": "Cohort retention: group users by the day they first appeared and measure what % return on day 1..N. Use for 'do users come back', 'what's my retention', 'are users sticking'.",
+		"description": "Cohort retention: group users by when they first appeared and measure what % return on period 1..N. Defaults to daily; set bucket \"week\" or \"month\" for a weekly/monthly product (daily retention understates a weekly product). rolling=true gives unbounded 'active on or after period n' retention. Use for 'do users come back', 'weekly retention', 'are users sticking'.",
 		"inputSchema": obj(map[string]any{
 			"event": map[string]any{
 				"type":        "string",
@@ -68,7 +68,15 @@ var toolList = []map[string]any{
 			},
 			"days": map[string]any{
 				"type":        "number",
-				"description": "How many days to measure (default 7).",
+				"description": "How many periods to measure (default 7).",
+			},
+			"bucket": map[string]any{
+				"type":        "string",
+				"description": "Period size: \"day\" (default), \"week\" (7-day blocks), or \"month\" (30-day blocks). Use week/month for a weekly/monthly product.",
+			},
+			"rolling": map[string]any{
+				"type":        "boolean",
+				"description": "true = unbounded retention (active on period n OR any later period), instead of exactly on period n.",
 			},
 			"filters": filtersSchema,
 		}, nil),

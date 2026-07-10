@@ -280,6 +280,8 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		var a struct {
 			Event   string    `json:"event"`
 			Days    int       `json:"days"`
+			Bucket  string    `json:"bucket"`
+			Rolling bool      `json:"rolling"`
 			Filters FilterSet `json:"filters"`
 		}
 		if err := unmarshalArgs(args, &a); err != nil {
@@ -297,7 +299,7 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		if err := query.Validate(a.Filters); err != nil {
 			return "", err
 		}
-		return jsonText(summarizeRetention(retention.Compute(query.Apply(evs, a.Filters), a.Days, a.Event)))
+		return jsonText(summarizeRetention(retention.ComputeBucketed(query.Apply(evs, a.Filters), a.Days, a.Event, a.Bucket, a.Rolling)))
 	case "trends":
 		var a struct {
 			Event     string    `json:"event"`
@@ -588,23 +590,12 @@ func (s *Server) toolOverview(evs []event.Event) (string, error) {
 }
 
 func summarizeRetention(rr retention.Result) map[string]any {
-	var size int
-	for _, c := range rr.Cohorts {
-		size += c.Size
-	}
-	out := map[string]any{"cohort_users": size, "max_days": rr.MaxDays}
-	// Honest day-N summaries: only cohorts old enough to observe day N are in the
-	// denominator (retention.DayN), and a day we can't measure yet is OMITTED, never
-	// reported as 0% — the model must not be handed a fabricated number.
-	now := time.Now().UTC()
-	for _, n := range []int{1, 7, 30} {
-		if ret, sz := retention.DayN(rr, n, now); sz > 0 {
-			out[fmt.Sprintf("day%d_retention_pct", n)] = int(float64(ret)/float64(sz)*100 + 0.5)
-			out[fmt.Sprintf("day%d_cohort_users", n)] = sz
-		}
-	}
+	// retention.Summarize is the SAME honest headline computation the HTTP API serializes,
+	// so the two surfaces can never disagree (agreement_test enforces it). We add the raw
+	// grid + a model-facing note on top.
+	out := retention.Summarize(rr, time.Now().UTC())
 	out["cohorts"] = rr.Cohorts
-	out["note"] = "day-N percentages only include cohorts old enough to observe day N; per-cohort rows show raw counts (Returned[n] of Size)."
+	out["note"] = "period-N percentages only include cohorts old enough to observe period N; per-cohort rows show raw counts (Returned[n] of Size)."
 	return out
 }
 

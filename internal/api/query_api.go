@@ -207,17 +207,14 @@ func (s *Server) apiRetention(w http.ResponseWriter, r *http.Request) {
 		writeQueryErr(w, err)
 		return
 	}
-	rr := retention.Compute(evs, days, r.URL.Query().Get("event"))
-	// ship the honest day-N summaries (observable cohorts only, retention.DayN) so no
-	// client ever re-derives them wrong from the raw grid.
-	out := map[string]any{"cohorts": rr.Cohorts, "max_days": rr.MaxDays}
-	now := time.Now().UTC()
-	for _, n := range []int{1, 7, 30} {
-		if ret, size := retention.DayN(rr, n, now); size > 0 {
-			out[fmt.Sprintf("day%d_retention_pct", n)] = int(float64(ret)/float64(size)*100 + 0.5)
-			out[fmt.Sprintf("day%d_cohort_users", n)] = size
-		}
-	}
+	q := r.URL.Query()
+	// bucket=week|month groups cohorts into 7-/30-day periods (a weekly product read daily
+	// looks broken); rolling=true is unbounded "active on or after period n" retention.
+	rr := retention.ComputeBucketed(evs, days, q.Get("event"), q.Get("bucket"), q.Get("rolling") == "true")
+	// the honest headline summaries come from retention.Summarize — the SAME function the MCP
+	// tool serializes, so the two surfaces can't drift (agreement_test locks it).
+	out := retention.Summarize(rr, time.Now().UTC())
+	out["cohorts"] = rr.Cohorts
 	writeJSON(w, http.StatusOK, out)
 }
 

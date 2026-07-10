@@ -225,7 +225,7 @@ func answer(q string, evs []event.Event, now time.Time) string {
 
 	switch intent {
 	case intentRetention:
-		return answerRetention(scoped, volAll, win, now)
+		return answerRetention(scoped, volAll, win, now, q)
 	case intentChannels:
 		return answerChannels(scoped, volAll, win)
 	case intentTopPages:
@@ -601,7 +601,12 @@ func humanDuration(secs float64) string {
 	}
 }
 
-func answerRetention(evs []event.Event, vol []string, win askWindow, now time.Time) string {
+func answerRetention(evs []event.Event, vol []string, win askWindow, now time.Time, q string) string {
+	// weekly/monthly/rolling asks take the bucketed path; the default daily path below is
+	// kept byte-identical so nothing about the common case changes.
+	if hasAny(q, "weekly", "week", "monthly", "month", "rolling", "unbounded") {
+		return answerRetentionBucketed(evs, vol, win, now, q)
+	}
 	rr := retention.Compute(evs, 7, pickEvent(vol, "open"))
 	// honest denominators: only cohorts old enough to observe day N (retention.DayN)
 	d1, size1 := retention.DayN(rr, 1, now)
@@ -622,6 +627,50 @@ func answerRetention(evs []event.Event, vol []string, win askWindow, now time.Ti
 		out += " Cohorts scoped to first activity " + win.label + "."
 	}
 	return out
+}
+
+// answerRetentionBucketed handles weekly/monthly/rolling retention asks: same honest
+// denominator (only cohorts old enough to observe period N), reported in the unit asked for.
+func answerRetentionBucketed(evs []event.Event, vol []string, win askWindow, now time.Time, q string) string {
+	bucket, unit, p1, p2, maxP := "day", "day", 1, 7, 7
+	if hasAny(q, "weekly", "week") {
+		bucket, unit, p1, p2, maxP = "week", "week", 1, 4, 4
+	}
+	if hasAny(q, "monthly", "month") {
+		bucket, unit, p1, p2, maxP = "month", "month", 1, 3, 3
+	}
+	rolling := hasAny(q, "rolling", "unbounded")
+	rr := retention.ComputeBucketed(evs, maxP, pickEvent(vol, "open"), bucket, rolling)
+
+	r1, s1 := retention.PeriodN(rr, p1, now)
+	kind := unit
+	if rolling {
+		kind = "rolling " + unit
+	}
+	if s1 == 0 {
+		return fmt.Sprintf("Not enough history yet to measure %s-over-%s retention, cohorts need to be past their first %s. Check back later, or drop the bucket for daily retention.", kind, unit, unit)
+	}
+	pctOf := func(a, b int) int { return int(float64(a)/float64(b)*100 + 0.5) }
+	out := fmt.Sprintf("%s-1 retention is %d%% (of %d users past %s 1).", title(unit), pctOf(r1, s1), s1, unit)
+	if r2, s2 := retention.PeriodN(rr, p2, now); s2 > 0 {
+		out = fmt.Sprintf("%s-1 retention is %d%% and %s-%d is %d%% (of %d and %d users old enough to measure).",
+			title(unit), pctOf(r1, s1), unit, p2, pctOf(r2, s2), s1, s2)
+	}
+	if rolling {
+		out += " (Rolling: counts users active on that period or any later one.)"
+	}
+	if win.scoped() {
+		out += " Cohorts scoped to first activity " + win.label + "."
+	}
+	return out
+}
+
+// title upper-cases the first letter (day -> Day) for the sentence-start unit label.
+func title(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }
 
 // answerChannels answers "which channel converts best" the way goal_report does:
