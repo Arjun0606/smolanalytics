@@ -574,8 +574,31 @@ func answerFunnel(evs []event.Event, vol []string, win askWindow) string {
 			worstDrop, worst = st.DroppedFromPrev, st.Event
 		}
 	}
-	return fmt.Sprintf("%d of %d users (%d%%) complete %s%s. The biggest drop-off is at \"%s\", %d users fall off there.",
-		fr.Steps[len(fr.Steps)-1].Count, fr.Steps[0].Count, pct(fr.OverallConversion), ftitle, windowClause(win), worst, worstDrop)
+	timing := ""
+	if fr.Converted > 0 && fr.MedianConvSecs > 0 {
+		timing = fmt.Sprintf(" Median time to convert the full funnel: %s.", humanDuration(fr.MedianConvSecs))
+	}
+	return fmt.Sprintf("%d of %d users (%d%%) complete %s%s. The biggest drop-off is at \"%s\", %d users fall off there.%s",
+		fr.Steps[len(fr.Steps)-1].Count, fr.Steps[0].Count, pct(fr.OverallConversion), ftitle, windowClause(win), worst, worstDrop, timing)
+}
+
+// humanDuration renders a time-to-convert like "45s", "12m", "3h 20m", or "2.5 days".
+func humanDuration(secs float64) string {
+	d := time.Duration(secs) * time.Second
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case d < 24*time.Hour:
+		h := int(d.Hours())
+		if m := int(d.Minutes()) % 60; m != 0 {
+			return fmt.Sprintf("%dh %dm", h, m)
+		}
+		return fmt.Sprintf("%dh", h)
+	default:
+		return fmt.Sprintf("%.1f days", d.Hours()/24)
+	}
 }
 
 func answerRetention(evs []event.Event, vol []string, win askWindow, now time.Time) string {

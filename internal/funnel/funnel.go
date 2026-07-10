@@ -29,7 +29,9 @@ type StepResult struct {
 // Result is the full funnel: per-step counts + the overall conversion.
 type Result struct {
 	Steps             []StepResult `json:"steps"`
-	OverallConversion float64      `json:"overall_conversion"` // last step / first step
+	OverallConversion float64      `json:"overall_conversion"`     // last step / first step
+	Converted         int          `json:"converted"`              // users who completed every step
+	MedianConvSecs    float64      `json:"median_conversion_secs"` // median time first->last step for converters (0 if none)
 }
 
 // Compute runs the funnel over events. A user counts toward step i only if they
@@ -51,11 +53,27 @@ func Compute(events []event.Event, steps []Step, window time.Duration) Result {
 	}
 
 	counts := make([]int, len(steps))
+	var convTimes []time.Duration // time first->last step, for users who fully converted
 	for _, evs := range byUser {
-		reached := furthestStep(evs, steps, window)
+		reached, dur, converted := furthestStep(evs, steps, window)
 		for i := 0; i < reached; i++ {
 			counts[i]++
 		}
+		if converted {
+			convTimes = append(convTimes, dur)
+		}
+	}
+	if len(convTimes) > 0 {
+		sort.Slice(convTimes, func(i, j int) bool { return convTimes[i] < convTimes[j] })
+		n := len(convTimes)
+		var med time.Duration
+		if n%2 == 1 {
+			med = convTimes[n/2]
+		} else {
+			med = (convTimes[n/2-1] + convTimes[n/2]) / 2
+		}
+		res.Converted = n
+		res.MedianConvSecs = med.Seconds()
 	}
 
 	for i := range res.Steps {
@@ -78,35 +96,40 @@ func Compute(events []event.Event, steps []Step, window time.Duration) Result {
 	return res
 }
 
-// furthestStep returns how many funnel steps a single user completed (0..len). It
-// tries each occurrence of step 0 as the anchor and returns the furthest the user
-// reaches from the best one — so a user whose first step-0 falls out of window but
-// who later retries and converts is still counted (standard Mixpanel/Amplitude
-// re-anchoring, rather than dropping them on the first anchor).
-func furthestStep(evs []event.Event, steps []Step, window time.Duration) int {
+// furthestStep returns how many funnel steps a single user completed (0..len), the time
+// from the anchor step-0 to the furthest matched step, and whether they fully converted.
+// It tries each occurrence of step 0 as the anchor and returns the furthest the user
+// reaches from the best one — so a user whose first step-0 falls out of window but who
+// later retries and converts is still counted (standard Mixpanel/Amplitude re-anchoring,
+// rather than dropping them on the first anchor). dur is measured on that best path.
+func furthestStep(evs []event.Event, steps []Step, window time.Duration) (reached int, dur time.Duration, converted bool) {
 	sort.SliceStable(evs, func(i, j int) bool { return evs[i].Timestamp.Before(evs[j].Timestamp) })
 
 	best := 0
+	var bestDur time.Duration
 	for start := range evs {
 		if evs[start].Name != steps[0].Event {
 			continue
 		}
 		anchor := evs[start].Timestamp
 		idx := 1 // matched step 0
+		lastMatch := anchor
 		for k := start + 1; k < len(evs) && idx < len(steps); k++ {
 			if window > 0 && evs[k].Timestamp.Sub(anchor) > window {
 				break // out of window — and everything after is later, so stop
 			}
 			if evs[k].Name == steps[idx].Event {
 				idx++
+				lastMatch = evs[k].Timestamp
 			}
 		}
 		if idx > best {
 			best = idx
+			bestDur = lastMatch.Sub(anchor)
 		}
 		if best == len(steps) {
 			break // can't do better than full conversion
 		}
 	}
-	return best
+	return best, bestDur, best == len(steps)
 }
