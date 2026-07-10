@@ -201,7 +201,7 @@
   <div class="logo">smol<b>analytics</b></div>
   <form class="ask" id="askform">
     <span class="k">›</span>
-    <input id="askq" autocomplete="off" placeholder="ask anything   —   how many signups this week? visitors to /pricing? where do users drop off?" aria-label="ask">
+    <input id="askq" autocomplete="off" placeholder="ask anything about your data…" aria-label="ask">
     <span class="hint">⏎ ask</span>
   </form>
   {{if .HasWeb}}<nav class="tabs"><a href="/{{if .Site}}?site={{.Site}}{{end}}" {{if not .ShowProduct}}class="on"{{end}}>Web</a><a href="/?view=product{{if .Site}}&site={{.Site}}{{end}}" {{if .ShowProduct}}class="on"{{end}}>Product</a></nav>{{end}}
@@ -230,10 +230,12 @@
 <main class="wrap">
   {{if .ShowingDev}}<div class="devnote">Showing <b>development</b> data (localhost / 127.0.0.1), the traffic production reports hide. <a href="/{{if .Site}}?site={{.Site}}{{end}}">← back to production</a></div>{{else if gt .DevHidden 0}}<div class="devnote">{{.DevHidden}} event{{if ne .DevHidden 1}}s{{end}} from localhost/development {{if eq .DevHidden 1}}is{{else}}are{{end}} hidden from these production reports. <a href="/?env=development{{if .Site}}&site={{.Site}}{{end}}">view dev data →</a></div>{{end}}
   {{if .HasData}}
+  {{if .Verdict}}
   <div class="card verdict">
     <h2>What to look at <span class="vdot"></span></h2>
-    <div id="verdict">{{range .Verdict}}<div class="vrow{{if eq .Severity "warn"}} warn{{end}}"><span class="vt">{{.Title}}</span><span class="vd">{{.Detail}}</span></div>{{else}}<div class="vmuted">not enough data yet — send some events.</div>{{end}}</div>
+    <div id="verdict">{{range .Verdict}}<div class="vrow{{if eq .Severity "warn"}} warn{{end}}"><span class="vt">{{.Title}}</span><span class="vd">{{.Detail}}</span></div>{{end}}</div>
   </div>
+  {{end}}
 
   <div class="card">
     <h2>Your week · this week vs last</h2>
@@ -245,7 +247,7 @@
     <summary>{{if .HasData}}Setup &amp; connect{{else}}Get started in 2 minutes{{end}}</summary>
     <div class="ob">
       <div class="obstep">
-        <div class="obh">1 · Install — drop this in your app</div>
+        <div class="obh">1 · Install, drop this in your app</div>
         <pre class="code" id="c1">&lt;script src="{{.Base}}/sdk.js"&gt;&lt;/script&gt;
 &lt;script&gt;
   smolanalytics.init("{{if .WriteKey}}{{.WriteKey}}{{else}}YOUR_WRITE_KEY{{end}}", {{"{"}} host: "{{.Base}}" {{"}"}});
@@ -255,20 +257,20 @@
       </div>
 
       <div class="obstep">
-        <div class="obh">…or let your AI do it — paste into Cursor / Claude Code</div>
-        <pre class="code" id="c2">Add smolanalytics product analytics to this app. Load the script {{.Base}}/sdk.js and call smolanalytics.init("{{if .WriteKey}}{{.WriteKey}}{{else}}YOUR_WRITE_KEY{{end}}", {{"{"}} host: "{{.Base}}" {{"}"}}). Then call smolanalytics.track(event, props) at the key moments — "signup" on account creation, "activate" at the core aha moment, "checkout" on payment — and smolanalytics.identify(userId) on login. Put the calls in the right places in the codebase.</pre>
+        <div class="obh">…or let your AI do it, paste into Cursor / Claude Code</div>
+        <pre class="code" id="c2">Add smolanalytics product analytics to this app. Load the script {{.Base}}/sdk.js and call smolanalytics.init("{{if .WriteKey}}{{.WriteKey}}{{else}}YOUR_WRITE_KEY{{end}}", {{"{"}} host: "{{.Base}}" {{"}"}}). Then call smolanalytics.track(event, props) at the key moments: "signup" on account creation, "activate" at the core aha moment, "checkout" on payment, and smolanalytics.identify(userId) on login. Put the calls in the right places in the codebase.</pre>
         <button class="copy" data-c="c2">copy</button>
       </div>
 
       <div class="obstep">
-        <div class="obh">2 · Ask it anything — connect your own AI over MCP</div>
+        <div class="obh">2 · Ask it anything, connect your own AI over MCP</div>
         <pre class="code" id="c3">{{"{"}}
   "mcpServers": {{"{"}}
     "smolanalytics": {{"{"}} "url": "{{.Base}}/mcp"{{if .WriteKey}}, "headers": {{"{"}} "Authorization": "Bearer {{.WriteKey}}" {{"}"}}{{end}} {{"}"}}
   {{"}"}}
 {{"}"}}</pre>
         <button class="copy" data-c="c3">copy</button>
-        <div class="obnote">Add to your Claude Desktop / Cursor MCP config, then ask <em>"what's my activation rate, and is pro converting better than free?"</em> — your own model reads your data through our tools (we never run a model, so it's free). If a key is set, add <code>"headers": {{"{"}} "Authorization": "Bearer YOUR_KEY" {{"}"}}</code> next to the url.<br><strong>Self-hosting?</strong> Skip the JSON — run <code>smolanalytics connect</code> and it wires itself into Claude Desktop / Cursor in one command.</div>
+        <div class="obnote">Add to your Claude Desktop / Cursor MCP config, then ask <em>"what's my activation rate, and is pro converting better than free?"</em>, your own model reads your data through our tools (we never run a model, so it's free). If a key is set, add <code>"headers": {{"{"}} "Authorization": "Bearer YOUR_KEY" {{"}"}}</code> next to the url.<br><strong>Self-hosting?</strong> Skip the JSON, run <code>smolanalytics connect</code> and it wires itself into Claude Desktop / Cursor in one command.</div>
       </div>
 
       <div class="obstatus" id="obstatus">○ waiting for your first event…</div>
@@ -327,7 +329,7 @@
       <input id="gValue" autocomplete="off" placeholder="event name (signup) or path glob (/thanks*)">
       <button id="gCreate">Create goal</button>
     </div>
-    <div class="obnote" id="gNote">no goals yet — name what counts as success. A value starting with <code>/</code> is matched as a page path; anything else is an event name.</div>
+    <div class="obnote" id="gNote">no goals yet, name what counts as success. A value starting with <code>/</code> is matched as a page path; anything else is an event name.</div>
     {{end}}
   </div>
   {{end}}
@@ -362,7 +364,7 @@
 
   <div class="card">
     <h2>Saved reports</h2>
-    <div id="saved" class="saved"><div class="exsummary">no saved reports yet — build one above and hit Save</div></div>
+    <div id="saved" class="saved"><div class="exsummary">no saved reports yet, build one above and hit Save</div></div>
   </div>
 
   <div class="card">
@@ -377,7 +379,7 @@
   </div>
 
   <div class="card">
-    <h2>Defined events · name a business event from clicks you already captured — no code</h2>
+    <h2>Defined events · name a business event from clicks you already captured, no code</h2>
     <div class="exrow">
       <input id="deName" autocomplete="off" placeholder="event name (e.g. checkout)">
       <span class="exsummary">=</span>
@@ -388,7 +390,7 @@
       <input id="deValue" autocomplete="off" placeholder="value (e.g. Buy now)">
       <button id="deCreate">Create</button>
     </div>
-    <div id="deList" class="saved"><div class="exsummary">no defined events yet — turn a captured click into a named event, retroactive to install</div></div>
+    <div id="deList" class="saved"><div class="exsummary">no defined events yet, turn a captured click into a named event, retroactive to install</div></div>
   </div>
 
   <div class="grid">
@@ -644,7 +646,7 @@
       exRun.onclick();
     }
     function renderSaved(items){
-      if(!items.length){savedEl.innerHTML='<div class="exsummary">no saved reports yet — build one above and hit Save</div>';return;}
+      if(!items.length){savedEl.innerHTML='<div class="exsummary">no saved reports yet, build one above and hit Save</div>';return;}
       savedEl.innerHTML='';
       items.forEach(function(it){
         var chip=document.createElement('div'); chip.className='chip';
@@ -697,7 +699,7 @@
         deField=document.getElementById('deField'),deOp=document.getElementById('deOp'),
         deValue=document.getElementById('deValue'),deList=document.getElementById('deList');
     function renderDefined(items){
-      if(!items.length){deList.innerHTML='<div class="exsummary">no defined events yet — turn a captured click into a named event, retroactive to install</div>';return;}
+      if(!items.length){deList.innerHTML='<div class="exsummary">no defined events yet, turn a captured click into a named event, retroactive to install</div>';return;}
       deList.innerHTML='';
       items.forEach(function(d){
         var w=(d.where||[]).map(function(c){return c.field+' '+c.op+' "'+c.value+'"';}).join(' and ');
@@ -794,7 +796,8 @@
     if(vEl){
       fetch('/v1/notable').then(function(r){return r.json()}).then(function(j){
         var fs=(j&&j.findings)||[];
-        if(!fs.length){vEl.innerHTML='<div class="vmuted">not enough data yet — send some events.</div>';return;}
+        // an empty verdict never renders an empty-state card, it just gets out of the way
+        if(!fs.length){var vc=vEl.closest('.card');if(vc)vc.style.display='none';return;}
         vEl.innerHTML='';
         fs.forEach(function(f){
           var row=document.createElement('div'); row.className='vrow'+(f.severity==='warn'?' warn':'');
