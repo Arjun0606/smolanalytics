@@ -75,11 +75,13 @@ var toolList = []map[string]any{
 	},
 	{
 		"name":        "trends",
-		"description": "Daily time series for an event: how many happened each day (or unique users per day). With breakdown set, returns one line per property value. Use for 'how many signups', 'signups by source over time', 'is growth up'.",
+		"description": "Daily time series for an event: how many happened each day (or unique users per day). With breakdown set, returns one line per property value. With measure+property set, aggregates a NUMERIC property per day (sum/avg/min/max/median/p90) — use this for revenue ('measure=sum, property=amount'), average order value ('measure=avg'), p90 latency, etc. Use for 'how many signups', 'total revenue per day', 'average order value', 'signups by source over time'.",
 		"inputSchema": obj(map[string]any{
 			"event":     map[string]any{"type": "string", "description": "Event name, e.g. \"signup\". Empty = all events."},
 			"unique":    map[string]any{"type": "boolean", "description": "Count distinct users per day instead of raw events."},
 			"breakdown": map[string]any{"type": "string", "description": "Optional property to split into one series per value, e.g. \"source\"."},
+			"measure":   map[string]any{"type": "string", "description": "Numeric aggregation over `property`: sum, avg, min, max, median, or p90. Requires property. Example: revenue = measure \"sum\" of property \"amount\"."},
+			"property":  map[string]any{"type": "string", "description": "The numeric property to aggregate when `measure` is set, e.g. \"amount\" or \"duration_ms\"."},
 			"filters":   filtersSchema,
 		}, nil),
 	},

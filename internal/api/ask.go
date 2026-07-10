@@ -87,6 +87,8 @@ func computedBy(q string, now time.Time) string {
 		report = "the web-overview report"
 	case intentTopPages:
 		report = "the top-pages report"
+	case intentMeasure:
+		report = "the numeric-aggregation report (a deterministic sum/avg/median/p90 over a property you sent)"
 	default:
 		report = "a deterministic report"
 	}
@@ -107,6 +109,7 @@ const (
 	intentFunnel    askIntent = "funnel"
 	intentActive    askIntent = "active"
 	intentSignups   askIntent = "signups"
+	intentMeasure   askIntent = "measure"
 	intentUnknown   askIntent = "unknown"
 )
 
@@ -127,6 +130,11 @@ func classifyAsk(q string) askIntent {
 		"what's wrong", "whats wrong", "going wrong", "wrong with", "problem",
 		"needs attention", "what should i do", "priorit", "red flag", "biggest issue"):
 		return intentBrief
+	// numeric aggregation (revenue = sum of amount, AOV = avg, p90 latency) BEFORE the
+	// count-y intents, so "total revenue"/"average order value" aren't answered as a
+	// checkout count. Resolves to a real number only if the property was actually sent.
+	case isMeasureAsk(q):
+		return intentMeasure
 	case hasAny(q, "retention", "retain", "come back", "comeback", "returning", "stick"):
 		return intentRetention
 	// top-pages must outrank both channels ("which pages" ≠ "which sources") and the
@@ -190,6 +198,12 @@ func answer(q string, evs []event.Event, now time.Time) string {
 	volAll := eventsByVolume(evs) // event NAMES come from the full schema, metrics from the window
 	scoped := scope(evs, win)
 
+	// Numeric aggregation wins before the path/event-name shortcuts, so "average order
+	// value" isn't hijacked into a checkout COUNT by the named-event branch below.
+	if intent == intentMeasure {
+		return answerMeasure(scoped, q, volAll, win)
+	}
+
 	// Explicit page-path or event-name mentions answer about exactly what the user named,
 	// taking priority over the generic intents. This is what lets the "your pages" and
 	// "your events" discovery chips resolve to a real answer instead of a generic one, and
@@ -236,6 +250,118 @@ func answer(q string, evs []event.Event, now time.Time) string {
 			answerBrief(evs, 7, now) + "\n\nAsk about any of those, scoped to today, yesterday, this/last week, " +
 			"this/last month, or last N days, or connect your own Claude/Cursor over MCP to go deeper."
 	}
+}
+
+// isMeasureAsk spots a numeric-aggregation question (revenue, AOV, median, p90) vs a count.
+// Kept to STRONG signals so "how much traffic" stays a web question, not a measure.
+func isMeasureAsk(q string) bool {
+	if hasAny(q, "revenue", "order value", "aov", "arpu", "sum of", "median",
+		"percentile", "p90", "p95", "p99", "average", "avg ", "mean ",
+		"how much money", "how much did", "total spend", "total amount", "total revenue") {
+		return true
+	}
+	// superlatives count as a measure only when paired with a value-ish word, so "max amount"
+	// / "highest revenue" route to a measure but "highest traffic" stays a web question.
+	return hasAny(q, "highest", "lowest", "max ", "maximum", "minimum", "min ", "biggest", "largest", "smallest", "peak ") &&
+		hasAny(q, "amount", "revenue", "value", "price", "cost", "spend", "order", "cart", "duration", "latency", "load time", "response time", "payment", "purchase")
+}
+
+// measureFromQuestion picks the aggregation from the phrasing; defaults to Sum (revenue).
+func measureFromQuestion(q string) trends.Measure {
+	switch {
+	case hasAny(q, "average", "avg", "mean", "order value", "aov", "arpu"):
+		return trends.Avg
+	case hasAny(q, "median"):
+		return trends.Median
+	case hasAny(q, "p90", "p95", "p99", "percentile", "90th"):
+		return trends.P90
+	case hasAny(q, "highest", "max", "biggest", "largest", "peak"):
+		return trends.Max
+	case hasAny(q, "lowest", "min", "smallest"):
+		return trends.Min
+	default:
+		return trends.Sum
+	}
+}
+
+// resolveNumericProp maps the question to a numeric property that ACTUALLY EXISTS in the
+// events, so we never invent a metric. Direct name match first, then aliases, then the usual
+// money columns. Returns "" when nothing numeric fits — the honest-refusal path.
+func resolveNumericProp(q string, evs []event.Event) string {
+	props := trends.NumericProps(evs)
+	if len(props) == 0 {
+		return ""
+	}
+	has := func(name string) bool {
+		for _, p := range props {
+			if p == name {
+				return true
+			}
+		}
+		return false
+	}
+	for _, p := range props { // 1. a real numeric property named verbatim
+		if strings.Contains(q, strings.ToLower(p)) {
+			return p
+		}
+	}
+	for _, a := range [][2]string{ // 2. aliases -> a candidate that exists
+		{"revenue", "amount"}, {"order value", "amount"}, {"aov", "amount"}, {"sales", "amount"},
+		{"spend", "amount"}, {"money", "amount"}, {"arpu", "amount"},
+		{"latency", "duration_ms"}, {"load time", "duration_ms"}, {"duration", "duration_ms"},
+		{"response time", "duration_ms"},
+	} {
+		if strings.Contains(q, a[0]) && has(a[1]) {
+			return a[1]
+		}
+	}
+	for _, c := range []string{"amount", "revenue", "value", "total", "price"} { // 3. usual columns
+		if has(c) {
+			return c
+		}
+	}
+	return ""
+}
+
+// answerMeasure computes a numeric aggregate over a real property, or refuses honestly when
+// no such property was sent — never fabricating a metric (the core trust promise).
+func answerMeasure(evs []event.Event, q string, volAll []string, win askWindow) string {
+	m := measureFromQuestion(q)
+	prop := resolveNumericProp(q, evs)
+	if prop == "" {
+		if props := trends.NumericProps(evs); len(props) > 0 {
+			return "I compute numbers only from values you've actually sent, so I won't invent one. The numeric properties on your events are: " +
+				strings.Join(props, ", ") + ". Ask about one of those, or send a new one (e.g. track(\"checkout\", {amount: 29}))."
+		}
+		return "I compute numbers only from values you've actually sent, so I won't invent one. You haven't sent any numeric event properties yet — add one (e.g. track(\"checkout\", {amount: 29})) and I'll total or average it exactly."
+	}
+	ev := namedEvent(q, volAll) // "" = across every event carrying the property
+	res := trends.ComputeMeasure(evs, ev, prop, m, win.from, win.to)
+	if res.N == 0 {
+		return fmt.Sprintf("No numeric %q values in that window yet, so there's nothing to compute. Once your events carry it, I'll report it exactly.", prop)
+	}
+	verb := map[trends.Measure]string{trends.Sum: "Total", trends.Avg: "Average", trends.Min: "Minimum", trends.Max: "Maximum", trends.Median: "Median", trends.P90: "p90"}[m]
+	evPart := ""
+	if ev != "" {
+		evPart = " per " + ev
+	}
+	scopePart := ""
+	if win.scoped() && win.label != "" {
+		scopePart = ", " + strings.TrimSpace(win.label)
+	}
+	plural := "s"
+	if res.N == 1 {
+		plural = ""
+	}
+	return fmt.Sprintf("%s %s%s%s: %s, computed from %d event%s.", verb, prop, evPart, scopePart, fmtMeasureNum(res.Total), res.N, plural)
+}
+
+// fmtMeasureNum prints a whole number cleanly and anything else to 2 decimals.
+func fmtMeasureNum(f float64) string {
+	if f == math.Trunc(f) {
+		return strconv.FormatFloat(f, 'f', 0, 64)
+	}
+	return strconv.FormatFloat(f, 'f', 2, 64)
 }
 
 // answerAction is honest guidance for change requests: the ask bar computes

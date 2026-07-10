@@ -44,6 +44,7 @@ func agreementServer(t *testing.T) *httptest.Server {
 		if i%4 == 0 {
 			batch = append(batch, map[string]any{
 				"name": "checkout", "distinct_id": u, "timestamp": now.Add(-age + 2*time.Hour).Format(time.RFC3339),
+				"properties": map[string]any{"amount": float64(20 + (i%3)*10)}, // varies 20/30/40 for measure tests
 			})
 		}
 		batch = append(batch, map[string]any{
@@ -116,6 +117,9 @@ func TestMCPAPIAgreement(t *testing.T) {
 		{"funnel default window", "/v1/funnel?steps=signup,activate,checkout", "funnel", `{"steps":["signup","activate","checkout"]}`, false},
 		{"funnel filtered", "/v1/funnel?steps=signup,activate&filters=" + urlEnc(filters), "funnel", `{"steps":["signup","activate"],"filters":` + filters + `}`, false},
 		{"trends", "/v1/trends?event=signup", "trends", `{"event":"signup"}`, false},
+		{"trends measure sum (revenue)", "/v1/trends?event=checkout&measure=sum&property=amount", "trends", `{"event":"checkout","measure":"sum","property":"amount"}`, false},
+		{"trends measure avg (AOV)", "/v1/trends?event=checkout&measure=avg&property=amount", "trends", `{"event":"checkout","measure":"avg","property":"amount"}`, false},
+		{"trends measure p90", "/v1/trends?event=checkout&measure=p90&property=amount", "trends", `{"event":"checkout","measure":"p90","property":"amount"}`, false},
 		{"retention", "/v1/retention?days=7&event=signup", "retention", `{"days":7,"event":"signup"}`, true},
 		{"retention capped at 90 both sides", "/v1/retention?days=500&event=signup", "retention", `{"days":500,"event":"signup"}`, true},
 		{"web overview", "/v1/web?days=30", "web_overview", `{"days":30}`, false},

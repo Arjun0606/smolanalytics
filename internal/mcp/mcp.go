@@ -303,6 +303,8 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 			Event     string    `json:"event"`
 			Unique    bool      `json:"unique"`
 			Breakdown string    `json:"breakdown"`
+			Measure   string    `json:"measure"`
+			Property  string    `json:"property"`
 			Filters   FilterSet `json:"filters"`
 		}
 		if err := unmarshalArgs(args, &a); err != nil {
@@ -315,6 +317,15 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 			return "", err
 		}
 		ev := query.Apply(evs, a.Filters)
+		// numeric aggregation over a property (revenue, AOV, p90) — mirrors GET /v1/trends
+		// with measure=; window is all-events here (no from/to arg), same as Compute below.
+		if a.Measure != "" {
+			if a.Property == "" {
+				return "", fmt.Errorf("measure needs a numeric property (e.g. property=amount)")
+			}
+			m, _ := trends.ParseMeasure(a.Measure)
+			return jsonText(trends.ComputeMeasure(ev, a.Event, a.Property, m, time.Time{}, time.Time{}))
+		}
 		if a.Breakdown != "" {
 			return jsonText(map[string]any{"event": a.Event, "breakdown": a.Breakdown,
 				"series": trends.ComputeBreakdown(ev, a.Event, a.Breakdown, time.Time{}, time.Time{}, a.Unique)})

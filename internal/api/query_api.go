@@ -104,6 +104,18 @@ func (s *Server) apiTrends(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, werr.Error())
 		return
 	}
+	// numeric aggregation: measure=sum|avg|min|max|median|p90 over a numeric property
+	// (revenue, AOV, p90 latency) — the money/growth questions Count can't answer.
+	if meas := q.Get("measure"); meas != "" {
+		property := q.Get("property")
+		if property == "" {
+			writeErr(w, http.StatusBadRequest, "measure needs a numeric property, e.g. measure=sum&property=amount")
+			return
+		}
+		m, _ := trends.ParseMeasure(meas)
+		writeJSON(w, http.StatusOK, trends.ComputeMeasure(evs, event, property, m, from, to))
+		return
+	}
 	if bd := q.Get("breakdown"); bd != "" {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"event": event, "breakdown": bd,
