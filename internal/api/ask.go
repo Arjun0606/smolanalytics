@@ -47,10 +47,13 @@ func (s *Server) ask(w http.ResponseWriter, r *http.Request) {
 	// every answer ships with its receipt: which deterministic report produced it, over
 	// what window, and the guarantee that a CI test proves it can't be fabricated. "Plain
 	// English analytics" makes people fear hallucinated numbers — show the work so they can
-	// verify before they trust.
+	// verify before they trust. The intent is the deterministic route the classifier picked,
+	// exposed so a UI can render the matching chart under the answer (reports-as-answers)
+	// without re-classifying the question and drifting from the engine.
 	writeJSON(w, http.StatusOK, map[string]string{
 		"answer":      answer(q, evs, now),
 		"computed_by": computedBy(q, now),
+		"intent":      string(classifyAsk(q)),
 	})
 }
 

@@ -55,3 +55,18 @@ func TestAskMeasure_ReceiptPresent(t *testing.T) {
 		t.Errorf("measure answer should carry a numeric-aggregation receipt, got: %q", cb)
 	}
 }
+
+// The ask response's intent field powers reports-as-answers in the UI: the chart under an
+// answer is chosen by the ENGINE's classification, never re-derived client-side.
+func TestAskIntentExposed(t *testing.T) {
+	for q, want := range map[string]string{
+		"where do people drop off?": "funnel",
+		"how is retention?":         "retention",
+		"total revenue":             "measure",
+		"how many signups?":         "signups",
+	} {
+		if got := string(classifyAsk(q)); got != want {
+			t.Errorf("classifyAsk(%q) = %q, want %q", q, got, want)
+		}
+	}
+}
