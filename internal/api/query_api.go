@@ -183,7 +183,7 @@ func (s *Server) apiTrends(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	unique := q.Get("unique") == "true"
+	unique := q.Get("unique") == "true" || q.Get("unique") == "1" || q.Get("unique") == "yes"
 	event := q.Get("event")
 	from, to, werr := parseTrendWindow(r)
 	if werr != nil {

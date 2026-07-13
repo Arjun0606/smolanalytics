@@ -178,11 +178,6 @@ func Seed(s store.Store) error {
 			if r.Float64() < 0.3 {
 				plan = "pro"
 			}
-			props := map[string]any{"source": source, "plan": plan}
-			t := dayStart.Add(time.Duration(r.Intn(24)) * time.Hour).Add(time.Duration(r.Intn(60)) * time.Minute)
-
-			// the web layer: everyone lands before signing up (referrer per source,
-			// device split, some tagged campaigns) — feeds the web_overview report
 			device := "desktop"
 			if r.Float64() < 0.35 {
 				device = "mobile"
@@ -193,6 +188,14 @@ func Seed(s store.Store) error {
 			browser := [...]string{"Chrome", "Safari", "Firefox", "Edge"}[weighted(r, 55, 25, 12, 8)]
 			osName := [...]string{"macOS", "Windows", "iOS", "Android", "Linux"}[weighted(r, 34, 30, 16, 12, 8)]
 			country := [...]string{"US", "IN", "DE", "GB", "FR", "BR", "CA", "NL"}[weighted(r, 32, 18, 12, 11, 8, 7, 7, 5)]
+			// the same dimensions real ingest stamps ride on the CUSTOM events too, so
+			// breakdowns of signup/activate/checkout return real segments, never "(none)"
+			props := map[string]any{"source": source, "plan": plan,
+				"device": device, "browser": browser, "os": osName, "country": country}
+			t := dayStart.Add(time.Duration(r.Intn(24)) * time.Hour).Add(time.Duration(r.Intn(60)) * time.Minute)
+
+			// the web layer: everyone lands before signing up (referrer per source,
+			// device split, some tagged campaigns) — feeds the web_overview report
 			wprops := map[string]any{"path": "/", "referrer": ref, "device": device, "source": source,
 				"browser": browser, "os": osName, "country": country}
 			if source == "twitter" && r.Float64() < 0.5 {

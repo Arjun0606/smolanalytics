@@ -183,6 +183,7 @@ type dashVM struct {
 	LastEventSecs  int    // seconds since the newest ingested event; -1 = none
 	ComputeMS      int    // wall time this page took to compute — printed in the footer as a brag
 	TrendMax       int    // the chart's y-axis top — rendered as a real scale, not a hover secret
+	GhostTotal     int    // prior window's total — 0 hides the ghost legend instead of promising invisible bars
 	CustomRange    bool   // an explicit ?from/?to window is active
 	AnyMode        bool   // filters join with OR (?fm=any) instead of AND
 	RangeFrom      string // the custom window's inputs, echoed into the date pickers
@@ -506,6 +507,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		HasShares:      s.shares != nil,
 		HasGoalsStore:  s.goals != nil,
 		RangeDays:      rangeDays,
+		GhostTotal:     trPrior.Total,
 		CustomRange:    customRange,
 		AnyMode:        anyMode,
 		RangeFrom:      r.URL.Query().Get("from"),
