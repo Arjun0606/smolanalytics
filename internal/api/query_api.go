@@ -198,8 +198,17 @@ func (s *Server) apiTrends(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadRequest, "measure needs a numeric property, e.g. measure=sum&property=amount")
 			return
 		}
-		m, _ := trends.ParseMeasure(meas)
+		m, ok := trends.ParseMeasure(meas)
+		if !ok {
+			writeErr(w, http.StatusBadRequest, "unknown measure "+meas+" (want sum, avg, min, max, median or p90)")
+			return
+		}
 		writeJSON(w, http.StatusOK, trends.ComputeMeasure(evs, event, property, m, from, to))
+		return
+	}
+	iv, iverr := trends.ParseInterval(q.Get("interval"))
+	if iverr != nil {
+		writeErr(w, http.StatusBadRequest, iverr.Error())
 		return
 	}
 	if bd := q.Get("breakdown"); bd != "" {
@@ -209,7 +218,25 @@ func (s *Server) apiTrends(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	writeJSON(w, http.StatusOK, trends.Compute(evs, event, from, to, unique))
+	// multi-series: events=a,b,c charts several events on one canvas (the
+	// signups-vs-checkouts question). Single event= stays the simple path.
+	if multi := q.Get("events"); multi != "" {
+		names := strings.Split(multi, ",")
+		if len(names) > 8 {
+			names = names[:8]
+		}
+		series := make([]trends.Result, 0, len(names))
+		for _, n := range names {
+			n = strings.TrimSpace(n)
+			if n == "" {
+				continue
+			}
+			series = append(series, trends.ComputeInterval(evs, n, from, to, unique, iv))
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"interval": string(iv), "series": series})
+		return
+	}
+	writeJSON(w, http.StatusOK, trends.ComputeInterval(evs, event, from, to, unique, iv))
 }
 
 // parseTrendWindow reads the time scope for /v1/trends from the query: days=N is a

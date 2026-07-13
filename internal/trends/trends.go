@@ -347,3 +347,150 @@ func numOf(v any) (float64, bool) {
 	}
 	return 0, false
 }
+
+// Interval is a bucketing grain for the series.
+type Interval string
+
+const (
+	Hour  Interval = "hour"
+	Day   Interval = "day"
+	Week  Interval = "week"  // ISO weeks, Monday start
+	Month Interval = "month" // calendar months
+)
+
+// ParseInterval maps a request string to a grain; empty = day. Unknown grains are
+// an error, never silently day — a wrong-grain chart is a silent-wrong answer.
+func ParseInterval(s string) (Interval, error) {
+	switch s {
+	case "", "day":
+		return Day, nil
+	case "hour":
+		return Hour, nil
+	case "week":
+		return Week, nil
+	case "month":
+		return Month, nil
+	}
+	return "", fmt.Errorf("unknown interval %q (want hour, day, week or month)", s)
+}
+
+// bucketOf truncates t to the start of its interval bucket.
+func bucketOf(t time.Time, iv Interval) time.Time {
+	t = t.UTC()
+	switch iv {
+	case Hour:
+		return t.Truncate(time.Hour)
+	case Week:
+		d := t.Truncate(24 * time.Hour)
+		off := (int(d.Weekday()) + 6) % 7 // Monday start
+		return d.AddDate(0, 0, -off)
+	case Month:
+		return time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, time.UTC)
+	default:
+		return t.Truncate(24 * time.Hour)
+	}
+}
+
+// next advances a bucket start by one interval.
+func next(t time.Time, iv Interval) time.Time {
+	switch iv {
+	case Hour:
+		return t.Add(time.Hour)
+	case Week:
+		return t.AddDate(0, 0, 7)
+	case Month:
+		return t.AddDate(0, 1, 0)
+	default:
+		return t.AddDate(0, 0, 1)
+	}
+}
+
+// ComputeInterval is Compute with a bucketing grain. Buckets with no activity fill
+// with zero so the series is continuous. Hourly output is capped at 31 days of
+// buckets (744) — the guardrail every incumbent applies to keep charts readable.
+func ComputeInterval(events []event.Event, eventName string, from, to time.Time, unique bool, iv Interval) Result {
+	if iv == Day || iv == "" {
+		return Compute(events, eventName, from, to, unique)
+	}
+	r := Result{Event: eventName, Unique: unique}
+	per := map[int64]map[string]int{}
+	var loT, hiT time.Time
+	have := false
+	for _, e := range events {
+		if eventName != "" && e.Name != eventName {
+			continue
+		}
+		ts := e.Timestamp.UTC()
+		if !from.IsZero() && ts.Before(from) {
+			continue
+		}
+		if !to.IsZero() && !ts.Before(to) {
+			continue
+		}
+		b := bucketOf(ts, iv)
+		k := b.Unix()
+		if per[k] == nil {
+			per[k] = map[string]int{}
+		}
+		if unique {
+			per[k][e.DistinctID]++
+		} else {
+			per[k][""]++
+		}
+		if !have || b.Before(loT) {
+			loT = b
+		}
+		if !have || b.After(hiT) {
+			hiT = b
+		}
+		have = true
+	}
+	if !from.IsZero() {
+		loT = bucketOf(from, iv)
+	}
+	if !to.IsZero() {
+		hiT = bucketOf(to.Add(-time.Nanosecond), iv)
+	}
+	if !have && (from.IsZero() || to.IsZero()) {
+		return r
+	}
+	guard := 0
+	for b := loT; !b.After(hiT); b = next(b, iv) {
+		guard++
+		if iv == Hour && guard > 744 {
+			break
+		}
+		if guard > 4000 {
+			break // absolute runaway stop for any grain
+		}
+		n := 0
+		if m := per[b.Unix()]; m != nil {
+			if unique {
+				n = len(m)
+			} else {
+				n = m[""]
+			}
+		}
+		r.Points = append(r.Points, Point{Date: b, Count: n})
+		r.Total += n
+	}
+	if unique {
+		// unique totals must not double-count users across buckets
+		users := map[string]bool{}
+		for _, e := range events {
+			if eventName != "" && e.Name != eventName {
+				continue
+			}
+			ts := e.Timestamp.UTC()
+			if !from.IsZero() && ts.Before(from) {
+				continue
+			}
+			if !to.IsZero() && !ts.Before(to) {
+				continue
+			}
+			users[e.DistinctID] = true
+		}
+		r.Total = len(users)
+	}
+	return r
+}

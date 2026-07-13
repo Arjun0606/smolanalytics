@@ -126,6 +126,18 @@
   .chartzone{margin:18px 0 0}
   .zonelbl{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--mut2);margin-bottom:10px;display:flex;align-items:baseline;gap:8px}
   .zonelbl .sub{text-transform:none;letter-spacing:0;color:var(--mut2)}
+  .zonesel{background:var(--s1);border:1px solid var(--line);color:var(--fg);font-family:var(--mono);font-size:11px;padding:2px 6px;border-radius:4px;margin-right:6px}
+  .charttable{margin-top:10px}
+  .charttable summary{cursor:pointer;list-style:none;font-family:var(--mono);font-size:11px;color:var(--mut2);padding:4px 0}
+  .charttable summary:hover{color:var(--accent)}
+  table.ctab{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:12px;margin-top:6px}
+  table.ctab th{color:var(--mut2);font-weight:500;text-align:left;padding:4px 10px 4px 0;border-bottom:1px solid var(--line);font-size:10px;text-transform:uppercase;letter-spacing:.06em}
+  table.ctab td{padding:4px 10px 4px 0;border-bottom:1px solid var(--s2)}
+  table.ctab .n{text-align:right}
+  table.ctab .mut{color:var(--mut2)}
+  table.ctab .up{color:var(--ok)} table.ctab .down{color:var(--warn)}
+  table.ctab .cbar{width:30%}
+  table.ctab .cbar div{height:8px;background:rgba(245,166,35,.35);border-radius:2px}
   .chartwrap{display:flex;gap:10px}
   .yaxis{display:flex;flex-direction:column;justify-content:space-between;text-align:right;color:var(--mut2);font-family:var(--mono);font-size:10px;padding:24px 0 0;height:174px;min-width:28px}
   .yaxis .ymid::before{content:""}
@@ -399,7 +411,16 @@
 
   <!-- zone 5: exactly one chart -->
   <div class="chartzone">
-    <div class="zonelbl">{{.TrendLabel}} per day <span class="sub">· last {{.RangeDays}}d{{if gt .GhostTotal 0}} · grey = prior {{.RangeDays}}d, same scale{{end}} · computed by /v1/trends</span>
+    <div class="zonelbl">
+      <select id="chartMetric" class="zonesel" title="chart any event">
+        {{range .Events}}<option value="{{.}}" {{if eq . $.ChartMetric}}selected{{end}}>{{.}}</option>{{end}}
+      </select>
+      <select id="chartGran" class="zonesel" title="bucket size">
+        <option value="day" {{if eq .Gran "day"}}selected{{end}}>daily</option>
+        <option value="week" {{if eq .Gran "week"}}selected{{end}}>weekly</option>
+        <option value="month" {{if eq .Gran "month"}}selected{{end}}>monthly</option>
+      </select>
+      <span class="sub">· last {{.RangeDays}}d{{if gt .GhostTotal 0}} · grey = prior {{.RangeDays}}d, same scale{{end}} · computed by /v1/trends</span>
       <select id="chartBreak" style="margin-left:auto;background:var(--s1);border:1px solid var(--line);color:var(--mut);font-family:var(--mono);font-size:10px;padding:2px 6px;border-radius:4px">
         <option value="">no breakdown</option>
         <option value="country">by country</option>
@@ -425,6 +446,22 @@
       </div>
     </div>
     </div>
+    {{if .ChartTable}}
+    <details class="charttable">
+      <summary>data table · newest first ▾</summary>
+      <table class="ctab">
+        <thead><tr><th>bucket</th><th class="n">{{.ChartMetric}}</th>{{if gt .GhostTotal 0}}<th class="n">prior</th><th class="n">change</th>{{end}}<th></th></tr></thead>
+        <tbody>
+        {{range .ChartTable}}<tr>
+          <td>{{.Label}}</td><td class="n">{{.Count}}</td>
+          {{if gt $.GhostTotal 0}}<td class="n mut">{{if ge .Prior 0}}{{.Prior}}{{end}}</td>
+          <td class="n {{if .Delta}}{{if eq (slice .Delta 0 1) "+"}}up{{else if eq (slice .Delta 0 1) "-"}}down{{end}}{{end}}">{{.Delta}}</td>{{end}}
+          <td class="cbar"><div style="width:{{.Bar}}%"></div></td>
+        </tr>{{end}}
+        </tbody>
+      </table>
+    </details>
+    {{end}}
   </div>
 
   {{if .Hours}}
@@ -1003,6 +1040,16 @@
         location.href=u.toString();
       });
     }
+
+    // chart metric + grain: server-rendered via the URL so views stay shareable
+    var cm=document.getElementById('chartMetric'),cg=document.getElementById('chartGran');
+    function setParam(k,v,dflt){
+      var u=new URL(location.href);
+      if(v===dflt)u.searchParams.delete(k);else u.searchParams.set(k,v);
+      u.hash='';location.href=u.toString();
+    }
+    if(cm)cm.onchange=function(){setParam('metric',cm.value,'{{.StatEventLabel}}');};
+    if(cg)cg.onchange=function(){setParam('gran',cg.value,'day');};
 
     // chart breakdown: split the main series by any dimension, same /v1/trends engine
     var cbreak=document.getElementById('chartBreak'),calt=document.getElementById('chartAlt'),cmain=document.getElementById('chartMain');

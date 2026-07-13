@@ -178,15 +178,18 @@ type dashVM struct {
 	VisitorsDelta  string // vs the prior equal window; "" when unknowable
 	PageviewsDelta string
 	SignupsDelta   string
-	SourceProp     string // the property behind the sources rows (click-to-filter)
-	ConvByProp     string // the property behind conversion-by rows
-	LastEventSecs  int    // seconds since the newest ingested event; -1 = none
-	ComputeMS      int    // wall time this page took to compute — printed in the footer as a brag
-	TrendMax       int    // the chart's y-axis top — rendered as a real scale, not a hover secret
-	GhostTotal     int    // prior window's total — 0 hides the ghost legend instead of promising invisible bars
-	CustomRange    bool   // an explicit ?from/?to window is active
-	AnyMode        bool   // filters join with OR (?fm=any) instead of AND
-	RangeFrom      string // the custom window's inputs, echoed into the date pickers
+	SourceProp     string     // the property behind the sources rows (click-to-filter)
+	ConvByProp     string     // the property behind conversion-by rows
+	LastEventSecs  int        // seconds since the newest ingested event; -1 = none
+	ComputeMS      int        // wall time this page took to compute — printed in the footer as a brag
+	TrendMax       int        // the chart's y-axis top — rendered as a real scale, not a hover secret
+	GhostTotal     int        // prior window's total — 0 hides the ghost legend instead of promising invisible bars
+	ChartMetric    string     // the charted event (?metric=), defaults to the detected headline event
+	Gran           string     // chart bucket grain (?gran=): day|week|month (hour capped upstream)
+	ChartTable     []chartRow // the sortable-data-table half of the chart+table unit
+	CustomRange    bool       // an explicit ?from/?to window is active
+	AnyMode        bool       // filters join with OR (?fm=any) instead of AND
+	RangeFrom      string     // the custom window's inputs, echoed into the date pickers
 	RangeTo        string
 	EngagedHuman   string // "13m 23s", never "803s"
 
@@ -218,6 +221,14 @@ func flagOf(cc string) string {
 	r1 := 0x1F1E6 + rune(cc[0]) - 'A'
 	r2 := 0x1F1E6 + rune(cc[1]) - 'A'
 	return string(r1) + string(r2)
+}
+
+type chartRow struct {
+	Label string // bucket label ("Jul 8" / "wk of Jul 7" / "Jul 2026")
+	Count int
+	Prior int    // same-position prior-window value (-1 = unknown)
+	Delta string // signed % vs prior, "" when unknowable
+	Bar   int    // count as % of the max, for the inline bar
 }
 
 type rangeVM struct {
@@ -467,12 +478,22 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	if !rangeAsof.IsZero() {
 		endT = rangeAsof
 	}
+	// the chart's metric + grain are user-selectable and live in the URL like all
+	// analysis state (?metric=checkout&gran=week)
+	chartMetric := r.URL.Query().Get("metric")
+	gran, granErr := trends.ParseInterval(r.URL.Query().Get("gran"))
+	if granErr != nil {
+		gran = trends.Day
+	}
 	fr := funnel.Compute(evs, fsteps, 7*24*time.Hour)
 	rr := retentionOf(evs, 7, retEvent)
 	// the chart and the headline stat both follow the selected range, and the stat
 	// carries a delta vs the prior equal window so movement is visible at a glance
-	tr := trends.Compute(evs, trendEvent, endT.AddDate(0, 0, -rangeDays), rangeAsof, false)
-	trPrior := trends.Compute(evs, trendEvent, endT.AddDate(0, 0, -2*rangeDays), endT.AddDate(0, 0, -rangeDays), false)
+	if chartMetric != "" {
+		trendEvent = chartMetric
+	}
+	tr := trends.ComputeInterval(evs, trendEvent, endT.AddDate(0, 0, -rangeDays), rangeAsof, false, gran)
+	trPrior := trends.ComputeInterval(evs, trendEvent, endT.AddDate(0, 0, -2*rangeDays), endT.AddDate(0, 0, -rangeDays), false, gran)
 	sig30 := tr.Total
 	sigPrior := trPrior.Total
 
@@ -627,6 +648,38 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		vm.Trend = append(vm.Trend, b)
 	}
 	vm.TrendMax = maxT
+	vm.ChartMetric = trendEvent
+	vm.Gran = string(gran)
+	// the data-table half of the chart+table unit: newest first, capped at 15 rows
+	{
+		n := len(tr.Points)
+		start := 0
+		if n > 15 {
+			start = n - 15
+		}
+		lbl := func(t time.Time) string {
+			switch gran {
+			case trends.Week:
+				return "wk of " + t.Format("Jan 2")
+			case trends.Month:
+				return t.Format("Jan 2006")
+			default:
+				return t.Format("Jan 2")
+			}
+		}
+		for i := n - 1; i >= start; i-- {
+			p := tr.Points[i]
+			row := chartRow{Label: lbl(p.Date), Count: p.Count, Prior: -1}
+			if maxT > 0 {
+				row.Bar = int(math.Round(float64(p.Count) / float64(maxT) * 100))
+			}
+			if i < len(trPrior.Points) {
+				row.Prior = trPrior.Points[i].Count
+				row.Delta = deltaStr(p.Count, trPrior.Points[i].Count)
+			}
+			vm.ChartTable = append(vm.ChartTable, row)
+		}
+	}
 
 	// Segmentation: the headline event broken down by the detected source property.
 	if srcProp != "" {
