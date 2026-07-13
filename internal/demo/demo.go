@@ -99,9 +99,9 @@ type swapStore struct {
 	cur store.Store
 }
 
-func (s *swapStore) get() store.Store          { s.mu.RLock(); defer s.mu.RUnlock(); return s.cur }
-func (s *swapStore) swap(n store.Store)         { s.mu.Lock(); s.cur = n; s.mu.Unlock() }
-func (s *swapStore) Ingest(e ...event.Event) error { return s.get().Ingest(e...) }
+func (s *swapStore) get() store.Store                            { s.mu.RLock(); defer s.mu.RUnlock(); return s.cur }
+func (s *swapStore) swap(n store.Store)                          { s.mu.Lock(); s.cur = n; s.mu.Unlock() }
+func (s *swapStore) Ingest(e ...event.Event) error               { return s.get().Ingest(e...) }
 func (s *swapStore) Range(f, t time.Time) ([]event.Event, error) { return s.get().Range(f, t) }
 func (s *swapStore) Scan(f, t time.Time, fn func(event.Event) error) error {
 	return s.get().Scan(f, t, fn)
@@ -113,6 +113,23 @@ func (s *swapStore) DeleteUser(id string) (int, error) { return s.get().DeleteUs
 
 // Seed populates the store with ~30 days of a SaaS signup→activate→checkout funnel
 // plus daily return ("open") activity for retention and trends.
+// weighted picks an index with the given percent weights — tiny helper so demo
+// splits look like real-world distributions instead of uniform noise.
+func weighted(r *rand.Rand, weights ...int) int {
+	total := 0
+	for _, w := range weights {
+		total += w
+	}
+	n := r.Intn(total)
+	for i, w := range weights {
+		if n < w {
+			return i
+		}
+		n -= w
+	}
+	return 0
+}
+
 func Seed(s store.Store) error {
 	r := rand.New(rand.NewSource(42))
 	now := time.Now().UTC()
@@ -171,9 +188,16 @@ func Seed(s store.Store) error {
 				device = "mobile"
 			}
 			ref := map[string]string{"google": "https://www.google.com/", "twitter": "https://t.co/", "hacker news": "https://news.ycombinator.com/", "reddit": "https://www.reddit.com/", "direct": "", "chatgpt": "https://chatgpt.com/", "claude": "https://claude.ai/", "perplexity": "https://www.perplexity.ai/"}[source]
-			wprops := map[string]any{"path": "/", "referrer": ref, "device": device, "source": source}
+			// the richness dimensions real ingest stamps (UA parse + geo lookup),
+			// seeded here so the demo shows the full breakdown surface
+			browser := [...]string{"Chrome", "Safari", "Firefox", "Edge"}[weighted(r, 55, 25, 12, 8)]
+			osName := [...]string{"macOS", "Windows", "iOS", "Android", "Linux"}[weighted(r, 34, 30, 16, 12, 8)]
+			country := [...]string{"US", "IN", "DE", "GB", "FR", "BR", "CA", "NL"}[weighted(r, 32, 18, 12, 11, 8, 7, 7, 5)]
+			wprops := map[string]any{"path": "/", "referrer": ref, "device": device, "source": source,
+				"browser": browser, "os": osName, "country": country}
 			if source == "twitter" && r.Float64() < 0.5 {
 				wprops["utm_source"] = "twitter"
+				wprops["utm_medium"] = [...]string{"social", "cpc"}[weighted(r, 70, 30)]
 				wprops["utm_campaign"] = "launch"
 			}
 			if err := emit("$pageview", user, t.Add(-3*time.Minute), wprops); err != nil {

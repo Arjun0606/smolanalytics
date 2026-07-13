@@ -183,6 +183,35 @@ type dashVM struct {
 	ComputeMS      int    // wall time this page took to compute — printed in the footer as a brag
 	TrendMax       int    // the chart's y-axis top — rendered as a real scale, not a hover secret
 	EngagedHuman   string // "13m 23s", never "803s"
+
+	// the data-richness dimensions (geo/devices/campaigns/entries/hours) — computed
+	// in internal/web, surfaced as breakdown tabs. Countries carry flag emoji.
+	Countries    []segRow
+	Browsers     []segRow
+	OSes         []segRow
+	DeviceRows   []segRow
+	UTMSources   []segRow
+	UTMMediums   []segRow
+	UTMCampaigns []segRow
+	EntryPages   []segRow
+	Hours        []hourBar
+	HasGeo       bool // countries present → render the geo tab + the db-ip credit
+}
+
+type hourBar struct {
+	Hour      int
+	Count     int
+	HeightPct int
+}
+
+// flagOf turns an ISO 3166-1 alpha-2 code into its flag emoji (regional indicators).
+func flagOf(cc string) string {
+	if len(cc) != 2 {
+		return ""
+	}
+	r1 := 0x1F1E6 + rune(cc[0]) - 'A'
+	r2 := 0x1F1E6 + rune(cc[1]) - 'A'
+	return string(r1) + string(r2)
 }
 
 type rangeVM struct {
@@ -615,6 +644,29 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		}
 		vm.TopPages = toRows(wv.TopPages, 6)
 		vm.Referrers = toRows(wv.Referrers, 6)
+		vm.EntryPages = toRows(wv.EntryPages, 6)
+		vm.Browsers = toRows(wv.Browsers, 6)
+		vm.OSes = toRows(wv.OSes, 6)
+		vm.DeviceRows = toRows(wv.DeviceSplit, 4)
+		vm.UTMSources = toRows(wv.UTMSources, 6)
+		vm.UTMMediums = toRows(wv.UTMMediums, 6)
+		vm.UTMCampaigns = toRows(wv.UTMCampaigns, 6)
+		vm.Countries = toRows(wv.Countries, 10)
+		for i := range vm.Countries {
+			if fl := flagOf(vm.Countries[i].Value); fl != "" {
+				vm.Countries[i].Value = fl + " " + vm.Countries[i].Value
+			}
+		}
+		vm.HasGeo = len(vm.Countries) > 0
+		maxH := 1
+		for _, c := range wv.Hours {
+			if c > maxH {
+				maxH = c
+			}
+		}
+		for h, c := range wv.Hours {
+			vm.Hours = append(vm.Hours, hourBar{Hour: h, Count: c, HeightPct: int(math.Round(float64(c) / float64(maxH) * 100))})
+		}
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

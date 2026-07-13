@@ -29,6 +29,17 @@ type Result struct {
 	Referrers   []Row `json:"referrers"`    // grouped by host, "" → "direct"
 	UTMSources  []Row `json:"utm_sources"`  // only when utm_source is present
 	DeviceSplit []Row `json:"device_split"` // mobile / desktop
+	// the dimensions people open first — browsers/os come from the ingest-time UA
+	// parse, countries from ingest-time geo (when enabled), entry pages from the
+	// SDK's session_id, titles from the SDK's title prop
+	Browsers     []Row   `json:"browsers"`
+	OSes         []Row   `json:"oses"`
+	Countries    []Row   `json:"countries"`
+	UTMMediums   []Row   `json:"utm_mediums"`
+	UTMCampaigns []Row   `json:"utm_campaigns"`
+	EntryPages   []Row   `json:"entry_pages"`
+	TopTitles    []Row   `json:"top_titles"`
+	Hours        [24]int `json:"hours"` // pageviews by UTC hour of day — the activity rhythm
 	// engagement — from $engagement events (SDK measures visible+focused time).
 	// Omitted (zero) when the SDK predates engagement tracking.
 	HasEngagement  bool `json:"has_engagement"`
@@ -64,6 +75,11 @@ func Compute(evs []event.Event, days int, asof time.Time) Result {
 	}
 
 	pages, refs, utms, devices, aiRefs := map[string]*agg{}, map[string]*agg{}, map[string]*agg{}, map[string]*agg{}, map[string]*agg{}
+	browsers, oses, countries, mediums, campaigns, titles := map[string]*agg{}, map[string]*agg{}, map[string]*agg{}, map[string]*agg{}, map[string]*agg{}, map[string]*agg{}
+	// entry page = the FIRST pageview of each session (fallback: visitor+utc-day when
+	// the SDK predates session_id) — "where do people land" as its own dimension
+	entryFirst := map[string]event.Event{}
+	var hours [24]int
 	visitors, live, aiVisitors := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	pv := 0
 	pvPerUser := map[string]int{}
@@ -108,6 +124,38 @@ func Compute(evs []event.Event, days int, asof time.Time) Result {
 		if d, _ := e.Properties["device"].(string); d != "" {
 			bump(devices, d, e.DistinctID)
 		}
+		if b, _ := e.Properties["browser"].(string); b != "" {
+			bump(browsers, b, e.DistinctID)
+		}
+		if o, _ := e.Properties["os"].(string); o != "" {
+			bump(oses, o, e.DistinctID)
+		}
+		if c, _ := e.Properties["country"].(string); c != "" {
+			bump(countries, c, e.DistinctID)
+		}
+		if m, _ := e.Properties["utm_medium"].(string); m != "" {
+			bump(mediums, m, e.DistinctID)
+		}
+		if cp, _ := e.Properties["utm_campaign"].(string); cp != "" {
+			bump(campaigns, cp, e.DistinctID)
+		}
+		if t, _ := e.Properties["title"].(string); t != "" {
+			bump(titles, t, e.DistinctID)
+		}
+		hours[e.Timestamp.UTC().Hour()]++
+		sess, _ := e.Properties["session_id"].(string)
+		if sess == "" {
+			sess = e.DistinctID + "·" + e.Timestamp.UTC().Format("2006-01-02")
+		}
+		if first, ok := entryFirst[sess]; !ok || e.Timestamp.Before(first.Timestamp) {
+			entryFirst[sess] = e
+		}
+	}
+	entries := map[string]*agg{}
+	for _, e := range entryFirst {
+		if p, _ := e.Properties["path"].(string); p != "" {
+			bump(entries, p, e.DistinctID)
+		}
 	}
 
 	r := Result{
@@ -121,6 +169,15 @@ func Compute(evs []event.Event, days int, asof time.Time) Result {
 		DeviceSplit: rank(devices, 4),
 		AIVisitors:  len(aiVisitors),
 		AIReferrers: rank(aiRefs, 6),
+
+		Browsers:     rank(browsers, 8),
+		OSes:         rank(oses, 8),
+		Countries:    rank(countries, 10),
+		UTMMediums:   rank(mediums, 10),
+		UTMCampaigns: rank(campaigns, 10),
+		EntryPages:   rank(entries, 10),
+		TopTitles:    rank(titles, 10),
+		Hours:        hours,
 	}
 	if hasEngagement {
 		r.HasEngagement = true
