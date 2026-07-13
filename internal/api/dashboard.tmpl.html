@@ -38,6 +38,11 @@
   .rangebtn{font-family:var(--mono);font-size:11px;color:var(--mut);padding:4px 10px;text-decoration:none;border-right:1px solid var(--line)}
   .rangebtn:last-child{border-right:none}
   .rangebtn.on{color:var(--accent);background:var(--s2)}
+  .customrange{display:inline-flex;align-items:center;gap:5px}
+  .customrange input{background:var(--s1);border:1px solid var(--line);color:var(--mut);font-family:var(--mono);font-size:10px;padding:3px 6px;border-radius:4px;color-scheme:dark}
+  .customrange.on input{border-color:var(--accent);color:var(--fg)}
+  .customrange .rangego{background:transparent;border:1px solid var(--line);color:var(--mut);font-family:var(--mono);font-size:10px;padding:3px 8px;border-radius:4px;cursor:pointer}
+  .customrange .rangego:hover{border-color:var(--accent);color:var(--accent)}
   .rangebtn:hover{color:var(--fg)}
   .chiprail{display:flex;flex-wrap:wrap;gap:8px;align-items:center;max-width:760px;margin:14px auto 0}
   .fchip{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(245,166,35,.5);color:var(--accent);border-radius:99px;font-family:var(--mono);font-size:11px;padding:4px 11px}
@@ -296,7 +301,13 @@
     <option value="">all sites</option>
     {{range .Sites}}<option value="{{.}}" {{if eq . $.Site}}selected{{end}}>{{.}}</option>{{end}}
   </select>{{end}}
-  {{if .HasData}}<nav class="ranges">{{range .Ranges}}<a class="rangebtn{{if .On}} on{{end}}" href="{{.URL}}">{{.Label}}</a>{{end}}</nav>{{end}}
+  {{if .HasData}}<nav class="ranges">{{range .Ranges}}<a class="rangebtn{{if and .On (not $.CustomRange)}} on{{end}}" href="{{.URL}}">{{.Label}}</a>{{end}}</nav>
+  <form class="customrange{{if .CustomRange}} on{{end}}" id="rangeform">
+    <input type="date" id="rfrom" value="{{.RangeFrom}}" aria-label="from date">
+    <span style="color:var(--mut2)">→</span>
+    <input type="date" id="rto" value="{{.RangeTo}}" aria-label="to date">
+    <button type="submit" class="rangego" title="apply custom range">go</button>
+  </form>{{end}}
   <div class="spacer"></div>
   {{if ge .LastEventSecs 0}}<span class="hlink" id="lastev" data-secs="{{.LastEventSecs}}" title="seconds since the newest ingested event — proof this page is live">·</span>{{end}}
   {{if .HasData}}<a class="livepill{{if gt .LiveNow 0}} on{{end}}" href="#tab=live" id="livepill"><span class="dot"></span><span id="livecount">{{if gt .LiveNow 0}}{{.LiveNow}} now{{else}}live{{end}}</span></a>{{end}}
@@ -359,7 +370,19 @@
 
   <!-- zone 5: exactly one chart -->
   <div class="chartzone">
-    <div class="zonelbl">{{.TrendLabel}} per day <span class="sub">· last {{.RangeDays}}d · computed by /v1/trends</span></div>
+    <div class="zonelbl">{{.TrendLabel}} per day <span class="sub">· last {{.RangeDays}}d · computed by /v1/trends</span>
+      <select id="chartBreak" style="margin-left:auto;background:var(--s1);border:1px solid var(--line);color:var(--mut);font-family:var(--mono);font-size:10px;padding:2px 6px;border-radius:4px">
+        <option value="">no breakdown</option>
+        <option value="country">by country</option>
+        <option value="device">by device</option>
+        <option value="browser">by browser</option>
+        <option value="os">by os</option>
+        <option value="source">by source</option>
+        <option value="utm_source">by utm source</option>
+      </select>
+    </div>
+    <div id="chartAlt" hidden></div>
+    <div id="chartMain">
     <div class="chartwrap">
       <div class="yaxis"><span>{{.TrendMax}}</span><span>0</span></div>
       <div class="plot">
@@ -371,6 +394,7 @@
           {{range .Trend}}<span class="xt">{{.Tick}}</span>{{end}}
         </div>
       </div>
+    </div>
     </div>
   </div>
 
@@ -405,6 +429,7 @@
       {{if .HasSearch}}<button class="tabbtn" data-tab="search">search</button>{{end}}
       {{if .HasWeb}}<button class="tabbtn" data-tab="goals">goals</button>{{end}}
       <button class="tabbtn" data-tab="live">live</button>
+      <button class="tabbtn" data-tab="events">events</button>
     </div>
 
     {{if .HasWeb}}
@@ -525,6 +550,14 @@
 
     <div class="pane" id="pane-live">
       <div id="live" class="live"><div class="livemuted">waiting for events…</div></div>
+    </div>
+
+    <div class="pane" id="pane-events">
+      <div class="exrow" style="margin-bottom:8px">
+        <input id="evFilter" autocomplete="off" placeholder="filter the stream: event name, visitor id, path, any property value…">
+      </div>
+      <div id="evTable" class="live"><div class="livemuted">loading…</div></div>
+      <div class="exsummary" style="margin-top:8px">latest 200 events · click a visitor to open their journey · computed by /v1/events/recent</div>
     </div>
   </div>
 
@@ -875,6 +908,55 @@
       }).catch(function(){});
     }
     pollLive(); setInterval(pollLive, 4000);
+
+    // custom date range: two inputs -> ?from&to (clears the preset)
+    var rform=document.getElementById('rangeform');
+    if(rform){
+      rform.addEventListener('submit',function(e){
+        e.preventDefault();
+        var f=document.getElementById('rfrom').value,t=document.getElementById('rto').value;
+        if(!f||!t)return;
+        var u=new URL(location.href);
+        u.searchParams.set('from',f);u.searchParams.set('to',t);u.searchParams.delete('days');u.hash='';
+        location.href=u.toString();
+      });
+    }
+
+    // chart breakdown: split the main series by any dimension, same /v1/trends engine
+    var cbreak=document.getElementById('chartBreak'),calt=document.getElementById('chartAlt'),cmain=document.getElementById('chartMain');
+    if(cbreak){
+      cbreak.onchange=function(){
+        if(!cbreak.value){calt.hidden=true;cmain.hidden=false;return;}
+        cmain.hidden=true;calt.hidden=false;
+        runInto('trend',{event:SA_EVENT||'$pageview',breakdown:cbreak.value},calt);
+      };
+    }
+
+    // events explorer: the raw stream, filterable, every row drills to a journey
+    var evTable=document.getElementById('evTable'),evFilter=document.getElementById('evFilter'),evRows=[];
+    function renderEvTable(){
+      if(!evTable)return;
+      var q=(evFilter&&evFilter.value||'').toLowerCase();
+      var rows=evRows.filter(function(e){return !q||JSON.stringify(e).toLowerCase().indexOf(q)>=0;});
+      if(!rows.length){evTable.innerHTML='<div class="livemuted">'+(evRows.length?'nothing matches that filter':'no events yet')+'</div>';return;}
+      evTable.innerHTML=rows.slice(0,200).map(function(e){
+        var p=e.properties||{};
+        var detail=[p.path,p.country,p.device,p.browser,p.source].filter(Boolean).join(' · ');
+        return '<div class="row"><span class="ev">'+esc(e.name)+'</span>'+
+          '<span class="who">'+esc(e.distinct_id)+'</span>'+
+          '<span class="who" style="flex:1.4">'+esc(detail)+'</span>'+
+          '<span class="ago">'+ago(e.timestamp)+'</span></div>';
+      }).join('');
+    }
+    if(evTable){
+      fetch('/v1/events/recent?limit=200').then(function(r){return r.json()}).then(function(evs){
+        evRows=evs||[];renderEvTable();
+      }).catch(function(){evTable.innerHTML='<div class="livemuted">could not load</div>';});
+      if(evFilter)evFilter.addEventListener('input',renderEvTable);
+      evTable.addEventListener('click',function(e){
+        var w=e.target.closest('.who');if(!w)return;openJourney(w.textContent);
+      });
+    }
 
     // the journey drill-through: click any visitor id -> that one human's timeline
     function openJourney(id){

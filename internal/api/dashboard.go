@@ -182,6 +182,9 @@ type dashVM struct {
 	LastEventSecs  int    // seconds since the newest ingested event; -1 = none
 	ComputeMS      int    // wall time this page took to compute — printed in the footer as a brag
 	TrendMax       int    // the chart's y-axis top — rendered as a real scale, not a hover secret
+	CustomRange    bool   // an explicit ?from/?to window is active
+	RangeFrom      string // the custom window's inputs, echoed into the date pickers
+	RangeTo        string
 	EngagedHuman   string // "13m 23s", never "803s"
 
 	// the data-richness dimensions (geo/devices/campaigns/entries/hours) — computed
@@ -316,13 +319,27 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		evs = query.Apply(evs, []query.Filter{{Property: "site", Op: query.Eq, Value: site}})
 	}
 
-	// range control: ?days=7|30|90 — every windowed zone below recomputes over it
+	// range control: ?days=7|30|90 presets, or ?from=YYYY-MM-DD&to=YYYY-MM-DD for
+	// arbitrary time travel — every windowed zone below recomputes over the window,
+	// and it lives in the querystring so any past view is a shareable URL
 	rangeDays := 30
 	switch r.URL.Query().Get("days") {
 	case "7":
 		rangeDays = 7
 	case "90":
 		rangeDays = 90
+	}
+	var rangeAsof time.Time // zero = now (presets); set = custom range's end
+	customRange := false
+	if fs, ts := r.URL.Query().Get("from"), r.URL.Query().Get("to"); fs != "" && ts != "" {
+		fromT, errF := time.Parse("2006-01-02", fs)
+		toT, errT := time.Parse("2006-01-02", ts)
+		if errF == nil && errT == nil && toT.After(fromT) {
+			toT = toT.AddDate(0, 0, 1) // inclusive end date
+			rangeDays = int(toT.Sub(fromT).Hours() / 24)
+			rangeAsof = toT
+			customRange = true
+		}
 	}
 
 	// click-to-filter: repeatable ?f=prop:value chips scope every report below.
@@ -400,13 +417,17 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	srcProp := detectProp(evs, "source")
 
 	nowT := time.Now().UTC()
+	endT := nowT
+	if !rangeAsof.IsZero() {
+		endT = rangeAsof
+	}
 	fr := funnel.Compute(evs, fsteps, 7*24*time.Hour)
 	rr := retentionOf(evs, 7, retEvent)
 	// the chart and the headline stat both follow the selected range, and the stat
 	// carries a delta vs the prior equal window so movement is visible at a glance
-	tr := trends.Compute(evs, trendEvent, nowT.AddDate(0, 0, -rangeDays), time.Time{}, false)
+	tr := trends.Compute(evs, trendEvent, endT.AddDate(0, 0, -rangeDays), rangeAsof, false)
 	sig30 := tr.Total
-	sigPrior := trends.Compute(evs, trendEvent, nowT.AddDate(0, 0, -2*rangeDays), nowT.AddDate(0, 0, -rangeDays), false).Total
+	sigPrior := trends.Compute(evs, trendEvent, endT.AddDate(0, 0, -2*rangeDays), endT.AddDate(0, 0, -rangeDays), false).Total
 
 	convLabel := ftitle
 	if n := len(fsteps); n >= 2 {
@@ -439,6 +460,9 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		HasShares:      s.shares != nil,
 		HasGoalsStore:  s.goals != nil,
 		RangeDays:      rangeDays,
+		CustomRange:    customRange,
+		RangeFrom:      r.URL.Query().Get("from"),
+		RangeTo:        r.URL.Query().Get("to"),
 		Ranges:         []rangeVM{mkRange(7), mkRange(30), mkRange(90)},
 		Chips:          chips,
 		SourceProp:     srcProp,
@@ -606,9 +630,9 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	// the web glance — live now, visitors, top pages, referrers over the selected
 	// range, with deltas vs the prior equal window. Only shown when $pageview data
 	// exists; a backend-only instance stays product-only.
-	wv := web.Compute(evs, rangeDays, time.Time{})
+	wv := web.Compute(evs, rangeDays, rangeAsof)
 	if wv.Pageviews > 0 {
-		wvPrior := web.Compute(evs, rangeDays, nowT.AddDate(0, 0, -rangeDays))
+		wvPrior := web.Compute(evs, rangeDays, endT.AddDate(0, 0, -rangeDays))
 		vm.VisitorsDelta = deltaStr(wv.Visitors, wvPrior.Visitors)
 		vm.PageviewsDelta = deltaStr(wv.Pageviews, wvPrior.Pageviews)
 		vm.HasWeb = true
