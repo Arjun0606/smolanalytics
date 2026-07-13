@@ -50,10 +50,17 @@ func (s *Server) ask(w http.ResponseWriter, r *http.Request) {
 	// verify before they trust. The intent is the deterministic route the classifier picked,
 	// exposed so a UI can render the matching chart under the answer (reports-as-answers)
 	// without re-classifying the question and drifting from the engine.
+	// a refusal (unsupported time window) must return NO intent: the UIs chart by
+	// intent, and a chart under "I can't answer that" reads as an answer anyway —
+	// the exact incoherence the proof chip exists to prevent.
+	intent := string(classifyAsk(q))
+	if _, unsupported := parseWindow(q, now); unsupported != "" {
+		intent = ""
+	}
 	writeJSON(w, http.StatusOK, map[string]string{
 		"answer":      answer(q, evs, now),
 		"computed_by": computedBy(q, now),
-		"intent":      string(classifyAsk(q)),
+		"intent":      intent,
 	})
 }
 
@@ -90,6 +97,8 @@ func computedBy(q string, now time.Time) string {
 		report = "the web-overview report"
 	case intentTopPages:
 		report = "the top-pages report"
+	case intentGeo:
+		report = "the geo (countries) breakdown of the web-overview report"
 	case intentMeasure:
 		report = "the numeric-aggregation report (a deterministic sum/avg/median/p90 over a property you sent)"
 	default:
@@ -107,6 +116,7 @@ const (
 	intentBrief     askIntent = "brief"
 	intentRetention askIntent = "retention"
 	intentChannels  askIntent = "channels"
+	intentGeo       askIntent = "geo"
 	intentTopPages  askIntent = "toppages"
 	intentWeb       askIntent = "web"
 	intentFunnel    askIntent = "funnel"
@@ -145,6 +155,10 @@ func classifyAsk(q string) askIntent {
 	case hasAny(q, "top page", "top pages", "most visited", "popular page", "most viewed",
 		"which page", "best page", "top url", "top path", "top content"):
 		return intentTopPages
+	// geo = country questions. Before channels so "how many countries" and "which
+	// countries" never land on sources or a signup trend.
+	case hasAny(q, "countr", "geograph", "which nations", "around the world", "worldwide"):
+		return intentGeo
 	// channels = WHERE traffic comes from (sources), not how much of it there is.
 	case hasAny(q, "channel", "source", "acquisition", "referr", "utm", "campaign",
 		"come from", "coming from", "came from", "where do my", "where are my visitors"):
@@ -233,6 +247,8 @@ func answer(q string, evs []event.Event, now time.Time) string {
 		return answerChannels(scoped, volAll, win)
 	case intentTopPages:
 		return answerTopPages(scoped, win)
+	case intentGeo:
+		return answerGeo(scoped, evs, win)
 	case intentWeb:
 		return answerWeb(scoped, win)
 	case intentFunnel:
@@ -486,6 +502,10 @@ func parseWindow(q string, now time.Time) (win askWindow, unsupported string) {
 		from := monday.AddDate(0, 0, -7)
 		return askWindow{from: from, to: monday,
 			label: "last week (Mon " + from.Format("Jan 2") + " – Sun " + monday.AddDate(0, 0, -1).Format("Jan 2") + ", UTC)"}, ""
+	case strings.Contains(q, "past week"), strings.Contains(q, "previous week"):
+		return askWindow{from: now.AddDate(0, 0, -7), to: now, label: "the last 7 days (UTC)"}, ""
+	case strings.Contains(q, "past month"), strings.Contains(q, "previous month"):
+		return askWindow{from: now.AddDate(0, 0, -30), to: now, label: "the last 30 days (UTC)"}, ""
 	case strings.Contains(q, "this month"):
 		first := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 		return askWindow{from: first, to: now,
@@ -1123,4 +1143,80 @@ func hasAny(s string, subs ...string) bool {
 		}
 	}
 	return false
+}
+
+// answerGeo counts distinct visitor countries (ingest-time geo). Geo stamping
+// began when the operator's instance first ran a geo-enabled build and IPs are
+// never stored, so history before that carries no country — the answer SAYS so
+// whenever the asked window predates the first stamped event, instead of letting
+// an honest small number read as a broken one.
+func answerGeo(scoped, all []event.Event, win askWindow) string {
+	type cAgg struct {
+		visitors map[string]bool
+		views    int
+	}
+	byCC := map[string]*cAgg{}
+	for _, e := range scoped {
+		if e.Name != "$pageview" {
+			continue
+		}
+		cc, _ := e.Properties["country"].(string)
+		if cc == "" {
+			continue
+		}
+		a := byCC[cc]
+		if a == nil {
+			a = &cAgg{visitors: map[string]bool{}}
+			byCC[cc] = a
+		}
+		a.views++
+		a.visitors[e.DistinctID] = true
+	}
+	// the honesty clause: when did geo stamping actually begin on this instance?
+	var firstGeo time.Time
+	for _, e := range all {
+		if _, ok := e.Properties["country"].(string); ok {
+			if firstGeo.IsZero() || e.Timestamp.Before(firstGeo) {
+				firstGeo = e.Timestamp
+			}
+		}
+	}
+	note := ""
+	if !firstGeo.IsZero() && (!win.scoped() || win.from.Before(firstGeo)) {
+		note = " Geo stamping began " + firstGeo.Format("Jan 2") + " on this instance (the IP is used for one lookup at ingest and never stored), so earlier events carry no country."
+	}
+	if len(byCC) == 0 {
+		if firstGeo.IsZero() {
+			return "No country data yet. Geo stamps at ingest from the free DB-IP database, so countries appear as new visitors arrive (IPs are never stored). If this instance runs with SMOLANALYTICS_GEO=off, that is why."
+		}
+		if win.scoped() {
+			return "No geo-stamped pageviews " + win.label + "." + note
+		}
+		return "No geo-stamped pageviews yet." + note
+	}
+	type row struct {
+		cc       string
+		visitors int
+	}
+	rows := make([]row, 0, len(byCC))
+	for cc, a := range byCC {
+		rows = append(rows, row{cc, len(a.visitors)})
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].visitors > rows[j].visitors })
+	parts := make([]string, 0, 5)
+	for i, r := range rows {
+		if i == 5 {
+			break
+		}
+		parts = append(parts, fmt.Sprintf("%s (%d)", r.cc, r.visitors))
+	}
+	scope := "across all recorded geo data"
+	if win.scoped() {
+		scope = win.label
+	}
+	more := ""
+	if len(rows) > 5 {
+		more = fmt.Sprintf(" and %d more", len(rows)-5)
+	}
+	return fmt.Sprintf("Visitors came from %d countries %s: %s%s.%s", len(rows), scope, strings.Join(parts, ", "), more, note)
 }

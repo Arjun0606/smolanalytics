@@ -652,7 +652,17 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		vm.UTMMediums = toRows(wv.UTMMediums, 6)
 		vm.UTMCampaigns = toRows(wv.UTMCampaigns, 6)
 		vm.Countries = toRows(wv.Countries, 10)
+		// share-of-total for a PARTIAL dimension is computed against events that carry
+		// it — geo stamping starts at the first geo-enabled ingest, so dividing by all
+		// pageviews would render an honest 4-visitor day as a bogus "1%"
+		geoTotal := 0
+		for _, r := range wv.Countries {
+			geoTotal += r.Count
+		}
 		for i := range vm.Countries {
+			if geoTotal > 0 {
+				vm.Countries[i].Pct = int(math.Round(float64(vm.Countries[i].Count) / float64(geoTotal) * 100))
+			}
 			if fl := flagOf(vm.Countries[i].Value); fl != "" {
 				vm.Countries[i].Value = fl + " " + vm.Countries[i].Value
 			}

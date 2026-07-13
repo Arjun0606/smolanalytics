@@ -70,3 +70,25 @@ func TestAskIntentExposed(t *testing.T) {
 		}
 	}
 }
+
+// Geo questions must land on the geo intent (never signups/channels), natural
+// time phrases must parse, and a refused window must return NO intent so no UI
+// renders a chart under a refusal.
+func TestAskGeoAndWindows(t *testing.T) {
+	if got := string(classifyAsk("from how many countries did i get viewership in the past week")); got != "geo" {
+		t.Errorf("countries question classified as %q, want geo", got)
+	}
+	if got := string(classifyAsk("where are my visitors from")); got != "channels" {
+		t.Errorf("visitors-from stays channels, got %q", got)
+	}
+	now := time.Now().UTC()
+	if _, unsup := parseWindow("how many signups in the past week", now); unsup != "" {
+		t.Errorf("'past week' should parse, got unsupported=%q", unsup)
+	}
+	if w, _ := parseWindow("visitors in the past month", now); !w.scoped() {
+		t.Error("'past month' should scope to a rolling 30-day window")
+	}
+	if _, unsup := parseWindow("signups this quarter", now); unsup == "" {
+		t.Error("'quarter' must still be named unsupported")
+	}
+}

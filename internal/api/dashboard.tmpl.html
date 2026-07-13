@@ -428,6 +428,7 @@
     {{if .HasGeo}}
     <div class="pane" id="pane-geo">
       <h3>countries · geo by <a href="https://db-ip.com" target="_blank" rel="noopener" style="color:var(--mut2)">db-ip.com</a></h3>
+      <div class="exsummary" style="margin-bottom:10px">countries stamp at ingest from the moment geo is enabled — the IP is used for one lookup and never stored, so earlier events carry no country (no backfill, by design)</div>
       {{range .Countries}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}
     </div>
     {{end}}
