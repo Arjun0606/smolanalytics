@@ -25,14 +25,14 @@
 
   /* zone 0 — header: one quiet 48px row */
   header{border-bottom:1px solid var(--line);background:var(--bg)}
-  .bar{display:flex;align-items:center;gap:14px;min-height:48px}
+  .bar{display:flex;align-items:center;gap:12px;min-height:48px;flex-wrap:nowrap;overflow:hidden}
   .logo{font-weight:800;letter-spacing:-.02em;font-size:15px;white-space:nowrap}
   .logo b{color:var(--accent)}
-  .siteselect{background:transparent;border:1px solid var(--line);color:var(--mut);font-family:var(--mono);font-size:11px;padding:4px 8px;border-radius:4px}
+  .siteselect{background:transparent;border:1px solid var(--line);color:var(--mut);font-family:var(--mono);font-size:11px;padding:4px 8px;border-radius:4px;max-width:180px}
   .spacer{flex:1}
-  .hlink{color:var(--mut);font-family:var(--mono);font-size:11px;text-decoration:none;white-space:nowrap}
+  .hlink{color:var(--mut);font-family:var(--mono);font-size:11px;text-decoration:none;white-space:nowrap;flex:none}
   .hlink:hover{color:var(--fg)}
-  .livepill{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--mut);border:1px solid var(--line);padding:3px 9px;border-radius:99px;cursor:pointer;text-decoration:none}
+  .livepill{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;flex:none;font-family:var(--mono);font-size:11px;color:var(--mut);border:1px solid var(--line);padding:3px 9px;border-radius:99px;cursor:pointer;text-decoration:none}
   .livepill .dot{width:6px;height:6px;border-radius:50%;background:var(--line2)}
   .ranges{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
   .rangebtn{font-family:var(--mono);font-size:11px;color:var(--mut);padding:4px 10px;text-decoration:none;border-right:1px solid var(--line)}
@@ -44,7 +44,8 @@
   .customrange .rangego{background:transparent;border:1px solid var(--line);color:var(--mut);font-family:var(--mono);font-size:10px;padding:3px 8px;border-radius:4px;cursor:pointer}
   .customrange .rangego:hover{border-color:var(--accent);color:var(--accent)}
   .rangebtn:hover{color:var(--fg)}
-  .chiprail{display:flex;flex-wrap:wrap;gap:8px;align-items:center;max-width:760px;margin:14px auto 0}
+  .toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:14px 0 0;padding:8px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .chiprail{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0 0}
   .fchip{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(245,166,35,.5);color:var(--accent);border-radius:99px;font-family:var(--mono);font-size:11px;padding:4px 11px}
   .fchip a{color:var(--mut);text-decoration:none}
   .fchip a:hover{color:var(--warn)}
@@ -59,19 +60,19 @@
   .seg[data-fp]{cursor:pointer}
   .seg[data-fp]:hover{border-color:var(--accent)}
   .livepill.on .dot{background:var(--accent);animation:pulse 1.6s infinite}
-  .agentpill{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--mut);border:1px solid var(--line);padding:3px 9px;border-radius:99px;cursor:pointer}
+  .agentpill{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;flex:none;font-family:var(--mono);font-size:11px;color:var(--mut);border:1px solid var(--line);padding:3px 9px;border-radius:99px;cursor:pointer}
   .agentpill:hover{border-color:var(--accent);color:var(--accent)}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 
   /* zone 1 — the ask hero: the one focal point on the page */
-  .hero{padding:34px 0 6px}
+  .hero{padding:18px 0 4px}
   .ask{position:relative;max-width:760px;margin:0 auto}
   .ask input{width:100%;background:var(--s1);border:1px solid var(--line2);color:var(--fg);border-radius:8px;
     font-family:var(--mono);font-size:15px;padding:15px 84px 15px 44px;outline:none;transition:border-color .15s, box-shadow .15s}
   .ask input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(245,166,35,.14)}
   .ask .k{position:absolute;left:17px;top:50%;transform:translateY(-50%);color:var(--accent);font-family:var(--mono);font-size:15px}
   .ask .hint{position:absolute;right:12px;top:50%;transform:translateY(-50%);display:flex;gap:4px;align-items:center}
-  .askchips{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:8px;padding:12px 0 0;max-width:820px;margin:0 auto}
+  .askchips{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:6px;padding:8px 0 0;max-width:900px;margin:0 auto}
   .chiplbl{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut2)}
   .chip{font-family:var(--mono);font-size:11px;color:var(--mut);border:1px solid var(--line);padding:4px 11px;border-radius:99px;cursor:pointer;transition:.15s;background:transparent}
   .chip:hover{color:var(--accent);border-color:var(--accent)}
@@ -93,11 +94,11 @@
   .abtn.pinned{border-color:var(--accent);color:var(--accent)}
 
   /* zone 3 — verdict sentences (not a card) */
-  .verdict{max-width:760px;margin:26px auto 0}
-  .vline{padding:6px 0;font-size:15px;line-height:1.6}
+  .verdict{max-width:860px;margin:16px auto 0}
+  .vline{padding:4px 0;font-size:14px;line-height:1.55}
   .vline .vdot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-right:9px;position:relative;top:-2px;animation:pulse 1.6s infinite}
   .vline.warn .vdot{background:var(--warn);animation:none}
-  .vline .vt{font-weight:600}
+  .vline .vt{font-weight:600;margin-right:8px}
   .vline .vd{color:var(--mut)}
   .vline .vwhy{color:var(--accent);font-family:var(--mono);font-size:12px;text-decoration:none;white-space:nowrap;cursor:pointer;margin-left:8px}
   .vline .vwhy:hover{text-decoration:underline}
@@ -113,15 +114,15 @@
   .weekbody .vrow.warn .vt{color:var(--warn)}
 
   /* zone 4 — glance row: numbers separated by hairlines, no card chrome */
-  .glance{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:0;margin:30px 0 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
-  .gtile{padding:16px 18px;border-right:1px solid var(--line)}
+  .glance{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:0;margin:18px 0 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .gtile{padding:12px 16px;border-right:1px solid var(--line)}
   .gtile:last-child{border-right:none}
   .gtile .l{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--mut2);white-space:nowrap}
   .gtile .v{font-family:var(--mono);font-size:30px;font-weight:700;letter-spacing:-.02em;margin-top:4px;line-height:1.15}
   .gtile .v.acc{color:var(--accent)}
 
   /* zone 5 — the one chart */
-  .chartzone{margin:26px 0 0}
+  .chartzone{margin:18px 0 0}
   .zonelbl{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--mut2);margin-bottom:10px;display:flex;align-items:baseline;gap:8px}
   .zonelbl .sub{text-transform:none;letter-spacing:0;color:var(--mut2)}
   .chartwrap{display:flex;gap:10px}
@@ -147,7 +148,7 @@
   .xaxis .xt{flex:1;color:var(--mut2);font-family:var(--mono);font-size:10px;white-space:nowrap;overflow:visible}
 
   /* zone 7 — the board: pinned questions as live cards */
-  .board{margin:30px 0 0}
+  .board{margin:18px 0 0}
   .boardgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
   @media(max-width:820px){.boardgrid{grid-template-columns:1fr}}
   .bcard{background:var(--s1);border:1px solid var(--line);border-radius:8px;padding:16px 18px}
@@ -158,7 +159,7 @@
   .bcard .bprov{margin-top:12px;display:flex;align-items:center;gap:8px}
 
   /* zone 8 — breakdowns: one tabbed panel */
-  .breakdowns{margin:30px 0 0}
+  .breakdowns{margin:18px 0 0}
   .tabrail{display:flex;flex-wrap:wrap;gap:2px;border-bottom:1px solid var(--line)}
   .tabbtn{background:transparent;border:none;color:var(--mut);font-family:var(--mono);font-size:12px;padding:8px 13px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
   .tabbtn:hover{color:var(--fg)}
@@ -308,17 +309,10 @@
     <option value="">all sites</option>
     {{range .Sites}}<option value="{{.}}" {{if eq . $.Site}}selected{{end}}>{{.}}</option>{{end}}
   </select>{{end}}
-  {{if .HasData}}<nav class="ranges">{{range .Ranges}}<a class="rangebtn{{if and .On (not $.CustomRange)}} on{{end}}" href="{{.URL}}">{{.Label}}</a>{{end}}</nav>
-  <form class="customrange{{if .CustomRange}} on{{end}}" id="rangeform">
-    <input type="date" id="rfrom" value="{{.RangeFrom}}" aria-label="from date">
-    <span style="color:var(--mut2)">→</span>
-    <input type="date" id="rto" value="{{.RangeTo}}" aria-label="to date">
-    <button type="submit" class="rangego" title="apply custom range">go</button>
-  </form>{{end}}
   <div class="spacer"></div>
   {{if ge .LastEventSecs 0}}<span class="hlink" id="lastev" data-secs="{{.LastEventSecs}}" title="seconds since the newest ingested event — proof this page is live">·</span>{{end}}
   {{if .HasData}}<a class="livepill{{if gt .LiveNow 0}} on{{end}}" href="#tab=live" id="livepill"><span class="dot"></span><span id="livecount">{{if gt .LiveNow 0}}{{.LiveNow}} now{{else}}live{{end}}</span></a>{{end}}
-  <span class="agentpill" id="agentpill" title="connect your coding agent over MCP">⌁ your agent</span>
+  <span class="agentpill" id="agentpill" title="connect your coding agent over MCP">⌁ agent</span>
   {{if .HasShares}}<a class="hlink" href="/settings/shares" id="shareBtn" title="mint a revocable read-only link">share</a>{{end}}
   <a class="hlink" href="https://smolanalytics.com" target="_blank" style="color:var(--accent)">Cloud ↗</a>
   <a class="hlink" href="/settings">settings</a>
@@ -347,9 +341,18 @@
     <div id="askresult" class="answer" hidden></div>
     <div id="shareresult" class="answer" hidden></div>
 
-    <!-- zone 6: filters — every chip scopes EVERY zone; click a chip's op to cycle
-         eq→neq→contains→ncontains; + filter opens the builder; all/any joins rows -->
-    {{if .HasData}}<div class="chiprail">
+    <!-- zone 6: the analysis toolbar — range, dates, filters. one row, where the
+         incumbents put it; every control writes the querystring so views share -->
+    {{if .HasData}}<div class="toolbar">
+      <nav class="ranges">{{range .Ranges}}<a class="rangebtn{{if and .On (not $.CustomRange)}} on{{end}}" href="{{.URL}}">{{.Label}}</a>{{end}}</nav>
+      <form class="customrange{{if .CustomRange}} on{{end}}" id="rangeform">
+        <input type="date" id="rfrom" value="{{.RangeFrom}}" aria-label="from date">
+        <span style="color:var(--mut2)">→</span>
+        <input type="date" id="rto" value="{{.RangeTo}}" aria-label="to date">
+        <button type="submit" class="rangego" title="apply custom range">go</button>
+      </form>
+    </div>
+    <div class="chiprail">
       {{if .Chips}}<span class="chiplbl">filtered to</span>
       {{range .Chips}}<span class="fchip" data-raw="{{.Raw}}"><b class="fop" title="click to flip: is / is not / contains / doesn't contain">{{.Prop}} {{.Op}}</b> {{.Value}} <a href="{{.RemoveURL}}" title="remove this filter">×</a></span>{{end}}
       {{if gt (len .Chips) 1}}<a class="fchip fmode" id="fmode" href="#" title="how the filters combine">match: {{if .AnyMode}}any{{else}}all{{end}}</a>{{end}}
@@ -367,7 +370,8 @@
         <button class="chip" id="fbGo" type="button">apply</button>
         <datalist id="fbProps"></datalist><datalist id="fbVals"></datalist>
       </span>
-    </div>{{end}}
+    </div>
+    {{end}}
   </div>
 
   {{if .HasData}}
