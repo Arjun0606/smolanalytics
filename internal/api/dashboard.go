@@ -177,6 +177,7 @@ type dashVM struct {
 	SourceProp     string // the property behind the sources rows (click-to-filter)
 	ConvByProp     string // the property behind conversion-by rows
 	LastEventSecs  int    // seconds since the newest ingested event; -1 = none
+	ComputeMS      int    // wall time this page took to compute — printed in the footer as a brag
 }
 
 type rangeVM struct {
@@ -215,6 +216,7 @@ type goalCard struct {
 }
 
 func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
+	renderStart := time.Now()
 	if r.URL.Path != "/" { // GET / is a catch-all; anything else is a real 404
 		s.notFound(w, r)
 		return
@@ -589,6 +591,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	vm.ComputeMS = int(time.Since(renderStart).Milliseconds())
 	_ = dashTmpl.Execute(w, vm)
 }
 

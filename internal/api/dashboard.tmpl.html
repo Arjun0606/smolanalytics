@@ -252,6 +252,22 @@
   .devnote a{color:var(--accent);text-decoration:none;font-family:var(--mono);font-size:12px;white-space:nowrap}
   .devnote b{color:var(--fg);font-weight:600}
 
+  /* the journey overlay: click any visitor to see what that one human actually did —
+     the drill-through GA4 users name as their #1 missing thing */
+  .jshade{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:40}
+  .journey{position:fixed;top:0;right:0;bottom:0;width:min(440px,92vw);background:var(--s1);border-left:1px solid var(--line2);z-index:41;padding:20px;overflow-y:auto}
+  .journey .jh{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:4px}
+  .journey .jid{font-family:var(--mono);font-size:13px;font-weight:700;word-break:break-all}
+  .journey .jclose{color:var(--mut2);cursor:pointer;font-family:var(--mono);font-size:12px;white-space:nowrap}
+  .journey .jclose:hover{color:var(--warn)}
+  .journey .jmeta{font-family:var(--mono);font-size:11px;color:var(--mut2);margin-bottom:14px;line-height:1.8}
+  .journey .jrow{display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--s2);font-family:var(--mono);font-size:12px}
+  .journey .jrow .jt{color:var(--mut2);min-width:52px}
+  .journey .jrow .je{color:var(--accent);min-width:110px}
+  .journey .jrow .jp{color:var(--mut);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .live .who{cursor:pointer}
+  .live .who:hover{color:var(--accent);text-decoration:underline}
+
   /* zone 9 — the covenant */
   .foot{color:var(--mut2);font-size:11px;text-align:center;padding:34px 0 28px;font-family:var(--mono);line-height:2}
   .foot a{color:var(--mut2)}
@@ -541,7 +557,7 @@
   <div class="foot">
     every row, every event — no sampling, no thresholding, no "(other)" ·
     ask == dashboard == MCP, <a href="https://github.com/Arjun0606/smolanalytics/blob/main/internal/api/agreement_test.go" target="_blank" rel="noopener">proven in CI ↗</a><br>
-    updated {{.Updated}} · one binary, your data · <a href="https://smolanalytics.com" target="_blank">smolanalytics</a>
+    updated {{.Updated}} · page computed in {{.ComputeMS}}ms · <a href="https://smolanalytics.com" target="_blank">smolanalytics</a>
   </div>
 </main>
 
@@ -774,6 +790,35 @@
       }).catch(function(){});
     }
     pollLive(); setInterval(pollLive, 4000);
+
+    // the journey drill-through: click any visitor id -> that one human's timeline
+    function openJourney(id){
+      var shade=document.createElement('div');shade.className='jshade';
+      var panel=document.createElement('div');panel.className='journey';
+      panel.innerHTML='<div class="jh"><span class="jid">'+esc(id)+'</span><span class="jclose">close ×</span></div><div class="jmeta">loading…</div>';
+      function close(){shade.remove();panel.remove();document.removeEventListener('keydown',onEsc);}
+      function onEsc(e){if(e.key==='Escape')close();}
+      shade.onclick=close;document.addEventListener('keydown',onEsc);
+      document.body.appendChild(shade);document.body.appendChild(panel);
+      panel.querySelector('.jclose').onclick=close;
+      fetch('/v1/users/'+encodeURIComponent(id)).then(function(r){return r.json()}).then(function(j){
+        if(!j.found){panel.querySelector('.jmeta').textContent='no events for this user';return;}
+        var traits=Object.keys(j.traits||{}).map(function(k){return k+'='+j.traits[k];}).join(' · ');
+        var meta=j.event_count+' events · first seen '+String(j.first_seen).slice(0,10)+' · last seen '+ago(j.last_seen)+' ago'+(traits?'<br>'+esc(traits):'');
+        var rows=(j.timeline||[]).map(function(e){
+          var p=(e.properties&&(e.properties.path||e.properties.plan||e.properties.source))||'';
+          return '<div class="jrow"><span class="jt">'+ago(e.timestamp)+'</span><span class="je">'+esc(e.name)+'</span><span class="jp">'+esc(p)+'</span></div>';
+        }).join('');
+        panel.innerHTML='<div class="jh"><span class="jid">'+esc(id)+'</span><span class="jclose">close ×</span></div>'+
+          '<div class="jmeta">'+meta+'</div>'+rows+
+          '<div class="jmeta" style="margin-top:12px">computed by /v1/users/{id} — every row, no sampling</div>';
+        panel.querySelector('.jclose').onclick=close;
+      }).catch(function(){panel.querySelector('.jmeta').textContent='could not load';});
+    }
+    document.addEventListener('click',function(e){
+      var w=e.target.closest('.live .who');if(!w)return;
+      openJourney(w.textContent);
+    });
 
     {{if .HasData}}
     // ---- explore — full capability behind the power-tools disclosure
