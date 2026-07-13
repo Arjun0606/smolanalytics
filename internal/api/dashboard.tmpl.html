@@ -130,8 +130,9 @@
   .gridlines{position:absolute;inset:24px 0 0;display:flex;flex-direction:column;justify-content:space-between;pointer-events:none}
   .gridlines div{border-top:1px solid var(--s2);height:0}
   .bars{display:flex;align-items:flex-end;gap:3px;height:150px;padding-top:24px;position:relative}
-  .bars .col{flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%;position:relative}
-  .bars .bar{background:var(--accent);opacity:.5;min-height:2px;border-radius:2px 2px 0 0;transition:opacity .1s}
+  .bars .col{flex:1;display:flex;flex-direction:row;align-items:flex-end;gap:1px;height:100%;position:relative}
+  .bars .bar{flex:2;background:var(--accent);opacity:.5;min-height:2px;border-radius:2px 2px 0 0;transition:opacity .1s}
+  .bars .ghost{flex:1;background:var(--mut2);opacity:.35;min-height:1px;border-radius:2px 2px 0 0}
   .bars .col:hover .bar{opacity:1}
   /* instant tooltip — pure css, zero native-title delay, readable size */
   .bars .col .tip{display:none;position:absolute;bottom:calc(100% + 4px);left:50%;transform:translateX(-50%);
@@ -392,7 +393,7 @@
 
   <!-- zone 5: exactly one chart -->
   <div class="chartzone">
-    <div class="zonelbl">{{.TrendLabel}} per day <span class="sub">· last {{.RangeDays}}d · computed by /v1/trends</span>
+    <div class="zonelbl">{{.TrendLabel}} per day <span class="sub">· last {{.RangeDays}}d · grey = prior {{.RangeDays}}d, same scale · computed by /v1/trends</span>
       <select id="chartBreak" style="margin-left:auto;background:var(--s1);border:1px solid var(--line);color:var(--mut);font-family:var(--mono);font-size:10px;padding:2px 6px;border-radius:4px">
         <option value="">no breakdown</option>
         <option value="country">by country</option>
@@ -410,7 +411,7 @@
       <div class="plot">
         <div class="gridlines"><div></div><div></div><div></div></div>
         <div class="bars">
-          {{range .Trend}}<div class="col"><span class="tip">{{.Tip}}</span>{{if and .Peak (gt .Count 0)}}<span class="peaklbl">{{.Count}}</span>{{end}}<div class="bar" style="height:{{.HeightPct}}%"></div></div>{{end}}
+          {{range .Trend}}<div class="col"><span class="tip">{{.Tip}}</span>{{if and .Peak (gt .Count 0)}}<span class="peaklbl">{{.Count}}</span>{{end}}<div class="bar" style="height:{{.HeightPct}}%"></div><div class="ghost" style="height:{{.GhostPct}}%" aria-hidden="true"></div></div>{{end}}
         </div>
         <div class="xaxis">
           {{range .Trend}}<span class="xt">{{.Tick}}</span>{{end}}

@@ -55,6 +55,7 @@ type trendBar struct {
 	Tip       string // instant CSS tooltip: "Jul 4 · 27" — no native-title hover delay
 	Tick      string // x-axis date label under this bar ("" = no tick); every ~5th day
 	Peak      bool   // the window's max — annotated with its value, always visible
+	GhostPct  int    // the prior equal window's same-position value, same y-scale
 }
 
 type segRow struct {
@@ -470,8 +471,9 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	// the chart and the headline stat both follow the selected range, and the stat
 	// carries a delta vs the prior equal window so movement is visible at a glance
 	tr := trends.Compute(evs, trendEvent, endT.AddDate(0, 0, -rangeDays), rangeAsof, false)
+	trPrior := trends.Compute(evs, trendEvent, endT.AddDate(0, 0, -2*rangeDays), endT.AddDate(0, 0, -rangeDays), false)
 	sig30 := tr.Total
-	sigPrior := trends.Compute(evs, trendEvent, endT.AddDate(0, 0, -2*rangeDays), endT.AddDate(0, 0, -rangeDays), false).Total
+	sigPrior := trPrior.Total
 
 	convLabel := ftitle
 	if n := len(fsteps); n >= 2 {
@@ -592,6 +594,13 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 			peakIdx = i
 		}
 	}
+	// the ghost: the prior equal window aligned position-by-position onto the same
+	// x-axis and the SAME y-scale, so "vs what?" is answered by the chart itself
+	for _, p := range trPrior.Points {
+		if p.Count > maxT {
+			maxT = p.Count
+		}
+	}
 	// tick cadence scales with the window so labels never crowd (~6 ticks)
 	tickEvery := len(tr.Points) / 6
 	if tickEvery < 1 {
@@ -607,6 +616,11 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		}
 		if i%tickEvery == 0 {
 			b.Tick = p.Date.Format("Jan 2")
+		}
+		if i < len(trPrior.Points) {
+			pp := trPrior.Points[i]
+			b.GhostPct = int(math.Round(float64(pp.Count) / float64(maxT) * 100))
+			b.Tip = fmt.Sprintf("%s · %d (prior window %s: %d)", p.Date.Format("Jan 2"), p.Count, pp.Date.Format("Jan 2"), pp.Count)
 		}
 		vm.Trend = append(vm.Trend, b)
 	}
