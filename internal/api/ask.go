@@ -55,6 +55,13 @@ func (s *Server) ask(w http.ResponseWriter, r *http.Request) {
 	// the exact incoherence the proof chip exists to prevent.
 	intent := string(classifyAsk(q))
 	if _, unsupported := parseWindow(q, now); unsupported != "" {
+		intent = "" // a refused window renders no chart (would sit under "I can't answer")
+	}
+	// a question that resolved to a SPECIFIC named event (e.g. "purchases" -> checkout)
+	// must not chart the classified intent's default series — better no chart than a
+	// signups line under a checkout answer. webdim/live/geo are list answers with no
+	// trend chart, so they render nothing anyway.
+	if ev := namedEvent(q, eventsByVolume(query.Apply(evs, nil))); ev != "" && countish(q) {
 		intent = ""
 	}
 	writeJSON(w, http.StatusOK, map[string]string{
@@ -117,6 +124,8 @@ const (
 	intentRetention askIntent = "retention"
 	intentChannels  askIntent = "channels"
 	intentGeo       askIntent = "geo"
+	intentWebDim    askIntent = "webdim"
+	intentLive      askIntent = "live"
 	intentTopPages  askIntent = "toppages"
 	intentWeb       askIntent = "web"
 	intentFunnel    askIntent = "funnel"
@@ -163,6 +172,15 @@ func classifyAsk(q string) askIntent {
 	case hasAny(q, "channel", "source", "acquisition", "referr", "utm", "campaign",
 		"come from", "coming from", "came from", "where do my", "where are my visitors"):
 		return intentChannels
+	// who's here now — the live count, before the generic web case
+	case hasAny(q, "right now", "on the site now", "online now", "live visitor", "who's on",
+		"whos on", "active right now", "currently on", "here now"):
+		return intentLive
+	// standard web dimensions the dashboard shows (device/browser/os/bounce) — before
+	// the web-volume case so "what devices" isn't answered as a pageview count
+	case hasAny(q, "device", "mobile vs desktop", "browser", "operating system", " os ",
+		"bounce", "bounce rate"):
+		return intentWebDim
 	// web volume = pageviews / visitors / traffic counts. After channels so "where do
 	// visitors come from" stays a channel question, but BEFORE signups so "how many
 	// pageviews" is never answered as a signup count (the confidently-wrong bug).
@@ -249,6 +267,10 @@ func answer(q string, evs []event.Event, now time.Time) string {
 		return answerTopPages(scoped, win)
 	case intentGeo:
 		return answerGeo(scoped, evs, win)
+	case intentWebDim:
+		return answerWebDim(scoped, q, win)
+	case intentLive:
+		return answerLive(evs, now)
 	case intentWeb:
 		return answerWeb(scoped, win)
 	case intentFunnel:
@@ -536,10 +558,19 @@ func mondayOffset(t time.Time) int { return (int(t.Weekday()) + 6) % 7 }
 func unsupportedTimePhrase(q string) string {
 	for _, tok := range []string{"quarter", "year", "month", "week", "hour", "minute",
 		"q1", "q2", "q3", "q4", "january", "february", "march", "april", "june", "july",
-		"august", "september", "october", "november", "december"} {
+		"august", "september", "october", "november", "december",
+		"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"} {
 		if containsWord(q, tok) {
 			return tok
 		}
+	}
+	// "since <x>" and "best/worst day" are scope-shaped phrasings the parser doesn't
+	// support — refuse them by name instead of silently answering the 30-day total.
+	if strings.Contains(q, "since ") {
+		return "since"
+	}
+	if hasAny(q, "best day", "worst day", "which day", "what day") {
+		return "a specific day-of-week"
 	}
 	return ""
 }
@@ -797,6 +828,25 @@ func pickConversion(evs []event.Event, vol []string) string {
 	return ""
 }
 
+// windowDays is the honest denominator for a per-day rate. len(trend.Points)
+// includes the exclusive end-boundary's bucket, so it overstates the divisor by
+// one and understates the rate (291 over a 7-day week read as 36/day, not 42).
+// For a scoped window, count the whole days it actually spans; otherwise the
+// point count is the day count.
+func windowDays(win askWindow, points int) int {
+	if win.scoped() {
+		d := int(win.to.Sub(win.from).Hours()/24 + 0.5)
+		if d < 1 {
+			d = 1
+		}
+		return d
+	}
+	if points < 1 {
+		return 1
+	}
+	return points
+}
+
 func answerSignups(evs []event.Event, vol []string, win askWindow) string {
 	ev := pickEvent(vol, "signup")
 	if ev == "" {
@@ -811,9 +861,9 @@ func answerSignups(evs []event.Event, vol []string, win askWindow) string {
 		return fmt.Sprintf("No \"%s\" events %s, widen the window, or drop the time phrase for all history.", ev, win.label)
 	}
 	if win.scoped() {
-		return fmt.Sprintf("%d \"%s\" events %s, about %d/day.", tr.Total, ev, win.label, tr.Total/days)
+		return fmt.Sprintf("%d \"%s\" events %s, about %d/day.", tr.Total, ev, win.label, tr.Total/windowDays(win, days))
 	}
-	return fmt.Sprintf("%d \"%s\" events over the last %d days, about %d/day.", tr.Total, ev, days, tr.Total/days)
+	return fmt.Sprintf("%d \"%s\" events over the last %d days, about %d/day.", tr.Total, ev, days, tr.Total/windowDays(win, days))
 }
 
 func answerActive(evs []event.Event, win askWindow, now time.Time) string {
@@ -847,10 +897,7 @@ func answerEvent(evs []event.Event, ev string, win askWindow) string {
 		}
 		return fmt.Sprintf("No %q events recorded yet.", ev)
 	}
-	per := tr.Total
-	if days > 0 {
-		per = tr.Total / days
-	}
+	per := tr.Total / windowDays(win, days)
 	if win.scoped() {
 		return fmt.Sprintf("%d %q events %s, about %d/day.", tr.Total, ev, win.label, per)
 	}
@@ -886,6 +933,107 @@ func answerPage(evs []event.Event, path string, win askWindow) string {
 // answerWeb answers "how many pageviews / visitors / traffic" from autocaptured
 // $pageview events — the fix for the router answering a signup count when the user
 // asked about pageviews. Counts views and the distinct visitors behind them.
+
+// answerWebDim answers device/browser/os/bounce questions from the same web report
+// the dashboard renders — the ask bar must never deny a dimension the dashboard shows.
+func answerWebDim(evs []event.Event, q string, win askWindow) string {
+	pick := func(prop string) []struct {
+		v string
+		n int
+	} {
+		counts := map[string]int{}
+		for _, e := range evs {
+			if e.Name != "$pageview" {
+				continue
+			}
+			if val, _ := e.Properties[prop].(string); val != "" {
+				counts[val]++
+			}
+		}
+		type kv struct {
+			v string
+			n int
+		}
+		rows := make([]kv, 0, len(counts))
+		for v, n := range counts {
+			rows = append(rows, kv{v, n})
+		}
+		sort.Slice(rows, func(i, j int) bool { return rows[i].n > rows[j].n })
+		out := make([]struct {
+			v string
+			n int
+		}, 0, len(rows))
+		for i, r := range rows {
+			if i == 5 {
+				break
+			}
+			out = append(out, struct {
+				v string
+				n int
+			}{r.v, r.n})
+		}
+		return out
+	}
+	label, prop := "devices", "device"
+	switch {
+	case strings.Contains(q, "browser"):
+		label, prop = "browsers", "browser"
+	case strings.Contains(q, "os"), strings.Contains(q, "operating system"):
+		label, prop = "operating systems", "os"
+	case strings.Contains(q, "bounce"):
+		// bounce rate: one-pageview visitors who engaged under 10s (the web report's rule)
+		pv := map[string]int{}
+		eng := map[string]float64{}
+		for _, e := range evs {
+			if e.Name == "$pageview" {
+				pv[e.DistinctID]++
+			} else if e.Name == "$engagement" {
+				if ms, _ := e.Properties["engaged_ms"].(float64); ms > 0 {
+					eng[e.DistinctID] += ms
+				}
+			}
+		}
+		if len(pv) == 0 {
+			return "No pageviews" + winSuffix(win) + " to measure bounce rate."
+		}
+		bounced := 0
+		for u, n := range pv {
+			if n == 1 && eng[u] < 10000 {
+				bounced++
+			}
+		}
+		return fmt.Sprintf("Bounce rate is %d%% (%d of %d visitors left after one page in under 10s)%s.", int(float64(bounced)/float64(len(pv))*100+0.5), bounced, len(pv), winSuffix(win))
+	}
+	rows := pick(prop)
+	if len(rows) == 0 {
+		return "No " + label + " recorded" + winSuffix(win) + " yet — these are parsed from the user agent at ingest, so they appear as visitors arrive."
+	}
+	parts := make([]string, len(rows))
+	for i, r := range rows {
+		parts[i] = fmt.Sprintf("%s (%d)", r.v, r.n)
+	}
+	return "Top " + label + winSuffix(win) + ": " + strings.Join(parts, ", ") + "."
+}
+
+// answerLive answers "who's on the site right now" from the last-5-minute window,
+// the same live count the dashboard header shows.
+func answerLive(evs []event.Event, now time.Time) string {
+	cutoff := now.Add(-5 * time.Minute)
+	live := map[string]bool{}
+	for _, e := range evs {
+		if e.Name == "$pageview" && !e.Timestamp.Before(cutoff) {
+			live[e.DistinctID] = true
+		}
+	}
+	if len(live) == 0 {
+		return "Nobody on the site in the last 5 minutes."
+	}
+	if len(live) == 1 {
+		return "1 visitor on the site right now (active in the last 5 minutes)."
+	}
+	return fmt.Sprintf("%d visitors on the site right now (active in the last 5 minutes).", len(live))
+}
+
 func answerWeb(evs []event.Event, win askWindow) string {
 	visitors := map[string]bool{}
 	views := 0
@@ -985,6 +1133,17 @@ func namedEvent(q string, vol []string) string {
 		}
 		if toks[strings.ToLower(ev)] {
 			return ev
+		}
+	}
+	// purchase synonyms map to a real purchase-shaped event so "how many purchases"
+	// answers about checkout/order/payment instead of silently falling to signups
+	if hasAny(q, "purchase", "bought", "buy", "order", "sale", "revenue event", "payment") {
+		for _, want := range []string{"checkout", "purchase", "order", "payment", "buy", "sale"} {
+			for _, ev := range vol {
+				if strings.ToLower(ev) == want {
+					return ev
+				}
+			}
 		}
 	}
 	return ""

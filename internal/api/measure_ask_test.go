@@ -92,3 +92,32 @@ func TestAskGeoAndWindows(t *testing.T) {
 		t.Error("'quarter' must still be named unsupported")
 	}
 }
+
+// The QA teardown's confirmed ask-bar bugs — each must stay fixed.
+func TestAskQAFixes(t *testing.T) {
+	if got := string(classifyAsk("what devices do people use")); got != "webdim" {
+		t.Errorf("devices question = %q, want webdim", got)
+	}
+	if got := string(classifyAsk("whats my bounce rate")); got != "webdim" {
+		t.Errorf("bounce question = %q, want webdim", got)
+	}
+	if got := string(classifyAsk("who is on the site right now")); got != "live" {
+		t.Errorf("live question = %q, want live", got)
+	}
+	now := time.Now().UTC()
+	// weekday + since must refuse, not silently answer 30d
+	if _, unsup := parseWindow("signups since monday", now); unsup == "" {
+		t.Error("'since monday' must be named unsupported, not silently 30d")
+	}
+	if _, unsup := parseWindow("best day for signups", now); unsup == "" {
+		t.Error("'best day' must be named unsupported")
+	}
+	// per-day rate: a scoped 7-day window divides by 7, not 8
+	w := askWindow{from: now.Truncate(24*time.Hour).AddDate(0, 0, -7), to: now.Truncate(24 * time.Hour)}
+	if d := windowDays(w, 8); d != 7 {
+		t.Errorf("windowDays for a 7-day window = %d, want 7 (the off-by-one rate bug)", d)
+	}
+	if d := windowDays(askWindow{from: now.Truncate(24*time.Hour).AddDate(0, 0, -1), to: now.Truncate(24 * time.Hour)}, 2); d != 1 {
+		t.Errorf("windowDays for yesterday = %d, want 1", d)
+	}
+}
