@@ -83,12 +83,12 @@
 
   /* zone 3 — verdict sentences (not a card) */
   .verdict{max-width:760px;margin:26px auto 0}
-  .vline{display:flex;gap:10px;align-items:baseline;padding:5px 0;font-size:15px}
-  .vline .vdot{width:6px;height:6px;border-radius:50%;background:var(--accent);flex:none;position:relative;top:-2px;animation:pulse 1.6s infinite}
+  .vline{padding:6px 0;font-size:15px;line-height:1.6}
+  .vline .vdot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-right:9px;position:relative;top:-2px;animation:pulse 1.6s infinite}
   .vline.warn .vdot{background:var(--warn);animation:none}
   .vline .vt{font-weight:600}
   .vline .vd{color:var(--mut)}
-  .vline .vwhy{color:var(--accent);font-family:var(--mono);font-size:12px;text-decoration:none;white-space:nowrap;cursor:pointer}
+  .vline .vwhy{color:var(--accent);font-family:var(--mono);font-size:12px;text-decoration:none;white-space:nowrap;cursor:pointer;margin-left:8px}
   .vline .vwhy:hover{text-decoration:underline}
   .vcalm{color:var(--mut);font-size:15px;padding:5px 0}
   .weekline{margin-top:4px}
@@ -113,11 +113,26 @@
   .chartzone{margin:26px 0 0}
   .zonelbl{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--mut2);margin-bottom:10px;display:flex;align-items:baseline;gap:8px}
   .zonelbl .sub{text-transform:none;letter-spacing:0;color:var(--mut2)}
-  .bars{display:flex;align-items:flex-end;gap:3px;height:150px}
-  .bars .col{flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%}
-  .bars .bar{background:var(--accent);opacity:.5;min-height:2px;border-radius:2px 2px 0 0;transition:opacity .15s}
+  .chartwrap{display:flex;gap:10px}
+  .yaxis{display:flex;flex-direction:column;justify-content:space-between;text-align:right;color:var(--mut2);font-family:var(--mono);font-size:10px;padding:24px 0 0;height:174px;min-width:28px}
+  .plot{flex:1;position:relative}
+  .gridlines{position:absolute;inset:24px 0 0;display:flex;flex-direction:column;justify-content:space-between;pointer-events:none}
+  .gridlines div{border-top:1px solid var(--s2);height:0}
+  .bars{display:flex;align-items:flex-end;gap:3px;height:150px;padding-top:24px;position:relative}
+  .bars .col{flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%;position:relative}
+  .bars .bar{background:var(--accent);opacity:.5;min-height:2px;border-radius:2px 2px 0 0;transition:opacity .1s}
   .bars .col:hover .bar{opacity:1}
-  .axis{display:flex;justify-content:space-between;color:var(--mut2);font-family:var(--mono);font-size:10px;margin-top:6px}
+  /* instant tooltip — pure css, zero native-title delay, readable size */
+  .bars .col .tip{display:none;position:absolute;bottom:calc(100% + 4px);left:50%;transform:translateX(-50%);
+    background:var(--s3);border:1px solid var(--line2);border-radius:5px;padding:3px 9px;
+    font-family:var(--mono);font-size:12px;color:var(--fg);white-space:nowrap;z-index:5}
+  .bars .col:hover .tip{display:block}
+  /* the peak is annotated permanently — the most important number needs no hover */
+  .bars .col .peaklbl{position:absolute;bottom:calc(100% + 2px);left:50%;transform:translateX(-50%);
+    font-family:var(--mono);font-size:11px;color:var(--accent);white-space:nowrap}
+  .bars .col:hover .peaklbl{display:none}
+  .xaxis{display:flex;gap:3px;margin-top:6px}
+  .xaxis .xt{flex:1;color:var(--mut2);font-family:var(--mono);font-size:10px;white-space:nowrap;overflow:visible}
 
   /* zone 7 — the board: pinned questions as live cards */
   .board{margin:30px 0 0}
@@ -333,22 +348,30 @@
 
   <!-- zone 4: the glance row — every number carries its delta vs the prior window -->
   <div class="glance">
-    {{if .HasWeb}}<div class="gtile"><div class="l">Visitors · {{.RangeDays}}d</div><div class="v">{{.Visitors}}</div>{{if .VisitorsDelta}}<div class="d{{if eq (slice .VisitorsDelta 0 1) "+"}} up{{else if eq (slice .VisitorsDelta 0 1) "-"}} down{{end}}">{{.VisitorsDelta}} vs prior</div>{{end}}</div>
-    <div class="gtile"><div class="l">Pageviews · {{.RangeDays}}d</div><div class="v">{{.Pageviews}}</div>{{if .PageviewsDelta}}<div class="d{{if eq (slice .PageviewsDelta 0 1) "+"}} up{{else if eq (slice .PageviewsDelta 0 1) "-"}} down{{end}}">{{.PageviewsDelta}} vs prior</div>{{end}}</div>{{end}}
+    {{if .HasWeb}}<div class="gtile"><div class="l">Visitors · {{.RangeDays}}d</div><div class="v">{{.Visitors}}</div>{{if .VisitorsDelta}}<div class="d{{if eq (slice .VisitorsDelta 0 1) "+"}} up{{else if eq (slice .VisitorsDelta 0 1) "-"}} down{{end}}">{{.VisitorsDelta}} vs prior {{$.RangeDays}}d</div>{{end}}</div>
+    <div class="gtile"><div class="l">Pageviews · {{.RangeDays}}d</div><div class="v">{{.Pageviews}}</div>{{if .PageviewsDelta}}<div class="d{{if eq (slice .PageviewsDelta 0 1) "+"}} up{{else if eq (slice .PageviewsDelta 0 1) "-"}} down{{end}}">{{.PageviewsDelta}} vs prior {{$.RangeDays}}d</div>{{end}}</div>{{end}}
     <div class="gtile"><div class="l">Users · all time</div><div class="v">{{.TotalUsers}}</div></div>
-    <div class="gtile"><div class="l">{{.StatEventLabel}} · {{.RangeDays}}d</div><div class="v">{{.Signups}}</div>{{if .SignupsDelta}}<div class="d{{if eq (slice .SignupsDelta 0 1) "+"}} up{{else if eq (slice .SignupsDelta 0 1) "-"}} down{{end}}">{{.SignupsDelta}} vs prior</div>{{end}}</div>
+    <div class="gtile"><div class="l">{{.StatEventLabel}} · {{.RangeDays}}d</div><div class="v">{{.Signups}}</div>{{if .SignupsDelta}}<div class="d{{if eq (slice .SignupsDelta 0 1) "+"}} up{{else if eq (slice .SignupsDelta 0 1) "-"}} down{{end}}">{{.SignupsDelta}} vs prior {{$.RangeDays}}d</div>{{end}}</div>
     <div class="gtile"><div class="l">{{.ConvLabel}}</div><div class="v acc">{{.OverallConv}}%</div></div>
-    {{if .HasEngagement}}<div class="gtile"><div class="l">Engaged · avg</div><div class="v">{{.EngagedSecs}}s</div></div>{{end}}
+    {{if .HasEngagement}}<div class="gtile"><div class="l">Engaged · avg</div><div class="v" style="font-size:22px;padding-top:6px">{{.EngagedHuman}}</div></div>{{end}}
     {{if gt .AIVisitors 0}}<div class="gtile"><div class="l">From AI</div><div class="v acc">{{.AIVisitors}}</div></div>{{end}}
   </div>
 
   <!-- zone 5: exactly one chart -->
   <div class="chartzone">
     <div class="zonelbl">{{.TrendLabel}} per day <span class="sub">· last {{.RangeDays}}d · computed by /v1/trends</span></div>
-    <div class="bars">
-      {{range .Trend}}<div class="col" title="{{.Date}}: {{.Count}}"><div class="bar" style="height:{{.HeightPct}}%"></div></div>{{end}}
+    <div class="chartwrap">
+      <div class="yaxis"><span>{{.TrendMax}}</span><span>0</span></div>
+      <div class="plot">
+        <div class="gridlines"><div></div><div></div><div></div></div>
+        <div class="bars">
+          {{range .Trend}}<div class="col"><span class="tip">{{.Tip}}</span>{{if and .Peak (gt .Count 0)}}<span class="peaklbl">{{.Count}}</span>{{end}}<div class="bar" style="height:{{.HeightPct}}%"></div></div>{{end}}
+        </div>
+        <div class="xaxis">
+          {{range .Trend}}<span class="xt">{{.Tick}}</span>{{end}}
+        </div>
+      </div>
     </div>
-    <div class="axis"><span>{{with index .Trend 0}}{{.Date}}{{end}}</span><span>now</span></div>
   </div>
 
   <!-- zone 7: the board — grows only from questions you pinned; empty = invisible -->
@@ -625,7 +648,7 @@
     }
     function trendBars(pts){
       var max=1;pts.forEach(function(p){if(p.count>max)max=p.count;});
-      return '<div class="bars" style="height:90px">'+pts.map(function(p){return '<div class="col" title="'+esc(p.date)+': '+p.count+'"><div class="bar" style="height:'+Math.round(p.count/max*100)+'%"></div></div>';}).join('')+'</div>';
+      return '<div class="bars" style="height:90px;padding-top:20px">'+pts.map(function(p){return '<div class="col"><span class="tip">'+esc(p.date)+' · '+p.count+'</span><div class="bar" style="height:'+Math.round(p.count/max*100)+'%"></div></div>';}).join('')+'</div>';
     }
     function renderReport(t,j,el){
       if(j.error){el.innerHTML='<div class="exsummary">'+esc(j.error)+'</div>';return;}

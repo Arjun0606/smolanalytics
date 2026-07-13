@@ -52,6 +52,9 @@ type trendBar struct {
 	Date      string
 	Count     int
 	HeightPct int
+	Tip       string // instant CSS tooltip: "Jul 4 · 27" — no native-title hover delay
+	Tick      string // x-axis date label under this bar ("" = no tick); every ~5th day
+	Peak      bool   // the window's max — annotated with its value, always visible
 }
 
 type segRow struct {
@@ -178,6 +181,8 @@ type dashVM struct {
 	ConvByProp     string // the property behind conversion-by rows
 	LastEventSecs  int    // seconds since the newest ingested event; -1 = none
 	ComputeMS      int    // wall time this page took to compute — printed in the footer as a brag
+	TrendMax       int    // the chart's y-axis top — rendered as a real scale, not a hover secret
+	EngagedHuman   string // "13m 23s", never "803s"
 }
 
 type rangeVM struct {
@@ -188,13 +193,10 @@ type rangeVM struct {
 
 type chipVM struct{ Prop, Value, RemoveURL string }
 
-// deltaStr renders a signed percent vs the prior window — "new" over a zero
-// baseline instead of a fabricated percentage (same rule as the CLI brief).
+// deltaStr renders a signed percent vs the prior window. A zero baseline returns ""
+// (no prior period = say nothing) — never a fabricated percentage or filler copy.
 func deltaStr(cur, prior int) string {
 	if prior == 0 {
-		if cur > 0 {
-			return "new"
-		}
 		return ""
 	}
 	d := int(math.Round(float64(cur-prior) / float64(prior) * 100))
@@ -206,6 +208,17 @@ func deltaStr(cur, prior int) string {
 	default:
 		return fmt.Sprintf("-%d%%", -d)
 	}
+}
+
+// humanDur renders seconds as a human duration — "13m 23s", not "803s".
+func humanDur(secs int) string {
+	if secs < 60 {
+		return fmt.Sprintf("%ds", secs)
+	}
+	if secs < 3600 {
+		return fmt.Sprintf("%dm %ds", secs/60, secs%60)
+	}
+	return fmt.Sprintf("%dh %dm", secs/3600, (secs%3600)/60)
 }
 
 type goalCard struct {
@@ -474,19 +487,32 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		vm.Retention = append(vm.Retention, row)
 	}
 
-	maxT := 1
-	for _, p := range tr.Points {
+	maxT, peakIdx := 1, -1
+	for i, p := range tr.Points {
 		if p.Count > maxT {
 			maxT = p.Count
+			peakIdx = i
 		}
 	}
-	for _, p := range tr.Points {
-		vm.Trend = append(vm.Trend, trendBar{
+	// tick cadence scales with the window so labels never crowd (~6 ticks)
+	tickEvery := len(tr.Points) / 6
+	if tickEvery < 1 {
+		tickEvery = 1
+	}
+	for i, p := range tr.Points {
+		b := trendBar{
 			Date:      p.Date.Format("1/2"),
 			Count:     p.Count,
 			HeightPct: int(math.Round(float64(p.Count) / float64(maxT) * 100)),
-		})
+			Tip:       fmt.Sprintf("%s · %d", p.Date.Format("Jan 2"), p.Count),
+			Peak:      i == peakIdx,
+		}
+		if i%tickEvery == 0 {
+			b.Tick = p.Date.Format("Jan 2")
+		}
+		vm.Trend = append(vm.Trend, b)
 	}
+	vm.TrendMax = maxT
 
 	// Segmentation: the headline event broken down by the detected source property.
 	if srcProp != "" {
@@ -563,6 +589,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		vm.Pageviews = wv.Pageviews
 		vm.HasEngagement = wv.HasEngagement
 		vm.EngagedSecs = wv.AvgEngagedSecs
+		vm.EngagedHuman = humanDur(wv.AvgEngagedSecs)
 		vm.BouncePct = wv.BounceRatePct
 		vm.AIVisitors = wv.AIVisitors
 		toRows := func(rows []web.Row, n int) []segRow {
