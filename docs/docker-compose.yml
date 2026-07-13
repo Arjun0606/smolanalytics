@@ -1,0 +1,19 @@
+services:
+  smolanalytics:
+    image: ghcr.io/arjun0606/smolanalytics:latest
+    container_name: smolanalytics
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+
+    environment:
+      - SMOLANALYTICS_WRITE_KEY=${SMOLANALYTICS_WRITE_KEY}
+      - SMOLANALYTICS_PASSWORD=${SMOLANALYTICS_PASSWORD}
+
+    # .env can be also used if secrets 
+    # won't be written directly in the compose file
+    # env_file:
+    #   - .env
+    volumes:
+      - ./data:/data
+      

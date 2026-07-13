@@ -37,3 +37,32 @@ Cursor / Claude Code and let it do it:
 
 That's all the instrumentation there is. Everything else, funnels, retention, paths, the
 "what to fix" verdict, you just ask for.
+
+# Docker Compose
+
+Alternativelly, you may use `docker-compose.yml` to run the container.
+
+1. Place the compose file from this repo into the destination folder
+
+```sh
+~/smolanalytics/docker-compose.yml
+```
+
+2. Add your key and password values
+
+```yaml
+environment:
+      - SMOLANALYTICS_WRITE_KEY="your_key_here"
+      - SMOLANALYTICS_PASSWORD="your_password_here"
+```
+
+if using `.env`:
+```txt
+SMOLANALYTICS_WRITE_KEY="your_key_here"
+SMOLANALYTICS_PASSWORD="your_password_here"
+```
+
+3. Deploy the container
+```sh
+docker compose up -d
+```
