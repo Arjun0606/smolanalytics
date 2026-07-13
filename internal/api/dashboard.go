@@ -164,6 +164,47 @@ type dashVM struct {
 	CursorLink    template.URL // cursor://anysphere.cursor-deeplink/mcp/install?name=...&config=b64
 	VSCodeLink    template.URL // vscode:mcp/install?{urlencoded JSON}
 	ClaudeCodeCmd string       // claude mcp add --transport http ...
+
+	// range + click-to-filter state: one global window and one global filter set that
+	// EVERY zone inherits, exactly like the site selector. All state lives in the
+	// querystring so every filtered view is a shareable, server-renderable URL.
+	RangeDays      int
+	Ranges         []rangeVM
+	Chips          []chipVM
+	VisitorsDelta  string // vs the prior equal window; "" when unknowable
+	PageviewsDelta string
+	SignupsDelta   string
+	SourceProp     string // the property behind the sources rows (click-to-filter)
+	ConvByProp     string // the property behind conversion-by rows
+	LastEventSecs  int    // seconds since the newest ingested event; -1 = none
+}
+
+type rangeVM struct {
+	Label string
+	URL   string
+	On    bool
+}
+
+type chipVM struct{ Prop, Value, RemoveURL string }
+
+// deltaStr renders a signed percent vs the prior window — "new" over a zero
+// baseline instead of a fabricated percentage (same rule as the CLI brief).
+func deltaStr(cur, prior int) string {
+	if prior == 0 {
+		if cur > 0 {
+			return "new"
+		}
+		return ""
+	}
+	d := int(math.Round(float64(cur-prior) / float64(prior) * 100))
+	switch {
+	case d == 0:
+		return "±0%"
+	case d > 0:
+		return fmt.Sprintf("+%d%%", d)
+	default:
+		return fmt.Sprintf("-%d%%", -d)
+	}
 }
 
 type goalCard struct {
@@ -231,6 +272,81 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		evs = query.Apply(evs, []query.Filter{{Property: "site", Op: query.Eq, Value: site}})
 	}
 
+	// range control: ?days=7|30|90 — every windowed zone below recomputes over it
+	rangeDays := 30
+	switch r.URL.Query().Get("days") {
+	case "7":
+		rangeDays = 7
+	case "90":
+		rangeDays = 90
+	}
+
+	// click-to-filter: repeatable ?f=prop:value chips scope every report below.
+	// Referrer matches by substring — rows show the host, the property stores the URL.
+	var chips []chipVM
+	{
+		qv := r.URL.Query()
+		fs := qv["f"]
+		if len(fs) > 5 {
+			fs = fs[:5]
+		}
+		var filters []query.Filter
+		for _, raw := range fs {
+			p, v, ok := strings.Cut(raw, ":")
+			if !ok || p == "" || v == "" || len(raw) > 200 {
+				continue
+			}
+			op := query.Eq
+			if p == "referrer" {
+				op = query.Contains
+			}
+			filters = append(filters, query.Filter{Property: p, Op: op, Value: v})
+		}
+		if len(filters) > 0 {
+			evs = query.Apply(evs, filters)
+		}
+		for i, raw := range fs {
+			p, v, ok := strings.Cut(raw, ":")
+			if !ok {
+				continue
+			}
+			nq := url.Values{}
+			for k, vals := range qv {
+				if k != "f" {
+					nq[k] = vals
+				}
+			}
+			for j, o := range fs {
+				if j != i {
+					nq.Add("f", o)
+				}
+			}
+			u := "/"
+			if enc := nq.Encode(); enc != "" {
+				u += "?" + enc
+			}
+			chips = append(chips, chipVM{Prop: p, Value: v, RemoveURL: u})
+		}
+	}
+
+	// the range switcher links, preserving site + filters
+	mkRange := func(d int) rangeVM {
+		nq := url.Values{}
+		for k, vals := range r.URL.Query() {
+			if k != "days" {
+				nq[k] = vals
+			}
+		}
+		if d != 30 {
+			nq.Set("days", fmt.Sprint(d))
+		}
+		u := "/"
+		if enc := nq.Encode(); enc != "" {
+			u += "?" + enc
+		}
+		return rangeVM{Label: fmt.Sprintf("%dd", d), URL: u, On: d == rangeDays}
+	}
+
 	names, _ := s.store.Names()
 	vol := eventsByVolume(evs)
 	fsteps, ftitle := detectFunnel(evs, vol)
@@ -239,11 +355,14 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	segProp := detectProp(evs, "plan")
 	srcProp := detectProp(evs, "source")
 
+	nowT := time.Now().UTC()
 	fr := funnel.Compute(evs, fsteps, 7*24*time.Hour)
 	rr := retentionOf(evs, 7, retEvent)
-	tr := trendOf(evs, trendEvent)
-	// the headline stat is genuinely the trailing 30 days (the label says "(30d)")
-	sig30 := trends.Compute(evs, trendEvent, time.Now().UTC().AddDate(0, 0, -30), time.Time{}, false).Total
+	// the chart and the headline stat both follow the selected range, and the stat
+	// carries a delta vs the prior equal window so movement is visible at a glance
+	tr := trends.Compute(evs, trendEvent, nowT.AddDate(0, 0, -rangeDays), time.Time{}, false)
+	sig30 := tr.Total
+	sigPrior := trends.Compute(evs, trendEvent, nowT.AddDate(0, 0, -2*rangeDays), nowT.AddDate(0, 0, -rangeDays), false).Total
 
 	convLabel := ftitle
 	if n := len(fsteps); n >= 2 {
@@ -275,6 +394,21 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		SourceTitle:    trendEvent + " by " + srcProp,
 		HasShares:      s.shares != nil,
 		HasGoalsStore:  s.goals != nil,
+		RangeDays:      rangeDays,
+		Ranges:         []rangeVM{mkRange(7), mkRange(30), mkRange(90)},
+		Chips:          chips,
+		SourceProp:     srcProp,
+		ConvByProp:     segProp,
+		SignupsDelta:   deltaStr(sig30, sigPrior),
+		LastEventSecs:  -1,
+	}
+	if n := len(evsAll); n > 0 {
+		// events append in arrival order, so the tail is the newest — this powers the
+		// header's "last event Ns ago" liveness stamp
+		vm.LastEventSecs = int(nowT.Sub(evsAll[n-1].Timestamp).Seconds())
+		if vm.LastEventSecs < 0 {
+			vm.LastEventSecs = 0
+		}
 	}
 
 	// connect-your-agent artifacts: cursor's deeplink takes base64 of the single-server
@@ -412,10 +546,14 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		vm.HasSearch = len(vm.SearchRows) > 0
 	}
 
-	// the web glance — live now, visitors, top pages, referrers (30d). Only shown
-	// when $pageview data exists; a backend-only instance stays product-only.
-	wv := web.Compute(evs, 30, time.Time{})
+	// the web glance — live now, visitors, top pages, referrers over the selected
+	// range, with deltas vs the prior equal window. Only shown when $pageview data
+	// exists; a backend-only instance stays product-only.
+	wv := web.Compute(evs, rangeDays, time.Time{})
 	if wv.Pageviews > 0 {
+		wvPrior := web.Compute(evs, rangeDays, nowT.AddDate(0, 0, -rangeDays))
+		vm.VisitorsDelta = deltaStr(wv.Visitors, wvPrior.Visitors)
+		vm.PageviewsDelta = deltaStr(wv.Pageviews, wvPrior.Pageviews)
 		vm.HasWeb = true
 		vm.ShowProduct = view == "product"
 		vm.LiveNow = wv.LiveNow

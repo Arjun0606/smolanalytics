@@ -34,6 +34,19 @@
   .hlink:hover{color:var(--fg)}
   .livepill{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--mut);border:1px solid var(--line);padding:3px 9px;border-radius:99px;cursor:pointer;text-decoration:none}
   .livepill .dot{width:6px;height:6px;border-radius:50%;background:var(--line2)}
+  .ranges{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+  .rangebtn{font-family:var(--mono);font-size:11px;color:var(--mut);padding:4px 10px;text-decoration:none;border-right:1px solid var(--line)}
+  .rangebtn:last-child{border-right:none}
+  .rangebtn.on{color:var(--accent);background:var(--s2)}
+  .rangebtn:hover{color:var(--fg)}
+  .chiprail{display:flex;flex-wrap:wrap;gap:8px;align-items:center;max-width:760px;margin:14px auto 0}
+  .fchip{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(245,166,35,.5);color:var(--accent);border-radius:99px;font-family:var(--mono);font-size:11px;padding:4px 11px}
+  .fchip a{color:var(--mut);text-decoration:none}
+  .fchip a:hover{color:var(--warn)}
+  .gtile .d{font-family:var(--mono);font-size:11px;margin-top:2px;color:var(--mut2)}
+  .gtile .d.up{color:var(--ok)} .gtile .d.down{color:var(--warn)}
+  .seg[data-fp]{cursor:pointer}
+  .seg[data-fp]:hover{border-color:var(--accent)}
   .livepill.on .dot{background:var(--accent);animation:pulse 1.6s infinite}
   .agentpill{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--mut);border:1px solid var(--line);padding:3px 9px;border-radius:99px;cursor:pointer}
   .agentpill:hover{border-color:var(--accent);color:var(--accent)}
@@ -252,7 +265,9 @@
     <option value="">all sites</option>
     {{range .Sites}}<option value="{{.}}" {{if eq . $.Site}}selected{{end}}>{{.}}</option>{{end}}
   </select>{{end}}
+  {{if .HasData}}<nav class="ranges">{{range .Ranges}}<a class="rangebtn{{if .On}} on{{end}}" href="{{.URL}}">{{.Label}}</a>{{end}}</nav>{{end}}
   <div class="spacer"></div>
+  {{if ge .LastEventSecs 0}}<span class="hlink" id="lastev" data-secs="{{.LastEventSecs}}" title="seconds since the newest ingested event — proof this page is live">·</span>{{end}}
   {{if .HasData}}<a class="livepill{{if gt .LiveNow 0}} on{{end}}" href="#tab=live" id="livepill"><span class="dot"></span><span id="livecount">{{if gt .LiveNow 0}}{{.LiveNow}} now{{else}}live{{end}}</span></a>{{end}}
   <span class="agentpill" id="agentpill" title="connect your coding agent over MCP">⌁ your agent</span>
   {{if .HasShares}}<a class="hlink" href="/settings/shares" id="shareBtn" title="mint a revocable read-only link">share</a>{{end}}
@@ -282,6 +297,12 @@
     <!-- zone 2: the answer slot — an artifact, not a chat -->
     <div id="askresult" class="answer" hidden></div>
     <div id="shareresult" class="answer" hidden></div>
+
+    <!-- zone 6: active filters — every chip scopes EVERY zone; click any row to add one -->
+    {{if .Chips}}<div class="chiprail">
+      <span class="chiplbl">filtered to</span>
+      {{range .Chips}}<span class="fchip">{{.Prop}}: {{.Value}} <a href="{{.RemoveURL}}" title="remove this filter">×</a></span>{{end}}
+    </div>{{end}}
   </div>
 
   {{if .HasData}}
@@ -294,12 +315,12 @@
     <details class="weekline"><summary>this week →</summary><div class="weekbody" id="brief"><div class="exsummary">…</div></div></details>
   </div>
 
-  <!-- zone 4: the glance row -->
+  <!-- zone 4: the glance row — every number carries its delta vs the prior window -->
   <div class="glance">
-    {{if .HasWeb}}<div class="gtile"><div class="l">Visitors · 30d</div><div class="v">{{.Visitors}}</div></div>
-    <div class="gtile"><div class="l">Pageviews · 30d</div><div class="v">{{.Pageviews}}</div></div>{{end}}
-    <div class="gtile"><div class="l">Users</div><div class="v">{{.TotalUsers}}</div></div>
-    <div class="gtile"><div class="l">{{.StatEventLabel}} · 30d</div><div class="v">{{.Signups}}</div></div>
+    {{if .HasWeb}}<div class="gtile"><div class="l">Visitors · {{.RangeDays}}d</div><div class="v">{{.Visitors}}</div>{{if .VisitorsDelta}}<div class="d{{if eq (slice .VisitorsDelta 0 1) "+"}} up{{else if eq (slice .VisitorsDelta 0 1) "-"}} down{{end}}">{{.VisitorsDelta}} vs prior</div>{{end}}</div>
+    <div class="gtile"><div class="l">Pageviews · {{.RangeDays}}d</div><div class="v">{{.Pageviews}}</div>{{if .PageviewsDelta}}<div class="d{{if eq (slice .PageviewsDelta 0 1) "+"}} up{{else if eq (slice .PageviewsDelta 0 1) "-"}} down{{end}}">{{.PageviewsDelta}} vs prior</div>{{end}}</div>{{end}}
+    <div class="gtile"><div class="l">Users · all time</div><div class="v">{{.TotalUsers}}</div></div>
+    <div class="gtile"><div class="l">{{.StatEventLabel}} · {{.RangeDays}}d</div><div class="v">{{.Signups}}</div>{{if .SignupsDelta}}<div class="d{{if eq (slice .SignupsDelta 0 1) "+"}} up{{else if eq (slice .SignupsDelta 0 1) "-"}} down{{end}}">{{.SignupsDelta}} vs prior</div>{{end}}</div>
     <div class="gtile"><div class="l">{{.ConvLabel}}</div><div class="v acc">{{.OverallConv}}%</div></div>
     {{if .HasEngagement}}<div class="gtile"><div class="l">Engaged · avg</div><div class="v">{{.EngagedSecs}}s</div></div>{{end}}
     {{if gt .AIVisitors 0}}<div class="gtile"><div class="l">From AI</div><div class="v acc">{{.AIVisitors}}</div></div>{{end}}
@@ -307,7 +328,7 @@
 
   <!-- zone 5: exactly one chart -->
   <div class="chartzone">
-    <div class="zonelbl">{{.TrendLabel}} per day <span class="sub">· computed by /v1/trends</span></div>
+    <div class="zonelbl">{{.TrendLabel}} per day <span class="sub">· last {{.RangeDays}}d · computed by /v1/trends</span></div>
     <div class="bars">
       {{range .Trend}}<div class="col" title="{{.Date}}: {{.Count}}"><div class="bar" style="height:{{.HeightPct}}%"></div></div>{{end}}
     </div>
@@ -336,10 +357,10 @@
 
     {{if .HasWeb}}
     <div class="pane" id="pane-pages">
-      {{range .TopPages}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
+      {{range .TopPages}}<div class="seg" data-fp="path" data-fv="{{.Value}}" title="click to filter every zone to this page"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
     </div>
     <div class="pane" id="pane-referrers">
-      {{range .Referrers}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
+      {{range .Referrers}}<div class="seg" data-fp="referrer" data-fv="{{.Value}}" title="click to filter every zone to this referrer"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
     </div>
     {{end}}
 
@@ -373,7 +394,7 @@
     {{if .HasSource}}
     <div class="pane" id="pane-sources">
       <h3>{{.SourceTitle}}</h3>
-      {{range .BySource}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}
+      {{range .BySource}}<div class="seg" data-fp="{{$.SourceProp}}" data-fv="{{.Value}}" title="click to filter every zone to this segment"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}
     </div>
     {{end}}
 
@@ -546,6 +567,26 @@
       q.value=c.getAttribute('data-q');f.dispatchEvent(new Event('submit',{cancelable:true}));
       q.scrollIntoView({behavior:'smooth',block:'center'});
     });
+
+    // click-to-filter: any row with data-fp adds a global filter chip and reloads —
+    // state lives in the querystring so the filtered view is a shareable URL
+    document.addEventListener('click',function(e){
+      var s=e.target.closest('.seg[data-fp]');if(!s)return;
+      var u=new URL(location.href);
+      u.searchParams.append('f',s.getAttribute('data-fp')+':'+s.getAttribute('data-fv'));
+      u.hash='';location.href=u.toString();
+    });
+
+    // liveness, visible: "last event Ns ago" ticks every second and refreshes from
+    // the live poll — you never have to wonder whether the page is real
+    var lastev=document.getElementById('lastev');
+    var lastTs=lastev?Date.now()-(+lastev.getAttribute('data-secs'))*1000:0;
+    function tickLast(){
+      if(!lastev)return;
+      var s=Math.max(0,Math.round((Date.now()-lastTs)/1000));
+      lastev.textContent='last event '+(s<60?s+'s':s<3600?Math.floor(s/60)+'m':Math.floor(s/3600)+'h')+' ago';
+    }
+    tickLast(); setInterval(tickLast,1000);
 
     // ---- reports-as-answers plumbing: one URL builder + one renderer, shared by the
     // answer slot, the pinned board, and the explore sheet, so a report renders
@@ -723,6 +764,8 @@
       if(!live)return;
       fetch('/v1/events/recent?limit=15').then(function(r){return r.json()}).then(function(evs){
         if(!evs||!evs.length){return;}
+        var newest=new Date(evs[0].timestamp).getTime();
+        if(newest>lastTs)lastTs=newest;
         live.innerHTML=evs.map(function(e){
           return '<div class="row"><span class="ev">'+esc(e.name)+'</span>'+
             '<span class="who">'+esc(e.distinct_id)+'</span>'+
