@@ -187,9 +187,9 @@ func TestAskRouterAndAnswers(t *testing.T) {
 			notContains: []string{"I can answer about"}, // never the capabilities menu
 		},
 		{
-			q:           "anything broken?",
-			intent:      intentBrief,
-			contains:    []string{"Last 7 days:"},
+			q:        "anything broken?",
+			intent:   intentBrief,
+			contains: []string{"Last 7 days:"},
 		},
 		// --- pageviews/visitors must never be answered as a signup count ---
 		{
@@ -209,9 +209,9 @@ func TestAskRouterAndAnswers(t *testing.T) {
 		},
 		// an unknown question leads with the verdict, not a dead-end menu
 		{
-			q:           "is my experiment variant b winning?",
-			intent:      intentUnknown,
-			contains:    []string{"Last 7 days:"},
+			q:        "is my experiment variant b winning?",
+			intent:   intentUnknown,
+			contains: []string{"Last 7 days:"},
 		},
 	}
 	for _, tc := range tests {

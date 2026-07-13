@@ -65,7 +65,7 @@ type Server struct {
 	goals    *goal.Store
 	exports  *exportlink.Store
 	defined  *defined.Store // retroactive zero-code events (Heap wedge)
-	writeKey string // if set, POST /v1/events requires Authorization: Bearer <writeKey>
+	writeKey string         // if set, POST /v1/events requires Authorization: Bearer <writeKey>
 	// autocaptured events dropped because the UA was a known crawler/bot — surfaced in
 	// /v1/usage so "why is my dashboard lower than GA?" has a visible, honest answer.
 	botsFiltered atomic.Int64
