@@ -2,11 +2,13 @@ package api
 
 import (
 	_ "embed"
+	"encoding/base64"
 	"fmt"
 	"html/template"
 	"io"
 	"math"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -153,6 +155,15 @@ type dashVM struct {
 	// only render when the wrapped store actually exists (no vapor buttons)
 	HasShares     bool
 	HasGoalsStore bool
+
+	// connect-your-agent artifacts, computed server-side from this instance's own
+	// URL + key so every snippet is complete and correct as rendered — never a
+	// "<YOUR_KEY_HERE>" placeholder the user has to hand-edit.
+	MCPURL        string       // {base}/mcp
+	MCPConfig     string       // the single-server JSON object ({"url":...,"headers":...})
+	CursorLink    template.URL // cursor://anysphere.cursor-deeplink/mcp/install?name=...&config=b64
+	VSCodeLink    template.URL // vscode:mcp/install?{urlencoded JSON}
+	ClaudeCodeCmd string       // claude mcp add --transport http ...
 }
 
 type goalCard struct {
@@ -265,6 +276,27 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		HasShares:      s.shares != nil,
 		HasGoalsStore:  s.goals != nil,
 	}
+
+	// connect-your-agent artifacts: cursor's deeplink takes base64 of the single-server
+	// config object (NOT the mcpServers map); vs code takes the urlencoded JSON. Both are
+	// complete as rendered — key included — so connecting is one click, never an edit.
+	mcpURL := vm.Base + "/mcp"
+	cfg := fmt.Sprintf(`{"url":%q`, mcpURL)
+	vsCfg := fmt.Sprintf(`{"name":"smolanalytics","type":"http","url":%q`, mcpURL)
+	cmd := "claude mcp add --transport http smolanalytics " + mcpURL
+	if s.writeKey != "" {
+		hdr := fmt.Sprintf(`,"headers":{"Authorization":"Bearer %s"}`, s.writeKey)
+		cfg += hdr
+		vsCfg += hdr
+		cmd += fmt.Sprintf(` --header "Authorization: Bearer %s"`, s.writeKey)
+	}
+	cfg += "}"
+	vsCfg += "}"
+	vm.MCPURL = mcpURL
+	vm.MCPConfig = cfg
+	vm.ClaudeCodeCmd = cmd
+	vm.CursorLink = template.URL("cursor://anysphere.cursor-deeplink/mcp/install?name=smolanalytics&config=" + base64.StdEncoding.EncodeToString([]byte(cfg)))
+	vm.VSCodeLink = template.URL("vscode:mcp/install?" + url.QueryEscape(vsCfg))
 
 	for i, st := range fr.Steps {
 		vm.Funnel = append(vm.Funnel, funnelRow{

@@ -6,503 +6,721 @@
 <title>smolanalytics</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%276%27 fill=%27%23F5A623%27/%3E%3Ctext x=%2716%27 y=%2723%27 font-size=%2720%27 text-anchor=%27middle%27 fill=%27%230A0A0A%27 font-family=%27monospace%27 font-weight=%27bold%27%3Es%3C/text%3E%3C/svg%3E">
 <style>
+  /* the whole theme derives from three decisions: a near-black base, one amber accent
+     used as punctuation only (focus ring, active underline, live pulse, pin), and a
+     4-step surface ladder. elevation is tone + a 1px hairline — no box-shadow anywhere.
+     exactly four type sizes: 30px focal numbers, 15px sentences, 13px body, 11px labels. */
   :root{
-    --bg:#0A0A0A; --surface:#161616; --surface2:#1C1C1C; --line:#262626;
-    --fg:#FAFAFA; --mut:#8E8E8E; --mut2:#6A6A6A; --accent:#F5A623; --warn:#E5544B; --ok:#F5A623;
+    --bg:#0A0A0A; --s1:#111111; --s2:#161616; --s3:#1C1C1C; --line:#262626; --line2:#2E2E2E;
+    --fg:#EDEDED; --mut:#8A8A8A; --mut2:#5F5F5F; --accent:#F5A623; --warn:#E5544B; --ok:#3FB27F;
     --mono:ui-monospace,"JetBrains Mono",SFMono-Regular,Menlo,monospace;
     --sans:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    font-variant-numeric:tabular-nums;
   }
   *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased;overflow-x:hidden}
   a{color:inherit}
-  .wrap{max-width:1180px;margin:0 auto;padding:0 24px}
+  .wrap{max-width:1060px;margin:0 auto;padding:0 24px}
+  kbd{border:1px solid var(--line2);border-bottom-width:2px;border-radius:3px;padding:0 5px;font-family:var(--mono);font-size:10px;color:var(--mut)}
 
-  /* top bar + the hero ask command bar */
-  header{position:sticky;top:0;z-index:10;background:rgba(10,10,10,.85);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
-  .bar{display:flex;flex-wrap:wrap;align-items:center;gap:18px;min-height:60px}
-  .logo{font-weight:800;letter-spacing:-.02em;font-size:17px;white-space:nowrap}
+  /* zone 0 — header: one quiet 48px row */
+  header{border-bottom:1px solid var(--line);background:var(--bg)}
+  .bar{display:flex;align-items:center;gap:14px;min-height:48px}
+  .logo{font-weight:800;letter-spacing:-.02em;font-size:15px;white-space:nowrap}
   .logo b{color:var(--accent)}
-  .ask{flex:1;position:relative}
-  .ask input{width:100%;background:var(--surface);border:1px solid var(--line);color:var(--fg);
-    font-family:var(--mono);font-size:13px;padding:11px 14px 11px 38px;outline:none;transition:border-color .15s}
-  .ask input:focus{border-color:var(--accent)}
-  .ask .k{position:absolute;left:13px;top:50%;transform:translateY(-50%);color:var(--mut2)}
-  .ask .hint{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--mut2);font-family:var(--mono);font-size:11px}
-  .askchips{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 0 0}
-  .chiplbl{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut2)}
-  .chip{font-family:var(--mono);font-size:11px;color:var(--mut);border:1px solid var(--line);padding:4px 10px;cursor:pointer;transition:.15s}
+  .siteselect{background:transparent;border:1px solid var(--line);color:var(--mut);font-family:var(--mono);font-size:11px;padding:4px 8px;border-radius:4px}
+  .spacer{flex:1}
+  .hlink{color:var(--mut);font-family:var(--mono);font-size:11px;text-decoration:none;white-space:nowrap}
+  .hlink:hover{color:var(--fg)}
+  .livepill{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--mut);border:1px solid var(--line);padding:3px 9px;border-radius:99px;cursor:pointer;text-decoration:none}
+  .livepill .dot{width:6px;height:6px;border-radius:50%;background:var(--line2)}
+  .livepill.on .dot{background:var(--accent);animation:pulse 1.6s infinite}
+  .agentpill{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--mut);border:1px solid var(--line);padding:3px 9px;border-radius:99px;cursor:pointer}
+  .agentpill:hover{border-color:var(--accent);color:var(--accent)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+  /* zone 1 — the ask hero: the one focal point on the page */
+  .hero{padding:34px 0 6px}
+  .ask{position:relative;max-width:760px;margin:0 auto}
+  .ask input{width:100%;background:var(--s1);border:1px solid var(--line2);color:var(--fg);border-radius:8px;
+    font-family:var(--mono);font-size:15px;padding:15px 84px 15px 44px;outline:none;transition:border-color .15s, box-shadow .15s}
+  .ask input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(245,166,35,.14)}
+  .ask .k{position:absolute;left:17px;top:50%;transform:translateY(-50%);color:var(--accent);font-family:var(--mono);font-size:15px}
+  .ask .hint{position:absolute;right:12px;top:50%;transform:translateY(-50%);display:flex;gap:4px;align-items:center}
+  .askchips{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:8px;padding:12px 0 0;max-width:820px;margin:0 auto}
+  .chiplbl{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut2)}
+  .chip{font-family:var(--mono);font-size:11px;color:var(--mut);border:1px solid var(--line);padding:4px 11px;border-radius:99px;cursor:pointer;transition:.15s;background:transparent}
   .chip:hover{color:var(--accent);border-color:var(--accent)}
-  .updated{color:var(--mut2);font-family:var(--mono);font-size:11px;white-space:nowrap}
-  .navlink{color:var(--mut);font-family:var(--mono);font-size:12px;text-decoration:none;white-space:nowrap}
-  .navlink:hover{color:var(--accent)}
 
-  /* stat cards */
-  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:24px 0}
-  .stat{background:var(--surface);border:1px solid var(--line);padding:18px}
-  .stat .l{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--mut)}
-  .stat .v{font-family:var(--mono);font-size:30px;font-weight:700;margin-top:6px;letter-spacing:-.02em}
-  .stat .v.acc{color:var(--accent)}
+  /* zone 2 — the answer slot: one card, zero height when unused */
+  .answer{max-width:760px;margin:14px auto 0;background:var(--s1);border:1px solid var(--line2);border-radius:8px;padding:16px 18px}
+  .answer[hidden]{display:none}
+  .answer .atext{font-size:15px;line-height:1.55;white-space:pre-wrap}
+  .answer .achart{margin-top:14px;border-top:1px solid var(--line);padding-top:14px}
+  .answer .arow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:12px}
+  .proof{display:inline-flex;align-items:center;gap:5px;border:1px solid rgba(245,166,35,.5);color:var(--accent);
+    font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:99px;text-decoration:none}
+  .proof:hover{background:var(--accent);color:var(--bg)}
+  .amethod{font-family:var(--mono);font-size:11px;color:var(--mut2)}
+  .amethod summary{cursor:pointer;list-style:none;display:inline}
+  .amethod summary:hover{color:var(--accent)}
+  .abtn{margin-left:auto;background:transparent;border:1px solid var(--line);color:var(--mut);font-family:var(--mono);font-size:11px;padding:3px 10px;border-radius:4px;cursor:pointer}
+  .abtn:hover{border-color:var(--accent);color:var(--accent)}
+  .abtn.pinned{border-color:var(--accent);color:var(--accent)}
 
-  .grid{display:grid;grid-template-columns:1.1fr .9fr;gap:14px}
-  .card{background:var(--surface);border:1px solid var(--line);padding:20px;margin-bottom:14px}
-  .card h2{font-size:13px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.1em;color:var(--mut);margin:0 0 18px}
+  /* zone 3 — verdict sentences (not a card) */
+  .verdict{max-width:760px;margin:26px auto 0}
+  .vline{display:flex;gap:10px;align-items:baseline;padding:5px 0;font-size:15px}
+  .vline .vdot{width:6px;height:6px;border-radius:50%;background:var(--accent);flex:none;position:relative;top:-2px;animation:pulse 1.6s infinite}
+  .vline.warn .vdot{background:var(--warn);animation:none}
+  .vline .vt{font-weight:600}
+  .vline .vd{color:var(--mut)}
+  .vline .vwhy{color:var(--accent);font-family:var(--mono);font-size:12px;text-decoration:none;white-space:nowrap;cursor:pointer}
+  .vline .vwhy:hover{text-decoration:underline}
+  .vcalm{color:var(--mut);font-size:15px;padding:5px 0}
+  .weekline{margin-top:4px}
+  .weekline summary{cursor:pointer;list-style:none;font-family:var(--mono);font-size:11px;color:var(--mut2)}
+  .weekline summary:hover{color:var(--accent)}
+  .weekline[open] summary{color:var(--mut)}
+  .weekbody{padding:8px 0 0}
+  .weekbody .vrow{display:flex;gap:10px;padding:3px 0;font-size:13px;flex-wrap:wrap}
+  .weekbody .vrow .vt{font-weight:600;min-width:150px}
+  .weekbody .vrow .vd{color:var(--mut)}
+  .weekbody .vrow.warn .vt{color:var(--warn)}
 
-  /* dev-data notice — surfaces localhost/development traffic that production reports hide */
-  .devnote{margin:16px 0 0;padding:10px 14px;border:1px solid var(--line);border-left:3px solid var(--accent);background:var(--surface);color:var(--mut);font-size:13px}
-  .devnote a{color:var(--accent);text-decoration:none;font-family:var(--mono);font-size:12px;white-space:nowrap}
-  .devnote a:hover{text-decoration:underline}
-  .devnote b{color:var(--fg);font-weight:600}
+  /* zone 4 — glance row: numbers separated by hairlines, no card chrome */
+  .glance{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:0;margin:30px 0 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .gtile{padding:16px 18px;border-right:1px solid var(--line)}
+  .gtile:last-child{border-right:none}
+  .gtile .l{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--mut2);white-space:nowrap}
+  .gtile .v{font-family:var(--mono);font-size:30px;font-weight:700;letter-spacing:-.02em;margin-top:4px;line-height:1.15}
+  .gtile .v.acc{color:var(--accent)}
 
-  /* verdict — the proactive "what to look at" front door */
-  .verdict h2{display:flex;align-items:center}
-  .vdot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent);margin-left:8px;animation:pulse 1.6s infinite}
-  .vrow{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--line);align-items:baseline;flex-wrap:wrap}
-  .vrow:last-child{border-bottom:none}
-  .vrow .vt{font-weight:600;min-width:220px}
-  .vrow .vd{color:var(--mut);font-size:13px;flex:1}
-  .vrow.warn .vt{color:var(--warn)}
-  .vmuted{color:var(--mut2);font-family:var(--mono);font-size:12px;padding:4px 0}
+  /* zone 5 — the one chart */
+  .chartzone{margin:26px 0 0}
+  .zonelbl{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--mut2);margin-bottom:10px;display:flex;align-items:baseline;gap:8px}
+  .zonelbl .sub{text-transform:none;letter-spacing:0;color:var(--mut2)}
+  .bars{display:flex;align-items:flex-end;gap:3px;height:150px}
+  .bars .col{flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%}
+  .bars .bar{background:var(--accent);opacity:.5;min-height:2px;border-radius:2px 2px 0 0;transition:opacity .15s}
+  .bars .col:hover .bar{opacity:1}
+  .axis{display:flex;justify-content:space-between;color:var(--mut2);font-family:var(--mono);font-size:10px;margin-top:6px}
 
-  /* onboarding */
-  details.onboard{padding:0}
-  details.onboard>summary{cursor:pointer;list-style:none;padding:18px 20px;font-size:13px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.1em;color:var(--accent)}
-  details.onboard>summary::-webkit-details-marker{display:none}
-  details.onboard[open]>summary{border-bottom:1px solid var(--line)}
-  .ob{padding:20px}
-  .obstep{margin-bottom:18px}
-  .obh{font-size:13px;color:var(--mut);margin-bottom:8px}
-  pre.code{background:#0D0D0D;border:1px solid var(--line);padding:14px;overflow:auto;font-family:var(--mono);font-size:12px;line-height:1.6;color:var(--fg);margin:0;white-space:pre-wrap;word-break:break-word}
-  .copy{margin-top:8px;background:transparent;border:1px solid var(--line);color:var(--mut);font-family:var(--mono);font-size:11px;padding:5px 12px;cursor:pointer}
-  .copy:hover{border-color:var(--accent);color:var(--accent)}
-  .obnote{font-size:12px;color:var(--mut);margin-top:8px;line-height:1.6}
-  .obnote code{background:var(--surface2);padding:1px 5px;font-family:var(--mono);font-size:11px}
-  .obstatus{font-family:var(--mono);font-size:12px;color:var(--mut2);padding-top:12px;border-top:1px solid var(--line)}
+  /* zone 7 — the board: pinned questions as live cards */
+  .board{margin:30px 0 0}
+  .boardgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:820px){.boardgrid{grid-template-columns:1fr}}
+  .bcard{background:var(--s1);border:1px solid var(--line);border-radius:8px;padding:16px 18px}
+  .bcard .bh{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:12px}
+  .bcard .bq{font-size:15px;font-weight:600}
+  .bcard .bx{color:var(--mut2);font-family:var(--mono);font-size:11px;cursor:pointer;white-space:nowrap}
+  .bcard .bx:hover{color:var(--warn)}
+  .bcard .bprov{margin-top:12px;display:flex;align-items:center;gap:8px}
+
+  /* zone 8 — breakdowns: one tabbed panel */
+  .breakdowns{margin:30px 0 0}
+  .tabrail{display:flex;flex-wrap:wrap;gap:2px;border-bottom:1px solid var(--line)}
+  .tabbtn{background:transparent;border:none;color:var(--mut);font-family:var(--mono);font-size:12px;padding:8px 13px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+  .tabbtn:hover{color:var(--fg)}
+  .tabbtn.on{color:var(--fg);border-bottom-color:var(--accent)}
+  .pane{display:none;padding:18px 0 0}
+  .pane.on{display:block}
+  .pane h3{font-size:13px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.07em;color:var(--mut2);margin:0 0 12px;font-weight:500}
+
+  /* rows with share-of-total bars behind them */
+  .seg{position:relative;height:32px;margin-bottom:4px;background:var(--s1);border:1px solid var(--line);border-radius:5px;overflow:hidden}
+  .segbar{position:absolute;inset:0 auto 0 0;background:rgba(245,166,35,.13);border-right:2px solid rgba(245,166,35,.45)}
+  .segmeta{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 12px}
+  .segname{font-size:13px}
+  .segnums{font-family:var(--mono);font-size:12px;color:var(--mut)}
+  .webcols{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+  @media(max-width:820px){.webcols{grid-template-columns:1fr}}
 
   /* funnel */
   .fstep{margin-bottom:6px}
   .fdrop{font-family:var(--mono);font-size:11px;color:var(--warn);margin:8px 0 4px 2px}
-  .fbarwrap{position:relative;height:42px;background:var(--surface2);border:1px solid var(--line);overflow:hidden}
-  .fbar{position:absolute;inset:0 auto 0 0;background:linear-gradient(90deg,rgba(245,166,35,.28),rgba(245,166,35,.12));border-right:2px solid var(--accent)}
-  .fmeta{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 14px}
-  .fname{font-weight:600}
+  .fbarwrap{position:relative;height:40px;background:var(--s1);border:1px solid var(--line);border-radius:5px;overflow:hidden}
+  .fbar{position:absolute;inset:0 auto 0 0;background:linear-gradient(90deg,rgba(245,166,35,.26),rgba(245,166,35,.1));border-right:2px solid var(--accent)}
+  .fmeta{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 13px}
+  .fname{font-weight:600;font-size:13px}
   .fnums{font-family:var(--mono);font-size:12px}
   .fnums .c{color:var(--fg)} .fnums .p{color:var(--accent);margin-left:10px}
+  .segconv .sc{margin-bottom:10px}
+  .sc-h{display:flex;justify-content:space-between;font-size:13px}
+  .sc-h .sc-conv{font-family:var(--mono);color:var(--accent)}
+  .sc-track{height:6px;background:var(--s2);border-radius:3px;margin:5px 0 3px;overflow:hidden}
+  .sc-fill{height:100%;background:var(--accent);opacity:.6;border-radius:3px}
+  .sc-sub{font-family:var(--mono);font-size:11px;color:var(--mut2)}
 
-  /* retention heatmap */
+  /* retention heat */
   table.heat{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:11px}
-  table.heat th{color:var(--mut);font-weight:500;text-align:center;padding:4px 0;border-bottom:1px solid var(--line)}
+  table.heat th{color:var(--mut2);font-weight:500;text-align:center;padding:4px 0;border-bottom:1px solid var(--line)}
   table.heat th:first-child,table.heat td:first-child{text-align:left;color:var(--mut)}
-  table.heat td{text-align:center;padding:0;height:30px;color:#0A0A0A;font-weight:600}
+  table.heat td{text-align:center;padding:0;height:28px;color:#0A0A0A;font-weight:600}
   table.heat td.lab{color:var(--mut);font-weight:400;padding-right:8px}
-  table.heat td.empty{background:var(--surface2)}
-  table.heat .cell{display:flex;align-items:center;justify-content:center;height:30px}
+  table.heat td.empty{background:var(--s1)}
+  table.heat .cell{display:flex;align-items:center;justify-content:center;height:28px}
 
-  /* trends */
-  .bars{display:flex;align-items:flex-end;gap:3px;height:120px;padding-top:10px}
-  .bars .col{flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%}
-  .bars .bar{background:var(--accent);opacity:.55;min-height:2px;transition:opacity .15s}
-  .bars .col:hover .bar{opacity:1}
-  .axis{display:flex;justify-content:space-between;color:var(--mut2);font-family:var(--mono);font-size:10px;margin-top:8px}
-
-  /* segmentation breakdown */
-  .seg{position:relative;height:34px;margin-bottom:5px;background:var(--surface2);border:1px solid var(--line);overflow:hidden}
-  .segbar{position:absolute;inset:0 auto 0 0;background:rgba(245,166,35,.16);border-right:2px solid rgba(245,166,35,.5)}
-  .segmeta{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 12px}
-  .segname{font-size:13px} .segnums{font-family:var(--mono);font-size:12px;color:var(--mut)}
-
-  /* segmented funnel conversion */
-  .segconv{display:flex;gap:18px}
-  /* web glance */
-  .webstats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:14px;margin-bottom:16px}
-  .wstat .l{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--mut)}
-  .wstat .v{font-family:var(--mono);font-size:24px;font-weight:700;margin-top:4px;letter-spacing:-.02em}
-  .wstat .v.acc{color:var(--accent)}
-  .webcols{display:grid;grid-template-columns:1fr 1fr;gap:18px}
-  .goalrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
-  .goalcard{background:var(--surface2);border:1px solid var(--line);padding:12px 14px}
-  .gname{font-size:13px;color:var(--mut)}
-  .gnum{font-family:var(--mono);font-size:22px;font-weight:700;margin-top:2px}
-  .gpct{font-size:13px;color:var(--accent)}
-  .gchan{font-family:var(--mono);font-size:11px;color:var(--mut2);margin-top:4px}
-  .wcolh{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--mut2);margin-bottom:8px}
-  @media(max-width:860px){.webcols{grid-template-columns:1fr}.webstats{grid-template-columns:1fr}}
-  .sc{flex:1}
-  .sc-h{display:flex;align-items:baseline;justify-content:space-between}
-  .sc-name{font-size:13px;text-transform:capitalize}
-  .sc-conv{font-family:var(--mono);font-size:22px;font-weight:700;color:var(--accent)}
-  .sc-track{height:6px;background:var(--surface2);border:1px solid var(--line);margin:8px 0 6px;overflow:hidden}
-  .sc-fill{height:100%;background:var(--accent)}
-  .sc-sub{font-family:var(--mono);font-size:11px;color:var(--mut)}
-
-  /* explore panel */
-  .exrow{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
-  .exrow select,.exrow input{background:var(--surface2);border:1px solid var(--line);color:var(--fg);font-family:var(--mono);font-size:13px;padding:9px 11px;outline:none}
-  .exrow input{flex:1;min-width:150px}
-  .exrow select:focus,.exrow input:focus{border-color:var(--accent)}
-  .exrow button{background:var(--accent);color:#0A0A0A;border:none;font-weight:700;padding:9px 20px;cursor:pointer;font-family:var(--mono);font-size:13px}
-  .exrow button.btn2{background:transparent;color:var(--fg);border:1px solid var(--line)}
-  .exrow button.btn2:hover{border-color:var(--accent);color:var(--accent)}
-  .saved{display:flex;flex-wrap:wrap;gap:8px}
-  .chip{display:flex;align-items:center;gap:8px;background:var(--surface2);border:1px solid var(--line);padding:8px 11px;font-family:var(--mono);font-size:12px;cursor:pointer}
-  .chip:hover{border-color:var(--accent)}
-  .chip .t{color:var(--mut2);text-transform:uppercase;font-size:10px}
-  .chip .x{color:var(--mut2);padding:0 2px;font-size:11px}
-  .chip .x:hover{color:var(--warn)}
-  .exout{min-height:8px}
-  .exbar{position:relative;height:34px;background:var(--surface2);border:1px solid var(--line);margin-bottom:5px;overflow:hidden}
-  .exfill{position:absolute;inset:0 auto 0 0;background:rgba(245,166,35,.18);border-right:2px solid var(--accent)}
-  .exmeta{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 12px;font-family:var(--mono);font-size:12px}
-  .exmeta .p{color:var(--accent);margin-left:8px}
-  .exsummary{font-family:var(--mono);font-size:13px;color:var(--mut);padding:6px 0}
-  table.lc{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:12px}
-  table.lc th,table.lc td{text-align:right;padding:4px 8px;border-bottom:1px solid var(--line)}
-  table.lc th:first-child,table.lc td:first-child{text-align:left;color:var(--mut)}
-  table.lc .n{color:var(--ok)} table.lc .r{color:var(--accent)} table.lc .rs{color:#6AA9FF} table.lc .dm{color:var(--warn)}
-  .stickrow{display:flex;gap:14px;flex-wrap:wrap}
-  .sk{flex:1;min-width:90px;background:var(--surface2);border:1px solid var(--line);padding:14px;text-align:center}
-  .skv{font-family:var(--mono);font-size:26px;font-weight:700}
-  .skv.acc{color:var(--accent)}
-  .skl{font-family:var(--mono);font-size:11px;color:var(--mut);text-transform:uppercase;margin-top:4px}
-
-  /* live events feed */
-  .tabs{display:flex;border:1px solid var(--line);font-family:var(--mono);font-size:12px}
-  .tabs a{padding:6px 14px;color:var(--mut);text-decoration:none}
-  .tabs a.on{background:var(--surface2);color:var(--accent)}
-  .siteselect{background:var(--surface2);border:1px solid var(--line);color:var(--fg);font-family:var(--mono);font-size:12px;padding:5px 8px;outline:none;max-width:180px}
-  .siteselect:focus{border-color:var(--accent)}
-  .livedot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--ok);margin-left:6px;animation:pulse 1.6s infinite}
-  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
-  .live{font-family:var(--mono);font-size:12px;max-height:260px;overflow:auto}
-  .live .row{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--line)}
-  .live .row:last-child{border-bottom:none}
-  .live .ev{color:var(--accent)}
-  .live .who{color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px}
+  /* live feed */
+  .live .row{display:flex;gap:12px;padding:6px 0;border-bottom:1px solid var(--s2);font-family:var(--mono);font-size:12px}
+  .live .ev{color:var(--accent);min-width:130px}
+  .live .who{color:var(--mut);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .live .ago{color:var(--mut2)}
-  .livemuted{color:var(--mut2);padding:8px 0}
+  .livemuted{color:var(--mut2);font-family:var(--mono);font-size:12px}
 
-  /* the ask answer panel */
-  .askresult{margin:0 0 4px;padding:14px 16px 14px 38px;background:var(--surface2);border:1px solid var(--accent);
-    border-top:none;font-size:14px;line-height:1.6;color:var(--fg);position:relative;white-space:pre-line}
-  .askresult::before{content:"✦";position:absolute;left:14px;top:14px;color:var(--accent)}
-  .askresult.load{color:var(--mut)}
-  /* the "show your work" receipt: the deterministic report behind an answer, so the
-     number is verifiable, not a model's guess */
-  .askmethod{margin-top:9px;padding-top:9px;border-top:1px solid var(--line);font-size:11px;line-height:1.5;color:var(--mut2);font-family:var(--mono)}
-  .asktrust{margin-top:8px;font-size:11px;line-height:1.5;color:var(--mut2);font-family:var(--mono)}
-  .asktrust a{color:var(--accent);text-decoration:none}
-  .asktrust a:hover{text-decoration:underline}
+  /* goals */
+  .goalrow{display:flex;flex-wrap:wrap;gap:12px}
+  .goalcard{border:1px solid var(--line);border-radius:6px;background:var(--s1);padding:12px 16px;min-width:150px}
+  .gname{font-size:12px;color:var(--mut)}
+  .gnum{font-family:var(--mono);font-size:22px;font-weight:700;margin-top:2px}
+  .gpct{font-size:12px;color:var(--accent)}
+  .gchan{font-family:var(--mono);font-size:11px;color:var(--mut2);margin-top:2px}
 
-  .foot{color:var(--mut2);font-size:12px;text-align:center;padding:28px 0;font-family:var(--mono)}
-  @media(max-width:860px){.grid{grid-template-columns:1fr}.stats{grid-template-columns:1fr}}
+  /* power tools (explore/cohorts/defined) — a sheet behind a quiet disclosure */
+  .power{margin:26px 0 0}
+  .power>summary{cursor:pointer;list-style:none;font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--mut2);padding:10px 0;border-top:1px solid var(--line)}
+  .power>summary::-webkit-details-marker{display:none}
+  .power>summary:hover{color:var(--accent)}
+  .ptool{background:var(--s1);border:1px solid var(--line);border-radius:8px;padding:16px 18px;margin-bottom:12px}
+  .ptool h3{font-size:13px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.07em;color:var(--mut2);margin:0 0 12px;font-weight:500}
+  .exrow{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+  .exrow input,.exrow select{background:var(--s2);border:1px solid var(--line);color:var(--fg);font-family:var(--mono);font-size:12px;padding:7px 10px;border-radius:5px;outline:none;min-width:0}
+  .exrow input:focus,.exrow select:focus{border-color:var(--accent)}
+  .exrow input{flex:1}
+  .exrow button{background:var(--accent);border:1px solid var(--accent);color:var(--bg);font-family:var(--mono);font-size:12px;font-weight:700;padding:7px 14px;border-radius:5px;cursor:pointer}
+  .exrow button.btn2{background:transparent;color:var(--mut);border-color:var(--line)}
+  .exrow button.btn2:hover{color:var(--accent);border-color:var(--accent)}
+  .exout{margin-top:6px}
+  .exsummary{font-family:var(--mono);font-size:12px;color:var(--mut);margin:6px 0}
+  .exbar{position:relative;height:30px;margin-bottom:4px;background:var(--s2);border:1px solid var(--line);border-radius:5px;overflow:hidden}
+  .exfill{position:absolute;inset:0 auto 0 0;background:rgba(245,166,35,.15);border-right:2px solid rgba(245,166,35,.5)}
+  .exmeta{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 11px;font-family:var(--mono);font-size:12px}
+  .exmeta .p{color:var(--accent);margin-left:8px}
+  table.lc{border-collapse:collapse;font-family:var(--mono);font-size:11px;margin-top:6px}
+  table.lc th,table.lc td{padding:3px 10px;text-align:right;border-bottom:1px solid var(--s2)}
+  table.lc th{color:var(--mut2);font-weight:500}
+  table.lc .n{color:var(--ok)} table.lc .r{color:var(--accent)} table.lc .rs{color:var(--fg)} table.lc .dm{color:var(--mut2)}
+  .stickrow{display:flex;gap:12px;flex-wrap:wrap;margin-top:6px}
+  .sk{border:1px solid var(--line);border-radius:6px;background:var(--s2);padding:10px 16px;text-align:center}
+  .skv{font-family:var(--mono);font-size:20px;font-weight:700}
+  .skv.acc{color:var(--accent)}
+  .skl{font-family:var(--mono);font-size:10px;color:var(--mut2);text-transform:uppercase;letter-spacing:.06em}
+  .saved{display:flex;flex-wrap:wrap;gap:8px}
+  .saved .chip{display:inline-flex;gap:8px;align-items:center;border-radius:6px}
+  .saved .chip .t{color:var(--mut2)}
+  .saved .chip .x{color:var(--mut2);cursor:pointer}
+  .saved .chip .x:hover{color:var(--warn)}
+
+  /* connect-your-agent sheet */
+  .connect{margin:26px 0 0}
+  .connect>summary{cursor:pointer;list-style:none;font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--mut2);padding:10px 0;border-top:1px solid var(--line)}
+  .connect>summary::-webkit-details-marker{display:none}
+  .connect>summary:hover{color:var(--accent)}
+  .crow{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--s2)}
+  .crow .cn{font-weight:600;font-size:13px;min-width:120px}
+  .cbtn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line2);border-radius:5px;background:var(--s2);color:var(--fg);font-family:var(--mono);font-size:11px;padding:5px 12px;cursor:pointer;text-decoration:none}
+  .cbtn:hover{border-color:var(--accent);color:var(--accent)}
+  .cbtn.primary{border-color:var(--accent);color:var(--accent)}
+  .ccode{background:#0D0D0D;border:1px solid var(--line);border-radius:5px;padding:8px 11px;font-family:var(--mono);font-size:11px;color:var(--mut);overflow:auto;white-space:nowrap;flex:1;min-width:200px}
+  .cnote{font-family:var(--mono);font-size:11px;color:var(--mut2);padding:10px 0 0;line-height:1.7}
+  .cnote em{color:var(--mut);font-style:normal}
+
+  /* onboarding takeover (fresh install only) */
+  .takeover{max-width:760px;margin:20px auto 0}
+  .obcard{background:var(--s1);border:1px solid var(--line);border-radius:8px;padding:20px;margin-bottom:14px}
+  .obh{font-size:15px;font-weight:600;margin-bottom:10px}
+  .obsub{font-family:var(--mono);font-size:11px;color:var(--mut2);margin-bottom:10px}
+  pre.code{background:#0D0D0D;border:1px solid var(--line);border-radius:6px;padding:13px;overflow:auto;font-family:var(--mono);font-size:12px;line-height:1.6;color:var(--fg);margin:0;white-space:pre-wrap;word-break:break-word}
+  .copy{margin-top:8px;background:transparent;border:1px solid var(--line);border-radius:4px;color:var(--mut);font-family:var(--mono);font-size:11px;padding:5px 12px;cursor:pointer}
+  .copy:hover{border-color:var(--accent);color:var(--accent)}
+  .obstatus{font-family:var(--mono);font-size:12px;color:var(--mut2);padding-top:14px}
+
+  .devnote{margin:16px 0 0;padding:10px 14px;border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:0 6px 6px 0;background:var(--s1);color:var(--mut);font-size:13px}
+  .devnote a{color:var(--accent);text-decoration:none;font-family:var(--mono);font-size:12px;white-space:nowrap}
+  .devnote b{color:var(--fg);font-weight:600}
+
+  /* zone 9 — the covenant */
+  .foot{color:var(--mut2);font-size:11px;text-align:center;padding:34px 0 28px;font-family:var(--mono);line-height:2}
+  .foot a{color:var(--mut2)}
+  .foot a:hover{color:var(--accent)}
 </style>
 </head>
 <body>
 <header><div class="wrap bar">
   <div class="logo">smol<b>analytics</b></div>
-  <form class="ask" id="askform">
-    <span class="k">›</span>
-    <input id="askq" autocomplete="off" placeholder="ask anything about your data…" aria-label="ask">
-    <span class="hint">⏎ ask</span>
-  </form>
-  {{if .HasWeb}}<nav class="tabs"><a href="/{{if .Site}}?site={{.Site}}{{end}}" {{if not .ShowProduct}}class="on"{{end}}>Web</a><a href="/?view=product{{if .Site}}&site={{.Site}}{{end}}" {{if .ShowProduct}}class="on"{{end}}>Product</a></nav>{{end}}
   {{if gt (len .Sites) 1}}<select class="siteselect" onchange="location.href=this.value?('/?site='+encodeURIComponent(this.value)):'/'" title="scope every report to one site">
     <option value="">all sites</option>
     {{range .Sites}}<option value="{{.}}" {{if eq . $.Site}}selected{{end}}>{{.}}</option>{{end}}
   </select>{{end}}
-  <div class="updated">updated {{.Updated}}</div>
-  {{if .HasShares}}<a class="navlink" href="/settings/shares" id="shareBtn" title="mint a revocable read-only link to your traffic overview">share</a>{{end}}
-  <a class="navlink" href="https://smolanalytics.com" target="_blank" title="hosted, for your team, with email briefs" style="color:var(--accent)">Cloud ↗</a>
-  <a class="navlink" href="/settings" title="settings">settings</a>
-</div>
-<div class="wrap"><div class="askchips" id="askchips">
-  <span class="chip" data-q="what should I fix?">what should I fix?</span>
-  <span class="chip" data-q="where do users drop off?">where do users drop off?</span>
-  <span class="chip" data-q="which channel converts best?">which channel converts best?</span>
-  <span class="chip" data-q="how is retention trending?">how is retention trending?</span>
-  <span class="chip" data-q="what happened this week?">what happened this week?</span>
-</div>
-{{if .ProductEvents}}<div class="askchips"><span class="chiplbl">your events</span>{{range .ProductEvents}}<span class="chip" data-q="how many {{.}} this week?" title="ask about the {{.}} event">{{.}}</span>{{end}}</div>{{end}}
-{{if .TopPages}}<div class="askchips"><span class="chiplbl">your pages</span>{{range .TopPages}}<span class="chip" data-q="visitors to {{.Value}}" title="traffic to {{.Value}}">{{.Value}}</span>{{end}}</div>{{end}}
-<div id="askresult" class="askresult" hidden></div><div id="shareresult" class="askresult" hidden></div>
-<div class="asktrust">every answer here is a deterministic report, not written by a model. each one shows the exact report it ran (the "computed by" line), and a CI test asserts the ask bar, this dashboard, and your editor all return the same number. <a href="https://github.com/Arjun0606/smolanalytics/blob/main/internal/api/agreement_test.go" target="_blank" rel="noopener">read the test ↗</a></div></div>
-</header>
+  <div class="spacer"></div>
+  {{if .HasData}}<a class="livepill{{if gt .LiveNow 0}} on{{end}}" href="#tab=live" id="livepill"><span class="dot"></span><span id="livecount">{{if gt .LiveNow 0}}{{.LiveNow}} now{{else}}live{{end}}</span></a>{{end}}
+  <span class="agentpill" id="agentpill" title="connect your coding agent over MCP">⌁ your agent</span>
+  {{if .HasShares}}<a class="hlink" href="/settings/shares" id="shareBtn" title="mint a revocable read-only link">share</a>{{end}}
+  <a class="hlink" href="https://smolanalytics.com" target="_blank" style="color:var(--accent)">Cloud ↗</a>
+  <a class="hlink" href="/settings">settings</a>
+</div></header>
 
 <main class="wrap">
   {{if .ShowingDev}}<div class="devnote">Showing <b>development</b> data (localhost / 127.0.0.1), the traffic production reports hide. <a href="/{{if .Site}}?site={{.Site}}{{end}}">← back to production</a></div>{{else if gt .DevHidden 0}}<div class="devnote">{{.DevHidden}} event{{if ne .DevHidden 1}}s{{end}} from localhost/development {{if eq .DevHidden 1}}is{{else}}are{{end}} hidden from these production reports. <a href="/?env=development{{if .Site}}&site={{.Site}}{{end}}">view dev data →</a></div>{{end}}
+
+  <!-- zone 1: the ask hero — the page's single focal point -->
+  <div class="hero">
+    <form class="ask" id="askform">
+      <span class="k">›</span>
+      <input id="askq" autocomplete="off" placeholder="ask anything about your data" aria-label="ask">
+      <span class="hint"><kbd>/</kbd><kbd>⏎</kbd></span>
+    </form>
+    <div class="askchips" id="askchips">
+      <span class="chip" data-q="what should I fix?">what should I fix?</span>
+      <span class="chip" data-q="where do users drop off?">where do users drop off?</span>
+      <span class="chip" data-q="how is retention?">how is retention?</span>
+      <span class="chip" data-q="what happened this week?">what happened this week?</span>
+    </div>
+    {{if .ProductEvents}}<div class="askchips"><span class="chiplbl">your events</span>{{range .ProductEvents}}<span class="chip" data-q="how many {{.}} this week?">{{.}}</span>{{end}}</div>{{end}}
+    {{if .TopPages}}<div class="askchips"><span class="chiplbl">your pages</span>{{range .TopPages}}<span class="chip" data-q="visitors to {{.Value}}">{{.Value}}</span>{{end}}</div>{{end}}
+
+    <!-- zone 2: the answer slot — an artifact, not a chat -->
+    <div id="askresult" class="answer" hidden></div>
+    <div id="shareresult" class="answer" hidden></div>
+  </div>
+
   {{if .HasData}}
-  {{if .Verdict}}
-  <div class="card verdict">
-    <h2>What to look at <span class="vdot"></span></h2>
-    <div id="verdict">{{range .Verdict}}<div class="vrow{{if eq .Severity "warn"}} warn{{end}}"><span class="vt">{{.Title}}</span><span class="vd">{{.Detail}}</span></div>{{end}}</div>
+  <!-- zone 3: the verdict as sentences. empty verdict = one calm line, never a card -->
+  <div class="verdict">
+    <div id="verdict">
+      {{range .Verdict}}<div class="vline{{if eq .Severity "warn"}} warn{{end}}"><span class="vdot"></span><span class="vt">{{.Title}}</span><span class="vd">{{.Detail}}</span><a class="vwhy" data-q="{{.Title}}">why? →</a></div>
+      {{else}}<div class="vcalm">nothing unusual right now — traffic and conversion look within normal range.</div>{{end}}
+    </div>
+    <details class="weekline"><summary>this week →</summary><div class="weekbody" id="brief"><div class="exsummary">…</div></div></details>
   </div>
+
+  <!-- zone 4: the glance row -->
+  <div class="glance">
+    {{if .HasWeb}}<div class="gtile"><div class="l">Visitors · 30d</div><div class="v">{{.Visitors}}</div></div>
+    <div class="gtile"><div class="l">Pageviews · 30d</div><div class="v">{{.Pageviews}}</div></div>{{end}}
+    <div class="gtile"><div class="l">Users</div><div class="v">{{.TotalUsers}}</div></div>
+    <div class="gtile"><div class="l">{{.StatEventLabel}} · 30d</div><div class="v">{{.Signups}}</div></div>
+    <div class="gtile"><div class="l">{{.ConvLabel}}</div><div class="v acc">{{.OverallConv}}%</div></div>
+    {{if .HasEngagement}}<div class="gtile"><div class="l">Engaged · avg</div><div class="v">{{.EngagedSecs}}s</div></div>{{end}}
+    {{if gt .AIVisitors 0}}<div class="gtile"><div class="l">From AI</div><div class="v acc">{{.AIVisitors}}</div></div>{{end}}
+  </div>
+
+  <!-- zone 5: exactly one chart -->
+  <div class="chartzone">
+    <div class="zonelbl">{{.TrendLabel}} per day <span class="sub">· computed by /v1/trends</span></div>
+    <div class="bars">
+      {{range .Trend}}<div class="col" title="{{.Date}}: {{.Count}}"><div class="bar" style="height:{{.HeightPct}}%"></div></div>{{end}}
+    </div>
+    <div class="axis"><span>{{with index .Trend 0}}{{.Date}}{{end}}</span><span>now</span></div>
+  </div>
+
+  <!-- zone 7: the board — grows only from questions you pinned; empty = invisible -->
+  <div class="board" id="board" hidden>
+    <div class="zonelbl">pinned · your questions</div>
+    <div class="boardgrid" id="boardgrid"></div>
+  </div>
+
+  <!-- zone 8: breakdowns — one tabbed panel, every deep report reachable, none shouting -->
+  <div class="breakdowns">
+    <div class="tabrail" id="tabrail">
+      {{if .HasWeb}}<button class="tabbtn" data-tab="pages">pages</button>
+      <button class="tabbtn" data-tab="referrers">referrers</button>{{end}}
+      <button class="tabbtn" data-tab="funnel">funnel</button>
+      {{if .HasConvBy}}<button class="tabbtn" data-tab="conversion">conversion</button>{{end}}
+      <button class="tabbtn" data-tab="retention">retention</button>
+      {{if .HasSource}}<button class="tabbtn" data-tab="sources">sources</button>{{end}}
+      {{if .HasSearch}}<button class="tabbtn" data-tab="search">search</button>{{end}}
+      {{if .HasWeb}}<button class="tabbtn" data-tab="goals">goals</button>{{end}}
+      <button class="tabbtn" data-tab="live">live</button>
+    </div>
+
+    {{if .HasWeb}}
+    <div class="pane" id="pane-pages">
+      {{range .TopPages}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
+    </div>
+    <div class="pane" id="pane-referrers">
+      {{range .Referrers}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
+    </div>
+    {{end}}
+
+    <div class="pane" id="pane-funnel">
+      <h3>{{.FunnelTitle}} <span style="text-transform:none;letter-spacing:0">· computed by /v1/funnel</span></h3>
+      {{range .Funnel}}
+        {{if not .First}}<div class="fdrop">↓ {{.PctPrev}}% continue · {{.Dropped}} dropped</div>{{end}}
+        <div class="fstep"><div class="fbarwrap"><div class="fbar" style="width:{{.PctTop}}%"></div><div class="fmeta"><span class="fname">{{.Event}}</span><span class="fnums"><span class="c">{{.Count}}</span><span class="p">{{.PctTop}}%</span></span></div></div></div>
+      {{end}}
+    </div>
+
+    {{if .HasConvBy}}
+    <div class="pane" id="pane-conversion">
+      <h3>conversion by {{.ConvByTitle}}</h3>
+      <div class="segconv">
+        {{range .ConvBySeg}}<div class="sc"><div class="sc-h"><span class="sc-name">{{.Value}}</span><span class="sc-conv">{{.Conv}}%</span></div><div class="sc-track"><div class="sc-fill" style="width:{{.Conv}}%"></div></div><div class="sc-sub">{{.Users}} users</div></div>{{end}}
+      </div>
+    </div>
+    {{end}}
+
+    <div class="pane" id="pane-retention">
+      <h3>returning users · computed by /v1/retention</h3>
+      <table class="heat">
+        <thead><tr><th>Cohort</th><th>n</th>{{range .RetDayHeaders}}<th>{{.}}</th>{{end}}</tr></thead>
+        <tbody>
+          {{range .Retention}}<tr><td class="lab">{{.Date}}</td><td class="lab">{{.Size}}</td>{{range .Cells}}{{if .Empty}}<td class="empty"></td>{{else}}<td style="{{.Style}}"><div class="cell">{{.Label}}</div></td>{{end}}{{end}}</tr>{{end}}
+        </tbody>
+      </table>
+    </div>
+
+    {{if .HasSource}}
+    <div class="pane" id="pane-sources">
+      <h3>{{.SourceTitle}}</h3>
+      {{range .BySource}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}
+    </div>
+    {{end}}
+
+    {{if .HasSearch}}
+    <div class="pane" id="pane-search">
+      <h3>google search queries · 28d clicks</h3>
+      {{range .SearchRows}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
+    </div>
+    {{end}}
+
+    {{if .HasWeb}}
+    <div class="pane" id="pane-goals">
+      {{if .Goals}}
+      <div class="goalrow">
+        {{range .Goals}}<div class="goalcard"><div class="gname">{{.Name}}</div><div class="gnum">{{.Conversions}} <span class="gpct">{{.Pct}}%</span></div>{{if .TopChannel}}<div class="gchan">top channel: {{.TopChannel}}</div>{{end}}</div>{{end}}
+      </div>
+      {{else if .HasGoalsStore}}
+      <div class="exrow" style="margin-bottom:0">
+        <input id="gName" autocomplete="off" placeholder="goal name (e.g. Signed up)">
+        <input id="gValue" autocomplete="off" placeholder="event name (signup) or path glob (/thanks*)">
+        <button id="gCreate">Create goal</button>
+      </div>
+      <div class="exsummary" id="gNote">no goals yet — name what counts as success. a value starting with / matches a page path; anything else is an event name.</div>
+      {{end}}
+    </div>
+    {{end}}
+
+    <div class="pane" id="pane-live">
+      <div id="live" class="live"><div class="livemuted">waiting for events…</div></div>
+    </div>
+  </div>
+
+  <!-- power tools: full capability, zero shouting -->
+  <details class="power">
+    <summary>explore · cohorts · defined events ▾</summary>
+    <div style="padding-top:14px">
+    <div class="ptool">
+      <h3>explore · run any report on your own events</h3>
+      <div class="exrow">
+        <select id="exType">
+          <option value="funnel">Funnel</option><option value="trend">Trend</option>
+          <option value="breakdown">Breakdown</option><option value="retention">Retention</option>
+          <option value="paths">Paths</option><option value="lifecycle">Lifecycle</option>
+          <option value="stickiness">Stickiness</option><option value="groups">Accounts</option>
+        </select>
+        <input id="exA" list="exEvents" autocomplete="off" placeholder="signup,activate,checkout">
+        <input id="exB" autocomplete="off" placeholder="property" style="display:none">
+        <button id="exRun">Run</button>
+        <button id="exSave" class="btn2">Pin to board</button>
+      </div>
+      <div class="exrow">
+        <select id="exCohort" title="scope to a cohort"><option value="">all users</option></select>
+        <input id="exFprop" list="exEvents" autocomplete="off" placeholder="filter property (optional)">
+        <select id="exFop"><option value="eq">=</option><option value="neq">≠</option><option value="contains">contains</option><option value="gt">&gt;</option><option value="lt">&lt;</option></select>
+        <input id="exFval" autocomplete="off" placeholder="value">
+      </div>
+      <datalist id="exEvents"></datalist>
+      <div id="exOut" class="exout"></div>
+    </div>
+    <div class="ptool">
+      <h3>cohorts · define a user group once, reuse anywhere</h3>
+      <div class="exrow">
+        <input id="coName" autocomplete="off" placeholder="cohort name (e.g. Paying users)">
+        <input id="coEvents" list="exEvents" autocomplete="off" placeholder="events, comma-separated (e.g. checkout)">
+        <select id="coMatch"><option value="any">did any</option><option value="all">did all</option></select>
+        <button id="coCreate">Create</button>
+      </div>
+      <div id="coList" class="saved"><div class="exsummary">no cohorts yet</div></div>
+    </div>
+    <div class="ptool">
+      <h3>defined events · name a business event from captured clicks, retroactive, no code</h3>
+      <div class="exrow">
+        <input id="deName" autocomplete="off" placeholder="event name (e.g. checkout)">
+        <span class="exsummary">=</span>
+        <select id="deEvent"><option value="$click">$click</option><option value="$pageview">$pageview</option><option value="$form_submit">$form_submit</option></select>
+        <span class="exsummary">where</span>
+        <select id="deField"><option value="text">text</option><option value="path">path</option><option value="id">id</option><option value="href">href</option><option value="classes">classes</option></select>
+        <select id="deOp"><option value="contains">contains</option><option value="equals">equals</option><option value="prefix">starts with</option></select>
+        <input id="deValue" autocomplete="off" placeholder="value (e.g. Buy now)">
+        <button id="deCreate">Create</button>
+      </div>
+      <div id="deList" class="saved"><div class="exsummary">no defined events yet</div></div>
+    </div>
+    </div>
+  </details>
   {{end}}
 
-  <div class="card">
-    <h2>Your week · this week vs last</h2>
-    <div id="brief"><div class="vmuted">computing your week…</div></div>
-  </div>
-  {{end}}
+  <!-- connect your agent: a first-class moment, present on every state of the page -->
+  <details class="connect" id="connect" {{if not .HasData}}open{{end}}>
+    <summary>⌁ connect your coding agent ▾</summary>
+    <div style="padding-top:8px">
+      <div class="crow">
+        <span class="cn">Cursor</span>
+        <a class="cbtn primary" href="{{.CursorLink}}">⚡ add to Cursor</a>
+        <span class="exsummary">one click — server, url and key preconfigured</span>
+      </div>
+      <div class="crow">
+        <span class="cn">Claude Code</span>
+        <span class="ccode" id="ccCmd">{{.ClaudeCodeCmd}}</span>
+        <button class="copy" data-c="ccCmd">copy</button>
+      </div>
+      <div class="crow">
+        <span class="cn">VS Code</span>
+        <a class="cbtn" href="{{.VSCodeLink}}">add to VS Code</a>
+      </div>
+      <div class="crow">
+        <span class="cn">Claude Desktop / any client</span>
+        <span class="ccode" id="c3">{{.MCPConfig}}</span>
+        <button class="copy" data-c="c3">copy</button>
+      </div>
+      <div class="cnote">
+        then ask from your editor: <em>"what changed on my site this week?"</em> · <em>"why did {{.StatEventLabel}} drop?"</em> · <em>"which referrer converts best?"</em><br>
+        your own model reads your data through 47 read-only tools — we never run a model, so it's free and unmetered.
+        every answer is a deterministic report, and a <a href="https://github.com/Arjun0606/smolanalytics/blob/main/internal/api/agreement_test.go" target="_blank" rel="noopener" style="color:var(--accent)">CI test ↗</a> proves the editor, this dashboard, and the ask bar always return the same number.
+        self-hosting? <em>smolanalytics connect</em> wires Claude Desktop / Cursor in one command.
+      </div>
+    </div>
+  </details>
 
-  <details class="card onboard" {{if not .HasData}}open{{end}}>
-    <summary>{{if .HasData}}Setup &amp; connect{{else}}Get started in 2 minutes{{end}}</summary>
-    <div class="ob">
-      <div class="obstep">
-        <div class="obh">1 · Install, drop this in your app</div>
-        <pre class="code" id="c1">&lt;script src="{{.Base}}/sdk.js"&gt;&lt;/script&gt;
+  {{if not .HasData}}
+  <!-- fresh install: the page IS the setup, two paths, gone forever once data flows -->
+  <div class="takeover">
+    <div class="obcard">
+      <div class="obh">1 · drop this in your app</div>
+      <div class="obsub">4KB script · cookieless · autocaptures pageviews, clicks, engagement</div>
+      <pre class="code" id="c1">&lt;script src="{{.Base}}/sdk.js"&gt;&lt;/script&gt;
 &lt;script&gt;
   smolanalytics.init("{{if .WriteKey}}{{.WriteKey}}{{else}}YOUR_WRITE_KEY{{end}}", {{"{"}} host: "{{.Base}}" {{"}"}});
   smolanalytics.track("signup", {{"{"}} plan: "pro" {{"}"}});
 &lt;/script&gt;</pre>
-        <button class="copy" data-c="c1">copy</button>
-      </div>
-
-      <div class="obstep">
-        <div class="obh">…or let your AI do it, paste into Cursor / Claude Code</div>
-        <pre class="code" id="c2">Add smolanalytics product analytics to this app. Load the script {{.Base}}/sdk.js and call smolanalytics.init("{{if .WriteKey}}{{.WriteKey}}{{else}}YOUR_WRITE_KEY{{end}}", {{"{"}} host: "{{.Base}}" {{"}"}}). Then call smolanalytics.track(event, props) at the key moments: "signup" on account creation, "activate" at the core aha moment, "checkout" on payment, and smolanalytics.identify(userId) on login. Put the calls in the right places in the codebase.</pre>
-        <button class="copy" data-c="c2">copy</button>
-      </div>
-
-      <div class="obstep">
-        <div class="obh">2 · Ask it anything, connect your own AI over MCP</div>
-        <pre class="code" id="c3">{{"{"}}
-  "mcpServers": {{"{"}}
-    "smolanalytics": {{"{"}} "url": "{{.Base}}/mcp"{{if .WriteKey}}, "headers": {{"{"}} "Authorization": "Bearer {{.WriteKey}}" {{"}"}}{{end}} {{"}"}}
-  {{"}"}}
-{{"}"}}</pre>
-        <button class="copy" data-c="c3">copy</button>
-        <div class="obnote">Add to your Claude Desktop / Cursor MCP config, then ask <em>"what's my activation rate, and is pro converting better than free?"</em>, your own model reads your data through our tools (we never run a model, so it's free). If a key is set, add <code>"headers": {{"{"}} "Authorization": "Bearer YOUR_KEY" {{"}"}}</code> next to the url.<br><strong>Self-hosting?</strong> Skip the JSON, run <code>smolanalytics connect</code> and it wires itself into Claude Desktop / Cursor in one command.</div>
-      </div>
-
-      <div class="obstatus" id="obstatus">○ waiting for your first event…</div>
+      <button class="copy" data-c="c1">copy</button>
     </div>
-  </details>
-
-  {{if .HasData}}
-  {{if .ShowProduct}}<div class="stats">
-    <div class="stat"><div class="l">Users</div><div class="v">{{.TotalUsers}}</div></div>
-    <div class="stat"><div class="l">{{.StatEventLabel}} (30d)</div><div class="v">{{.Signups}}</div></div>
-    <div class="stat"><div class="l">{{.ConvLabel}}</div><div class="v acc">{{.OverallConv}}%</div></div>
-  </div>
-
-  {{end}}
-
-  {{if .HasWeb}}
-  <div class="card">
-    <h2>Web · your traffic at a glance{{if gt .LiveNow 0}}<span class="livedot"></span>{{end}}</h2>
-    <div class="webstats">
-      <div class="wstat"><div class="l">Live now</div><div class="v acc">{{.LiveNow}}</div></div>
-      <div class="wstat"><div class="l">Visitors (30d)</div><div class="v">{{.Visitors}}</div></div>
-      <div class="wstat"><div class="l">Pageviews (30d)</div><div class="v">{{.Pageviews}}</div></div>
-      {{if .HasEngagement}}<div class="wstat"><div class="l">Avg engaged</div><div class="v">{{.EngagedSecs}}s</div></div>
-      <div class="wstat"><div class="l">Bounce</div><div class="v">{{.BouncePct}}%</div></div>{{end}}
-      {{if gt .AIVisitors 0}}<div class="wstat"><div class="l">From AI assistants</div><div class="v acc">{{.AIVisitors}}</div></div>{{end}}
-    </div>
-    <div class="webcols">
-      <div>
-        <div class="wcolh">top pages</div>
-        {{range .TopPages}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
-      </div>
-      <div>
-        <div class="wcolh">referrers</div>
-        {{range .Referrers}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
-      </div>
-      {{if .HasSearch}}<div>
-        <div class="wcolh">google search queries (28d clicks)</div>
-        {{range .SearchRows}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
-      </div>{{end}}
-    </div>
-    {{if .Goals}}
-    <div class="wcolh" style="margin-top:18px">goals · last 30 days</div>
-    <div class="goalrow">
-      {{range .Goals}}
-      <div class="goalcard">
-        <div class="gname">{{.Name}}</div>
-        <div class="gnum">{{.Conversions}} <span class="gpct">{{.Pct}}%</span></div>
-        {{if .TopChannel}}<div class="gchan">top channel: {{.TopChannel}}</div>{{end}}
-      </div>
-      {{end}}
-    </div>
-    {{else if .HasGoalsStore}}
-    <div class="wcolh" style="margin-top:18px">goals · last 30 days</div>
-    <div class="exrow" style="margin-bottom:0">
-      <input id="gName" autocomplete="off" placeholder="goal name (e.g. Signed up)">
-      <input id="gValue" autocomplete="off" placeholder="event name (signup) or path glob (/thanks*)">
-      <button id="gCreate">Create goal</button>
-    </div>
-    <div class="obnote" id="gNote">no goals yet, name what counts as success. A value starting with <code>/</code> is matched as a page path; anything else is an event name.</div>
-    {{end}}
-  </div>
-  {{end}}
-
-  {{if .ShowProduct}}<div class="card explore">
-    <h2>Explore · run any report on your own events</h2>
-    <div class="exrow">
-      <select id="exType">
-        <option value="funnel">Funnel</option>
-        <option value="trend">Trend</option>
-        <option value="breakdown">Breakdown</option>
-        <option value="retention">Retention</option>
-        <option value="paths">Paths</option>
-        <option value="lifecycle">Lifecycle</option>
-        <option value="stickiness">Stickiness</option>
-        <option value="groups">Accounts</option>
-      </select>
-      <input id="exA" list="exEvents" autocomplete="off" placeholder="signup,activate,checkout">
-      <input id="exB" autocomplete="off" placeholder="property" style="display:none">
-      <button id="exRun">Run</button>
-      <button id="exSave" class="btn2">Save</button>
-    </div>
-    <div class="exrow">
-      <select id="exCohort" title="scope to a cohort"><option value="">all users</option></select>
-      <input id="exFprop" list="exEvents" autocomplete="off" placeholder="filter property (optional)">
-      <select id="exFop"><option value="eq">=</option><option value="neq">≠</option><option value="contains">contains</option><option value="gt">&gt;</option><option value="lt">&lt;</option></select>
-      <input id="exFval" autocomplete="off" placeholder="value">
-    </div>
-    <datalist id="exEvents"></datalist>
-    <div id="exOut" class="exout"></div>
-  </div>
-
-  <div class="card">
-    <h2>Saved reports</h2>
-    <div id="saved" class="saved"><div class="exsummary">no saved reports yet, build one above and hit Save</div></div>
-  </div>
-
-  <div class="card">
-    <h2>Cohorts · define a user group once, reuse on any report</h2>
-    <div class="exrow">
-      <input id="coName" autocomplete="off" placeholder="cohort name (e.g. Paying users)">
-      <input id="coEvents" list="exEvents" autocomplete="off" placeholder="events, comma-separated (e.g. checkout)">
-      <select id="coMatch"><option value="any">did any</option><option value="all">did all</option></select>
-      <button id="coCreate">Create</button>
-    </div>
-    <div id="coList" class="saved"><div class="exsummary">no cohorts yet</div></div>
-  </div>
-
-  <div class="card">
-    <h2>Defined events · name a business event from clicks you already captured, no code</h2>
-    <div class="exrow">
-      <input id="deName" autocomplete="off" placeholder="event name (e.g. checkout)">
-      <span class="exsummary">=</span>
-      <select id="deEvent"><option value="$click">$click</option><option value="$pageview">$pageview</option><option value="$form_submit">$form_submit</option></select>
-      <span class="exsummary">where</span>
-      <select id="deField"><option value="text">text</option><option value="path">path</option><option value="id">id</option><option value="href">href</option><option value="classes">classes</option></select>
-      <select id="deOp"><option value="contains">contains</option><option value="equals">equals</option><option value="prefix">starts with</option></select>
-      <input id="deValue" autocomplete="off" placeholder="value (e.g. Buy now)">
-      <button id="deCreate">Create</button>
-    </div>
-    <div id="deList" class="saved"><div class="exsummary">no defined events yet, turn a captured click into a named event, retroactive to install</div></div>
-  </div>
-
-  <div class="grid">
-    <div>
-      <div class="card">
-        <h2>Funnel · {{.FunnelTitle}}</h2>
-        {{range .Funnel}}
-          {{if not .First}}<div class="fdrop">↓ {{.PctPrev}}% continue · {{.Dropped}} dropped</div>{{end}}
-          <div class="fstep">
-            <div class="fbarwrap">
-              <div class="fbar" style="width:{{.PctTop}}%"></div>
-              <div class="fmeta">
-                <span class="fname">{{.Event}}</span>
-                <span class="fnums"><span class="c">{{.Count}}</span><span class="p">{{.PctTop}}%</span></span>
-              </div>
-            </div>
-          </div>
-        {{end}}
-      </div>
-
-      {{if .HasConvBy}}
-      <div class="card">
-        <h2>Conversion by {{.ConvByTitle}} · segmented funnel</h2>
-        <div class="segconv">
-          {{range .ConvBySeg}}
-          <div class="sc">
-            <div class="sc-h"><span class="sc-name">{{.Value}}</span><span class="sc-conv">{{.Conv}}%</span></div>
-            <div class="sc-track"><div class="sc-fill" style="width:{{.Conv}}%"></div></div>
-            <div class="sc-sub">{{.Users}} users</div>
-          </div>
-          {{end}}
-        </div>
-      </div>
-      {{end}}
-
-      <div class="card">
-        <h2>{{.TrendLabel}} per day</h2>
-        <div class="bars">
-          {{range .Trend}}<div class="col" title="{{.Date}}: {{.Count}}"><div class="bar" style="height:{{.HeightPct}}%"></div></div>{{end}}
-        </div>
-        <div class="axis"><span>{{with index .Trend 0}}{{.Date}}{{end}}</span><span>now</span></div>
-      </div>
-    </div>
-
-    <div>
-      <div class="card">
-        <h2>Retention · returning users</h2>
-        <table class="heat">
-          <thead><tr><th>Cohort</th><th>n</th>{{range .RetDayHeaders}}<th>{{.}}</th>{{end}}</tr></thead>
-          <tbody>
-            {{range .Retention}}
-            <tr>
-              <td class="lab">{{.Date}}</td><td class="lab">{{.Size}}</td>
-              {{range .Cells}}{{if .Empty}}<td class="empty"></td>{{else}}<td style="{{.Style}}"><div class="cell">{{.Label}}</div></td>{{end}}{{end}}
-            </tr>
-            {{end}}
-          </tbody>
-        </table>
-      </div>
-
-      {{if .HasSource}}
-      <div class="card">
-        <h2>{{.SourceTitle}}</h2>
-        {{range .BySource}}
-        <div class="seg">
-          <div class="segbar" style="width:{{.BarPct}}%"></div>
-          <div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div>
-        </div>
-        {{end}}
-      </div>
-      {{end}}
-
-      <div class="card">
-        <h2>Live events <span class="livedot"></span></h2>
-        <div id="live" class="live"><div class="livemuted">waiting for events…</div></div>
-      </div>
+    <div class="obcard">
+      <div class="obh">…or let your agent do the whole thing</div>
+      <div class="obsub">paste into Cursor / Claude Code — it reads your codebase and wires the right events in the right places</div>
+      <pre class="code" id="c2">Add smolanalytics product analytics to this app. Load the script {{.Base}}/sdk.js and call smolanalytics.init("{{if .WriteKey}}{{.WriteKey}}{{else}}YOUR_WRITE_KEY{{end}}", {{"{"}} host: "{{.Base}}" {{"}"}}). Then call smolanalytics.track(event, props) at the key moments: "signup" on account creation, "activate" at the core aha moment, "checkout" on payment, and smolanalytics.identify(userId) on login. Put the calls in the right places in the codebase.</pre>
+      <button class="copy" data-c="c2">copy</button>
+      <div class="obstatus" id="obstatus">○ waiting for your first event — this page flips live the moment it arrives</div>
     </div>
   </div>
   {{end}}
 
-  {{end}}
-
-  <div class="foot">metered by smolanalytics · one binary, your data</div>
+  <!-- zone 9: the covenant -->
+  <div class="foot">
+    every row, every event — no sampling, no thresholding, no "(other)" ·
+    ask == dashboard == MCP, <a href="https://github.com/Arjun0606/smolanalytics/blob/main/internal/api/agreement_test.go" target="_blank" rel="noopener">proven in CI ↗</a><br>
+    updated {{.Updated}} · one binary, your data · <a href="https://smolanalytics.com" target="_blank">smolanalytics</a>
+  </div>
 </main>
+
 <script>
   (function(){
     var f=document.getElementById('askform'),q=document.getElementById('askq'),res=document.getElementById('askresult');
-    // delegate across every .askchips row (examples + your events + your pages) so a
-    // click on any chip carrying data-q runs it; the [data-q] filter skips plain labels.
-    document.addEventListener('click',function(e){var c=e.target.closest('.askchips .chip[data-q]');if(!c)return;q.value=c.getAttribute('data-q');f.dispatchEvent(new Event('submit',{cancelable:true}));});
+    // the engine's own funnel/event detection, exposed so answer-charts and pins use
+    // exactly what the server computed — the client never re-derives.
+    var SA_FUNNEL=[{{range $i,$s := .Funnel}}{{if $i}},{{end}}"{{$s.Event}}"{{end}}];
+    var SA_EVENT="{{.StatEventLabel}}";
+
+    function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
+
+    // '/' focuses the ask bar from anywhere; cmd/ctrl-k too; esc blurs
+    document.addEventListener('keydown',function(e){
+      if((e.key==='/'&&!/input|textarea|select/i.test(e.target.tagName))||((e.metaKey||e.ctrlKey)&&e.key==='k')){e.preventDefault();q.focus();}
+      if(e.key==='Escape'&&document.activeElement===q)q.blur();
+    });
+
+    // chips + verdict "why?" links both feed the ask bar
+    document.addEventListener('click',function(e){
+      var c=e.target.closest('.chip[data-q],.vwhy[data-q]');if(!c)return;
+      q.value=c.getAttribute('data-q');f.dispatchEvent(new Event('submit',{cancelable:true}));
+      q.scrollIntoView({behavior:'smooth',block:'center'});
+    });
+
+    // ---- reports-as-answers plumbing: one URL builder + one renderer, shared by the
+    // answer slot, the pinned board, and the explore sheet, so a report renders
+    // identically wherever it appears.
+    function buildURL(t,p){
+      p=p||{};
+      if(t==='funnel')return '/v1/funnel?window=168h&steps='+encodeURIComponent(p.steps||'');
+      if(t==='trend')return '/v1/trends?event='+encodeURIComponent(p.event||'')+(p.breakdown?'&breakdown='+encodeURIComponent(p.breakdown):'');
+      if(t==='breakdown')return '/v1/breakdown?event='+encodeURIComponent(p.event||'')+'&property='+encodeURIComponent(p.property||'');
+      if(t==='retention')return '/v1/retention?days='+encodeURIComponent(p.days||'7')+'&event='+encodeURIComponent(p.event||'');
+      if(t==='paths')return '/v1/paths?start='+encodeURIComponent(p.start||'')+'&depth='+encodeURIComponent(p.depth||'3');
+      if(t==='lifecycle')return '/v1/lifecycle?days='+encodeURIComponent(p.days||'30');
+      if(t==='stickiness')return '/v1/stickiness?_=1';
+      if(t==='groups')return '/v1/groups?property='+encodeURIComponent(p.property||'');
+      return null;
+    }
+    function bar(label,fillPct,right){
+      return '<div class="exbar"><div class="exfill" style="width:'+fillPct+'%"></div>'+
+        '<div class="exmeta"><span>'+esc(label)+'</span><span>'+right+'</span></div></div>';
+    }
+    function trendBars(pts){
+      var max=1;pts.forEach(function(p){if(p.count>max)max=p.count;});
+      return '<div class="bars" style="height:90px">'+pts.map(function(p){return '<div class="col" title="'+esc(p.date)+': '+p.count+'"><div class="bar" style="height:'+Math.round(p.count/max*100)+'%"></div></div>';}).join('')+'</div>';
+    }
+    function renderReport(t,j,el){
+      if(j.error){el.innerHTML='<div class="exsummary">'+esc(j.error)+'</div>';return;}
+      if(t==='funnel'){
+        var s=j.steps||[];
+        el.innerHTML=s.map(function(x){var p=Math.round((x.conversion_from_top||0)*100);
+          return bar(x.event,p,'<span>'+x.count+'</span><span class="p">'+p+'%</span>');}).join('')||'<div class="exsummary">no data</div>';
+      }else if(t==='trend'){
+        if(j.series){
+          el.innerHTML=j.series.map(function(s){return '<div class="exsummary">'+esc(s.value)+' · '+s.total+'</div>'+trendBars(s.points||[]);}).join('')||'<div class="exsummary">no data</div>';
+        }else{
+          var pts=j.points||[];
+          el.innerHTML='<div class="exsummary">'+(j.total||0)+' total over '+pts.length+' days</div>'+trendBars(pts);
+        }
+      }else if(t==='breakdown'){
+        var g=j.groups||[],gmax=(g[0]&&g[0].count)||1;
+        el.innerHTML=g.slice(0,8).map(function(x){return bar(x.value,Math.round(x.count/gmax*100),x.count);}).join('')||'<div class="exsummary">no data</div>';
+      }else if(t==='retention'){
+        // the server computes honest day-N summaries (only cohorts old enough to
+        // observe day N) — never re-derive them client-side.
+        var parts=[];
+        if(j.day1_retention_pct!==undefined)parts.push('Day-1 retention '+j.day1_retention_pct+'% ('+j.day1_cohort_users+' users)');
+        if(j.day7_retention_pct!==undefined)parts.push('Day-7 '+j.day7_retention_pct+'% ('+j.day7_cohort_users+' users)');
+        if(j.day30_retention_pct!==undefined)parts.push('Day-30 '+j.day30_retention_pct+'%');
+        el.innerHTML='<div class="exsummary">'+(parts.length?parts.join(' · '):'no cohort is old enough to measure retention yet')+'</div>';
+      }else if(t==='paths'){
+        var lv=j.levels||[];
+        el.innerHTML='<div class="exsummary">'+(j.users||0)+' users did "'+esc(j.start)+'"</div>'+
+          lv.map(function(L){var mx=(L.steps[0]&&L.steps[0].count)||1;
+            return '<div class="exsummary">step '+L.depth+'</div>'+L.steps.slice(0,6).map(function(s){return bar(s.event,Math.round(s.count/mx*100),s.count);}).join('');}).join('')||'<div class="exsummary">no data</div>';
+      }else if(t==='lifecycle'){
+        var d=j.days||[];
+        el.innerHTML='<table class="lc"><tr><th>day</th><th class="n">new</th><th class="r">ret</th><th class="rs">res</th><th class="dm">dorm</th></tr>'+
+          d.slice(-14).map(function(x){return '<tr><td>'+String(x.date).slice(5,10)+'</td><td class="n">'+x.new+'</td><td class="r">'+x.returning+'</td><td class="rs">'+x.resurrected+'</td><td class="dm">'+x.dormant+'</td></tr>';}).join('')+'</table>';
+      }else if(t==='stickiness'){
+        el.innerHTML='<div class="stickrow"><div class="sk"><div class="skv">'+(j.dau||0)+'</div><div class="skl">DAU</div></div>'+
+          '<div class="sk"><div class="skv">'+(j.wau||0)+'</div><div class="skl">WAU</div></div>'+
+          '<div class="sk"><div class="skv">'+(j.mau||0)+'</div><div class="skl">MAU</div></div>'+
+          '<div class="sk"><div class="skv acc">'+Math.round((j.dau_over_mau||0)*100)+'%</div><div class="skl">DAU/MAU</div></div></div>';
+      }else if(t==='groups'){
+        var gr=j.groups||[],mx=(gr[0]&&gr[0].events)||1;
+        el.innerHTML='<div class="exsummary">'+(j.total_groups||0)+' accounts · '+(j.active_groups_7d||0)+' active 7d · '+(j.active_groups_30d||0)+' active 30d</div>'+
+          gr.slice(0,12).map(function(x){return bar(x.value,Math.round(x.events/mx*100),x.users+' users · '+x.events+' ev');}).join('')||'<div class="exsummary">no data</div>';
+      }
+    }
+    function runInto(t,p,el){
+      var u=buildURL(t,p); if(!u){el.innerHTML='';return;}
+      el.innerHTML='<div class="exsummary">…</div>';
+      fetch(u).then(function(r){return r.json()}).then(function(j){renderReport(t,j,el);}).catch(function(){el.innerHTML='<div class="exsummary">error</div>';});
+    }
+    // the engine's ask intent → the chart that should render under the answer
+    function chartFor(intent){
+      if(intent==='funnel'&&SA_FUNNEL.length>1)return {t:'funnel',p:{steps:SA_FUNNEL.join(',')}};
+      if(intent==='retention')return {t:'retention',p:{days:'7'}};
+      if(intent==='signups'||intent==='active'||intent==='measure'){if(SA_EVENT)return {t:'trend',p:{event:SA_EVENT}};}
+      if(intent==='channels')return {t:'breakdown',p:{event:'',property:'source'}};
+      if(intent==='toppages')return {t:'breakdown',p:{event:'$pageview',property:'path'}};
+      return null;
+    }
+
+    // ---- the ask: answer as artifact — text, chart, proof chip, pin
     f.addEventListener('submit',function(e){
       e.preventDefault();
       var question=q.value.trim(); if(!question) return;
-      res.hidden=false; res.className='askresult load'; res.textContent='thinking…';
+      res.hidden=false; res.innerHTML='<div class="atext" style="color:var(--mut2)">computing…</div>';
       fetch('/v1/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:question})})
         .then(function(r){return r.json()})
         .then(function(j){
-          res.className='askresult';
-          if(j.answer){
-            res.textContent=j.answer;
-            if(j.computed_by){ var m=document.createElement('div'); m.className='askmethod'; m.textContent=j.computed_by; res.appendChild(m); }
-          } else { res.textContent=j.error||'no answer'; }
+          if(!j.answer){res.innerHTML='<div class="atext">'+esc(j.error||'no answer')+'</div>';return;}
+          var h='<div class="atext">'+esc(j.answer)+'</div>';
+          var chart=chartFor(j.intent||'');
+          if(chart)h+='<div class="achart" id="achart"></div>';
+          h+='<div class="arow">'+
+            '<a class="proof" href="https://github.com/Arjun0606/smolanalytics/blob/main/internal/api/agreement_test.go" target="_blank" rel="noopener">✓ proven · matches dashboard</a>';
+          if(j.computed_by)h+='<details class="amethod"><summary>how</summary><div style="padding-top:6px">'+esc(j.computed_by)+'</div></details>';
+          if(chart)h+='<button class="abtn" id="askpin">pin to board</button>';
+          h+='</div>';
+          res.innerHTML=h;
+          if(chart){
+            runInto(chart.t,chart.p,document.getElementById('achart'));
+            var pinBtn=document.getElementById('askpin');
+            pinBtn.onclick=function(){
+              pinBtn.disabled=true;pinBtn.textContent='pinning…';
+              fetch('/v1/insights',{method:'POST',headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({name:question,type:chart.t,params:chart.p})})
+                .then(function(r){return r.json()})
+                .then(function(){pinBtn.textContent='pinned ✓';pinBtn.className='abtn pinned';loadBoard();})
+                .catch(function(){pinBtn.disabled=false;pinBtn.textContent='pin failed — retry';});
+            };
+          }
         })
-        .catch(function(){res.className='askresult'; res.textContent='something went wrong';});
+        .catch(function(){res.innerHTML='<div class="atext">something went wrong — try again</div>';});
     });
 
-    // live events feed — poll and render newest-first
+    // ---- the board: saved reports rendered as live cards titled by your questions
+    var boardEl=document.getElementById('board'),boardGrid=document.getElementById('boardgrid');
+    function loadBoard(){
+      if(!boardEl)return;
+      fetch('/v1/insights').then(function(r){return r.json()}).then(function(j){
+        var items=j.insights||[];
+        if(!items.length){boardEl.hidden=true;return;}
+        boardEl.hidden=false;boardGrid.innerHTML='';
+        items.forEach(function(it){
+          var card=document.createElement('div');card.className='bcard';
+          card.innerHTML='<div class="bh"><span class="bq">'+esc(it.name)+'</span><span class="bx" title="unpin">unpin ×</span></div>'+
+            '<div class="bbody"></div>'+
+            '<div class="bprov"><a class="proof" href="https://github.com/Arjun0606/smolanalytics/blob/main/internal/api/agreement_test.go" target="_blank" rel="noopener">✓ proven</a>'+
+            '<span class="amethod">computed by /v1/'+esc(it.type==='trend'?'trends':it.type)+'</span></div>';
+          card.querySelector('.bx').onclick=function(){
+            fetch('/v1/insights/'+it.id,{method:'DELETE'}).then(loadBoard);
+          };
+          boardGrid.appendChild(card);
+          runInto(it.type,it.params||{},card.querySelector('.bbody'));
+        });
+      }).catch(function(){});
+    }
+    loadBoard();
+
+    // ---- breakdowns: one tab rail, state in the hash so views are linkable
+    var rail=document.getElementById('tabrail');
+    if(rail){
+      var btns=rail.querySelectorAll('.tabbtn');
+      function show(name){
+        var found=false;
+        btns.forEach?void 0:0;
+        Array.prototype.forEach.call(btns,function(b){
+          var on=b.getAttribute('data-tab')===name;
+          b.classList.toggle('on',on); if(on)found=true;
+          var p=document.getElementById('pane-'+b.getAttribute('data-tab'));
+          if(p)p.classList.toggle('on',on);
+        });
+        if(!found&&btns.length){show(btns[0].getAttribute('data-tab'));return;}
+      }
+      Array.prototype.forEach.call(btns,function(b){
+        b.onclick=function(){var n=b.getAttribute('data-tab');history.replaceState(null,'','#tab='+n);show(n);};
+      });
+      var m=/tab=([\w-]+)/.exec(location.hash);
+      show(m?m[1]:(btns[0]&&btns[0].getAttribute('data-tab')));
+      var lp=document.getElementById('livepill');
+      if(lp)lp.onclick=function(e){e.preventDefault();history.replaceState(null,'','#tab=live');show('live');document.getElementById('pane-live').scrollIntoView({behavior:'smooth',block:'center'});};
+    }
+
+    // agent pill opens the connect sheet
+    var ap=document.getElementById('agentpill'),cs=document.getElementById('connect');
+    if(ap&&cs)ap.onclick=function(){cs.open=true;cs.scrollIntoView({behavior:'smooth',block:'center'});};
+
+    // ---- live feed: poll and render newest-first (only fetched when the pane exists)
     var live=document.getElementById('live');
     function ago(ts){var s=Math.max(0,(Date.now()-new Date(ts).getTime())/1000);
       if(s<60)return Math.floor(s)+'s';if(s<3600)return Math.floor(s/60)+'m';if(s<86400)return Math.floor(s/3600)+'h';return Math.floor(s/86400)+'d';}
-    function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
     function pollLive(){
+      if(!live)return;
       fetch('/v1/events/recent?limit=15').then(function(r){return r.json()}).then(function(evs){
         if(!evs||!evs.length){return;}
         live.innerHTML=evs.map(function(e){
@@ -514,9 +732,8 @@
     }
     pollLive(); setInterval(pollLive, 4000);
 
-    {{if and .HasData .ShowProduct}}
-    // explore — run any report on the user's own events (only wired when there's data;
-    // the empty-state dashboard omits these sections)
+    {{if .HasData}}
+    // ---- explore — full capability behind the power-tools disclosure
     var exType=document.getElementById('exType'),exA=document.getElementById('exA'),
         exB=document.getElementById('exB'),exRun=document.getElementById('exRun'),
         exOut=document.getElementById('exOut'),exEvents=document.getElementById('exEvents'),
@@ -556,74 +773,6 @@
       }
       return x;
     }
-    function bar(label,fillPct,right){
-      return '<div class="exbar"><div class="exfill" style="width:'+fillPct+'%"></div>'+
-        '<div class="exmeta"><span>'+esc(label)+'</span><span>'+right+'</span></div></div>';
-    }
-    function trendBars(pts){
-      var max=1;pts.forEach(function(p){if(p.count>max)max=p.count;});
-      return '<div class="bars">'+pts.map(function(p){return '<div class="col" title="'+esc(p.date)+': '+p.count+'"><div class="bar" style="height:'+Math.round(p.count/max*100)+'%"></div></div>';}).join('')+'</div>';
-    }
-    function renderEx(t,j){
-      if(j.error){exOut.innerHTML='<div class="exsummary">'+esc(j.error)+'</div>';return;}
-      if(t==='funnel'){
-        var s=j.steps||[];
-        exOut.innerHTML=s.map(function(x){var p=Math.round((x.conversion_from_top||0)*100);
-          return bar(x.event,p,'<span>'+x.count+'</span><span class="p">'+p+'%</span>');}).join('')||'<div class="exsummary">no data</div>';
-      }else if(t==='trend'){
-        if(j.series){
-          exOut.innerHTML=j.series.map(function(s){return '<div class="exsummary">'+esc(s.value)+' · '+s.total+'</div>'+trendBars(s.points||[]);}).join('')||'<div class="exsummary">no data</div>';
-        }else{
-          var pts=j.points||[];
-          exOut.innerHTML='<div class="exsummary">'+(j.total||0)+' total over '+pts.length+' days</div>'+trendBars(pts);
-        }
-      }else if(t==='breakdown'){
-        var g=j.groups||[],gmax=(g[0]&&g[0].count)||1;
-        exOut.innerHTML=g.map(function(x){return bar(x.value,Math.round(x.count/gmax*100),x.count);}).join('')||'<div class="exsummary">no data</div>';
-      }else if(t==='retention'){
-        // the server computes honest day-N summaries (only cohorts old enough to
-        // observe day N) — never re-derive them client-side.
-        var parts=[];
-        if(j.day1_retention_pct!==undefined)parts.push('Day-1 retention '+j.day1_retention_pct+'% ('+j.day1_cohort_users+' users)');
-        if(j.day7_retention_pct!==undefined)parts.push('Day-7 '+j.day7_retention_pct+'% ('+j.day7_cohort_users+' users)');
-        if(j.day30_retention_pct!==undefined)parts.push('Day-30 '+j.day30_retention_pct+'%');
-        exOut.innerHTML='<div class="exsummary">'+(parts.length?parts.join(' · '):'no cohort is old enough to measure retention yet')+'</div>';
-      }else if(t==='paths'){
-        var lv=j.levels||[];
-        exOut.innerHTML='<div class="exsummary">'+(j.users||0)+' users did "'+esc(j.start)+'"</div>'+
-          lv.map(function(L){var mx=(L.steps[0]&&L.steps[0].count)||1;
-            return '<div class="exsummary">step '+L.depth+'</div>'+L.steps.slice(0,6).map(function(s){return bar(s.event,Math.round(s.count/mx*100),s.count);}).join('');}).join('')||'<div class="exsummary">no data</div>';
-      }else if(t==='lifecycle'){
-        var d=j.days||[];
-        exOut.innerHTML='<table class="lc"><tr><th>day</th><th class="n">new</th><th class="r">ret</th><th class="rs">res</th><th class="dm">dorm</th></tr>'+
-          d.slice(-14).map(function(x){return '<tr><td>'+String(x.date).slice(5,10)+'</td><td class="n">'+x.new+'</td><td class="r">'+x.returning+'</td><td class="rs">'+x.resurrected+'</td><td class="dm">'+x.dormant+'</td></tr>';}).join('')+'</table>';
-      }else if(t==='stickiness'){
-        exOut.innerHTML='<div class="stickrow"><div class="sk"><div class="skv">'+(j.dau||0)+'</div><div class="skl">DAU</div></div>'+
-          '<div class="sk"><div class="skv">'+(j.wau||0)+'</div><div class="skl">WAU</div></div>'+
-          '<div class="sk"><div class="skv">'+(j.mau||0)+'</div><div class="skl">MAU</div></div>'+
-          '<div class="sk"><div class="skv acc">'+Math.round((j.dau_over_mau||0)*100)+'%</div><div class="skl">DAU/MAU</div></div></div>';
-      }else if(t==='groups'){
-        var gr=j.groups||[],mx=(gr[0]&&gr[0].events)||1;
-        exOut.innerHTML='<div class="exsummary">'+(j.total_groups||0)+' accounts · '+(j.active_groups_7d||0)+' active 7d · '+(j.active_groups_30d||0)+' active 30d</div>'+
-          gr.slice(0,12).map(function(x){return bar(x.value,Math.round(x.events/mx*100),x.users+' users · '+x.events+' ev');}).join('')||'<div class="exsummary">no data</div>';
-      }
-    }
-    exRun.onclick=function(){
-      var t=exType.value,a=exA.value.trim(),b=exB.value.trim(),url,x=extra();
-      if(t==='funnel')url='/v1/funnel?window=168h&steps='+encodeURIComponent(a)+x;
-      else if(t==='trend')url='/v1/trends?event='+encodeURIComponent(a)+(b?'&breakdown='+encodeURIComponent(b):'')+x;
-      else if(t==='breakdown')url='/v1/breakdown?event='+encodeURIComponent(a)+'&property='+encodeURIComponent(b)+x;
-      else if(t==='retention')url='/v1/retention?days='+encodeURIComponent(b||'7')+'&event='+encodeURIComponent(a)+x;
-      else if(t==='paths')url='/v1/paths?start='+encodeURIComponent(a)+'&depth='+encodeURIComponent(b||'3')+x;
-      else if(t==='lifecycle')url='/v1/lifecycle?days='+encodeURIComponent(b||'30')+x;
-      else if(t==='stickiness')url='/v1/stickiness?_=1'+x;
-      else url='/v1/groups?property='+encodeURIComponent(a)+x;
-      exOut.innerHTML='<div class="exsummary">running…</div>';
-      fetch(url).then(function(r){return r.json()}).then(function(j){renderEx(t,j);}).catch(function(){exOut.innerHTML='<div class="exsummary">error</div>';});
-    };
-
-    // saved reports — pin an Explore report, reload + run it in one click
-    var savedEl=document.getElementById('saved');
     function paramsFor(t){
       if(t==='funnel')return {steps:exA.value.trim()};
       if(t==='trend')return {event:exA.value.trim(),breakdown:exB.value.trim()};
@@ -634,39 +783,19 @@
       if(t==='groups')return {property:exA.value.trim()};
       return {};
     }
-    function loadInto(t,p){
-      exType.value=t; syncEx();
-      if(t==='funnel')exA.value=p.steps||'';
-      else if(t==='trend'){exA.value=p.event||'';exB.value=p.breakdown||'';}
-      else if(t==='breakdown'){exA.value=p.event||'';exB.value=p.property||'';}
-      else if(t==='retention'){exA.value=p.event||'';exB.value=p.days||'7';}
-      else if(t==='paths'){exA.value=p.start||'';exB.value=p.depth||'3';}
-      else if(t==='lifecycle')exB.value=p.days||'30';
-      else if(t==='groups')exA.value=p.property||'';
-      exRun.onclick();
-    }
-    function renderSaved(items){
-      if(!items.length){savedEl.innerHTML='<div class="exsummary">no saved reports yet, build one above and hit Save</div>';return;}
-      savedEl.innerHTML='';
-      items.forEach(function(it){
-        var chip=document.createElement('div'); chip.className='chip';
-        chip.innerHTML='<span class="t">'+esc(it.type)+'</span><span>'+esc(it.name)+'</span><span class="x">✕</span>';
-        chip.onclick=function(e){ if(!e.target.classList.contains('x')) loadInto(it.type,it.params||{}); };
-        chip.querySelector('.x').onclick=function(e){ e.stopPropagation();
-          fetch('/v1/insights/'+it.id,{method:'DELETE'}).then(loadSaved); };
-        savedEl.appendChild(chip);
-      });
-    }
-    function loadSaved(){ fetch('/v1/insights').then(function(r){return r.json()}).then(function(j){renderSaved(j.insights||[]);}).catch(function(){}); }
+    exRun.onclick=function(){
+      var t=exType.value,u=buildURL(t,paramsFor(t))+extra();
+      exOut.innerHTML='<div class="exsummary">running…</div>';
+      fetch(u).then(function(r){return r.json()}).then(function(j){renderReport(t,j,exOut);}).catch(function(){exOut.innerHTML='<div class="exsummary">error</div>';});
+    };
     document.getElementById('exSave').onclick=function(){
-      var name=prompt('Name this report:'); if(!name)return;
+      var name=prompt('Name this pin (shown as the card title):'); if(!name)return;
       fetch('/v1/insights',{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({name:name,type:exType.value,params:paramsFor(exType.value)})})
-        .then(function(r){return r.json()}).then(loadSaved).catch(function(){});
+        .then(function(r){return r.json()}).then(loadBoard).catch(function(){});
     };
-    loadSaved();
 
-    // cohort builder — create a reusable user group from the dashboard
+    // cohort builder
     var coName=document.getElementById('coName'),coEvents=document.getElementById('coEvents'),
         coMatch=document.getElementById('coMatch'),coCreate=document.getElementById('coCreate'),
         coList=document.getElementById('coList');
@@ -693,13 +822,12 @@
     };
     refreshCohorts();
 
-    // defined events — turn autocaptured clicks/pageviews into a named business event,
-    // retroactive and zero-code. Same primitive the define_event MCP tool writes.
+    // defined events — the same primitive the define_event MCP tool writes
     var deName=document.getElementById('deName'),deEvent=document.getElementById('deEvent'),
         deField=document.getElementById('deField'),deOp=document.getElementById('deOp'),
         deValue=document.getElementById('deValue'),deList=document.getElementById('deList');
     function renderDefined(items){
-      if(!items.length){deList.innerHTML='<div class="exsummary">no defined events yet, turn a captured click into a named event, retroactive to install</div>';return;}
+      if(!items.length){deList.innerHTML='<div class="exsummary">no defined events yet</div>';return;}
       deList.innerHTML='';
       items.forEach(function(d){
         var w=(d.where||[]).map(function(c){return c.field+' '+c.op+' "'+c.value+'"';}).join(' and ');
@@ -720,44 +848,27 @@
         .then(function(r){return r.json()}).then(function(res){ if(res&&res.error){alert(res.error);return;} deName.value='';deValue.value='';refreshDefined(); }).catch(function(){});
     };
     refreshDefined();
-    {{end}}
 
-    // share — mint a revocable read-only link from the header; the URL is shown
-    // ONCE (the server stores only its hash), with a copy button + settings pointer
-    var shareBtn=document.getElementById('shareBtn'),shareRes=document.getElementById('shareresult');
-    if(shareBtn&&shareRes){
-      shareBtn.onclick=function(e){
-        e.preventDefault();
-        var name=prompt('Who is this link for? (e.g. "investor update" — used to identify it when revoking)');
-        if(!name)return;
-        shareRes.hidden=false; shareRes.className='askresult load'; shareRes.textContent='minting link…';
-        fetch('/v1/shares',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name})})
-          .then(function(r){return r.json()})
-          .then(function(j){
-            shareRes.className='askresult';
-            if(!j.path){shareRes.textContent=j.error||'could not create the link';return;}
-            var url=location.origin+j.path;
-            shareRes.innerHTML='read-only traffic link for “'+esc(j.name)+'” — shown once, revoke any time in '+
-              '<a href="/settings/shares" style="color:var(--accent)">settings → share links</a>:<br>'+
-              '<span style="font-family:var(--mono);font-size:12px;word-break:break-all">'+esc(url)+'</span> '+
-              '<button class="copy" id="shareCopy" style="margin-left:8px">copy</button>';
-            document.getElementById('shareCopy').onclick=function(){
-              var b=this;
-              if(navigator.clipboard){navigator.clipboard.writeText(url).then(function(){b.textContent='copied ✓';setTimeout(function(){b.textContent='copy';},1200);});}
-            };
-          })
-          .catch(function(){shareRes.className='askresult';shareRes.textContent='could not reach the server — try again';});
-      };
+    // verdict refresh — matches /v1/notable exactly; empty verdict = the calm line
+    var vEl=document.getElementById('verdict');
+    if(vEl){
+      fetch('/v1/notable').then(function(r){return r.json()}).then(function(j){
+        var fs=(j&&j.findings)||[];
+        if(!fs.length){vEl.innerHTML='<div class="vcalm">nothing unusual right now — traffic and conversion look within normal range.</div>';return;}
+        vEl.innerHTML='';
+        fs.forEach(function(fd){
+          var row=document.createElement('div'); row.className='vline'+(fd.severity==='warn'?' warn':'');
+          row.innerHTML='<span class="vdot"></span><span class="vt">'+esc(fd.title)+'</span><span class="vd">'+esc(fd.detail)+'</span><a class="vwhy" data-q="'+esc(fd.title)+'">why? →</a>';
+          vEl.appendChild(row);
+        });
+      }).catch(function(){});
     }
 
-    // your week — the same digest as `smolanalytics brief` and the cloud email,
-    // rendered in the verdict card's visual grammar (pulse, per-product, findings)
+    // the week, one expandable line — same digest as `smolanalytics brief` + cloud email
     var bEl=document.getElementById('brief');
     if(bEl){
       fetch('/v1/brief').then(function(r){return r.json()}).then(function(j){
-        if(!j||j.error){bEl.innerHTML='<div class="vmuted">'+esc((j&&j.error)||'could not load')+'</div>';return;}
-        // signed % vs the prior window; "new" over a zero baseline instead of a
-        // fabricated percentage — same rule as the CLI brief
+        if(!j||j.error){bEl.innerHTML='<div class="exsummary">'+esc((j&&j.error)||'could not load')+'</div>';return;}
         function pc(cur,prior){return prior===0?'new':((cur>=prior?'+':'')+Math.round((cur-prior)/prior*100)+'%');}
         var h='';
         var cmp=j.prior_events===0?'no prior data to compare'
@@ -766,13 +877,11 @@
         (j.sites||[]).forEach(function(s){
           h+='<div class="vrow"><span class="vt">'+esc(s.site)+'</span><span class="vd">'+s.visitors+' visitors · '+s.events+' events ('+pc(s.events,s.prior_events)+')</span></div>';
         });
-        var fs=j.findings||[];
-        if(!fs.length){h+='<div class="vmuted">nothing notable — no big swings, funnel leaks, or retention flags.</div>';}
-        fs.forEach(function(f){
-          h+='<div class="vrow'+(f.severity==='warn'?' warn':'')+'"><span class="vt">'+esc(f.title)+'</span><span class="vd">'+esc(f.detail)+'</span></div>';
+        (j.findings||[]).forEach(function(fd){
+          h+='<div class="vrow'+(fd.severity==='warn'?' warn':'')+'"><span class="vt">'+esc(fd.title)+'</span><span class="vd">'+esc(fd.detail)+'</span></div>';
         });
         bEl.innerHTML=h;
-      }).catch(function(){bEl.innerHTML='<div class="vmuted">could not load.</div>';});
+      }).catch(function(){bEl.innerHTML='<div class="exsummary">could not load.</div>';});
     }
 
     // goals empty state — create the first goal right where the card will render
@@ -790,24 +899,35 @@
           .catch(function(){note.textContent='could not reach the server — try again';});
       };
     }
+    {{end}}
 
-    // verdict — proactive "what to look at", the front door
-    var vEl=document.getElementById('verdict');
-    if(vEl){
-      fetch('/v1/notable').then(function(r){return r.json()}).then(function(j){
-        var fs=(j&&j.findings)||[];
-        // an empty verdict never renders an empty-state card, it just gets out of the way
-        if(!fs.length){var vc=vEl.closest('.card');if(vc)vc.style.display='none';return;}
-        vEl.innerHTML='';
-        fs.forEach(function(f){
-          var row=document.createElement('div'); row.className='vrow'+(f.severity==='warn'?' warn':'');
-          row.innerHTML='<span class="vt">'+esc(f.title)+'</span><span class="vd">'+esc(f.detail)+'</span>';
-          vEl.appendChild(row);
-        });
-      }).catch(function(){vEl.innerHTML='<div class="vmuted">could not load.</div>';});
+    // share — mint a revocable read-only link; the URL is shown once
+    var shareBtn=document.getElementById('shareBtn'),shareRes=document.getElementById('shareresult');
+    if(shareBtn&&shareRes){
+      shareBtn.onclick=function(e){
+        e.preventDefault();
+        var name=prompt('Who is this link for? (e.g. "investor update" — used to identify it when revoking)');
+        if(!name)return;
+        shareRes.hidden=false; shareRes.innerHTML='<div class="atext" style="color:var(--mut2)">minting link…</div>';
+        fetch('/v1/shares',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name})})
+          .then(function(r){return r.json()})
+          .then(function(j){
+            if(!j.path){shareRes.innerHTML='<div class="atext">'+esc(j.error||'could not create the link')+'</div>';return;}
+            var url=location.origin+j.path;
+            shareRes.innerHTML='<div class="atext" style="font-size:13px">read-only traffic link for “'+esc(j.name)+'” — shown once, revoke any time in '+
+              '<a href="/settings/shares" style="color:var(--accent)">settings → share links</a>:<br>'+
+              '<span style="font-family:var(--mono);font-size:12px;word-break:break-all">'+esc(url)+'</span> '+
+              '<button class="copy" id="shareCopy" style="margin-left:8px">copy</button></div>';
+            document.getElementById('shareCopy').onclick=function(){
+              var b=this;
+              if(navigator.clipboard){navigator.clipboard.writeText(url).then(function(){b.textContent='copied ✓';setTimeout(function(){b.textContent='copy';},1200);});}
+            };
+          })
+          .catch(function(){shareRes.innerHTML='<div class="atext">could not reach the server — try again</div>';});
+      };
     }
 
-    // onboarding — copy buttons + live first-event detection
+    // copy buttons + first-event detection (fresh install flips live on event #1)
     Array.prototype.forEach.call(document.querySelectorAll('.copy'),function(b){
       b.onclick=function(){
         var pre=document.getElementById(b.getAttribute('data-c')); if(!pre)return;
@@ -817,7 +937,7 @@
     var obstatus=document.getElementById('obstatus');
     if(obstatus){
       function obchk(){fetch('/v1/events/recent?limit=1').then(function(r){return r.json()}).then(function(e){
-        if(e&&e.length){ {{if .HasData}}obstatus.innerHTML='<span style="color:var(--ok)">●</span> events flowing — you\'re all set';{{else}}location.reload();{{end}} } // first event on a fresh instance → reveal the populated dashboard
+        if(e&&e.length){ location.reload(); } // first event arrived → reveal the populated dashboard
       }).catch(function(){});}
       obchk(); setInterval(obchk,4000);
     }
