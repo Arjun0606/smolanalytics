@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"time"
 
@@ -79,13 +80,72 @@ func (s *Server) filtered(r *http.Request) ([]event.Event, error) {
 // event names — this just exposes it over REST (the MCP tools do the same for AI).
 
 // GET /v1/meta — the event names available, so the UI can offer them.
-func (s *Server) apiMeta(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) apiMeta(w http.ResponseWriter, r *http.Request) {
 	names, err := s.store.Names()
 	if err != nil {
 		writeQueryErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"events": names})
+	out := map[string]any{"events": names}
+	// ?props=1 adds the property catalog: every property seen in the last 30 days
+	// with its top values — the typeahead behind the filter builder, so filtering
+	// is picking from what your data actually contains, never guessing names.
+	if r.URL.Query().Get("props") == "1" {
+		evs, err := s.store.Range(time.Now().UTC().AddDate(0, 0, -30), time.Time{})
+		if err == nil {
+			evs = query.Apply(evs, nil)
+			counts := map[string]map[string]int{}
+			for _, e := range evs {
+				for k, v := range e.Properties {
+					if k == "env" || k == "engaged_ms" || k == "session_id" {
+						continue // internal / high-cardinality noise
+					}
+					sv, ok := v.(string)
+					if !ok || sv == "" || len(sv) > 80 {
+						continue
+					}
+					m := counts[k]
+					if m == nil {
+						m = map[string]int{}
+						counts[k] = m
+					}
+					if len(m) <= 200 {
+						m[sv]++
+					}
+				}
+			}
+			props := map[string][]string{}
+			keys := make([]string, 0, len(counts))
+			for k := range counts {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			if len(keys) > 50 {
+				keys = keys[:50]
+			}
+			for _, k := range keys {
+				type vc struct {
+					v string
+					n int
+				}
+				vs := make([]vc, 0, len(counts[k]))
+				for v, n := range counts[k] {
+					vs = append(vs, vc{v, n})
+				}
+				sort.Slice(vs, func(i, j int) bool { return vs[i].n > vs[j].n })
+				if len(vs) > 20 {
+					vs = vs[:20]
+				}
+				vals := make([]string, len(vs))
+				for i, x := range vs {
+					vals[i] = x.v
+				}
+				props[k] = vals
+			}
+			out["properties"] = props
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // GET /v1/trends?event=signup&unique=true&breakdown=source&filters=...

@@ -183,6 +183,7 @@ type dashVM struct {
 	ComputeMS      int    // wall time this page took to compute — printed in the footer as a brag
 	TrendMax       int    // the chart's y-axis top — rendered as a real scale, not a hover secret
 	CustomRange    bool   // an explicit ?from/?to window is active
+	AnyMode        bool   // filters join with OR (?fm=any) instead of AND
 	RangeFrom      string // the custom window's inputs, echoed into the date pickers
 	RangeTo        string
 	EngagedHuman   string // "13m 23s", never "803s"
@@ -223,7 +224,39 @@ type rangeVM struct {
 	On    bool
 }
 
-type chipVM struct{ Prop, Value, RemoveURL string }
+type chipVM struct{ Prop, Op, Value, Raw, RemoveURL string }
+
+// parseChip decodes one ?f token: "prop:value" (eq) or "prop:op:value"; set/notset
+// need no value ("prop:set:"). Caps guard against abuse, not honest use.
+func parseChip(raw string) (prop string, op query.Op, val string, ok bool) {
+	if len(raw) > 300 {
+		return "", "", "", false
+	}
+	parts := strings.SplitN(raw, ":", 3)
+	switch len(parts) {
+	case 2:
+		if parts[0] == "" || parts[1] == "" {
+			return "", "", "", false
+		}
+		op = query.Eq
+		if parts[0] == "referrer" {
+			op = query.Contains
+		}
+		return parts[0], op, parts[1], true
+	case 3:
+		o := query.Op(parts[1])
+		switch o {
+		case query.Eq, query.Neq, query.Contains, query.NotContains, query.Regex, query.Gt, query.Lt, query.Set, query.NotSet:
+		default:
+			return "", "", "", false
+		}
+		if parts[0] == "" || (parts[2] == "" && o != query.Set && o != query.NotSet) {
+			return "", "", "", false
+		}
+		return parts[0], o, parts[2], true
+	}
+	return "", "", "", false
+}
 
 // deltaStr renders a signed percent vs the prior window. A zero baseline returns ""
 // (no prior period = say nothing) — never a fabricated percentage or filler copy.
@@ -342,35 +375,46 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// click-to-filter: repeatable ?f=prop:value chips scope every report below.
-	// Referrer matches by substring — rows show the host, the property stores the URL.
+	// click-to-filter + the filter builder: repeatable ?f chips scope every report
+	// below. Grammar: prop:value (eq) or prop:op:value with op in eq|neq|contains|
+	// ncontains|regex|gt|lt|set|notset; multi-value ORs via v1|v2 (the In op).
+	// ?fm=any switches the rows from AND to OR. Referrer defaults to substring
+	// match — rows show the host, the property stores the URL.
+	anyMode := r.URL.Query().Get("fm") == "any"
 	var chips []chipVM
 	{
 		qv := r.URL.Query()
 		fs := qv["f"]
-		if len(fs) > 5 {
-			fs = fs[:5]
+		if len(fs) > 8 {
+			fs = fs[:8]
 		}
 		var filters []query.Filter
 		for _, raw := range fs {
-			p, v, ok := strings.Cut(raw, ":")
-			if !ok || p == "" || v == "" || len(raw) > 200 {
-				continue
-			}
-			op := query.Eq
-			if p == "referrer" {
-				op = query.Contains
-			}
-			filters = append(filters, query.Filter{Property: p, Op: op, Value: v})
-		}
-		if len(filters) > 0 {
-			evs = query.Apply(evs, filters)
-		}
-		for i, raw := range fs {
-			p, v, ok := strings.Cut(raw, ":")
+			p, op, v, ok := parseChip(raw)
 			if !ok {
 				continue
 			}
+			f := query.Filter{Property: p, Op: op, Value: v}
+			if vs := strings.Split(fmt.Sprint(v), "|"); len(vs) > 1 && (op == query.Eq) {
+				arr := make([]any, len(vs))
+				for i, x := range vs {
+					arr[i] = x
+				}
+				f = query.Filter{Property: p, Op: query.In, Value: arr}
+			}
+			filters = append(filters, f)
+		}
+		if len(filters) > 0 {
+			if err := query.Validate(filters); err == nil {
+				evs = query.ApplyMode(evs, filters, anyMode)
+			}
+		}
+		for i, raw := range fs {
+			p, op, v, ok := parseChip(raw)
+			if !ok {
+				continue
+			}
+			_ = op
 			nq := url.Values{}
 			for k, vals := range qv {
 				if k != "f" {
@@ -386,7 +430,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 			if enc := nq.Encode(); enc != "" {
 				u += "?" + enc
 			}
-			chips = append(chips, chipVM{Prop: p, Value: v, RemoveURL: u})
+			chips = append(chips, chipVM{Prop: p, Op: string(op), Value: v, Raw: raw, RemoveURL: u})
 		}
 	}
 
@@ -461,6 +505,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		HasGoalsStore:  s.goals != nil,
 		RangeDays:      rangeDays,
 		CustomRange:    customRange,
+		AnyMode:        anyMode,
 		RangeFrom:      r.URL.Query().Get("from"),
 		RangeTo:        r.URL.Query().Get("to"),
 		Ranges:         []rangeVM{mkRange(7), mkRange(30), mkRange(90)},

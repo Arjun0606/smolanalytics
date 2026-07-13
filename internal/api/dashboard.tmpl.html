@@ -48,6 +48,12 @@
   .fchip{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(245,166,35,.5);color:var(--accent);border-radius:99px;font-family:var(--mono);font-size:11px;padding:4px 11px}
   .fchip a{color:var(--mut);text-decoration:none}
   .fchip a:hover{color:var(--warn)}
+  .fchip .fop{font-weight:600;cursor:pointer}
+  .fchip .fop:hover{text-decoration:underline}
+  .fchip.fmode{border-color:var(--line);color:var(--mut);text-decoration:none}
+  .fchip.fmode:hover{color:var(--accent);border-color:var(--accent)}
+  .fbuilder{display:inline-flex;align-items:center;gap:6px}
+  .fbuilder input,.fbuilder select{background:var(--s1);border:1px solid var(--line);color:var(--fg);font-family:var(--mono);font-size:11px;padding:4px 8px;border-radius:5px;max-width:170px}
   .gtile .d{font-family:var(--mono);font-size:11px;margin-top:2px;color:var(--mut2)}
   .gtile .d.up{color:var(--ok)} .gtile .d.down{color:var(--warn)}
   .seg[data-fp]{cursor:pointer}
@@ -340,10 +346,26 @@
     <div id="askresult" class="answer" hidden></div>
     <div id="shareresult" class="answer" hidden></div>
 
-    <!-- zone 6: active filters — every chip scopes EVERY zone; click any row to add one -->
-    {{if .Chips}}<div class="chiprail">
-      <span class="chiplbl">filtered to</span>
-      {{range .Chips}}<span class="fchip">{{.Prop}}: {{.Value}} <a href="{{.RemoveURL}}" title="remove this filter">×</a></span>{{end}}
+    <!-- zone 6: filters — every chip scopes EVERY zone; click a chip's op to cycle
+         eq→neq→contains→ncontains; + filter opens the builder; all/any joins rows -->
+    {{if .HasData}}<div class="chiprail">
+      {{if .Chips}}<span class="chiplbl">filtered to</span>
+      {{range .Chips}}<span class="fchip" data-raw="{{.Raw}}"><b class="fop" title="click to flip: is / is not / contains / doesn't contain">{{.Prop}} {{.Op}}</b> {{.Value}} <a href="{{.RemoveURL}}" title="remove this filter">×</a></span>{{end}}
+      {{if gt (len .Chips) 1}}<a class="fchip fmode" id="fmode" href="#" title="how the filters combine">match: {{if .AnyMode}}any{{else}}all{{end}}</a>{{end}}
+      {{end}}
+      <button class="chip" id="fadd" type="button">+ filter</button>
+      <span class="fbuilder" id="fbuilder" hidden>
+        <input list="fbProps" id="fbProp" placeholder="property" autocomplete="off">
+        <select id="fbOp">
+          <option value="eq">is</option><option value="neq">is not</option>
+          <option value="contains">contains</option><option value="ncontains">doesn't contain</option>
+          <option value="regex">matches regex</option><option value="gt">&gt;</option><option value="lt">&lt;</option>
+          <option value="set">is set</option><option value="notset">is not set</option>
+        </select>
+        <input list="fbVals" id="fbVal" placeholder="value (a|b for either)" autocomplete="off">
+        <button class="chip" id="fbGo" type="button">apply</button>
+        <datalist id="fbProps"></datalist><datalist id="fbVals"></datalist>
+      </span>
     </div>{{end}}
   </div>
 
@@ -908,6 +930,59 @@
       }).catch(function(){});
     }
     pollLive(); setInterval(pollLive, 4000);
+
+    // the filter builder: property/op/value -> a ?f chip; typeahead from /v1/meta
+    var fadd=document.getElementById('fadd'),fbuilder=document.getElementById('fbuilder');
+    if(fadd&&fbuilder){
+      var fbProp=document.getElementById('fbProp'),fbOp=document.getElementById('fbOp'),
+          fbVal=document.getElementById('fbVal'),fbProps=document.getElementById('fbProps'),
+          fbVals=document.getElementById('fbVals'),metaProps=null;
+      fadd.onclick=function(){
+        fbuilder.hidden=!fbuilder.hidden;
+        if(!fbuilder.hidden&&!metaProps){
+          fetch('/v1/meta?props=1').then(function(r){return r.json()}).then(function(j){
+            metaProps=j.properties||{};
+            fbProps.innerHTML=Object.keys(metaProps).map(function(k){return '<option value="'+esc(k)+'">';}).join('');
+          }).catch(function(){});
+        }
+        if(!fbuilder.hidden)fbProp.focus();
+      };
+      fbProp.addEventListener('input',function(){
+        var vs=(metaProps&&metaProps[fbProp.value])||[];
+        fbVals.innerHTML=vs.map(function(v){return '<option value="'+esc(v)+'">';}).join('');
+      });
+      function fbApply(){
+        var p=fbProp.value.trim(),o=fbOp.value,v=fbVal.value.trim();
+        if(!p)return;
+        if(!v&&o!=='set'&&o!=='notset')return;
+        var u=new URL(location.href);
+        u.searchParams.append('f',p+':'+o+':'+v);u.hash='';
+        location.href=u.toString();
+      }
+      document.getElementById('fbGo').onclick=fbApply;
+      fbVal.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();fbApply();}});
+    }
+    // op cycling on chips: is -> is not -> contains -> doesn't contain -> is
+    document.addEventListener('click',function(e){
+      var op=e.target.closest('.fchip .fop');if(!op)return;
+      var chip=op.closest('.fchip'),raw=chip.getAttribute('data-raw');if(!raw)return;
+      var parts=raw.split(':');
+      var prop=parts[0],cur=parts.length>2?parts[1]:'eq',val=parts.length>2?parts.slice(2).join(':'):parts.slice(1).join(':');
+      var cycle={eq:'neq',neq:'contains',contains:'ncontains',ncontains:'eq'};
+      var next=cycle[cur]||'eq';
+      var u=new URL(location.href);
+      var all=u.searchParams.getAll('f');u.searchParams.delete('f');
+      all.forEach(function(x){u.searchParams.append('f',x===raw?prop+':'+next+':'+val:x);});
+      u.hash='';location.href=u.toString();
+    });
+    // all/any join toggle
+    var fmode=document.getElementById('fmode');
+    if(fmode)fmode.onclick=function(e){
+      e.preventDefault();
+      var u=new URL(location.href);
+      if(u.searchParams.get('fm')==='any')u.searchParams.delete('fm');else u.searchParams.set('fm','any');
+      u.hash='';location.href=u.toString();
+    };
 
     // custom date range: two inputs -> ?from&to (clears the preset)
     var rform=document.getElementById('rangeform');
