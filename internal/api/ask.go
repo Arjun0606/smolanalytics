@@ -1218,5 +1218,9 @@ func answerGeo(scoped, all []event.Event, win askWindow) string {
 	if len(rows) > 5 {
 		more = fmt.Sprintf(" and %d more", len(rows)-5)
 	}
-	return fmt.Sprintf("Visitors came from %d countries %s: %s%s.%s", len(rows), scope, strings.Join(parts, ", "), more, note)
+	noun := "countries"
+	if len(rows) == 1 {
+		noun = "country"
+	}
+	return fmt.Sprintf("Visitors came from %d %s %s: %s%s.%s", len(rows), noun, scope, strings.Join(parts, ", "), more, note)
 }
