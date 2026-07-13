@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -30,6 +31,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/exportlink"
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
+	"github.com/Arjun0606/smolanalytics/internal/geo"
 	"github.com/Arjun0606/smolanalytics/internal/goal"
 	"github.com/Arjun0606/smolanalytics/internal/gsc"
 	"github.com/Arjun0606/smolanalytics/internal/insights"
@@ -66,6 +68,7 @@ type Server struct {
 	exports  *exportlink.Store
 	defined  *defined.Store // retroactive zero-code events (Heap wedge)
 	writeKey string         // if set, POST /v1/events requires Authorization: Bearer <writeKey>
+	geo      *geo.Resolver  // ingest-time IP→country (IP never stored); nil = disabled
 	// autocaptured events dropped because the UA was a known crawler/bot — surfaced in
 	// /v1/usage so "why is my dashboard lower than GA?" has a visible, honest answer.
 	botsFiltered atomic.Int64
@@ -174,6 +177,10 @@ func (s *Server) EvaluateAlerts() {
 // SetWriteKey gates event ingestion behind a write key (production). Empty = open
 // (dev). The SDK passes the same key.
 func (s *Server) SetWriteKey(k string) { s.writeKey = k }
+
+// SetGeo enables ingest-time country resolution (the IP is used for one lookup
+// and never stored, only the ISO code lands on the event).
+func (s *Server) SetGeo(g *geo.Resolver) { s.geo = g }
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -436,6 +443,12 @@ func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 	// derive browser + OS server-side with zero SDK weight. Unrecognized (backend/library)
 	// UAs return "", so server-to-server events are never stamped with a bogus browser.
 	uaBrowser, uaOS := parseUA(r.Header.Get("User-Agent"))
+	// geo: one in-memory lookup on the request IP, then the IP is gone. events
+	// carry only a country code, same privacy shape as the UA-derived browser/os
+	country := ""
+	if s.geo != nil {
+		country = s.geo.Country(net.ParseIP(clientIP(r)))
+	}
 	for i := range batch {
 		if batch[i].Name == "" {
 			writeErr(w, http.StatusBadRequest, "every event needs a name")
@@ -450,6 +463,14 @@ func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 			}
 			if _, ok := batch[i].Properties["os"]; !ok && uaOS != "" {
 				batch[i].Properties["os"] = uaOS
+			}
+		}
+		if country != "" {
+			if batch[i].Properties == nil {
+				batch[i].Properties = map[string]any{}
+			}
+			if _, ok := batch[i].Properties["country"]; !ok {
+				batch[i].Properties["country"] = country
 			}
 		}
 		if batch[i].DistinctID == "$anon" {

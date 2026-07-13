@@ -23,6 +23,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/defined"
 	"github.com/Arjun0606/smolanalytics/internal/demo"
 	"github.com/Arjun0606/smolanalytics/internal/exportlink"
+	"github.com/Arjun0606/smolanalytics/internal/geo"
 	"github.com/Arjun0606/smolanalytics/internal/goal"
 	"github.com/Arjun0606/smolanalytics/internal/gsc"
 	"github.com/Arjun0606/smolanalytics/internal/insight"
@@ -282,6 +283,11 @@ func serve(st store.Store, closeStore func() error, guardPublic bool) {
 		app.SetDefined(definedStore)
 	}
 	app.SetWriteKey(os.Getenv("SMOLANALYTICS_WRITE_KEY"))
+	if os.Getenv("SMOLANALYTICS_GEO") != "off" {
+		// country resolution from the free DB-IP lite db (CC BY 4.0) — downloads on
+		// first boot, loads in the background, never blocks serving. IPs never stored.
+		app.SetGeo(geo.Open(sp(".geoip.csv.gz")))
+	}
 	if ins, err := insights.Open(sp(".insights.json")); err == nil {
 		app.SetInsights(ins)
 	} else {

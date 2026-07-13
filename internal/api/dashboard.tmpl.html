@@ -374,6 +374,16 @@
     </div>
   </div>
 
+  {{if .Hours}}
+  <div class="chartzone" style="margin-top:18px">
+    <div class="zonelbl">activity by hour <span class="sub">· UTC · last {{.RangeDays}}d</span></div>
+    <div class="bars" style="height:44px;padding-top:18px">
+      {{range .Hours}}<div class="col"><span class="tip">{{.Hour}}:00 UTC · {{.Count}}</span><div class="bar" style="height:{{.HeightPct}}%"></div></div>{{end}}
+    </div>
+    <div class="axis" style="display:flex;justify-content:space-between;color:var(--mut2);font-family:var(--mono);font-size:10px;margin-top:4px"><span>00:00</span><span>12:00</span><span>23:00</span></div>
+  </div>
+  {{end}}
+
   <!-- zone 7: the board — grows only from questions you pinned; empty = invisible -->
   <div class="board" id="board" hidden>
     <div class="zonelbl">pinned · your questions</div>
@@ -384,7 +394,10 @@
   <div class="breakdowns">
     <div class="tabrail" id="tabrail">
       {{if .HasWeb}}<button class="tabbtn" data-tab="pages">pages</button>
-      <button class="tabbtn" data-tab="referrers">referrers</button>{{end}}
+      <button class="tabbtn" data-tab="referrers">referrers</button>
+      {{if .HasGeo}}<button class="tabbtn" data-tab="geo">geo</button>{{end}}
+      <button class="tabbtn" data-tab="devices">devices</button>
+      {{if .UTMSources}}<button class="tabbtn" data-tab="campaigns">campaigns</button>{{end}}{{end}}
       <button class="tabbtn" data-tab="funnel">funnel</button>
       {{if .HasConvBy}}<button class="tabbtn" data-tab="conversion">conversion</button>{{end}}
       <button class="tabbtn" data-tab="retention">retention</button>
@@ -396,10 +409,58 @@
 
     {{if .HasWeb}}
     <div class="pane" id="pane-pages">
-      {{range .TopPages}}<div class="seg" data-fp="path" data-fv="{{.Value}}" title="click to filter every zone to this page"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
+      <div class="webcols">
+        <div>
+          <h3>top pages</h3>
+          {{range .TopPages}}<div class="seg" data-fp="path" data-fv="{{.Value}}" title="click to filter every zone to this page"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
+        </div>
+        <div>
+          <h3>entry pages · where sessions land</h3>
+          {{range .EntryPages}}<div class="seg" data-fp="path" data-fv="{{.Value}}"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">appears once sessions carry a landing page</div>{{end}}
+        </div>
+      </div>
     </div>
     <div class="pane" id="pane-referrers">
       {{range .Referrers}}<div class="seg" data-fp="referrer" data-fv="{{.Value}}" title="click to filter every zone to this referrer"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
+    </div>
+    {{end}}
+
+    {{if .HasGeo}}
+    <div class="pane" id="pane-geo">
+      <h3>countries · geo by <a href="https://db-ip.com" target="_blank" rel="noopener" style="color:var(--mut2)">db-ip.com</a></h3>
+      {{range .Countries}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}
+    </div>
+    {{end}}
+
+    <div class="pane" id="pane-devices">
+      <div class="webcols">
+        <div>
+          <h3>device</h3>
+          {{range .DeviceRows}}<div class="seg" data-fp="device" data-fv="{{.Value}}"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{else}}<div class="exsummary">no device data yet</div>{{end}}
+          <h3 style="margin-top:16px">os</h3>
+          {{range .OSes}}<div class="seg" data-fp="os" data-fv="{{.Value}}"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">appears as visitors arrive (parsed from the user agent, nothing stored)</div>{{end}}
+        </div>
+        <div>
+          <h3>browser</h3>
+          {{range .Browsers}}<div class="seg" data-fp="browser" data-fv="{{.Value}}"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">appears as visitors arrive</div>{{end}}
+        </div>
+      </div>
+    </div>
+
+    {{if .UTMSources}}
+    <div class="pane" id="pane-campaigns">
+      <div class="webcols">
+        <div>
+          <h3>utm source</h3>
+          {{range .UTMSources}}<div class="seg" data-fp="utm_source" data-fv="{{.Value}}"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
+          {{if .UTMMediums}}<h3 style="margin-top:16px">utm medium</h3>
+          {{range .UTMMediums}}<div class="seg" data-fp="utm_medium" data-fv="{{.Value}}"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}{{end}}
+        </div>
+        <div>
+          <h3>utm campaign</h3>
+          {{range .UTMCampaigns}}<div class="seg" data-fp="utm_campaign" data-fv="{{.Value}}"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">tag links with utm_campaign to see them here</div>{{end}}
+        </div>
+      </div>
     </div>
     {{end}}
 
