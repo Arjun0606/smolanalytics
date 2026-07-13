@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/cohort"
@@ -25,18 +26,43 @@ import (
 // ERROR, never ignored — silently returning unfiltered data as if it were the
 // segment is the worst kind of wrong answer.
 func filtersFrom(r *http.Request) ([]query.Filter, error) {
-	raw := r.URL.Query().Get("filters")
-	if raw == "" {
-		return nil, nil
-	}
+	fs, _, err := filterSetFrom(r)
+	return fs, err
+}
+
+// filterSetFrom is the ONE filter parser every /v1 endpoint and the dashboard share,
+// so the ask bar, an agent over MCP, a pasted URL, and the dashboard all speak one
+// filter language. It accepts both the ?f=prop:op:value chip grammar (repeatable,
+// the URL-native form) and ?filters=<JSON array> (the programmatic form), and honors
+// ?fm=any to OR the rows. Malformed input is an ERROR, never ignored — silently
+// returning unfiltered data as if it were the segment is the worst kind of wrong answer.
+func filterSetFrom(r *http.Request) ([]query.Filter, bool, error) {
 	var fs []query.Filter
-	if err := json.Unmarshal([]byte(raw), &fs); err != nil {
-		return nil, badRequestError{fmt.Sprintf("invalid filters JSON: %v", err)}
+	if raw := r.URL.Query().Get("filters"); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &fs); err != nil {
+			return nil, false, badRequestError{fmt.Sprintf("invalid filters JSON: %v", err)}
+		}
+	}
+	// ?f=prop:op:value (or prop:value for eq); multi-value a|b becomes an In list.
+	for _, raw := range r.URL.Query()["f"] {
+		p, op, v, ok := parseChip(raw)
+		if !ok {
+			return nil, false, badRequestError{fmt.Sprintf("bad filter %q: use prop:op:value with op in eq,neq,contains,ncontains,regex,gt,lt,set,notset", raw)}
+		}
+		flt := query.Filter{Property: p, Op: op, Value: v}
+		if parts := strings.Split(v, "|"); len(parts) > 1 && op == query.Eq {
+			arr := make([]any, len(parts))
+			for i, x := range parts {
+				arr[i] = x
+			}
+			flt = query.Filter{Property: p, Op: query.In, Value: arr}
+		}
+		fs = append(fs, flt)
 	}
 	if err := query.Validate(fs); err != nil {
-		return nil, badRequestError{err.Error()}
+		return nil, false, badRequestError{err.Error()}
 	}
-	return fs, nil
+	return fs, r.URL.Query().Get("fm") == "any", nil
 }
 
 // badRequestError marks a caller mistake (bad filters) so handlers return 400, not 500.
@@ -58,7 +84,7 @@ func writeQueryErr(w http.ResponseWriter, err error) {
 // ?cohort=<id> is set) scopes to that cohort's members. Cohort membership is
 // resolved over the full history, then the filtered events are kept for those users.
 func (s *Server) filtered(r *http.Request) ([]event.Event, error) {
-	fs, err := filtersFrom(r)
+	fs, anyMode, err := filterSetFrom(r)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +92,7 @@ func (s *Server) filtered(r *http.Request) ([]event.Event, error) {
 	if err != nil {
 		return nil, err
 	}
-	evs := query.Apply(all, fs)
+	evs := query.ApplyMode(all, fs, anyMode)
 	if cid := r.URL.Query().Get("cohort"); cid != "" && s.cohorts != nil {
 		if d, ok := s.cohorts.Get(cid); ok {
 			evs = cohort.FilterToUsers(evs, cohort.Resolve(all, d))
