@@ -525,6 +525,38 @@ func (s *Server) apiFunnel(w http.ResponseWriter, r *http.Request) {
 	if window <= 0 {
 		window = 7 * 24 * time.Hour // same default as the MCP funnel tool — one question, one answer
 	}
+	// the funnel options contract (phase 1): order= discipline, exclude= disqualifying
+	// events, sf<N>=prop:value per-step filters. Unknown enum values are a 400 naming
+	// the valid set (ERRORS-1), never a silently different funnel.
+	q := r.URL.Query()
+	order, oerr := funnel.ParseOrder(q.Get("order"))
+	if oerr != nil {
+		writeErr(w, http.StatusBadRequest, oerr.Error())
+		return
+	}
+	opts := funnel.Options{Order: order}
+	if ex := q.Get("exclude"); ex != "" {
+		for _, name := range strings.Split(ex, "|") {
+			if name = strings.TrimSpace(name); name != "" {
+				opts.Exclusions = append(opts.Exclusions, name)
+			}
+		}
+	}
+	for i := range steps {
+		raw := q.Get(fmt.Sprintf("sf%d", i))
+		if raw == "" {
+			continue
+		}
+		prop, val, ok := strings.Cut(raw, ":")
+		if !ok || prop == "" || val == "" {
+			writeErr(w, http.StatusBadRequest, fmt.Sprintf("bad step filter sf%d=%q — use sf%d=property:value", i, raw, i))
+			return
+		}
+		if opts.StepFilters == nil {
+			opts.StepFilters = make([]map[string]string, len(steps))
+		}
+		opts.StepFilters[i] = map[string]string{prop: val}
+	}
 	evs, err := s.filtered(r)
 	if err != nil {
 		writeQueryErr(w, err)
@@ -532,7 +564,7 @@ func (s *Server) apiFunnel(w http.ResponseWriter, r *http.Request) {
 	}
 	// breakdown=source runs the funnel per segment (conversion by property) — the same
 	// shape the MCP funnel tool returns, so agreement_test locks the two together.
-	if bd := r.URL.Query().Get("breakdown"); bd != "" {
+	if bd := q.Get("breakdown"); bd != "" {
 		names := make([]string, len(steps))
 		for i, st := range steps {
 			names[i] = st.Event
@@ -540,7 +572,7 @@ func (s *Server) apiFunnel(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"steps": names, "breakdown": bd, "segments": funnel.ComputeBreakdown(evs, steps, window, bd)})
 		return
 	}
-	writeJSON(w, http.StatusOK, funnel.Compute(evs, steps, window))
+	writeJSON(w, http.StatusOK, funnel.ComputeOpts(evs, steps, window, opts))
 }
 
 // --- helpers ---

@@ -557,7 +557,13 @@
     {{end}}
 
     <div class="pane" id="pane-funnel">
-      <h3>{{.FunnelTitle}} <span style="text-transform:none;letter-spacing:0">· computed by /v1/funnel</span></h3>
+      <h3>{{.FunnelTitle}}
+        <select id="funnelOrder" class="zonesel" title="step matching discipline" style="margin-left:8px">
+          <option value="ordered" {{if eq .FunnelOrder "ordered"}}selected{{end}}>in order</option>
+          <option value="strict" {{if eq .FunnelOrder "strict"}}selected{{end}}>strictly consecutive</option>
+          <option value="unordered" {{if eq .FunnelOrder "unordered"}}selected{{end}}>any order</option>
+        </select>
+        <span style="text-transform:none;letter-spacing:0">· computed by /v1/funnel</span></h3>
       {{range .Funnel}}
         {{if not .First}}<div class="fdrop">↓ {{.PctPrev}}% continue · {{.Dropped}} dropped</div>{{end}}
         <div class="fstep"><div class="fbarwrap"><div class="fbar" style="width:{{.PctTop}}%"></div><div class="fmeta"><span class="fname">{{.Event}}</span><span class="fnums"><span class="c">{{.Count}}</span><span class="p">{{.PctTop}}%</span></span></div></div></div>
@@ -1050,6 +1056,8 @@
     }
     if(cm)cm.onchange=function(){setParam('metric',cm.value,'{{.StatEventLabel}}');};
     if(cg)cg.onchange=function(){setParam('gran',cg.value,'day');};
+    var fo=document.getElementById('funnelOrder');
+    if(fo)fo.onchange=function(){setParam('forder',fo.value,'ordered');};
 
     // chart breakdown: split the main series by any dimension, same /v1/trends engine
     var cbreak=document.getElementById('chartBreak'),calt=document.getElementById('chartAlt'),cmain=document.getElementById('chartMain');

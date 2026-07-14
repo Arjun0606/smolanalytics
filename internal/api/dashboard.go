@@ -187,6 +187,7 @@ type dashVM struct {
 	ChartMetric    string     // the charted event (?metric=), defaults to the detected headline event
 	Gran           string     // chart bucket grain (?gran=): day|week|month (hour capped upstream)
 	ChartTable     []chartRow // the sortable-data-table half of the chart+table unit
+	FunnelOrder    string     // the funnel discipline (?forder=): ordered|strict|unordered
 	CustomRange    bool       // an explicit ?from/?to window is active
 	AnyMode        bool       // filters join with OR (?fm=any) instead of AND
 	RangeFrom      string     // the custom window's inputs, echoed into the date pickers
@@ -473,6 +474,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	segProp := detectProp(evs, "plan")
 	srcProp := detectProp(evs, "source")
 
+	forder, _ := funnel.ParseOrder(r.URL.Query().Get("forder"))
 	nowT := time.Now().UTC()
 	endT := nowT
 	if !rangeAsof.IsZero() {
@@ -485,7 +487,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	if granErr != nil {
 		gran = trends.Day
 	}
-	fr := funnel.Compute(evs, fsteps, 7*24*time.Hour)
+	fr := funnel.ComputeOpts(evs, fsteps, 7*24*time.Hour, funnel.Options{Order: forder})
 	rr := retentionOf(evs, 7, retEvent)
 	// the chart and the headline stat both follow the selected range, and the stat
 	// carries a delta vs the prior equal window so movement is visible at a glance
@@ -529,6 +531,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		HasGoalsStore:  s.goals != nil,
 		RangeDays:      rangeDays,
 		GhostTotal:     trPrior.Total,
+		FunnelOrder:    string(forder),
 		CustomRange:    customRange,
 		AnyMode:        anyMode,
 		RangeFrom:      r.URL.Query().Get("from"),

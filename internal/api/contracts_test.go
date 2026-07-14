@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/event"
+	"github.com/Arjun0606/smolanalytics/internal/funnel"
 	"github.com/Arjun0606/smolanalytics/internal/store/memory"
 	"github.com/Arjun0606/smolanalytics/internal/trends"
 )
@@ -207,5 +208,76 @@ func TestContractBreakdownWindowAndHonestErrors(t *testing.T) {
 		if !strings.Contains(ct, "json") {
 			t.Fatalf("%s must answer JSON (got %s) — /v1/* never falls through to HTML", p, ct)
 		}
+	}
+}
+
+// CONTRACT FUNNEL-ORDER + FUNNEL-EXCLUDE + FUNNEL-STEPFILTER: the three disciplines
+// count a crafted sequence exactly as documented, and an excluded event disqualifies
+// the anchor but not a later clean attempt.
+func TestContractFunnelDisciplines(t *testing.T) {
+	base := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
+	at := func(min int) time.Time { return base.Add(time.Duration(min) * time.Minute) }
+	steps := []funnel.Step{{Event: "signup"}, {Event: "activate"}, {Event: "checkout"}}
+	day := 24 * time.Hour
+
+	// u1: signup -> noise -> activate -> checkout  (ordered converts; strict does not)
+	// u2: checkout -> activate -> signup           (only unordered converts)
+	// u3: signup -> activate -> refund -> checkout (excluded when refund is exclusion)
+	// u4: signup -> refund ... then a clean signup -> activate -> checkout (later anchor converts despite exclusion)
+	evs := []event.Event{
+		{Name: "signup", DistinctID: "u1", Timestamp: at(0)},
+		{Name: "$pageview", DistinctID: "u1", Timestamp: at(1)},
+		{Name: "activate", DistinctID: "u1", Timestamp: at(2)},
+		{Name: "checkout", DistinctID: "u1", Timestamp: at(3)},
+
+		{Name: "checkout", DistinctID: "u2", Timestamp: at(0)},
+		{Name: "activate", DistinctID: "u2", Timestamp: at(1)},
+		{Name: "signup", DistinctID: "u2", Timestamp: at(2)},
+
+		{Name: "signup", DistinctID: "u3", Timestamp: at(0)},
+		{Name: "activate", DistinctID: "u3", Timestamp: at(1)},
+		{Name: "refund", DistinctID: "u3", Timestamp: at(2)},
+		{Name: "checkout", DistinctID: "u3", Timestamp: at(3)},
+
+		{Name: "signup", DistinctID: "u4", Timestamp: at(0)},
+		{Name: "refund", DistinctID: "u4", Timestamp: at(1)},
+		{Name: "signup", DistinctID: "u4", Timestamp: at(10)},
+		{Name: "activate", DistinctID: "u4", Timestamp: at(11)},
+		{Name: "checkout", DistinctID: "u4", Timestamp: at(12)},
+	}
+
+	conv := func(opts funnel.Options) int {
+		return funnel.ComputeOpts(evs, steps, day, opts).Converted
+	}
+	if got := conv(funnel.Options{}); got != 3 {
+		t.Fatalf("ordered: want u1,u3,u4 = 3 conversions, got %d", got)
+	}
+	if got := conv(funnel.Options{Order: funnel.Strict}); got != 1 {
+		// u1 breaks on the interleaved pageview, u3 breaks on the refund between
+		// activate and checkout (ANY intervening event breaks strict) — only u4's
+		// clean consecutive second attempt survives
+		t.Fatalf("strict: only u4's consecutive run converts; want 1, got %d", got)
+	}
+	if got := conv(funnel.Options{Order: funnel.Unordered}); got != 4 {
+		t.Fatalf("unordered: u2's reversed order must count; want 4, got %d", got)
+	}
+	if got := conv(funnel.Options{Exclusions: []string{"refund"}}); got != 2 {
+		t.Fatalf("exclusion: u3 disqualified, u4's clean second attempt converts; want u1,u4 = 2, got %d", got)
+	}
+	// per-step filter: only checkouts with plan=pro count as the final step
+	evs2 := []event.Event{
+		{Name: "signup", DistinctID: "p1", Timestamp: at(0)},
+		{Name: "checkout", DistinctID: "p1", Timestamp: at(1), Properties: map[string]any{"plan": "pro"}},
+		{Name: "signup", DistinctID: "p2", Timestamp: at(0)},
+		{Name: "checkout", DistinctID: "p2", Timestamp: at(1), Properties: map[string]any{"plan": "free"}},
+	}
+	two := []funnel.Step{{Event: "signup"}, {Event: "checkout"}}
+	r := funnel.ComputeOpts(evs2, two, day, funnel.Options{StepFilters: []map[string]string{nil, {"plan": "pro"}}})
+	if r.Converted != 1 {
+		t.Fatalf("step filter: only the pro checkout converts; want 1, got %d", r.Converted)
+	}
+	// and the default Compute path is literally ComputeOpts (one engine)
+	if a, b := funnel.Compute(evs, steps, day), funnel.ComputeOpts(evs, steps, day, funnel.Options{}); a.Converted != b.Converted || a.Order != b.Order {
+		t.Fatalf("Compute must delegate to ComputeOpts identically: %+v vs %+v", a, b)
 	}
 }

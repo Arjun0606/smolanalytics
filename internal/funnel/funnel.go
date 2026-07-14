@@ -29,6 +29,10 @@ type StepResult struct {
 
 // Result is the full funnel: per-step counts + the overall conversion.
 type Result struct {
+	// the discipline + options this funnel ran under, echoed so every surface
+	// (HTTP, MCP, dashboard) emits byte-identical JSON for identical questions
+	Order             string       `json:"order"`
+	ExcludedEvents    []string     `json:"excluded_events,omitempty"`
 	Steps             []StepResult `json:"steps"`
 	OverallConversion float64      `json:"overall_conversion"`     // last step / first step
 	Converted         int          `json:"converted"`              // users who completed every step
@@ -40,32 +44,7 @@ type Result struct {
 // `window` of the FIRST step (the conversion window; 0 = no limit). Other events
 // in between are ignored. This matches the standard Mixpanel/Amplitude semantics.
 func Compute(events []event.Event, steps []Step, window time.Duration) Result {
-	res := Result{Steps: make([]StepResult, len(steps))}
-	for i, s := range steps {
-		res.Steps[i].Event = s.Event
-	}
-	if len(steps) == 0 {
-		return res
-	}
-
-	byUser := map[string][]event.Event{}
-	for _, e := range events {
-		byUser[e.DistinctID] = append(byUser[e.DistinctID], e)
-	}
-
-	counts := make([]int, len(steps))
-	var convTimes []time.Duration // time first->last step, for users who fully converted
-	for _, evs := range byUser {
-		reached, dur, converted := furthestStep(evs, steps, window)
-		for i := 0; i < reached; i++ {
-			counts[i]++
-		}
-		if converted {
-			convTimes = append(convTimes, dur)
-		}
-	}
-	finishFromCounts(&res, steps, counts, convTimes)
-	return res
+	return ComputeOpts(events, steps, window, Options{})
 }
 
 // SegmentResult is one value of a breakdown property and that segment's full funnel.
@@ -235,7 +214,10 @@ func stepMatches(e event.Event, steps []Step, i int, opts Options) bool {
 // behavior, and Compute delegates here so there is ONE matching engine (the
 // agreement guarantee depends on that).
 func ComputeOpts(events []event.Event, steps []Step, window time.Duration, opts Options) Result {
-	res := Result{Steps: make([]StepResult, len(steps))}
+	if opts.Order == "" {
+		opts.Order = Ordered
+	}
+	res := Result{Steps: make([]StepResult, len(steps)), Order: string(opts.Order), ExcludedEvents: opts.Exclusions}
 	for i, s := range steps {
 		res.Steps[i].Event = s.Event
 	}
@@ -273,7 +255,21 @@ func furthestStepOpts(evs []event.Event, steps []Step, window time.Duration, opt
 	best := 0
 	var bestDur time.Duration
 	for start := range evs {
-		if !stepMatches(evs[start], steps, 0, opts) {
+		// unordered anchors on ANY step's event (amplitude/posthog "any order"
+		// semantics: the window opens at the first step-matching event, whichever
+		// step it is); ordered/strict anchor on step 0.
+		anchorStep := -1
+		if opts.Order == Unordered {
+			for si := range steps {
+				if stepMatches(evs[start], steps, si, opts) {
+					anchorStep = si
+					break
+				}
+			}
+			if anchorStep == -1 {
+				continue
+			}
+		} else if !stepMatches(evs[start], steps, 0, opts) {
 			continue
 		}
 		anchor := evs[start].Timestamp
@@ -283,7 +279,7 @@ func furthestStepOpts(evs []event.Event, steps []Step, window time.Duration, opt
 		switch opts.Order {
 		case Unordered:
 			seen := make([]bool, len(steps))
-			seen[0] = true
+			seen[anchorStep] = true
 			matched := 1
 			last := anchor
 			for k := start + 1; k < len(evs); k++ {
