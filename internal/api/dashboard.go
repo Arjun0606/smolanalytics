@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"log"
 	"math"
 	"net/http"
 	"net/url"
@@ -51,6 +52,7 @@ type retRow struct {
 
 type trendBar struct {
 	Date      string
+	ISO       string // YYYY-MM-DD — the who-descriptor's date key
 	Count     int
 	HeightPct int
 	Tip       string // instant CSS tooltip: "Jul 4 · 27" — no native-title hover delay
@@ -663,6 +665,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	for i, p := range tr.Points {
 		b := trendBar{
 			Date:      p.Date.Format("1/2"),
+			ISO:       p.Date.Format("2006-01-02"),
 			Count:     p.Count,
 			HeightPct: int(math.Round(float64(p.Count) / float64(maxT) * 100)),
 			Tip:       fmt.Sprintf("%s · %d", p.Date.Format("Jan 2"), p.Count),
@@ -850,7 +853,11 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	vm.ComputeMS = int(time.Since(renderStart).Milliseconds())
-	_ = dashTmpl.Execute(w, vm)
+	// a template execution error TRUNCATES the page silently (it already cost us a
+	// missing funnel pane once) — always log it, loudly
+	if err := dashTmpl.Execute(w, vm); err != nil {
+		log.Printf("smolanalytics: DASHBOARD RENDER ERROR (page truncated): %v", err)
+	}
 }
 
 func pct(f float64) int { return int(math.Round(f * 100)) }

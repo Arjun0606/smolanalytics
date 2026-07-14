@@ -438,7 +438,7 @@
       <div class="plot">
         <div class="gridlines"><div></div><div></div><div></div></div>
         <div class="bars">
-          {{range .Trend}}<div class="col"><span class="tip">{{.Tip}}</span>{{if and .Peak (gt .Count 0)}}<span class="peaklbl">{{.Count}}</span>{{end}}<div class="bar" style="height:{{.HeightPct}}%"></div>{{if gt $.GhostTotal 0}}<div class="ghost" style="height:{{.GhostPct}}%" aria-hidden="true"></div>{{end}}</div>{{end}}
+          {{range .Trend}}<div class="col" data-who="event={{$.ChartMetric}}&date={{.ISO}}" title="click: who is behind this bar"><span class="tip">{{.Tip}}</span>{{if and .Peak (gt .Count 0)}}<span class="peaklbl">{{.Count}}</span>{{end}}<div class="bar" style="height:{{.HeightPct}}%"></div>{{if gt $.GhostTotal 0}}<div class="ghost" style="height:{{.GhostPct}}%" aria-hidden="true"></div>{{end}}</div>{{end}}
         </div>
         <div class="xaxis">
           {{range .Trend}}<span class="xt">{{.Tick}}</span>{{end}}
@@ -566,7 +566,7 @@
         <span style="text-transform:none;letter-spacing:0">· computed by /v1/funnel</span></h3>
       {{range .Funnel}}
         {{if not .First}}<div class="fdrop">↓ {{.PctPrev}}% continue · {{.Dropped}} dropped</div>{{end}}
-        <div class="fstep"><div class="fbarwrap"><div class="fbar" style="width:{{.PctTop}}%"></div><div class="fmeta"><span class="fname">{{.Event}}</span><span class="fnums"><span class="c">{{.Count}}</span><span class="p">{{.PctTop}}%</span></span></div></div></div>
+        <div class="fstep"><div class="fbarwrap" data-whostep="{{.Event}}" title="click: the people who reached this step"><div class="fbar" style="width:{{.PctTop}}%"></div><div class="fmeta"><span class="fname">{{.Event}}</span><span class="fnums"><span class="c">{{.Count}}</span><span class="p">{{.PctTop}}%</span></span></div></div></div>
       {{end}}
     </div>
 
@@ -1141,6 +1141,44 @@
     document.addEventListener('click',function(e){
       var w=e.target.closest('.live .who');if(!w)return;
       openJourney(w.textContent);
+    });
+
+    // the microscope: any chart bar or funnel step opens the PEOPLE behind it —
+    // same engine as the aggregate, so the list always sums to the bar
+    var SA_FSTEPS=SA_FUNNEL.join(',');
+    function openWho(query,label){
+      var shade=document.createElement('div');shade.className='jshade';
+      var panel=document.createElement('div');panel.className='journey';
+      panel.innerHTML='<div class="jh"><span class="jid">'+esc(label)+'</span><span class="jclose">close ×</span></div><div class="jmeta">loading…</div>';
+      function close(){shade.remove();panel.remove();document.removeEventListener('keydown',onEsc);}
+      function onEsc(ev){if(ev.key==='Escape')close();}
+      shade.onclick=close;document.addEventListener('keydown',onEsc);
+      document.body.appendChild(shade);document.body.appendChild(panel);
+      panel.querySelector('.jclose').onclick=close;
+      fetch('/v1/who?'+query).then(function(r){return r.json()}).then(function(j){
+        if(j.error){panel.querySelector('.jmeta').textContent=j.error;return;}
+        var rows=(j.users||[]).map(function(u){
+          return '<div class="jrow" style="cursor:pointer" data-uid="'+esc(u.distinct_id)+'"><span class="je" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">'+esc(u.distinct_id)+'</span><span class="jt">'+u.events+' ev</span><span class="jt">'+ago(u.last_seen)+' ago</span></div>';
+        }).join('');
+        panel.innerHTML='<div class="jh"><span class="jid">'+esc(label)+'</span><span class="jclose">close ×</span></div>'+
+          '<div class="jmeta">'+j.total_users+' people · click one for their journey · computed by /v1/who, same engine as the chart</div>'+rows;
+        panel.querySelector('.jclose').onclick=close;
+        panel.addEventListener('click',function(ev){
+          var r2=ev.target.closest('.jrow[data-uid]');if(!r2)return;
+          close();openJourney(r2.getAttribute('data-uid'));
+        });
+      }).catch(function(){panel.querySelector('.jmeta').textContent='could not load';});
+    }
+    document.addEventListener('click',function(e){
+      var c=e.target.closest('.col[data-who]');
+      if(c){openWho(c.getAttribute('data-who'),'people behind this bar');return;}
+      var fs=e.target.closest('.fbarwrap[data-whostep]');
+      if(fs&&SA_FUNNEL.length>1){
+        var idx=SA_FUNNEL.indexOf(fs.getAttribute('data-whostep'));
+        if(idx<0)return;
+        openWho('steps='+encodeURIComponent(SA_FSTEPS)+'&step='+idx+'&state=reached'+({{.FunnelOrder | printf "%q"}}!=='ordered'?'&order='+{{.FunnelOrder | printf "%q"}}:''),
+          'reached "'+fs.getAttribute('data-whostep')+'"');
+      }
     });
 
     {{if .HasData}}

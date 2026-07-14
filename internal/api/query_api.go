@@ -13,6 +13,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/cohort"
 	"github.com/Arjun0606/smolanalytics/internal/engagement"
 	"github.com/Arjun0606/smolanalytics/internal/event"
+	"github.com/Arjun0606/smolanalytics/internal/funnel"
 	"github.com/Arjun0606/smolanalytics/internal/groups"
 	"github.com/Arjun0606/smolanalytics/internal/paths"
 	"github.com/Arjun0606/smolanalytics/internal/query"
@@ -472,4 +473,157 @@ func (s *Server) apiGroups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, groups.Compute(evs, property, time.Time{}, limit))
+}
+
+// apiWho is the Microscope: the people behind any datapoint. Three descriptor
+// modes, each REUSING the exact engine that computed the aggregate, so the list
+// always sums to the number on the chart:
+//
+//	trends point:  event=X&date=YYYY-MM-DD (+ window/filters)
+//	breakdown row: event=X&property=P&value=V (+ window/filters)
+//	funnel step:   steps=a,b,c&step=N&state=reached|dropped|converted (+ order/exclude/window)
+//
+// Response: {mode, total, users:[{distinct_id, events, last_seen}]}, capped at 200.
+func (s *Server) apiWho(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	evs, err := s.filtered(r)
+	if err != nil {
+		writeQueryErr(w, err)
+		return
+	}
+	type row struct {
+		ID       string    `json:"distinct_id"`
+		Events   int       `json:"events"`
+		LastSeen time.Time `json:"last_seen"`
+	}
+	collect := func(match func(event.Event) bool) []row {
+		agg := map[string]*row{}
+		for _, e := range evs {
+			if !match(e) {
+				continue
+			}
+			a := agg[e.DistinctID]
+			if a == nil {
+				a = &row{ID: e.DistinctID}
+				agg[e.DistinctID] = a
+			}
+			a.Events++
+			if e.Timestamp.After(a.LastSeen) {
+				a.LastSeen = e.Timestamp
+			}
+		}
+		out := make([]row, 0, len(agg))
+		for _, a := range agg {
+			out = append(out, *a)
+		}
+		sort.Slice(out, func(i, j int) bool { return out[i].LastSeen.After(out[j].LastSeen) })
+		return out
+	}
+	respond := func(mode string, rows []row) {
+		total := len(rows)
+		if len(rows) > 200 {
+			rows = rows[:200]
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"mode": mode, "total_users": total, "users": rows})
+	}
+
+	// funnel-step mode
+	if stepsQ := q.Get("steps"); stepsQ != "" {
+		steps := parseSteps(stepsQ)
+		if len(steps) < 2 {
+			writeErr(w, http.StatusBadRequest, "steps must list at least two event names")
+			return
+		}
+		stepN, err := strconv.Atoi(q.Get("step"))
+		if err != nil || stepN < 0 || stepN >= len(steps) {
+			writeErr(w, http.StatusBadRequest, fmt.Sprintf("step must be 0..%d", len(steps)-1))
+			return
+		}
+		state := q.Get("state")
+		window, _ := time.ParseDuration(q.Get("window"))
+		if window <= 0 {
+			window = 7 * 24 * time.Hour
+		}
+		order, oerr := funnel.ParseOrder(q.Get("order"))
+		if oerr != nil {
+			writeErr(w, http.StatusBadRequest, oerr.Error())
+			return
+		}
+		outcomes := funnel.Users(evs, steps, window, funnel.Options{Order: order})
+		wanted := map[string]bool{}
+		for _, o := range outcomes {
+			switch state {
+			case "dropped": // reached step N, did NOT reach N+1
+				if o.Reached == stepN+1 && !o.Converted {
+					wanted[o.DistinctID] = true
+				}
+			case "converted":
+				if o.Converted {
+					wanted[o.DistinctID] = true
+				}
+			default: // "reached" (or empty): reached at least step N
+				if o.Reached >= stepN+1 {
+					wanted[o.DistinctID] = true
+				}
+			}
+		}
+		respond("funnel", collect(func(e event.Event) bool { return wanted[e.DistinctID] }))
+		return
+	}
+
+	eventName := q.Get("event")
+	if !s.knownEventOr400(w, eventName) {
+		return
+	}
+	from, to, werr := parseTrendWindow(r)
+	if werr != nil {
+		writeErr(w, http.StatusBadRequest, werr.Error())
+		return
+	}
+	inWindow := func(e event.Event) bool {
+		ts := e.Timestamp.UTC()
+		if !from.IsZero() && ts.Before(from) {
+			return false
+		}
+		if !to.IsZero() && !ts.Before(to) {
+			return false
+		}
+		return true
+	}
+
+	// trends-point mode: one bucket's day
+	if d := q.Get("date"); d != "" {
+		day, derr := time.Parse("2006-01-02", d)
+		if derr != nil {
+			writeErr(w, http.StatusBadRequest, "date must be YYYY-MM-DD")
+			return
+		}
+		next := day.AddDate(0, 0, 1)
+		respond("trends_point", collect(func(e event.Event) bool {
+			if eventName != "" && e.Name != eventName {
+				return false
+			}
+			ts := e.Timestamp.UTC()
+			return !ts.Before(day) && ts.Before(next) && inWindow(e)
+		}))
+		return
+	}
+
+	// breakdown-row mode
+	if prop := q.Get("property"); prop != "" {
+		val := q.Get("value")
+		respond("breakdown_row", collect(func(e event.Event) bool {
+			if eventName != "" && e.Name != eventName {
+				return false
+			}
+			got, _ := e.Properties[prop].(string)
+			return got == val && inWindow(e)
+		}))
+		return
+	}
+
+	// plain event-in-window mode
+	respond("event", collect(func(e event.Event) bool {
+		return (eventName == "" || e.Name == eventName) && inWindow(e)
+	}))
 }

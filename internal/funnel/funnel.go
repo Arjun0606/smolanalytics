@@ -384,3 +384,40 @@ func finishFromCounts(res *Result, steps []Step, counts []int, convTimes []time.
 		res.OverallConversion = float64(counts[len(counts)-1]) / float64(counts[0])
 	}
 }
+
+// UserOutcome is one user's funnel result — the Microscope's raw material: the
+// people BEHIND a funnel bar, not just its height.
+type UserOutcome struct {
+	DistinctID string `json:"distinct_id"`
+	Reached    int    `json:"reached"` // steps completed (1 = step 0 only)
+	Converted  bool   `json:"converted"`
+}
+
+// Users returns every user's outcome under the same matching engine as
+// ComputeOpts — counts derived from this list always agree with the funnel's
+// bars, because they are the same computation.
+func Users(events []event.Event, steps []Step, window time.Duration, opts Options) []UserOutcome {
+	if opts.Order == "" {
+		opts.Order = Ordered
+	}
+	excl := map[string]bool{}
+	for _, x := range opts.Exclusions {
+		if x != "" {
+			excl[x] = true
+		}
+	}
+	byUser := map[string][]event.Event{}
+	for _, e := range events {
+		byUser[e.DistinctID] = append(byUser[e.DistinctID], e)
+	}
+	out := make([]UserOutcome, 0, len(byUser))
+	for id, evs := range byUser {
+		reached, _, converted := furthestStepOpts(evs, steps, window, opts, excl)
+		if reached == 0 {
+			continue
+		}
+		out = append(out, UserOutcome{DistinctID: id, Reached: reached, Converted: converted})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].DistinctID < out[j].DistinctID })
+	return out
+}

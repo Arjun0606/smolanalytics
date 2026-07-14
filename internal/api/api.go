@@ -209,6 +209,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/brief", s.apiBrief)
 	mux.HandleFunc("GET /v1/events/recent", s.recentEvents)
 	mux.HandleFunc("GET /v1/users/{id}", s.userActivity)
+	mux.HandleFunc("GET /v1/who", s.apiWho) // the microscope: the people behind any datapoint
 	mux.HandleFunc("GET /v1/export", s.export)
 	mux.HandleFunc("GET /v1/insights", s.listInsights)
 	mux.HandleFunc("POST /v1/insights", s.saveInsight)
