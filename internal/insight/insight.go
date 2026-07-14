@@ -148,11 +148,9 @@ func Generate(evs []event.Event) []Finding {
 	}
 
 	// 3) retention read
-	retEv := "open"
-	if !has(retEv) {
-		retEv = names[0]
-	}
-	rr := retention.Compute(evs, 7, retEv)
+	// anchor: ANY event, the same default /v1/retention, the dashboard, and the ask
+	// bar use — four surfaces, one definition of "came back".
+	rr := retention.Compute(evs, 7, "")
 	// retention.DayN keeps the denominator honest: only cohorts old enough to have
 	// observed day N count (the retention-triangle rule).
 	d1, size1 := retention.DayN(rr, 1, now)
@@ -164,11 +162,11 @@ func Generate(evs []event.Event) []Finding {
 			sev = "warn"
 		}
 		title := fmt.Sprintf("Day-1 retention %d%%", p1)
-		detail := fmt.Sprintf("of %d users past day 1, based on %q activity.", size1, retEv)
+		detail := fmt.Sprintf("of %d users past day 1 (any activity counts as returning).", size1)
 		if size7 >= minSample {
 			p7 := int(float64(d7)/float64(size7)*100 + 0.5)
 			title = fmt.Sprintf("Day-1 retention %d%%, day-7 %d%%", p1, p7)
-			detail = fmt.Sprintf("of %d users past day 1 (%d past day 7), based on %q activity.", size1, size7, retEv)
+			detail = fmt.Sprintf("of %d users past day 1 (%d past day 7), any activity counts as returning.", size1, size7)
 		}
 		out = append(out, Finding{Severity: sev, Title: title, Detail: qualify(detail, size1)})
 	}

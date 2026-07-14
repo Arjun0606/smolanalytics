@@ -78,8 +78,8 @@ func TestAskGeoAndWindows(t *testing.T) {
 	if got := string(classifyAsk("from how many countries did i get viewership in the past week")); got != "geo" {
 		t.Errorf("countries question classified as %q, want geo", got)
 	}
-	if got := string(classifyAsk("where are my visitors from")); got != "channels" {
-		t.Errorf("visitors-from stays channels, got %q", got)
+	if got := string(classifyAsk("where are my visitors from")); got != "sources" {
+		t.Errorf("visitors-from is a traffic ranking (sources), got %q", got)
 	}
 	now := time.Now().UTC()
 	if _, unsup := parseWindow("how many signups in the past week", now); unsup != "" {
@@ -105,12 +105,13 @@ func TestAskQAFixes(t *testing.T) {
 		t.Errorf("live question = %q, want live", got)
 	}
 	now := time.Now().UTC()
-	// weekday + since must refuse, not silently answer 30d
-	if _, unsup := parseWindow("signups since monday", now); unsup == "" {
-		t.Error("'since monday' must be named unsupported, not silently 30d")
+	// 'since monday' now parses via the extra-window layer instead of refusing
+	if w, ok := parseExtraWindow("signups since monday", now); !ok || !w.scoped() {
+		t.Error("'since monday' must parse to a real window")
 	}
-	if _, unsup := parseWindow("best day for signups", now); unsup == "" {
-		t.Error("'best day' must be named unsupported")
+	// 'best day' routes to the peak-day report instead of refusing
+	if got := string(classifyAsk("best day for signups")); got != "peakday" {
+		t.Errorf("'best day' = %q, want peakday", got)
 	}
 	// per-day rate: a scoped 7-day window divides by 7, not 8
 	w := askWindow{from: now.Truncate(24*time.Hour).AddDate(0, 0, -7), to: now.Truncate(24 * time.Hour)}

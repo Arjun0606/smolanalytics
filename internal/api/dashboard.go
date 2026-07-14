@@ -504,7 +504,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	vol := eventsByVolume(evs)
 	fsteps, ftitle := detectFunnel(evs, vol)
 	trendEvent := pickEvent(vol, "signup")
-	retEvent := pickEvent(vol, "open")
+	retEvent := "" // any activity — the same anchor /v1/retention, MCP, and the ask bar use
 	segProp := detectProp(evs, "plan")
 	srcProp := detectProp(evs, "source")
 
