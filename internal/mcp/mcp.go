@@ -49,6 +49,7 @@ const protocolVersion = "2025-03-26" // Streamable HTTP; we echo the client's ve
 const instructions = `You are a sharp product analyst with live access to this user's own product analytics — their real events, on their own instance. Nothing is shared with anyone; you (their model) do the reasoning, for free, right here in their editor. The whole point: they never build a report, they just ask you.
 
 How to work:
+- ALWAYS answer analytics questions through these tools — never by fetching the HTTP API yourself, scraping the dashboard, or estimating. The tools ARE the deterministic report engine; a CI test proves their numbers equal the dashboard's. Time questions map directly: "last 6 hours" = trends(hours=6, interval="hour"), "this week" = trends(days=7), any range = from/to.
 - Orient first. Call overview for the headline numbers and list_events to see exactly what's tracked. Never invent event or property names — use the real ones.
 - Pick the right tool: funnel (conversion + where users drop off), retention (do they come back), trends (counts over time, optionally broken down by a property), breakdown (segment by a property), web_overview (traffic: visitors, live-now, top pages, referrers, UTM sources, devices), lifecycle (new/returning/resurrected/dormant), stickiness (DAU/WAU/MAU), paths (what users do after an event), groups (B2B accounts), recent_events (debug instrumentation), user_activity (one user's timeline). Every report accepts filters to segment (e.g. plan=pro, source=hacker news).
 - Answer like an analyst, not a database. Lead with the number, say what it means, then offer the most useful next cut. If conversion dropped, find the step; if a segment underperforms, name it; if retention is flat, say so plainly.
@@ -322,6 +323,11 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 			Breakdown string    `json:"breakdown"`
 			Measure   string    `json:"measure"`
 			Property  string    `json:"property"`
+			Days      float64   `json:"days"`
+			Hours     float64   `json:"hours"`
+			From      string    `json:"from"`
+			To        string    `json:"to"`
+			Interval  string    `json:"interval"`
 			Filters   FilterSet `json:"filters"`
 		}
 		if err := unmarshalArgs(args, &a); err != nil {
@@ -333,6 +339,34 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		if err := query.Validate(a.Filters); err != nil {
 			return "", err
 		}
+		// the time grammar, identical to GET /v1/trends: days/hours are rolling
+		// windows ending now; from/to are absolute; interval buckets the series
+		var from, to time.Time
+		nowW := time.Now().UTC()
+		if a.Days > 0 {
+			from = nowW.Add(-time.Duration(a.Days * 24 * float64(time.Hour)))
+		}
+		if a.Hours > 0 {
+			from = nowW.Add(-time.Duration(a.Hours * float64(time.Hour)))
+		}
+		if a.From != "" {
+			if t, err := parseWhen(a.From); err == nil {
+				from = t
+			} else {
+				return "", fmt.Errorf("bad from %q (want RFC3339 or YYYY-MM-DD)", a.From)
+			}
+		}
+		if a.To != "" {
+			if t, err := parseWhen(a.To); err == nil {
+				to = t
+			} else {
+				return "", fmt.Errorf("bad to %q (want RFC3339 or YYYY-MM-DD)", a.To)
+			}
+		}
+		iv, iverr := trends.ParseInterval(a.Interval)
+		if iverr != nil {
+			return "", iverr
+		}
 		ev := query.Apply(evs, a.Filters)
 		// numeric aggregation over a property (revenue, AOV, p90) — mirrors GET /v1/trends
 		// with measure=; window is all-events here (no from/to arg), same as Compute below.
@@ -340,14 +374,17 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 			if a.Property == "" {
 				return "", fmt.Errorf("measure needs a numeric property (e.g. property=amount)")
 			}
-			m, _ := trends.ParseMeasure(a.Measure)
-			return jsonText(trends.ComputeMeasure(ev, a.Event, a.Property, m, time.Time{}, time.Time{}))
+			m, ok := trends.ParseMeasure(a.Measure)
+			if !ok {
+				return "", fmt.Errorf("unknown measure %q (want sum, avg, min, max, median or p90)", a.Measure)
+			}
+			return jsonText(trends.ComputeMeasure(ev, a.Event, a.Property, m, from, to))
 		}
 		if a.Breakdown != "" {
 			return jsonText(map[string]any{"event": a.Event, "breakdown": a.Breakdown,
-				"series": trends.ComputeBreakdown(ev, a.Event, a.Breakdown, time.Time{}, time.Time{}, a.Unique)})
+				"series": trends.ComputeBreakdown(ev, a.Event, a.Breakdown, from, to, a.Unique)})
 		}
-		return jsonText(trends.Compute(ev, a.Event, time.Time{}, time.Time{}, a.Unique))
+		return jsonText(trends.ComputeInterval(ev, a.Event, from, to, a.Unique, iv))
 	case "breakdown":
 		var a struct {
 			Event    string    `json:"event"`
@@ -620,4 +657,12 @@ func jsonText(v any) (string, error) {
 		return "", err
 	}
 	return string(b), nil
+}
+
+// parseWhen accepts RFC3339 or bare YYYY-MM-DD, the same grammar as /v1.
+func parseWhen(v string) (time.Time, error) {
+	if t, err := time.Parse(time.RFC3339, v); err == nil {
+		return t, nil
+	}
+	return time.Parse("2006-01-02", v)
 }

@@ -293,6 +293,13 @@ func (s *Server) apiTrends(w http.ResponseWriter, r *http.Request) {
 // ignore these entirely, so days=7 and days=90 returned the same series.
 func parseTrendWindow(r *http.Request) (from, to time.Time, err error) {
 	q := r.URL.Query()
+	if v := q.Get("hours"); v != "" {
+		n, perr := strconv.ParseFloat(v, 64)
+		if perr != nil || n <= 0 || n > 24*366 {
+			return from, to, fmt.Errorf("hours must be a positive number (got %q)", v)
+		}
+		return time.Now().UTC().Add(-time.Duration(n * float64(time.Hour))), time.Time{}, nil
+	}
 	if v := q.Get("days"); v != "" {
 		n, e := strconv.Atoi(v)
 		if e != nil || n <= 0 {
