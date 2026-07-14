@@ -284,7 +284,7 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		// same shape as GET /v1/funnel?breakdown=, locked by agreement_test.
 		if a.Breakdown != "" {
 			return jsonText(map[string]any{"steps": a.Steps, "breakdown": a.Breakdown,
-				"segments": funnel.ComputeBreakdown(query.ScopeUsers(evs, a.Filters, false), steps, window, a.Breakdown)})
+				"segments": funnel.ComputeBreakdown(query.StampFirstTouch(query.ScopeUsers(evs, a.Filters, false), a.Breakdown), steps, window, a.Breakdown)})
 		}
 		order, oerr := funnel.ParseOrder(a.Order)
 		if oerr != nil {
@@ -344,7 +344,10 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		var from, to time.Time
 		nowW := time.Now().UTC()
 		if a.Days > 0 {
-			from = nowW.Add(-time.Duration(a.Days * 24 * float64(time.Hour)))
+			// calendar-day aligned, IDENTICAL to GET /v1/trends (parseTrendWindow): N
+			// whole day-buckets ending today, so MCP and the dashboard never disagree
+			// (the old rolling calc prepended a phantom empty leading day — a covenant break).
+			from = nowW.Truncate(24 * time.Hour).AddDate(0, 0, -(int(a.Days) - 1))
 		}
 		if a.Hours > 0 {
 			from = nowW.Add(-time.Duration(a.Hours * float64(time.Hour)))

@@ -120,6 +120,10 @@ func TestMCPAPIAgreement(t *testing.T) {
 		{"funnel filtered in-list", "/v1/funnel?steps=signup,activate&filters=" + urlEnc(inFilters), "funnel", `{"steps":["signup","activate"],"filters":` + inFilters + `}`, false},
 		{"funnel breakdown by property", "/v1/funnel?steps=signup,activate&breakdown=plan", "funnel", `{"steps":["signup","activate"],"breakdown":"plan"}`, false},
 		{"trends", "/v1/trends?event=signup", "trends", `{"event":"signup"}`, false},
+		// days=N is the windowed path: MCP once used a rolling from=now-N*24h while /v1
+		// used calendar-day alignment, so MCP prepended a phantom leading day. Lock the
+		// bucket list identical across surfaces.
+		{"trends 7-day window", "/v1/trends?event=signup&days=7", "trends", `{"event":"signup","days":7}`, false},
 		{"trends measure sum (revenue)", "/v1/trends?event=checkout&measure=sum&property=amount", "trends", `{"event":"checkout","measure":"sum","property":"amount"}`, false},
 		{"trends measure avg (AOV)", "/v1/trends?event=checkout&measure=avg&property=amount", "trends", `{"event":"checkout","measure":"avg","property":"amount"}`, false},
 		{"trends measure p90", "/v1/trends?event=checkout&measure=p90&property=amount", "trends", `{"event":"checkout","measure":"p90","property":"amount"}`, false},

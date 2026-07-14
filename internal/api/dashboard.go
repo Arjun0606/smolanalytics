@@ -912,7 +912,21 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		vm.EngagedHuman = humanDur(wv.AvgEngagedSecs)
 		vm.BouncePct = wv.BounceRatePct
 		vm.AIVisitors = wv.AIVisitors
-		toRows := func(rows []web.Row, n int) []segRow {
+		// share-of-total is computed against the RIGHT denominator per dimension. Pages are
+		// per-pageview → divide by pageviews. Referrer/UTM/device/browser/os/country are
+		// per-VISITOR first-touch attributes AND partial (not every visitor carries one) —
+		// dividing those by pageviews understates them and the percentages never sum to 100
+		// (device "mobile 37% / desktop 31%" with a third of the bar silently missing). Divide
+		// each partial per-visitor dimension by the sum of its OWN recorded values, so the
+		// split reads as an honest share-of-recorded that adds up.
+		sumRows := func(rows []web.Row) int {
+			t := 0
+			for _, r := range rows {
+				t += r.Count
+			}
+			return t
+		}
+		toRows := func(rows []web.Row, n int, denom int) []segRow {
 			top := 0
 			if len(rows) > 0 {
 				top = rows[0].Count
@@ -926,39 +940,40 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 				if top > 0 {
 					sr.BarPct = int(math.Round(float64(r.Count) / float64(top) * 100))
 				}
-				if wv.Pageviews > 0 {
-					sr.Pct = int(math.Round(float64(r.Count) / float64(wv.Pageviews) * 100))
+				if denom > 0 {
+					sr.Pct = int(math.Round(float64(r.Count) / float64(denom) * 100))
 				}
 				out = append(out, sr)
 			}
 			return out
 		}
-		vm.TopPages = toRows(wv.TopPages, 6)
-		vm.Referrers = toRows(wv.Referrers, 6)
-		vm.EntryPages = toRows(wv.EntryPages, 6)
-		vm.Browsers = toRows(wv.Browsers, 6)
-		vm.OSes = toRows(wv.OSes, 6)
-		vm.DeviceRows = toRows(wv.DeviceSplit, 4)
-		vm.UTMSources = toRows(wv.UTMSources, 6)
-		vm.UTMMediums = toRows(wv.UTMMediums, 6)
-		vm.UTMCampaigns = toRows(wv.UTMCampaigns, 6)
-		vm.Countries = toRows(wv.Countries, 10)
-		// share-of-total for a PARTIAL dimension is computed against events that carry
-		// it — geo stamping starts at the first geo-enabled ingest, so dividing by all
-		// pageviews would render an honest 4-visitor day as a bogus "1%"
-		geoTotal := 0
-		for _, r := range wv.Countries {
-			geoTotal += r.Count
-		}
+		vm.TopPages = toRows(wv.TopPages, 6, wv.Pageviews)
+		vm.Referrers = toRows(wv.Referrers, 6, sumRows(wv.Referrers))
+		vm.EntryPages = toRows(wv.EntryPages, 6, sumRows(wv.EntryPages))
+		vm.Browsers = toRows(wv.Browsers, 6, sumRows(wv.Browsers))
+		vm.OSes = toRows(wv.OSes, 6, sumRows(wv.OSes))
+		vm.DeviceRows = toRows(wv.DeviceSplit, 4, sumRows(wv.DeviceSplit))
+		vm.UTMSources = toRows(wv.UTMSources, 6, sumRows(wv.UTMSources))
+		vm.UTMMediums = toRows(wv.UTMMediums, 6, sumRows(wv.UTMMediums))
+		vm.UTMCampaigns = toRows(wv.UTMCampaigns, 6, sumRows(wv.UTMCampaigns))
+		vm.Countries = toRows(wv.Countries, 10, sumRows(wv.Countries))
+		// "ZZ"/"XX" are MaxMind's not-a-real-country codes (anonymous proxy, unresolved).
+		// Show them as a plain "Unknown" row, never a bogus flag. If the ONLY thing we have
+		// is Unknown (geo disabled, or all traffic from unresolved IPs), the card carries no
+		// signal at all — hide it rather than render a proud "Unknown 100%".
+		realGeo := false
 		for i := range vm.Countries {
-			if geoTotal > 0 {
-				vm.Countries[i].Pct = int(math.Round(float64(vm.Countries[i].Count) / float64(geoTotal) * 100))
+			code := vm.Countries[i].Value
+			if code == "ZZ" || code == "XX" || code == "" {
+				vm.Countries[i].Value = "Unknown"
+				continue
 			}
-			if fl := flagOf(vm.Countries[i].Value); fl != "" {
-				vm.Countries[i].Value = fl + " " + vm.Countries[i].Value
+			realGeo = true
+			if fl := flagOf(code); fl != "" {
+				vm.Countries[i].Value = fl + " " + code
 			}
 		}
-		vm.HasGeo = len(vm.Countries) > 0
+		vm.HasGeo = realGeo
 		maxH, totalH := 1, 0
 		for _, c := range wv.Hours {
 			totalH += c

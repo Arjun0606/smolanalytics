@@ -2,6 +2,7 @@ package query
 
 import (
 	"testing"
+	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/event"
 )
@@ -43,5 +44,48 @@ func TestBreakdown(t *testing.T) {
 	}
 	if g[0].Value != "google" || g[0].Count != 2 {
 		t.Fatalf("top group = %s/%d, want google/2", g[0].Value, g[0].Count)
+	}
+}
+
+// TestStampFirstTouch pins the funnel/report breakdown-by-acquisition fix: a conversion
+// event (signup) carries no referrer, but the user's landing pageview does. Without
+// stamping, a breakdown by referrer collapses every converter into "(none)". After
+// stamping, each user's events inherit their first-touch referrer HOST.
+func TestStampFirstTouch(t *testing.T) {
+	ev := func(name, user, referrer string, tsSec int64) event.Event {
+		p := map[string]any{}
+		if referrer != "" {
+			p["referrer"] = referrer
+		}
+		return event.Event{Name: name, DistinctID: user, Properties: p,
+			Timestamp: time.Unix(tsSec, 0).UTC()}
+	}
+	evs := []event.Event{
+		ev("$pageview", "u1", "https://www.reddit.com/r/x", 100), // landing carries referrer
+		ev("signup", "u1", "", 200),                              // conversion carries none
+		ev("$pageview", "u2", "https://news.ycombinator.com/", 100),
+		ev("signup", "u2", "", 200),
+	}
+	out := StampFirstTouch(evs, "referrer")
+	// every one of u1's events now reads reddit.com (host, no scheme/www/path)
+	for _, e := range out {
+		if e.DistinctID == "u1" {
+			if got := e.Properties["referrer"]; got != "reddit.com" {
+				t.Fatalf("u1 %s referrer = %v, want reddit.com", e.Name, got)
+			}
+		}
+		if e.DistinctID == "u2" {
+			if got := e.Properties["referrer"]; got != "news.ycombinator.com" {
+				t.Fatalf("u2 %s referrer = %v, want news.ycombinator.com", e.Name, got)
+			}
+		}
+	}
+	// the original slice is untouched (copy semantics): u1's signup still has no referrer
+	for _, e := range evs {
+		if e.DistinctID == "u1" && e.Name == "signup" {
+			if _, ok := e.Properties["referrer"]; ok {
+				t.Fatal("StampFirstTouch mutated the input events")
+			}
+		}
 	}
 }

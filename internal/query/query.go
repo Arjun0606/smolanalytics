@@ -270,3 +270,55 @@ func ScopeUsers(events []event.Event, filters []Filter, anyMode bool) []event.Ev
 	}
 	return out
 }
+
+// StampFirstTouch returns a copy of events where every event of a user carries that
+// user's FIRST-TOUCH value of `prop` (from their earliest event that has it). This lets
+// a funnel/report breakdown segment by an acquisition/user attribute (referrer, device,
+// country) even though the conversion events don't carry it — otherwise the breakdown
+// collapses everyone into "(none)". Referrer values are reduced to their host.
+func StampFirstTouch(events []event.Event, prop string) []event.Event {
+	type ft struct {
+		t   int64
+		val string
+	}
+	first := map[string]ft{}
+	for _, e := range events {
+		v, ok := e.Properties[prop]
+		if !ok {
+			continue
+		}
+		val := toStr(v)
+		if val == "" {
+			continue
+		}
+		if prop == "referrer" {
+			val = hostOfURL(val)
+		}
+		ts := e.Timestamp.UnixNano()
+		if cur, seen := first[e.DistinctID]; !seen || ts < cur.t {
+			first[e.DistinctID] = ft{ts, val}
+		}
+	}
+	out := make([]event.Event, len(events))
+	for i, e := range events {
+		out[i] = e
+		if f, ok := first[e.DistinctID]; ok {
+			np := make(map[string]any, len(e.Properties)+1)
+			for k, v := range e.Properties {
+				np[k] = v
+			}
+			np[prop] = f.val
+			out[i].Properties = np
+		}
+	}
+	return out
+}
+
+// hostOfURL reduces a referrer URL to its bare host (no scheme, no path, no www).
+func hostOfURL(v string) string {
+	v = strings.TrimPrefix(strings.TrimPrefix(v, "https://"), "http://")
+	if i := strings.IndexByte(v, '/'); i >= 0 {
+		v = v[:i]
+	}
+	return strings.TrimPrefix(v, "www.")
+}

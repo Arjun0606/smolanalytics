@@ -30,11 +30,12 @@ import (
 // askSeg is one extracted segment: a real property/value pair plus the human label
 // used in the answer ("from reddit.com", "on iOS", "from India").
 type askSeg struct {
-	prop  string
-	value string // the value as it appears in the DATA (correct casing)
-	label string
-	found bool   // value exists in the events; false = honest-zero answer
-	orUTM string // twitter special case: also count utm_source=<orUTM>
+	prop     string
+	value    string // the value as it appears in the DATA (correct casing)
+	label    string
+	found    bool     // value exists in the events; false = honest-zero answer
+	orUTM    string   // twitter special case: also count utm_source=<orUTM>
+	altHosts []string // extra referrer hosts to match (e.g. twitter = twitter.com|t.co|x.com)
 }
 
 // segMatch is an alias table row: any of words in the question maps to prop=value.
@@ -60,7 +61,7 @@ var segAliases = []segMatch{
 	{[]string{"youtube"}, "referrer", "youtube.com", "youtube"},
 	{[]string{"instagram"}, "referrer", "instagram.com", "instagram"},
 	// twitter lives in two places: t.co referrers and utm_source=twitter; count either
-	{[]string{"twitter", "t.co"}, "referrer", "t.co", "twitter"},
+	{[]string{"twitter", "t.co", "x.com"}, "referrer", "twitter.com", "twitter"},
 	// devices / browsers / OS — validated against data casing below
 	{[]string{"mobile", "phone"}, "device", "mobile", "mobile"},
 	{[]string{"desktop"}, "device", "desktop", "desktop"},
@@ -149,6 +150,13 @@ func extractSegments(q string, evs []event.Event) []askSeg {
 			s := askSeg{prop: a.prop, value: val, label: a.label, found: found}
 			if a.label == "twitter" {
 				s.orUTM = "twitter"
+				s.altHosts = []string{"twitter.com", "t.co", "x.com"}
+				for _, h := range s.altHosts {
+					if rv, ok := realValue(evs, "referrer", h); ok {
+						s.value, s.found = rv, true
+						break
+					}
+				}
 			}
 			hits = append(hits, hit{pos, s})
 			break
@@ -213,6 +221,11 @@ func segMatches(e event.Event, s askSeg) bool {
 		if s.prop == "referrer" {
 			if hostEquals(hostOf(sv), hostOf(s.value)) {
 				return true
+			}
+			for _, h := range s.altHosts {
+				if hostEquals(hostOf(sv), hostOf(h)) {
+					return true
+				}
 			}
 		} else if strings.EqualFold(sv, s.value) {
 			return true
@@ -419,7 +432,14 @@ func answerSegment(evs []event.Event, m askMetric, s askSeg, win askWindow) stri
 		return fmt.Sprintf("0 — no events with %s = %s have been sent, so there's no %s from %s in the data. If that's unexpected, check the tracking on that channel.",
 			s.prop, s.label, m.label, s.label)
 	}
-	scoped := scope(segFilter(evs, s), win)
+	// user-scope for acquisition/user attributes (referrer/source/utm/device/os/
+	// browser/country): "reddit signups" = signups BY reddit-acquired users, since the
+	// signup event itself carries no referrer. path/other props stay event-scoped.
+	pool := segFilter(evs, s)
+	if m.kind == "event" && userAttr(s.prop) {
+		pool = segFilterUsers(evs, s) // "reddit signups": the signup event carries no referrer
+	}
+	scoped := scope(pool, win)
 	n := metricCount(scoped, m)
 	from := "from"
 	if s.prop == "device" || s.prop == "browser" || s.prop == "os" {
@@ -428,14 +448,30 @@ func answerSegment(evs []event.Event, m askMetric, s askSeg, win askWindow) stri
 	return fmt.Sprintf("%d %s %s %s%s.", n, m.label, from, s.label, winSuffix(win))
 }
 
+// userAttr reports whether a property describes the VISITOR (so a metric filtered by
+// it must scope users, not events — the acquisition/device props aren't on every event).
+func userAttr(prop string) bool {
+	switch prop {
+	case "referrer", "source", "utm_source", "utm_medium", "utm_campaign", "device", "os", "browser", "country":
+		return true
+	}
+	return false
+}
+
 // answerSegVsSeg answers "X vs Y" over the same metric — both numbers, then the verdict.
 func answerSegVsSeg(evs []event.Event, m askMetric, a, b askSeg, win askWindow) string {
+	segPool := func(sg askSeg) []event.Event {
+		if m.kind == "event" && userAttr(sg.prop) {
+			return segFilterUsers(evs, sg)
+		}
+		return segFilter(evs, sg)
+	}
 	na, nb := 0, 0
 	if a.found {
-		na = metricCount(scope(segFilter(evs, a), win), m)
+		na = metricCount(scope(segPool(a), win), m)
 	}
 	if b.found {
-		nb = metricCount(scope(segFilter(evs, b), win), m)
+		nb = metricCount(scope(segPool(b), win), m)
 	}
 	verdict := fmt.Sprintf("%s leads", a.label)
 	if nb > na {
@@ -1110,7 +1146,70 @@ func answerConvByQ(evs []event.Event, vol []string, q string, win askWindow) str
 	if conv == "" {
 		return "No conversion event tracked yet to segment — send a signup/checkout style event first."
 	}
+	// "conversion by source/channel/referrer" must attribute the ACQUISITION channel
+	// (first-touch referrer/utm), not a raw "source" property that's only stamped on the
+	// conversion event itself — that made every converter fall in one bucket at 100%.
+	if prop == "source" {
+		return answerConvByChannel(evs, conv, win)
+	}
 	return answerConvBy(evs, prop, conv, win)
+}
+
+// answerConvByChannel is conversion segmented by first-touch acquisition channel, so
+// "conversion by source" reads real channels (reddit X%, google Y%) instead of a
+// degenerate 100% for a property present only on the conversion event.
+func answerConvByChannel(evs []event.Event, convEvent string, win askWindow) string {
+	scoped := scope(evs, win)
+	firstTS := map[string]time.Time{}
+	channel := map[string]string{}
+	conv := map[string]bool{}
+	for _, e := range scoped {
+		if t, ok := firstTS[e.DistinctID]; !ok || e.Timestamp.Before(t) {
+			firstTS[e.DistinctID] = e.Timestamp
+			channel[e.DistinctID] = channelOf(e)
+		}
+		if e.Name == convEvent {
+			conv[e.DistinctID] = true
+		}
+	}
+	type row struct {
+		ch         string
+		users, did int
+	}
+	byCh := map[string]*row{}
+	for id, ch := range channel {
+		r := byCh[ch]
+		if r == nil {
+			r = &row{ch: ch}
+			byCh[ch] = r
+		}
+		r.users++
+		if conv[id] {
+			r.did++
+		}
+	}
+	if len(byCh) == 0 {
+		return "No visitors to segment conversion by channel yet."
+	}
+	rows := make([]*row, 0, len(byCh))
+	for _, r := range byCh {
+		rows = append(rows, r)
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		ri, rj := float64(rows[i].did)/float64(rows[i].users), float64(rows[j].did)/float64(rows[j].users)
+		if ri != rj {
+			return ri > rj
+		}
+		return rows[i].users > rows[j].users
+	})
+	parts := []string{}
+	for i, r := range rows {
+		if i == 6 {
+			break
+		}
+		parts = append(parts, fmt.Sprintf("%s %d%% (%d of %d)", r.ch, int(float64(r.did)/float64(r.users)*100+0.5), r.did, r.users))
+	}
+	return fmt.Sprintf("%q conversion by channel%s: %s.", convEvent, winSuffix(win), strings.Join(parts, " · "))
 }
 
 // stepsInQuestion finds funnel step names mentioned in the question, returned as step

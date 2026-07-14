@@ -732,7 +732,7 @@ func (s *Server) apiFunnel(w http.ResponseWriter, r *http.Request) {
 		for i, st := range steps {
 			names[i] = st.Event
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"steps": names, "breakdown": bd, "segments": funnel.ComputeBreakdown(evs, steps, window, bd)})
+		writeJSON(w, http.StatusOK, map[string]any{"steps": names, "breakdown": bd, "segments": funnel.ComputeBreakdown(query.StampFirstTouch(evs, bd), steps, window, bd)})
 		return
 	}
 	writeJSON(w, http.StatusOK, funnel.ComputeOpts(evs, steps, window, opts))
