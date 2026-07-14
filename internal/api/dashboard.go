@@ -127,24 +127,25 @@ func toStr(v any) string {
 }
 
 type dashVM struct {
-	TotalUsers    int
-	Signups       int
-	OverallConv   int
-	Funnel        []funnelRow
-	Verdict       []insight.Finding // server-rendered "what to look at" so the front door isn't a JS-only spinner
-	Retention     []retRow
-	RetDayHeaders []string
-	Trend         []trendBar
-	BySource      []segRow
-	ConvBySeg     []segConv
-	Events        []string
-	ProductEvents []string // real named events (no $-prefixed internals) for the "your events" ask chips
-	Updated       string
-	HasData       bool   // false on a fresh install → show the big onboarding
-	DevHidden     int    // count of env=development events hidden from production reports
-	ShowingDev    bool   // true when ?env=development — viewing the hidden dev traffic
-	Base          string // this server's base URL, for ready-to-paste snippets
-	WriteKey      string // this instance's write key — real snippets, not placeholders (key is public-by-design: it ships in tracked pages' HTML)
+	TotalUsers     int
+	Signups        int
+	OverallConv    int
+	Funnel         []funnelRow
+	Verdict        []insight.Finding // server-rendered "what to look at" so the front door isn't a JS-only spinner
+	Retention      []retRow
+	RetDayHeaders  []string
+	RetentionReady bool // P2-8: at least one observable post-D0 return exists
+	Trend          []trendBar
+	BySource       []segRow
+	ConvBySeg      []segConv
+	Events         []string
+	ProductEvents  []string // real named events (no $-prefixed internals) for the "your events" ask chips
+	Updated        string
+	HasData        bool   // false on a fresh install → show the big onboarding
+	DevHidden      int    // count of env=development events hidden from production reports
+	ShowingDev     bool   // true when ?env=development — viewing the hidden dev traffic
+	Base           string // this server's base URL, for ready-to-paste snippets
+	WriteKey       string // this instance's write key — real snippets, not placeholders (key is public-by-design: it ships in tracked pages' HTML)
 	// adaptive labels — the default dashboard reflects the user's OWN events
 	FunnelTitle    string
 	ConvLabel      string // "<first> → <last>" of the detected funnel
@@ -712,6 +713,21 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		start = len(rr.Cohorts) - 12
 	}
 	today := time.Now().UTC().Unix() / 86400
+	// P2-8: retention needs at least one cohort old enough to have an OBSERVABLE
+	// return past day 0. Below that the grid is a near-empty triangle plus a
+	// tautological 100% D0 column — worse than saying "not enough history yet".
+	retObservable := 0
+	for i := len(rr.Cohorts) - 1; i >= start; i-- {
+		c := rr.Cohorts[i]
+		cohortDay := c.Date.UTC().Unix() / 86400
+		for d := 1; d <= rr.MaxDays && d < len(c.Returned); d++ {
+			if c.Size > 0 && cohortDay+int64(d) <= today {
+				retObservable++
+				break
+			}
+		}
+	}
+	vm.RetentionReady = retObservable >= 1
 	for i := len(rr.Cohorts) - 1; i >= start; i-- {
 		c := rr.Cohorts[i]
 		row := retRow{Date: c.Date.Format("Jan 2"), Size: c.Size}
@@ -747,7 +763,11 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	// the ghost: the prior equal window aligned position-by-position onto the same
 	// x-axis and the SAME y-scale, so "vs what?" is answered by the chart itself
+	priorHasData := false
 	for _, p := range trPrior.Points {
+		if p.Count > 0 {
+			priorHasData = true
+		}
 		if p.Count > maxT {
 			maxT = p.Count
 		}
@@ -769,7 +789,10 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		if i%tickEvery == 0 {
 			b.Tick = p.Date.Format("Jan 2")
 		}
-		if i < len(trPrior.Points) {
+		// P1-2: only compare against the prior window when it actually has data. A
+		// brand-new account's prior window is all zeros, so "(prior window: 0)" on
+		// every bar is noise — suppress the ghost + the clause until there's history.
+		if priorHasData && i < len(trPrior.Points) {
 			pp := trPrior.Points[i]
 			b.GhostPct = int(math.Round(float64(pp.Count) / float64(maxT) * 100))
 			b.Tip = fmt.Sprintf("%s · %d (prior window %s: %d)", p.Date.Format("Jan 2"), p.Count, pp.Date.Format("Jan 2"), pp.Count)
@@ -936,16 +959,22 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		vm.HasGeo = len(vm.Countries) > 0
-		maxH := 1
+		maxH, totalH := 1, 0
 		for _, c := range wv.Hours {
+			totalH += c
 			if c > maxH {
 				maxH = c
 			}
 		}
-		for h, c := range wv.Hours {
-			vm.Hours = append(vm.Hours, hourBar{Hour: h, Count: c, HeightPct: int(math.Round(float64(c) / float64(maxH) * 100))})
+		// P2-9: an hourly histogram needs enough volume to show a real pattern. Under
+		// this floor it's a sparse row of near-empty bars ("peak 3/hr") dressed as a
+		// chart — hide the whole zone until there's enough traffic to mean something.
+		if totalH >= 200 {
+			for h, c := range wv.Hours {
+				vm.Hours = append(vm.Hours, hourBar{Hour: h, Count: c, HeightPct: int(math.Round(float64(c) / float64(maxH) * 100))})
+			}
+			vm.HoursMax = maxH
 		}
-		vm.HoursMax = maxH
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

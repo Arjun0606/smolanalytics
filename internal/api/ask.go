@@ -301,6 +301,17 @@ func answer(q string, evs []event.Event, now time.Time) string {
 	case intentAction:
 		return answerAction(q)
 	case intentBrief:
+		// P2-6: a "why are people leaving / churning" question can't be answered
+		// directly (there's no reason attached to an absence). Say so honestly, then
+		// offer the closest real read (retention + drop-off) rather than jumping
+		// silently into the weekly pulse as if it answered the "why".
+		if hasAny(q, "why are people leav", "why do people leav", "why are users leav",
+			"why are people churn", "why do people churn", "why are we losing", "why do we lose",
+			"why are people droppi", "why do people droppi") {
+			return "I can't tell you WHY people leave — that's a judgment call no metric holds. " +
+				"What I can show is WHERE they drop and whether they come back, which is usually where the answer starts:\n\n" +
+				answerBrief(evs, briefDays(q), now)
+		}
 		return answerBrief(evs, briefDays(q), now)
 	}
 
@@ -363,6 +374,16 @@ func answer(q string, evs []event.Event, now time.Time) string {
 			return answerVisitorShare(scoped, ev, win)
 		}
 	}
+	// P2-7: "signup conversion rate" / "what % of visitors sign up" most likely means
+	// visitor→signup, not the post-signup funnel. Lead with that rate (and point at the
+	// funnel for the deeper cut) instead of answering a different question.
+	if hasAny(q, "signup conversion", "sign up conversion", "signup rate", "sign-up rate",
+		"visitor to signup", "visitors sign up", "visitors who sign up") {
+		if ev := pickEvent(volAll, "signup"); ev != "" {
+			return answerVisitorShare(scoped, ev, win) +
+				" (That's visitor→" + ev + "; ask \"where do people drop off\" for the full funnel after that.)"
+		}
+	}
 	// "social traffic trend over the last 30 days" wants a SERIES, not one scalar
 	if hasAny(q, "trend", "over time", "trajectory") && (len(segs) == 1 || m.kind == "event") {
 		return answerTrendText(evs, m, segs, win, now)
@@ -411,6 +432,11 @@ func answer(q string, evs []event.Event, now time.Time) string {
 		!(intent == intentFunnel && hasAny(q, "all the way", "made it", "complete", "end up", "go on to",
 			"percent", "% of", "share of", "rate", "dropped between", "drop between",
 			"funnel", "conversion", "convert")) {
+		// P2-5: if the event was resolved through a SYNONYM (the asked word isn't the
+		// tracked name), disclose the substitution rather than silently answering it.
+		if syn := synonymNote(q, ev); syn != "" {
+			return syn + " " + answerEvent(scoped, ev, win)
+		}
 		return answerEvent(scoped, ev, win)
 	}
 	// If the user explicitly named an event ("the X event", "X events fire") that we
@@ -420,6 +446,16 @@ func answer(q string, evs []event.Event, now time.Time) string {
 	// sells against.
 	if miss := unknownNamedEvent(q, volAll); miss != "" {
 		return answerUnknownEvent(miss, volAll)
+	}
+	// P0-2: a COUNT question about a specific noun that is NOT a tracked event, a web
+	// term, or a metric ("how many refunds", "how many burritos") must NOT fall through
+	// to the signups/how-many catch-all and answer a different event's count under the
+	// "cannot be fabricated" stamp. Only guard the intentSignups catch-all — every other
+	// intent (active users, web, geo…) resolves its own noun correctly.
+	if intent == intentSignups {
+		if miss := unknownCountNoun(qe, volAll); miss != "" {
+			return answerUnknownEvent(miss, volAll)
+		}
 	}
 
 	return answerScopedIntent(intent, evs, scoped, volAll, win, now, q)
@@ -1131,6 +1167,18 @@ func windowDays(win askWindow, points int) int {
 	return points
 }
 
+// lastNDays renders "the last N days" with correct grammar (1 → "day") and a clean
+// "today so far" for the degenerate 1-bucket case, so a day-old account never reads
+// "over the last 1 days" or "over 0 days".
+func lastNDays(n int) string {
+	switch {
+	case n <= 1:
+		return "so far"
+	default:
+		return fmt.Sprintf("over the last %d days", n)
+	}
+}
+
 func answerSignups(evs []event.Event, vol []string, win askWindow) string {
 	ev := pickEvent(vol, "signup")
 	if ev == "" {
@@ -1147,7 +1195,7 @@ func answerSignups(evs []event.Event, vol []string, win askWindow) string {
 	if win.scoped() {
 		return fmt.Sprintf("%d \"%s\" events %s%s.", tr.Total, ev, win.label, rateSuffix(tr.Total, win, days))
 	}
-	return fmt.Sprintf("%d \"%s\" events over the last %d days%s.", tr.Total, ev, days, rateSuffix(tr.Total, win, days))
+	return fmt.Sprintf("%d \"%s\" events %s%s.", tr.Total, ev, lastNDays(days), rateSuffix(tr.Total, win, days))
 }
 
 func answerActive(evs []event.Event, win askWindow, now time.Time) string {
@@ -1184,7 +1232,7 @@ func answerEvent(evs []event.Event, ev string, win askWindow) string {
 	if win.scoped() {
 		return fmt.Sprintf("%d %q events %s%s.", tr.Total, ev, win.label, rateSuffix(tr.Total, win, days))
 	}
-	return fmt.Sprintf("%d %q events over the last %d days%s.", tr.Total, ev, days, rateSuffix(tr.Total, win, days))
+	return fmt.Sprintf("%d %q events %s%s.", tr.Total, ev, lastNDays(days), rateSuffix(tr.Total, win, days))
 }
 
 // answerPage answers "visitors to /pricing" / "how many pageviews for /pqr" from
@@ -1510,6 +1558,61 @@ func unknownNamedEvent(q string, vol []string) string {
 		return cand
 	}
 	return ""
+}
+
+// synonymNote returns a one-line disclosure when the event was resolved through a
+// synonym (the tracked name does NOT appear literally in the question), so a
+// substituted answer is never presented as if the user's exact word was the event.
+// Empty when the user typed the real event name (or its plural) — no note needed.
+func synonymNote(q, ev string) string {
+	low := strings.ToLower(ev)
+	if strings.Contains(q, low) || strings.Contains(q, low+"s") {
+		return ""
+	}
+	return fmt.Sprintf("You don't track that exact event, so here's the closest one you do — %q:", ev)
+}
+
+// countNounRe pulls the noun out of the common count phrasings so an unknown one can
+// be caught: "how many <noun>", "number of <noun>", "<noun> count".
+var countHowManyRe = regexp.MustCompile(`how many ([a-z][a-z-]{2,})`)
+var countNumberOfRe = regexp.MustCompile(`number of ([a-z][a-z-]{2,})`)
+
+// webCountNouns are the count-nouns that belong to OTHER intents (web/active/etc), so
+// the unknown-event miss must not fire on them.
+var webCountNouns = map[string]bool{
+	"visitor": true, "visitors": true, "visit": true, "visits": true, "view": true,
+	"views": true, "pageview": true, "pageviews": true, "people": true, "person": true,
+	"folks": true, "user": true, "users": true, "session": true, "sessions": true,
+	"click": true, "clicks": true, "hit": true, "hits": true, "event": true, "events": true,
+	"country": true, "countries": true, "day": true, "days": true, "hour": true, "hours": true,
+	"time": true, "times": true, "page": true, "pages": true, "referrer": true, "referrers": true,
+	"source": true, "sources": true, "signup": true, "signups": true,
+}
+
+// unknownCountNoun returns a count-noun the user asked to COUNT that is not a tracked
+// event, not a web/metric term, and not filler — so the caller can miss honestly
+// instead of substituting the signups/how-many catch-all. Empty when the noun is
+// known or the question isn't a bare count of one noun.
+func unknownCountNoun(qe string, vol []string) string {
+	known := map[string]bool{}
+	for _, ev := range vol {
+		known[strings.ToLower(ev)] = true
+	}
+	var cand string
+	if m := countHowManyRe.FindStringSubmatch(qe); m != nil {
+		cand = m[1]
+	} else if m := countNumberOfRe.FindStringSubmatch(qe); m != nil {
+		cand = m[1]
+	}
+	if cand == "" {
+		return ""
+	}
+	sing := strings.TrimSuffix(cand, "s")
+	if isFillerWord(cand) || webCountNouns[cand] || webCountNouns[sing] ||
+		known[cand] || known[sing] || namedEvent(cand, vol) != "" {
+		return ""
+	}
+	return cand
 }
 
 // isFillerWord skips articles/generic nouns so "the ... event" resolves to the real

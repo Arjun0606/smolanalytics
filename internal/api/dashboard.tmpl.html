@@ -693,12 +693,16 @@
           <option value="1" {{if .RetRolling}}selected{{end}}>on or after</option>
         </select>
         <span style="text-transform:none;letter-spacing:0">· computed by /v1/retention</span></h3>
+      {{if .RetentionReady}}
       <table class="heat">
         <thead><tr><th>Cohort</th><th>n</th>{{range .RetDayHeaders}}<th>{{.}}</th>{{end}}</tr></thead>
         <tbody>
           {{range .Retention}}<tr><td class="lab">{{.Date}}</td><td class="lab">{{.Size}}</td>{{range .Cells}}{{if .Empty}}<td class="empty"></td>{{else}}<td style="{{.Style}}"><div class="cell">{{.Label}}</div></td>{{end}}{{end}}</tr>{{end}}
         </tbody>
       </table>
+      {{else}}
+      <div class="exsummary">retention needs a few days of history — once your first visitors have a chance to come back, their cohorts fill in here.</div>
+      {{end}}
     </div>
 
     <div class="pane" id="pane-live">

@@ -382,16 +382,20 @@ func answerCompareWindows(evs []event.Event, m askMetric, segs []askSeg, cur, pr
 	}
 	a := metricCount(scope(scopeEvs, cur), m)
 	b := metricCount(scope(scopeEvs, prior), m)
+	// P1-2: a brand-new account has no prior period — comparing "N vs 0 — up" is
+	// noise. When the prior window is genuinely empty, say so instead of inventing a
+	// direction and a divide-by-zero delta.
+	if b == 0 {
+		return fmt.Sprintf("%s%s %s: %d. No data yet for %s to compare against — the prior period is empty, so there's no trend to read until you have two periods of history.",
+			title(m.label), segNote, cur.label, a, prior.label)
+	}
 	dir := "flat"
 	if a > b {
 		dir = "up"
 	} else if a < b {
 		dir = "down"
 	}
-	delta := ""
-	if b > 0 {
-		delta = fmt.Sprintf(" (%+d%%)", int(float64(a-b)/float64(b)*100+copysign(0.5, float64(a-b))))
-	}
+	delta := fmt.Sprintf(" (%+d%%)", int(float64(a-b)/float64(b)*100+copysign(0.5, float64(a-b))))
 	note := ""
 	if strings.HasPrefix(cur.label, "this ") {
 		note = " Note: the current period is still in progress."

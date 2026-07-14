@@ -10,6 +10,8 @@ package mcp
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/Arjun0606/smolanalytics/internal/instrument"
@@ -69,6 +71,9 @@ func (s *Server) callInstrument(name string, args json.RawMessage) (bool, string
 		}
 		_ = json.Unmarshal(args, &p)
 		root := orDot(p.RepoPath)
+		if !looksLikeRepo(root) {
+			return true, "", notLocalErr(root)
+		}
 		host := p.Host
 		if host == "" {
 			host = "<your-instance-host>"
@@ -89,6 +94,9 @@ func (s *Server) callInstrument(name string, args json.RawMessage) (bool, string
 		if strings.TrimSpace(p.Event) == "" {
 			return true, "", fmt.Errorf("event is required — the planned event that isn't arriving")
 		}
+		if root := orDot(p.RepoPath); !looksLikeRepo(root) {
+			return true, "", notLocalErr(root)
+		}
 		b, _ := json.MarshalIndent(instrument.SuggestFixResult(orDot(p.RepoPath), p.Event), "", "  ")
 		return true, string(b), nil
 
@@ -97,6 +105,9 @@ func (s *Server) callInstrument(name string, args json.RawMessage) (bool, string
 			RepoPath string `json:"repo_path"`
 		}
 		_ = json.Unmarshal(args, &p)
+		if root := orDot(p.RepoPath); !looksLikeRepo(root) {
+			return true, "", notLocalErr(root)
+		}
 		found := instrument.FindAllTracked(orDot(p.RepoPath))
 		events := make([]map[string]any, 0, len(found))
 		for name, loc := range found {
@@ -122,6 +133,11 @@ func (s *Server) callInstrument(name string, args json.RawMessage) (bool, string
 		}
 		_ = json.Unmarshal(args, &p)
 		root := orDot(p.RepoPath)
+		// P1-4: verify still reports FIRING from live traffic even without code access,
+		// but it must NOT read "no call-site" as MISSING when it simply can't see the
+		// code (hosted endpoint / wrong path). Track whether the repo is readable and
+		// label the non-firing rows honestly instead of falsely declaring them unwired.
+		haveCode := looksLikeRepo(root)
 
 		// firing = the event name appears in stored traffic
 		firing := map[string]bool{}
@@ -135,7 +151,10 @@ func (s *Server) callInstrument(name string, args json.RawMessage) (bool, string
 		for i, e := range plan.Events {
 			planNames[i] = e.Name
 		}
-		wired := instrument.Wired(root, planNames)
+		wired := map[string]instrument.TrackedEvent{}
+		if haveCode {
+			wired = instrument.Wired(root, planNames)
+		}
 
 		type row struct {
 			Event  string `json:"event"`
@@ -153,6 +172,9 @@ func (s *Server) callInstrument(name string, args json.RawMessage) (bool, string
 				w := wired[e.Name]
 				rows = append(rows, row{e.Name, "WIRED", fmt.Sprintf("track() found at %s:%d but no traffic yet — run the app and exercise this flow", w.File, w.Line)})
 				wiredN++
+			case !haveCode:
+				rows = append(rows, row{e.Name, "NOT FIRING", "no traffic yet, and I can't read your code from here to check the call-site — run the LOCAL smolanalytics MCP in your project to verify it's wired"})
+				missingN++
 			default:
 				rows = append(rows, row{e.Name, "MISSING", "no track() call in code and no traffic — call suggest_instrumentation_fix"})
 				missingN++
@@ -176,4 +198,36 @@ func orDot(p string) string {
 		return "."
 	}
 	return p
+}
+
+// repoMarkers are files/dirs that mark a real code project. Used to detect when a
+// repo-scan tool is pointed at something that ISN'T the user's code (e.g. a hosted
+// MCP server's own container), so it can say so instead of returning empty-as-success.
+var repoMarkers = []string{
+	"package.json", "go.mod", "requirements.txt", "pyproject.toml", "Gemfile",
+	"composer.json", "Cargo.toml", "pom.xml", "build.gradle", "index.html",
+	"src", "app", "pages", "components", ".git",
+}
+
+// looksLikeRepo reports whether root plausibly holds a code project. When it
+// doesn't, the repo-scan tools return an honest error (P1-4): scanning a hosted
+// server's cwd would otherwise report "no track() calls / framework unknown" as a
+// successful result, silently telling the user their code has no instrumentation.
+func looksLikeRepo(root string) bool {
+	for _, m := range repoMarkers {
+		if _, err := os.Stat(filepath.Join(root, m)); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// notLocalErr is the honest miss when a repo-scan tool can't see the user's code —
+// the repo tools only work where the code lives (the local stdio MCP).
+func notLocalErr(root string) error {
+	return fmt.Errorf("I can't see your code at %q — no project files there. The repo-scanning tools "+
+		"(propose_instrumentation, verify_instrumentation, regenerate_plan_from_code, suggest_instrumentation_fix) "+
+		"read your source on the machine where your editor runs, so they need the LOCAL smolanalytics MCP "+
+		"(run `npx -y @smolanalytics/mcp` or `smolanalytics mcp` in your project), not the hosted HTTP endpoint. "+
+		"Pass an explicit repo_path if your code is elsewhere.", root)
 }

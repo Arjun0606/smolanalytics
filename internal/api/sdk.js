@@ -1,4 +1,4 @@
-/* smolanalytics browser SDK — drop-in, dependency-free, ~1KB.
+/* smolanalytics browser SDK — drop-in, dependency-free, ~7KB gzipped.
  *
  *   <script src="https://YOUR_HOST/sdk.js"></script>
  *   <script>
@@ -134,10 +134,11 @@
         mode: "cors",
       }).then(function (r) {
         if (!r.ok && r.status >= 500) requeue();
-        else if ((r.status === 401 || r.status === 403) && !warnedAuth) {
+        else if (!r.ok && !warnedAuth) {
           warnedAuth = true;
-          // a typo'd write key drops every event silently otherwise — say so once
-          if (window.console) console.warn("smolanalytics: events rejected (" + r.status + ") — check your write key");
+          // a typo'd key (401/403) or a wrong host (404/SPA-catch) drops every event
+          // silently otherwise — say so once so the builder isn't debugging a blank dashboard
+          if (window.console) console.warn("smolanalytics: events rejected (" + r.status + ") — check your host and write key");
         }
       }).catch(requeue);
     } catch (e) {
@@ -447,6 +448,7 @@
       opts = opts || {};
       key = writeKey || "";
       host = (opts.host || "").replace(/\/$/, "");
+      if (!host && window.console) console.warn("smolanalytics: no host set — pass { host: \"https://YOUR_HOST\" } to init(), or events have nowhere to go");
       // anonymous: true → cookieless mode. Nothing is stored on the visitor's device
       // (no localStorage, no cookies), so no consent banner is needed; the server
       // derives a daily-rotating anonymous id instead. identify() still works after
