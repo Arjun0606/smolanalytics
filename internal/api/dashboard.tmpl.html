@@ -775,6 +775,12 @@
   <details class="connect" id="connect" {{if not .HasData}}open{{end}}>
     <summary>⌁ connect your coding agent ▾</summary>
     <div style="padding-top:8px">
+      <div class="crow" style="align-items:flex-start">
+        <span class="cn" style="padding-top:6px">any AI · one paste</span>
+        <pre class="code" id="cuni" style="flex:1;margin:0;white-space:pre-wrap;font-size:11px;line-height:1.6;max-height:150px;overflow-y:auto">{{.ConnectPrompt}}</pre>
+        <button class="copy" data-c="cuni">copy</button>
+      </div>
+      <div class="cnote" style="padding:0 0 10px">copy once, paste into whatever you use — Claude Code, Cursor, Windsurf, Zed, Cline. the agent wires itself up (url + key included) and proves the connection by reading your visitor count. Claude Desktop can't edit its own config, so paste its JSON from below by hand. or pick your client manually:</div>
       <div class="crow">
         <span class="cn">Cursor</span>
         <a class="cbtn primary" href="{{.CursorLink}}">⚡ add to Cursor</a>
@@ -794,7 +800,7 @@
         <span class="ccode" id="c3">{{.DesktopConfig}}</span>
         <button class="copy" data-c="c3">copy</button>
       </div>
-      <div class="cnote" style="padding:0 0 8px">desktop's connector UI only takes an OAuth URL, so don't paste anything there. instead: Settings → Developer → Edit Config, paste the JSON above into claude_desktop_config.json, restart Claude Desktop. the 47 tools appear under smolanalytics.</div>
+      <div class="cnote" style="padding:0 0 8px">desktop's connector UI only takes an OAuth URL, so don't paste anything there. instead: Settings → Developer → Edit Config, paste the JSON above into claude_desktop_config.json, restart Claude Desktop. the tools appear under smolanalytics.</div>
       <div class="crow">
         <span class="cn">any mcp.json client (Windsurf, Zed…)</span>
         <span class="ccode" id="c4">{{.MCPServersJSON}}</span>
@@ -802,7 +808,7 @@
       </div>
       <div class="cnote">
         then ask from your editor: <em>"what changed on my site this week?"</em> · <em>"why did {{.StatEventLabel}} drop?"</em> · <em>"which referrer converts best?"</em><br>
-        your own model reads your data through 47 read-only tools — we never run a model, so it's free and unmetered.
+        your own model reads your data through the smolanalytics report tools — we never run a model, so it's free and unmetered.
         every answer is a deterministic report, and a <a href="https://github.com/Arjun0606/smolanalytics/blob/main/internal/api/agreement_test.go" target="_blank" rel="noopener" style="color:var(--accent)">CI test ↗</a> proves the editor, this dashboard, and the ask bar always return the same number.
         self-hosting? <em>smolanalytics connect</em> wires Claude Desktop / Cursor in one command.
       </div>

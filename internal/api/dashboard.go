@@ -193,6 +193,7 @@ type dashVM struct {
 	ClaudeCodeCmd  string       // claude mcp add --transport http ...
 	DesktopConfig  string       // claude_desktop_config.json bridge via mcp-remote (Desktop UI is OAuth-only)
 	MCPServersJSON string       // full {"mcpServers":{...}} wrapper for mcp.json clients
+	ConnectPrompt  string       // the universal paste: any agent reads it and connects itself
 
 	// range + click-to-filter state: one global window and one global filter set that
 	// EVERY zone inherits, exactly like the site selector. All state lives in the
@@ -624,7 +625,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	mcpURL := vm.Base + "/mcp"
 	cfg := fmt.Sprintf(`{"url":%q`, mcpURL)
 	vsCfg := fmt.Sprintf(`{"name":"smolanalytics","type":"http","url":%q`, mcpURL)
-	cmd := "claude mcp add --transport http smolanalytics " + mcpURL
+	cmd := "claude mcp add --transport http --scope user smolanalytics " + mcpURL
 	if s.writeKey != "" {
 		hdr := fmt.Sprintf(`,"headers":{"Authorization":"Bearer %s"}`, s.writeKey)
 		cfg += hdr
@@ -645,6 +646,21 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	vm.DesktopConfig = fmt.Sprintf(`{ "mcpServers": { "smolanalytics": { "command": "npx", "args": ["-y", "mcp-remote", %q%s] } } }`, mcpURL, hdrArg)
 	vm.MCPServersJSON = fmt.Sprintf(`{ "mcpServers": { "smolanalytics": %s } }`, cfg)
 	vm.ClaudeCodeCmd = cmd
+	// the universal paste: one block that tells WHATEVER agent is reading it how to
+	// wire itself up — the user copies once, pastes into any AI, done. Every path is
+	// complete (url + key baked in); the agent picks its own.
+	authLine := ""
+	if s.writeKey != "" {
+		authLine = "\nAuth header: Authorization: Bearer " + s.writeKey
+	}
+	vm.ConnectPrompt = "Connect the smolanalytics MCP server to yourself, then verify it.\n\n" +
+		"Server: " + mcpURL + " (Streamable HTTP)" + authLine + "\n\n" +
+		"Pick the path for the client you are:\n" +
+		"- Claude Code: run " + cmd + "\n" +
+		"- Cursor: merge into ~/.cursor/mcp.json under \"mcpServers\": {\"smolanalytics\": " + cfg + "}\n" +
+		"- Windsurf / Zed / Cline / any mcp.json client: same object in your client's MCP config file\n" +
+		"- Claude Desktop (config file only, the connector UI is OAuth-only): open Settings > Developer > Edit Config and merge: " + vm.DesktopConfig + " then restart Claude Desktop\n\n" +
+		"After connecting, call the \"overview\" tool and report the visitor count so I know it works."
 	vm.CursorLink = template.URL("cursor://anysphere.cursor-deeplink/mcp/install?name=smolanalytics&config=" + base64.StdEncoding.EncodeToString([]byte(cfg)))
 	vm.VSCodeLink = template.URL("vscode:mcp/install?" + url.QueryEscape(vsCfg))
 
