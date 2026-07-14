@@ -800,9 +800,26 @@
         <span class="ccode" id="c3">{{.DesktopConfig}}</span>
         <button class="copy" data-c="c3">copy</button>
       </div>
-      <div class="cnote" style="padding:0 0 8px">desktop's connector UI only takes an OAuth URL, so don't paste anything there. instead: Settings → Developer → Edit Config, paste the JSON above into claude_desktop_config.json, restart Claude Desktop. the tools appear under smolanalytics.</div>
+      <div class="cnote" style="padding:0 0 8px">desktop's connector UI only takes an OAuth URL, so don't paste anything there. instead: Settings → Developer → Edit Config, paste the JSON above into claude_desktop_config.json, restart Claude Desktop. the tools appear under smolanalytics. (the key rides in env because windows mangles spaces in args — works everywhere.)</div>
       <div class="crow">
-        <span class="cn">any mcp.json client (Windsurf, Zed…)</span>
+        <span class="cn">Windsurf</span>
+        <span class="ccode" id="c5">{{.WindsurfConfig}}</span>
+        <button class="copy" data-c="c5">copy</button>
+      </div>
+      <div class="cnote" style="padding:0 0 8px">into ~/.codeium/windsurf/mcp_config.json — windsurf wants serverUrl, not url</div>
+      <div class="crow">
+        <span class="cn">Cline</span>
+        <span class="ccode" id="c6">{{.ClineConfig}}</span>
+        <button class="copy" data-c="c6">copy</button>
+      </div>
+      <div class="crow">
+        <span class="cn">Zed</span>
+        <span class="ccode" id="c7">{{.ZedConfig}}</span>
+        <button class="copy" data-c="c7">copy</button>
+      </div>
+      <div class="cnote" style="padding:0 0 8px">into ~/.config/zed/settings.json</div>
+      <div class="crow">
+        <span class="cn">anything else (mcp.json)</span>
         <span class="ccode" id="c4">{{.MCPServersJSON}}</span>
         <button class="copy" data-c="c4">copy</button>
       </div>
