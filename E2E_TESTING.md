@@ -75,3 +75,36 @@ The check (run it whenever pricing/features copy changes):
 
 This gate would have caught both the "opens a PR" (no such feature) and the
 Business-exclusive "audit log" (real but universal) claims at write-time.
+
+### Level 3b — the competitor-fact gate (before shipping ANY /vs or /best copy)
+
+A claim ABOUT A COMPETITOR is a second, sneakier class: it can be true the day you
+write it and false six months later because the competitor shipped the feature. The
+brand is "no fabrication" — a stale "Plausible has no path analysis" (it now ships User
+Journeys) reads as either dishonest or careless, and either one costs trust. These
+never fail a build, so they rot silently.
+
+The check (run it whenever a /vs/<competitor>, /best, or comparison line changes):
+
+1. Pull every CONCRETE, checkable claim about the competitor — feature-absence ("no
+   retention", "no paths", "can't do funnels"), pricing tiers and numbers ("$9 / 3
+   sites", "sales-led", "$50/M"), and version/tech requirements ("PHP 8.1+", "needs
+   Postgres"). Claims about smolanalytics go through Level 3 above; this is only the
+   claims about THEM.
+2. Verify each against the competitor's CURRENT pricing page, docs, and changelog — be
+   adversarial, assume they've shipped past your copy. Competitors add features
+   constantly (Umami added Retention + Journeys; Plausible added User Journeys + funnels;
+   Amplitude added a self-serve Plus tier + Autocapture; Heap moved off pure sales-led).
+   The `vs-page-fact-check` workflow (one live checker per page) automates this.
+3. Prefer SOFTENING an absolute to a defensible claim ("no X" → "X is newer / Pro-only /
+   limited") over swapping one wrong specific for another unverified specific.
+4. Any attributed testimonial quote ("— Hacker News", "— r/ProductManagement") must be
+   locatable at its source. If it can't be verified, DELETE it — an unverifiable quote
+   in quotation marks is exactly the fabrication the brand forbids. Don't replace it with
+   another unverified quote.
+5. Date-stamp soft claims ("as of mid-2026 …") so the next reader knows when it was last
+   checked and re-verifies rather than trusting an old absolute.
+
+This gate would have caught the stale "Plausible: no paths / $9 for 3 sites", the
+"Amplitude: sales-led", the "Matomo: PHP 8.1+ / premium tag manager", and the three
+unverifiable competitor testimonial quotes — all shipped, all fixed on 2026-07-15.
