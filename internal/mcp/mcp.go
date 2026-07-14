@@ -284,13 +284,13 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		// same shape as GET /v1/funnel?breakdown=, locked by agreement_test.
 		if a.Breakdown != "" {
 			return jsonText(map[string]any{"steps": a.Steps, "breakdown": a.Breakdown,
-				"segments": funnel.ComputeBreakdown(query.Apply(evs, a.Filters), steps, window, a.Breakdown)})
+				"segments": funnel.ComputeBreakdown(query.ScopeUsers(evs, a.Filters, false), steps, window, a.Breakdown)})
 		}
 		order, oerr := funnel.ParseOrder(a.Order)
 		if oerr != nil {
 			return "", oerr
 		}
-		return jsonText(funnel.ComputeOpts(query.Apply(evs, a.Filters), steps, window,
+		return jsonText(funnel.ComputeOpts(query.ScopeUsers(evs, a.Filters, false), steps, window,
 			funnel.Options{Order: order, Exclusions: a.Exclude, StepFilters: a.StepFilters}))
 	case "retention":
 		var a struct {
@@ -645,8 +645,9 @@ func summarizeRetention(rr retention.Result) map[string]any {
 	// retention.Summarize is the SAME honest headline computation the HTTP API serializes,
 	// so the two surfaces can never disagree (agreement_test enforces it). We add the raw
 	// grid + a model-facing note on top.
-	out := retention.Summarize(rr, time.Now().UTC())
-	out["cohorts"] = rr.Cohorts
+	now := time.Now().UTC()
+	out := retention.Summarize(rr, now)
+	out["cohorts"] = retention.SerializeCohorts(rr, now)
 	out["note"] = "period-N percentages only include cohorts old enough to observe period N; per-cohort rows show raw counts (Returned[n] of Size)."
 	return out
 }

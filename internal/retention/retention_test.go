@@ -64,3 +64,32 @@ func TestMultipleCohortsAndEventFilter(t *testing.T) {
 		t.Fatalf("cohort1 size = %d, want 1", r.Cohorts[1].Size)
 	}
 }
+
+// TestSerializeCohortsNullsFuture pins the world-class-test P0: a retention period
+// whose window hasn't started yet must serialize as null, never 0 (0 reads as
+// "retention cratered to 0%"). Past periods with genuine zero returns stay 0.
+func TestSerializeCohortsNullsFuture(t *testing.T) {
+	now := time.Date(2026, 7, 14, 18, 0, 0, 0, time.UTC)
+	// one cohort anchored 2 days ago; days 0,1 observable, days 2..7 in the future.
+	anchor := now.AddDate(0, 0, -2).Truncate(24 * time.Hour)
+	evs := []event.Event{
+		{DistinctID: "a", Name: "x", Timestamp: anchor},
+		{DistinctID: "a", Name: "x", Timestamp: anchor.AddDate(0, 0, 1)}, // returns day 1
+	}
+	rr := ComputeBucketed(evs, 7, "", "day", false)
+	cj := SerializeCohorts(rr, now)
+	if len(cj) != 1 {
+		t.Fatalf("want 1 cohort, got %d", len(cj))
+	}
+	ret := cj[0].Returned
+	// day0 and day1 observable (non-nil); day2 is today (observable, genuine 0);
+	// days 3..7 are future → must be nil.
+	if ret[0] == nil || *ret[0] != 1 || ret[1] == nil || *ret[1] != 1 {
+		t.Errorf("day0/day1 should be observed 1/1, got %v %v", ret[0], ret[1])
+	}
+	for n := 3; n <= 7; n++ {
+		if ret[n] != nil {
+			t.Errorf("day %d has not started yet, must serialize null, got %d", n, *ret[n])
+		}
+	}
+}

@@ -302,7 +302,17 @@ func furthestStepOpts(evs []event.Event, steps []Step, window time.Duration, opt
 					break
 				}
 			}
-			idx, lastMatch = matched, last
+			// any-order funnel depth = the longest PREFIX of the listed steps the user
+			// actually performed. Counting `matched` (how many distinct steps matched,
+			// anywhere) and assigning it positionally was the fabrication bug: a user who
+			// did only step 2 got counted in step 1's column, and a step whose event never
+			// occurs still showed the full population. Prefix-membership fixes both — step
+			// k counts a user only if they performed every one of events[0..k].
+			depth := 0
+			for depth < len(steps) && seen[depth] {
+				depth++
+			}
+			idx, lastMatch = depth, last
 		case Strict:
 			idx = 1
 			for k := start + 1; k < len(evs) && idx < len(steps); k++ {

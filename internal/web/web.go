@@ -79,6 +79,7 @@ func Compute(evs []event.Event, days int, asof time.Time) Result {
 	// entry page = the FIRST pageview of each session (fallback: visitor+utc-day when
 	// the SDK predates session_id) — "where do people land" as its own dimension
 	entryFirst := map[string]event.Event{}
+	firstPV := map[string]event.Event{} // each visitor's earliest pageview (first-touch attribution)
 	var hours [24]int
 	visitors, live, aiVisitors := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	pv := 0
@@ -109,38 +110,18 @@ func Compute(evs []event.Event, days int, asof time.Time) Result {
 		if p, _ := e.Properties["path"].(string); p != "" {
 			bump(pages, p, e.DistinctID)
 		}
-		host := refHost(e.Properties["referrer"])
-		bump(refs, host, e.DistinctID)
-		if aiHosts[host] {
-			aiVisitors[e.DistinctID] = true
-			bump(aiRefs, host, e.DistinctID)
-		} else if u, _ := e.Properties["utm_source"].(string); aiHosts[refHostString(u)] {
-			aiVisitors[e.DistinctID] = true
-			bump(aiRefs, refHostString(u), e.DistinctID)
-		}
-		if u, _ := e.Properties["utm_source"].(string); u != "" {
-			bump(utms, u, e.DistinctID)
-		}
-		if d, _ := e.Properties["device"].(string); d != "" {
-			bump(devices, d, e.DistinctID)
-		}
-		if b, _ := e.Properties["browser"].(string); b != "" {
-			bump(browsers, b, e.DistinctID)
-		}
-		if o, _ := e.Properties["os"].(string); o != "" {
-			bump(oses, o, e.DistinctID)
-		}
-		if c, _ := e.Properties["country"].(string); c != "" {
-			bump(countries, c, e.DistinctID)
-		}
-		if m, _ := e.Properties["utm_medium"].(string); m != "" {
-			bump(mediums, m, e.DistinctID)
-		}
-		if cp, _ := e.Properties["utm_campaign"].(string); cp != "" {
-			bump(campaigns, cp, e.DistinctID)
-		}
+		// title is a content dimension (a visitor legitimately sees several), so it
+		// stays per-pageview like pages. Acquisition + device dimensions (referrer,
+		// utm, device, browser, os, country) are VISITOR attributes and must be
+		// attributed once per visitor, or a returning pageview with a different (or
+		// missing) referrer double-counts the visitor into two segments — the segments
+		// then sum past the visitor total and no breakdown reconciles. Those are
+		// resolved first-touch after the loop, from each visitor's earliest pageview.
 		if t, _ := e.Properties["title"].(string); t != "" {
 			bump(titles, t, e.DistinctID)
+		}
+		if f, ok := firstPV[e.DistinctID]; !ok || e.Timestamp.Before(f.Timestamp) {
+			firstPV[e.DistinctID] = e
 		}
 		hours[e.Timestamp.UTC().Hour()]++
 		sess, _ := e.Properties["session_id"].(string)
@@ -149,6 +130,40 @@ func Compute(evs []event.Event, days int, asof time.Time) Result {
 		}
 		if first, ok := entryFirst[sess]; !ok || e.Timestamp.Before(first.Timestamp) {
 			entryFirst[sess] = e
+		}
+	}
+	// first-touch attribution: each visitor counted once per acquisition/device
+	// dimension, so every breakdown sums to exactly the visitor total.
+	for id, e := range firstPV {
+		host := refHost(e.Properties["referrer"])
+		bump(refs, host, id)
+		if aiHosts[host] {
+			aiVisitors[id] = true
+			bump(aiRefs, host, id)
+		} else if u, _ := e.Properties["utm_source"].(string); aiHosts[refHostString(u)] {
+			aiVisitors[id] = true
+			bump(aiRefs, refHostString(u), id)
+		}
+		if u, _ := e.Properties["utm_source"].(string); u != "" {
+			bump(utms, u, id)
+		}
+		if d, _ := e.Properties["device"].(string); d != "" {
+			bump(devices, d, id)
+		}
+		if b, _ := e.Properties["browser"].(string); b != "" {
+			bump(browsers, b, id)
+		}
+		if o, _ := e.Properties["os"].(string); o != "" {
+			bump(oses, o, id)
+		}
+		if c, _ := e.Properties["country"].(string); c != "" {
+			bump(countries, c, id)
+		}
+		if m, _ := e.Properties["utm_medium"].(string); m != "" {
+			bump(mediums, m, id)
+		}
+		if cp, _ := e.Properties["utm_campaign"].(string); cp != "" {
+			bump(campaigns, cp, id)
 		}
 	}
 	entries := map[string]*agg{}

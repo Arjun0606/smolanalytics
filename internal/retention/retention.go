@@ -156,6 +156,35 @@ func DayN(r Result, n int, now time.Time) (retained, size int) { return PeriodN(
 // cohort is old enough to observe is OMITTED, never reported as a fabricated 0%. This is the
 // single source both the HTTP API and the MCP tool serialize, so the two can never disagree
 // (agreement_test enforces it). Does NOT include the raw cohorts grid — callers add that.
+// CohortJSON is the serialization shape shared by the HTTP API and the MCP tool, so
+// the two can never disagree (agreement_test locks them). Returned[n] is nil for any
+// period whose window has not started relative to now — an unobservable future day
+// must serialize as null, never 0, or it reads as "retention cratered to 0%".
+type CohortJSON struct {
+	Date     time.Time `json:"date"`
+	Size     int       `json:"size"`
+	Returned []*int    `json:"returned"`
+}
+
+// SerializeCohorts nulls out unobservable future periods, one definition for every surface.
+func SerializeCohorts(r Result, now time.Time) []CohortJSON {
+	bs := bucketSeconds(r.Bucket)
+	out := make([]CohortJSON, 0, len(r.Cohorts))
+	for _, c := range r.Cohorts {
+		cj := CohortJSON{Date: c.Date, Size: c.Size, Returned: make([]*int, len(c.Returned))}
+		for n := range c.Returned {
+			if c.Date.Unix()+int64(n)*bs > now.Unix() {
+				cj.Returned[n] = nil // future period: not yet observable
+				continue
+			}
+			v := c.Returned[n]
+			cj.Returned[n] = &v
+		}
+		out = append(out, cj)
+	}
+	return out
+}
+
 func Summarize(r Result, now time.Time) map[string]any {
 	var size int
 	for _, c := range r.Cohorts {

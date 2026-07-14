@@ -102,6 +102,29 @@ func (s *Server) filtered(r *http.Request) ([]event.Event, error) {
 	return evs, nil
 }
 
+// funnelScoped applies the request's filter at the USER level, not the event level:
+// it keeps every event of any user who has at least one matching event. A funnel
+// filtered by a user attribute (plan, device, country) that isn't present on every
+// step event would otherwise drop the later steps and report a broken funnel
+// ([50,0,0] instead of [50,30,15]). This matches the breakdown path's semantics.
+func (s *Server) funnelScoped(r *http.Request) ([]event.Event, error) {
+	fs, anyMode, err := filterSetFrom(r)
+	if err != nil {
+		return nil, err
+	}
+	all, err := s.store.Range(time.Time{}, time.Time{})
+	if err != nil {
+		return nil, err
+	}
+	evs := query.ScopeUsers(all, fs, anyMode)
+	if cid := r.URL.Query().Get("cohort"); cid != "" && s.cohorts != nil {
+		if d, ok := s.cohorts.Get(cid); ok {
+			evs = cohort.FilterToUsers(evs, cohort.Resolve(all, d))
+		}
+	}
+	return evs, nil
+}
+
 // These endpoints back the interactive Explore panel: run any report on any of the
 // user's own events, not just the demo funnel. The engine already takes arbitrary
 // event names — this just exposes it over REST (the MCP tools do the same for AI).
@@ -249,6 +272,19 @@ func (s *Server) apiTrends(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadRequest, "unknown measure "+meas+" (want sum, avg, min, max, median or p90)")
 			return
 		}
+		// a measure over a non-numeric property (measure=avg&property=device) must
+		// error, not silently return total:0 — a 0 reads as "average device is 0".
+		numeric := false
+		for _, p := range trends.NumericProps(evs) {
+			if p == property {
+				numeric = true
+				break
+			}
+		}
+		if !numeric {
+			writeErr(w, http.StatusBadRequest, fmt.Sprintf("property %q is not numeric — measures need a numeric property like amount", property))
+			return
+		}
 		writeJSON(w, http.StatusOK, trends.ComputeMeasure(evs, event, property, m, from, to))
 		return
 	}
@@ -336,6 +372,9 @@ func parseTrendWindow(r *http.Request) (from, to time.Time, err error) {
 func (s *Server) apiBreakdown(w http.ResponseWriter, r *http.Request) {
 	property := r.URL.Query().Get("property")
 	if property == "" {
+		property = r.URL.Query().Get("prop") // accept prop= as an alias for property=
+	}
+	if property == "" {
 		writeErr(w, http.StatusBadRequest, "property is required")
 		return
 	}
@@ -404,8 +443,9 @@ func (s *Server) apiRetention(w http.ResponseWriter, r *http.Request) {
 	rr := retention.ComputeBucketed(evs, days, q.Get("event"), q.Get("bucket"), boolParam(q.Get("rolling")))
 	// the honest headline summaries come from retention.Summarize — the SAME function the MCP
 	// tool serializes, so the two surfaces can't drift (agreement_test locks it).
-	out := retention.Summarize(rr, time.Now().UTC())
-	out["cohorts"] = rr.Cohorts
+	now := time.Now().UTC()
+	out := retention.Summarize(rr, now)
+	out["cohorts"] = retention.SerializeCohorts(rr, now)
 	writeJSON(w, http.StatusOK, out)
 }
 

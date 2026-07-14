@@ -696,11 +696,21 @@ func (s *Server) apiFunnel(w http.ResponseWriter, r *http.Request) {
 		}
 		opts.StepFilters[i] = map[string]string{prop: val}
 	}
-	evs, err := s.filtered(r)
+	evs, err := s.funnelScoped(r)
 	if err != nil {
 		writeQueryErr(w, err)
 		return
 	}
+	// scope the funnel to the requested window (days/hours/from/to). Without this the
+	// funnel ran over ALL history regardless of the time params — a from=2020 or days=1
+	// query silently returned the full all-time funnel, a wrong number for every scoped
+	// query. Zero from/to = unbounded (the all-history default is preserved).
+	fFrom, fTo, ferr := parseTrendWindow(r)
+	if ferr != nil {
+		writeErr(w, http.StatusBadRequest, ferr.Error())
+		return
+	}
+	evs = scopeToWindow(evs, fFrom, fTo)
 	// breakdown=source runs the funnel per segment (conversion by property) — the same
 	// shape the MCP funnel tool returns, so agreement_test locks the two together.
 	if bd := q.Get("breakdown"); bd != "" {
@@ -712,6 +722,25 @@ func (s *Server) apiFunnel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, funnel.ComputeOpts(evs, steps, window, opts))
+}
+
+// scopeToWindow keeps events in [from, to); a zero bound is unbounded on that side,
+// so a zero/zero window returns everything (all-history default).
+func scopeToWindow(evs []event.Event, from, to time.Time) []event.Event {
+	if from.IsZero() && to.IsZero() {
+		return evs
+	}
+	out := make([]event.Event, 0, len(evs))
+	for _, e := range evs {
+		if !from.IsZero() && e.Timestamp.Before(from) {
+			continue
+		}
+		if !to.IsZero() && !e.Timestamp.Before(to) {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
 }
 
 // --- helpers ---

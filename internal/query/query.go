@@ -248,3 +248,25 @@ func toNum(v any) float64 {
 	}
 	return 0
 }
+
+// ScopeUsers keeps every event of any user who has at least one event matching the
+// filters — user-level scoping (vs Apply's event-level). Funnels use this so a filter
+// on a user attribute (plan, device) that isn't present on every step event scopes the
+// POPULATION, not the events, and later steps aren't dropped. Empty filters = unchanged.
+func ScopeUsers(events []event.Event, filters []Filter, anyMode bool) []event.Event {
+	if len(filters) == 0 {
+		return events
+	}
+	matched := ApplyMode(events, filters, anyMode)
+	users := make(map[string]bool, len(matched))
+	for _, e := range matched {
+		users[e.DistinctID] = true
+	}
+	out := make([]event.Event, 0, len(events))
+	for _, e := range events {
+		if users[e.DistinctID] {
+			out = append(out, e)
+		}
+	}
+	return out
+}

@@ -41,7 +41,11 @@ func TestComputeOverview(t *testing.T) {
 	if r.TopPages[0].Value != "/" || r.TopPages[0].Count != 2 {
 		t.Fatalf("top page: %+v", r.TopPages)
 	}
-	// both google URL shapes collapse into one host row; empty referrer = direct
+	// both google URL shapes collapse into one host row; empty referrer = direct.
+	// Referrer is FIRST-TOUCH per visitor: u1's earliest pageview is the google one, so
+	// u1 is a google visitor even though a later pageview had no referrer (it must NOT
+	// also count as direct — that double-count made the segments sum past the visitor
+	// total). google = {u1,u2} = 2; direct = {u3 only} = 1; sum 3 == total visitors 3.
 	var google, direct int
 	for _, row := range r.Referrers {
 		if row.Value == "google.com" {
@@ -51,8 +55,16 @@ func TestComputeOverview(t *testing.T) {
 			direct = row.Count
 		}
 	}
-	if google != 2 || direct != 2 {
-		t.Fatalf("referrers: google=%d direct=%d, want 2/2 (%+v)", google, direct, r.Referrers)
+	if google != 2 || direct != 1 {
+		t.Fatalf("referrers: google=%d direct=%d, want 2/1 — first-touch, reconciles to 3 (%+v)", google, direct, r.Referrers)
+	}
+	// integrity: every referrer segment must sum to exactly the visitor total
+	sumVis := 0
+	for _, row := range r.Referrers {
+		sumVis += row.Visitors
+	}
+	if sumVis != r.Visitors {
+		t.Fatalf("referrer visitors sum to %d, must equal total visitors %d (no double-count)", sumVis, r.Visitors)
 	}
 	if len(r.UTMSources) != 1 || r.UTMSources[0].Value != "hn" {
 		t.Fatalf("utm: %+v", r.UTMSources)

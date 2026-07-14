@@ -106,3 +106,36 @@ func TestEmptyAndSingleStep(t *testing.T) {
 		t.Fatalf("single-step funnel wrong: %+v", r)
 	}
 }
+
+// TestUnorderedPrefixMembership pins the world-class-test P0: unordered funnels must
+// count a user toward step k ONLY if they performed every listed event up to k — never
+// fabricate counts for events a user didn't do (or events that don't exist at all).
+func TestUnorderedPrefixMembership(t *testing.T) {
+	base := time.Now().Add(-time.Hour)
+	ev := func(u, name string, off time.Duration) event.Event {
+		return event.Event{DistinctID: u, Name: name, Timestamp: base.Add(off)}
+	}
+	// 3 users did signup; 1 of them also did checkout. No one did ghost_event.
+	evs := []event.Event{
+		ev("a", "signup", 0), ev("a", "checkout", time.Minute),
+		ev("b", "signup", 0),
+		ev("c", "signup", 0),
+	}
+	col := func(r Result) []int {
+		out := make([]int, len(r.Steps))
+		for i, s := range r.Steps {
+			out[i] = s.Count
+		}
+		return out
+	}
+	// ghost_event never occurs → both columns 0 (was [3,0] fabrication bug).
+	r := ComputeOpts(evs, []Step{{Event: "ghost_event"}, {Event: "signup"}}, 7*24*time.Hour, Options{Order: Unordered})
+	if g := col(r); g[0] != 0 || g[1] != 0 {
+		t.Errorf("unordered [ghost,signup] = %v, want [0 0] — no fabrication for a zero-occurrence event", g)
+	}
+	// checkout,signup any-order: step1 = did checkout (1), step2 = did checkout AND signup (1).
+	r = ComputeOpts(evs, []Step{{Event: "checkout"}, {Event: "signup"}}, 7*24*time.Hour, Options{Order: Unordered})
+	if g := col(r); g[0] != 1 || g[1] != 1 {
+		t.Errorf("unordered [checkout,signup] = %v, want [1 1] — only the user who did both", g)
+	}
+}
