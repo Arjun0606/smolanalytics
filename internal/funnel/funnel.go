@@ -64,36 +64,7 @@ func Compute(events []event.Event, steps []Step, window time.Duration) Result {
 			convTimes = append(convTimes, dur)
 		}
 	}
-	if len(convTimes) > 0 {
-		sort.Slice(convTimes, func(i, j int) bool { return convTimes[i] < convTimes[j] })
-		n := len(convTimes)
-		var med time.Duration
-		if n%2 == 1 {
-			med = convTimes[n/2]
-		} else {
-			med = (convTimes[n/2-1] + convTimes[n/2]) / 2
-		}
-		res.Converted = n
-		res.MedianConvSecs = med.Seconds()
-	}
-
-	for i := range res.Steps {
-		res.Steps[i].Count = counts[i]
-		if counts[0] > 0 {
-			res.Steps[i].ConversionFromTop = float64(counts[i]) / float64(counts[0])
-		}
-		if i == 0 {
-			res.Steps[i].ConversionFromPrev = 1
-		} else {
-			if counts[i-1] > 0 {
-				res.Steps[i].ConversionFromPrev = float64(counts[i]) / float64(counts[i-1])
-			}
-			res.Steps[i].DroppedFromPrev = counts[i-1] - counts[i]
-		}
-	}
-	if counts[0] > 0 {
-		res.OverallConversion = float64(counts[len(counts)-1]) / float64(counts[0])
-	}
+	finishFromCounts(&res, steps, counts, convTimes)
 	return res
 }
 
@@ -208,4 +179,212 @@ func furthestStep(evs []event.Event, steps []Step, window time.Duration) (reache
 		}
 	}
 	return best, bestDur, best == len(steps)
+}
+
+// Order is the step-matching discipline.
+type Order string
+
+const (
+	Ordered   Order = "ordered"   // default: steps in order, other events may interleave
+	Strict    Order = "strict"    // steps in order with NO other events between matched steps
+	Unordered Order = "unordered" // all steps within the window, any order
+)
+
+// ParseOrder maps a request string to a discipline; empty = ordered. Unknown is an
+// error, never silently ordered — a wrong-discipline funnel is a silent-wrong answer.
+func ParseOrder(s string) (Order, error) {
+	switch s {
+	case "", "ordered":
+		return Ordered, nil
+	case "strict":
+		return Strict, nil
+	case "unordered", "any", "any_order":
+		return Unordered, nil
+	}
+	return "", fmt.Errorf("unknown order %q (want ordered, strict or unordered)", s)
+}
+
+// Options extends Compute with the disciplines the incumbents document: ordering
+// mode, exclusion events (a user who fires one between first-match and full
+// conversion is dropped from the funnel entirely), and per-step property filters
+// (step N only matches when the event carries prop=value).
+type Options struct {
+	Order       Order
+	Exclusions  []string            // event names that disqualify between step 0 and conversion
+	StepFilters []map[string]string // per-step property equals-filters; nil entry = no filter
+}
+
+// stepMatches reports whether e satisfies step i under opts (name + per-step filter).
+func stepMatches(e event.Event, steps []Step, i int, opts Options) bool {
+	if e.Name != steps[i].Event {
+		return false
+	}
+	if opts.StepFilters == nil || i >= len(opts.StepFilters) || opts.StepFilters[i] == nil {
+		return true
+	}
+	for k, want := range opts.StepFilters[i] {
+		got, _ := e.Properties[k].(string)
+		if got != want {
+			return false
+		}
+	}
+	return true
+}
+
+// ComputeOpts is Compute with Options. Options{} degrades to exactly Compute's
+// behavior, and Compute delegates here so there is ONE matching engine (the
+// agreement guarantee depends on that).
+func ComputeOpts(events []event.Event, steps []Step, window time.Duration, opts Options) Result {
+	res := Result{Steps: make([]StepResult, len(steps))}
+	for i, s := range steps {
+		res.Steps[i].Event = s.Event
+	}
+	if len(steps) == 0 {
+		return res
+	}
+	excl := map[string]bool{}
+	for _, x := range opts.Exclusions {
+		if x != "" {
+			excl[x] = true
+		}
+	}
+	byUser := map[string][]event.Event{}
+	for _, e := range events {
+		byUser[e.DistinctID] = append(byUser[e.DistinctID], e)
+	}
+	counts := make([]int, len(steps))
+	var convTimes []time.Duration
+	for _, evs := range byUser {
+		reached, dur, converted := furthestStepOpts(evs, steps, window, opts, excl)
+		for i := 0; i < reached; i++ {
+			counts[i]++
+		}
+		if converted {
+			convTimes = append(convTimes, dur)
+		}
+	}
+	finishFromCounts(&res, steps, counts, convTimes)
+	return res
+}
+
+// furthestStepOpts is the single matching core under every discipline.
+func furthestStepOpts(evs []event.Event, steps []Step, window time.Duration, opts Options, excl map[string]bool) (reached int, dur time.Duration, converted bool) {
+	sort.SliceStable(evs, func(i, j int) bool { return evs[i].Timestamp.Before(evs[j].Timestamp) })
+	best := 0
+	var bestDur time.Duration
+	for start := range evs {
+		if !stepMatches(evs[start], steps, 0, opts) {
+			continue
+		}
+		anchor := evs[start].Timestamp
+		lastMatch := anchor
+		excluded := false
+		var idx int
+		switch opts.Order {
+		case Unordered:
+			seen := make([]bool, len(steps))
+			seen[0] = true
+			matched := 1
+			last := anchor
+			for k := start + 1; k < len(evs); k++ {
+				if window > 0 && evs[k].Timestamp.Sub(anchor) > window {
+					break
+				}
+				if excl[evs[k].Name] {
+					excluded = true
+					break
+				}
+				for si := range steps {
+					if !seen[si] && stepMatches(evs[k], steps, si, opts) {
+						seen[si] = true
+						matched++
+						last = evs[k].Timestamp
+						break
+					}
+				}
+				if matched == len(steps) {
+					break
+				}
+			}
+			idx, lastMatch = matched, last
+		case Strict:
+			idx = 1
+			for k := start + 1; k < len(evs) && idx < len(steps); k++ {
+				if window > 0 && evs[k].Timestamp.Sub(anchor) > window {
+					break
+				}
+				if excl[evs[k].Name] {
+					excluded = true
+					break
+				}
+				if stepMatches(evs[k], steps, idx, opts) {
+					idx++
+					lastMatch = evs[k].Timestamp
+				} else {
+					break // strict: ANY intervening event breaks the sequence
+				}
+			}
+		default: // Ordered
+			idx = 1
+			for k := start + 1; k < len(evs) && idx < len(steps); k++ {
+				if window > 0 && evs[k].Timestamp.Sub(anchor) > window {
+					break
+				}
+				if excl[evs[k].Name] {
+					excluded = true
+					break
+				}
+				if stepMatches(evs[k], steps, idx, opts) {
+					idx++
+					lastMatch = evs[k].Timestamp
+				}
+			}
+		}
+		if excluded {
+			continue // this anchor is disqualified; a later anchor may still convert
+		}
+		if idx > best {
+			best = idx
+			bestDur = lastMatch.Sub(anchor)
+		}
+		if best == len(steps) {
+			break
+		}
+	}
+	return best, bestDur, best == len(steps)
+}
+
+// finishFromCounts assembles a Result from per-step reach counts + conversion
+// durations — the ONE assembly path Compute and ComputeOpts share, so the
+// agreement guarantee can't drift between the plain and options funnels.
+func finishFromCounts(res *Result, steps []Step, counts []int, convTimes []time.Duration) {
+	if len(convTimes) > 0 {
+		sort.Slice(convTimes, func(i, j int) bool { return convTimes[i] < convTimes[j] })
+		n := len(convTimes)
+		var med time.Duration
+		if n%2 == 1 {
+			med = convTimes[n/2]
+		} else {
+			med = (convTimes[n/2-1] + convTimes[n/2]) / 2
+		}
+		res.Converted = n
+		res.MedianConvSecs = med.Seconds()
+	}
+	for i := range res.Steps {
+		res.Steps[i].Count = counts[i]
+		if counts[0] > 0 {
+			res.Steps[i].ConversionFromTop = float64(counts[i]) / float64(counts[0])
+		}
+		if i == 0 {
+			res.Steps[i].ConversionFromPrev = 1
+		} else {
+			if counts[i-1] > 0 {
+				res.Steps[i].ConversionFromPrev = float64(counts[i]) / float64(counts[i-1])
+			}
+			res.Steps[i].DroppedFromPrev = counts[i-1] - counts[i]
+		}
+	}
+	if counts[0] > 0 {
+		res.OverallConversion = float64(counts[len(counts)-1]) / float64(counts[0])
+	}
 }
