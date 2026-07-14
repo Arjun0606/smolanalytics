@@ -62,6 +62,8 @@
   .livepill.on .dot{background:var(--accent);animation:pulse 1.6s infinite}
   .agentpill{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;flex:none;font-family:var(--mono);font-size:11px;color:var(--mut);border:1px solid var(--line);padding:3px 9px;border-radius:99px;cursor:pointer}
   .agentpill:hover{border-color:var(--accent);color:var(--accent)}
+  .agentpill.on{border-color:rgba(245,166,35,.6);color:var(--accent)}
+  .agentpill.on::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-right:6px;animation:pulse 1.6s infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 
   /* zone 1 — the ask hero: the one focal point on the page */
@@ -326,7 +328,7 @@
   <div class="spacer"></div>
   {{if ge .LastEventSecs 0}}<span class="hlink" id="lastev" data-secs="{{.LastEventSecs}}" title="seconds since the newest ingested event — proof this page is live">·</span>{{end}}
   {{if .HasData}}<a class="livepill{{if gt .LiveNow 0}} on{{end}}" href="#tab=live" id="livepill"><span class="dot"></span><span id="livecount">{{if gt .LiveNow 0}}{{.LiveNow}} now{{else}}live{{end}}</span></a>{{end}}
-  <span class="agentpill" id="agentpill" title="connect your coding agent over MCP">⌁ agent</span>
+  <span class="agentpill{{if .AgentLive}} on{{end}}" id="agentpill" title="{{if .AgentName}}your agent, seen via real MCP traffic — click for connect options{{else}}connect your coding agent over MCP{{end}}">⌁ <span id="agentlbl">{{if .AgentName}}{{.AgentName}} · {{.AgentAgo}}{{if gt .AgentCalls 0}} · {{.AgentCalls}} calls{{end}}{{else}}agent{{end}}</span></span>
   <a class="hlink" href="#explore" id="exploreLink" title="run any report on your own events">explore</a>
   {{if .HasShares}}<a class="hlink" href="/settings/shares" id="shareBtn" title="mint a revocable read-only link">share</a>{{end}}
   <a class="hlink" href="https://smolanalytics.com" target="_blank" style="color:var(--accent)">Cloud ↗</a>
@@ -975,6 +977,20 @@
     }
 
     // agent pill opens the connect sheet
+    // the agent badge: presence from the MCP server's own traffic, polled live —
+    // watch it flip to "claude-code · now" the moment an editor connects
+    var albl=document.getElementById('agentlbl'),apill=document.getElementById('agentpill');
+    function pollAgent(){
+      fetch('/v1/agent-status').then(function(r){return r.json()}).then(function(j){
+        var a=(j.agents||[])[0];if(!a||!albl)return;
+        var s2=Math.max(0,(Date.now()-new Date(a.last_seen).getTime())/1000);
+        var ago=s2<60?'now':s2<3600?Math.floor(s2/60)+'m ago':Math.floor(s2/3600)+'h ago';
+        albl.textContent=a.name+' · '+ago+(a.calls_24h?' · '+a.calls_24h+' calls':'');
+        apill.classList.toggle('on',s2<300);
+      }).catch(function(){});
+    }
+    pollAgent(); setInterval(pollAgent,10000);
+
     var el=document.getElementById('exploreLink'),pw=document.querySelector('.power');
     if(el&&pw)el.onclick=function(e){e.preventDefault();pw.open=true;pw.scrollIntoView({behavior:'smooth',block:'start'});};
     var ap=document.getElementById('agentpill'),cs=document.getElementById('connect');

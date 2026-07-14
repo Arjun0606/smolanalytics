@@ -194,9 +194,13 @@ type dashVM struct {
 	RetDays        int        // retention horizon (?rdays=): 7|30|90
 	RetBucket      string     // retention bucket (?rbucket=): day|week|month
 	RetRolling     bool       // on-or-after mode (?rroll=1)
-	CustomRange    bool       // an explicit ?from/?to window is active
-	AnyMode        bool       // filters join with OR (?fm=any) instead of AND
-	RangeFrom      string     // the custom window's inputs, echoed into the date pickers
+	AgentName      string     // most recent MCP client ("" = never connected)
+	AgentAgo       string     // "2m ago"
+	AgentLive      bool       // seen within 5 minutes
+	AgentCalls     int
+	CustomRange    bool   // an explicit ?from/?to window is active
+	AnyMode        bool   // filters join with OR (?fm=any) instead of AND
+	RangeFrom      string // the custom window's inputs, echoed into the date pickers
 	RangeTo        string
 	EngagedHuman   string // "13m 23s", never "803s"
 
@@ -565,6 +569,21 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		ConvByProp:     segProp,
 		SignupsDelta:   deltaStr(sig30, sigPrior),
 		LastEventSecs:  -1,
+	}
+	if ags := s.agentStatus(); len(ags) > 0 {
+		a := ags[0]
+		vm.AgentName = a.Name
+		vm.AgentCalls = a.Calls24h
+		since := nowT.Sub(a.LastSeen)
+		vm.AgentLive = since < 5*time.Minute
+		switch {
+		case since < time.Minute:
+			vm.AgentAgo = "now"
+		case since < time.Hour:
+			vm.AgentAgo = fmt.Sprintf("%dm ago", int(since.Minutes()))
+		default:
+			vm.AgentAgo = fmt.Sprintf("%dh ago", int(since.Hours()))
+		}
 	}
 	if n := len(evsAll); n > 0 {
 		// events append in arrival order, so the tail is the newest — this powers the

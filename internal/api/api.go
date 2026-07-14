@@ -18,6 +18,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -73,6 +74,9 @@ type Server struct {
 	geo          *geo.Resolver  // ingest-time IP→country (IP never stored); nil = disabled
 	anomalyMu    sync.Mutex
 	anomalyFired map[string]time.Time // finding title -> last webhook fire (24h dedup)
+
+	agentMu sync.Mutex
+	agents  map[string]*agentSeen // MCP client name -> presence (in-memory; resets on reboot)
 	// autocaptured events dropped because the UA was a known crawler/bot — surfaced in
 	// /v1/usage so "why is my dashboard lower than GA?" has a visible, honest answer.
 	botsFiltered atomic.Int64
@@ -260,6 +264,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/events/recent", s.recentEvents)
 	mux.HandleFunc("GET /v1/users/{id}", s.userActivity)
 	mux.HandleFunc("GET /v1/who", s.apiWho) // the microscope: the people behind any datapoint
+	mux.HandleFunc("GET /v1/agent-status", s.apiAgentStatus)
 	mux.HandleFunc("GET /v1/export", s.export)
 	mux.HandleFunc("GET /v1/insights", s.listInsights)
 	mux.HandleFunc("POST /v1/insights", s.saveInsight)
@@ -372,6 +377,88 @@ func (s *Server) keyAuthed(r *http.Request) bool {
 	return s.authorized(r)
 }
 
+// agentSeen is one MCP client's presence — the "is my Claude actually connected?"
+// answer, driven by the MCP server's own traffic instead of asserted.
+type agentSeen struct {
+	Name     string    `json:"name"`
+	Version  string    `json:"version,omitempty"`
+	LastSeen time.Time `json:"last_seen"`
+	LastTool string    `json:"last_tool,omitempty"`
+	Calls24h int       `json:"calls_24h"`
+	firstIn  time.Time // start of the rolling calls window
+}
+
+// recordAgent notes MCP activity. initialize carries clientInfo (who connected);
+// every other method bumps the most recent client's liveness.
+func (s *Server) recordAgent(body []byte) {
+	var probe struct {
+		Method string `json:"method"`
+		Params struct {
+			Name       string `json:"name"` // tools/call: the tool
+			ClientInfo struct {
+				Name    string `json:"name"`
+				Version string `json:"version"`
+			} `json:"clientInfo"`
+		} `json:"params"`
+	}
+	if json.Unmarshal(body, &probe) != nil {
+		return
+	}
+	now := time.Now().UTC()
+	s.agentMu.Lock()
+	defer s.agentMu.Unlock()
+	if s.agents == nil {
+		s.agents = map[string]*agentSeen{}
+	}
+	name := probe.Params.ClientInfo.Name
+	if probe.Method == "initialize" && name != "" {
+		a := s.agents[name]
+		if a == nil {
+			a = &agentSeen{Name: name, firstIn: now}
+			s.agents[name] = a
+		}
+		a.Version = probe.Params.ClientInfo.Version
+		a.LastSeen = now
+		a.Calls24h++
+		return
+	}
+	// non-initialize: attribute to the most recently seen client
+	var latest *agentSeen
+	for _, a := range s.agents {
+		if latest == nil || a.LastSeen.After(latest.LastSeen) {
+			latest = a
+		}
+	}
+	if latest == nil {
+		return
+	}
+	if now.Sub(latest.firstIn) > 24*time.Hour {
+		latest.firstIn = now
+		latest.Calls24h = 0
+	}
+	latest.LastSeen = now
+	latest.Calls24h++
+	if probe.Method == "tools/call" && probe.Params.Name != "" {
+		latest.LastTool = probe.Params.Name
+	}
+}
+
+// agentStatus returns the connected agents, most recent first.
+func (s *Server) agentStatus() []agentSeen {
+	s.agentMu.Lock()
+	defer s.agentMu.Unlock()
+	out := make([]agentSeen, 0, len(s.agents))
+	for _, a := range s.agents {
+		out = append(out, *a)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].LastSeen.After(out[j].LastSeen) })
+	return out
+}
+
+func (s *Server) apiAgentStatus(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"agents": s.agentStatus()})
+}
+
 // handleMCP is the Streamable-HTTP MCP transport: point a remote MCP client
 // (Claude, Cursor) at http://host/mcp and it reads this server's live data. When a
 // key is configured it's required here too — otherwise a public deploy would leak
@@ -386,6 +473,7 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "read error")
 		return
 	}
+	s.recordAgent(body) // the header's agent badge: presence from real MCP traffic
 	status, resp := s.mcp.HTTPDispatch(body)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
