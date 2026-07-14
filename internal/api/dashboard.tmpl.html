@@ -11,26 +11,57 @@
      4-step surface ladder. elevation is tone + a 1px hairline — no box-shadow anywhere.
      exactly four type sizes: 30px focal numbers, 15px sentences, 13px body, 11px labels. */
   :root{
-    --bg:#0A0A0A; --s1:#111111; --s2:#161616; --s3:#1C1C1C; --line:#262626; --line2:#2E2E2E;
-    --fg:#EDEDED; --mut:#8A8A8A; --mut2:#5F5F5F; --accent:#F5A623; --warn:#E5544B; --ok:#3FB27F;
-    --mono:ui-monospace,"JetBrains Mono",SFMono-Regular,Menlo,monospace;
-    --sans:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    /* surfaces — one ladder, strays named */
+    --bg:#0A0A0A; --well:#0D0D0D; --s1:#111111; --s2:#161616; --s3:#1C1C1C;
+    --line:#262626; --line2:#2E2E2E; --line3:#3E3E3E;
+    /* text — three reading tones + disabled, every one AA on its surface */
+    --fg:#EDEDED; --mut:#8A8A8A; --mut2:#7A7A7A; --dis:#5F5F5F;
+    /* amber — one accent, a real ladder */
+    --accent:#F5A623; --accent-hi:#FFC24D; --accent-dim:#C77F0A; --accent-bar:#C98A1E;
+    --a14:rgba(245,166,35,.14); --a25:rgba(245,166,35,.25); --a45:rgba(245,166,35,.45);
+    --warn:#E5544B; --ok:#3FB27F; --ghost:#3A3A3A; --grid:#1C1C1C;
+    /* type — exactly four sizes, weights 400/500/600 */
+    --fs-lbl:11px; --lh-lbl:16px; --fs-body:13px; --lh-body:20px;
+    --fs-lead:15px; --lh-lead:22px; --fs-num:24px; --lh-num:30px;
+    --track-lbl:.06em; --track-num:-.02em; --track-body:-.01em;
+    /* space — 4px base */
+    --sp1:4px; --sp2:8px; --sp3:12px; --sp4:16px; --sp6:24px; --sp8:32px;
+    --zone:24px; --card-pad:16px; --gap:16px;
+    /* radii — three, nested smaller than parent */
+    --r-ctl:4px; --r-card:8px; --r-pill:999px;
+    /* control metrics — four heights replace eleven */
+    --chip-h:24px; --ctl-h:28px; --tab-h:32px; --ask-h:46px; --row-h:32px;
+    /* motion — two speeds + one slow, ease-out only */
+    --t-fast:100ms; --t-base:150ms; --t-slow:200ms;
+    --ease:cubic-bezier(.4,0,.2,1); --ease-out:cubic-bezier(.215,.61,.355,1);
+    --ring:0 0 0 3px var(--a14);
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Cascadia Mono",monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     font-variant-numeric:tabular-nums;
   }
+  /* companion globals: keyboard focus, reduced motion, entrances */
+  :where(a,button,select,input,summary,[tabindex]):focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  :where(a,button,select,input,summary):focus:not(:focus-visible){outline:none}
+  .ask input:focus-visible{outline:none}
+  @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+  @keyframes rise{from{opacity:0;transform:translateY(2px)}to{opacity:1;transform:none}}
+  @keyframes fadein{from{opacity:0}}
+  @keyframes slidein{from{transform:translateX(24px);opacity:0}}
   *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:var(--fs-body);line-height:1.5;letter-spacing:var(--track-body);-webkit-font-smoothing:antialiased}
   a{color:inherit}
   .wrap{max-width:1060px;margin:0 auto;padding:0 24px}
   kbd{border:1px solid var(--line2);border-bottom-width:2px;border-radius:3px;padding:0 5px;font-family:var(--mono);font-size:10px;color:var(--mut)}
 
   /* zone 0 — header: one quiet 48px row */
   header{border-bottom:1px solid var(--line);background:var(--bg)}
-  .bar{display:flex;align-items:center;gap:12px;min-height:48px;flex-wrap:nowrap;overflow:hidden}
-  .logo{font-weight:800;letter-spacing:-.02em;font-size:15px;white-space:nowrap}
+  .bar{display:flex;align-items:center;gap:12px;min-height:48px;flex-wrap:nowrap}
+  @media(max-width:880px){.bar{flex-wrap:wrap;padding:6px 0}}
+  .logo{font-family:var(--mono);font-weight:600;letter-spacing:-.02em;font-size:15px;white-space:nowrap}
   .logo b{color:var(--accent)}
   .siteselect{background:transparent;border:1px solid var(--line);color:var(--mut);font-family:var(--mono);font-size:11px;padding:4px 8px;border-radius:4px;max-width:180px}
   .spacer{flex:1}
-  .hlink{color:var(--mut);font-family:var(--mono);font-size:11px;text-decoration:none;white-space:nowrap;flex:none}
+  .hlink{color:var(--mut);font-family:var(--mono);font-size:11px;text-decoration:none;white-space:nowrap;flex:none;padding:6px 4px;margin:-6px -4px}
   .hlink:hover{color:var(--fg)}
   .livepill{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;flex:none;font-family:var(--mono);font-size:11px;color:var(--mut);border:1px solid var(--line);padding:3px 9px;border-radius:99px;cursor:pointer;text-decoration:none}
   .livepill .dot{width:6px;height:6px;border-radius:50%;background:var(--line2)}
@@ -44,7 +75,7 @@
   .customrange .rangego{background:transparent;border:1px solid var(--line);color:var(--mut);font-family:var(--mono);font-size:10px;padding:3px 8px;border-radius:4px;cursor:pointer}
   .customrange .rangego:hover{border-color:var(--accent);color:var(--accent)}
   .rangebtn:hover{color:var(--fg)}
-  .toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:14px 0 0;padding:8px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .toolbar{position:sticky;top:0;z-index:30;background:var(--bg);display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;margin:16px 0 0;padding:8px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
   .chiprail{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0 0}
   .fchip{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(245,166,35,.5);color:var(--accent);border-radius:99px;font-family:var(--mono);font-size:11px;padding:4px 11px}
   .fchip a{color:var(--mut);text-decoration:none}
@@ -58,7 +89,7 @@
   .gtile .d{font-family:var(--mono);font-size:11px;margin-top:2px;color:var(--mut2)}
   .gtile .d.up{color:var(--ok)} .gtile .d.down{color:var(--warn)}
   .seg[data-fp]{cursor:pointer}
-  .seg[data-fp]:hover{border-color:var(--accent)}
+  .seg[data-fp]:hover .segbar{border-right-color:var(--accent)}
   .livepill.on .dot{background:var(--accent);animation:pulse 1.6s infinite}
   .agentpill{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;flex:none;font-family:var(--mono);font-size:11px;color:var(--mut);border:1px solid var(--line);padding:3px 9px;border-radius:99px;cursor:pointer}
   .agentpill:hover{border-color:var(--accent);color:var(--accent)}
@@ -67,20 +98,21 @@
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 
   /* zone 1 — the ask hero: the one focal point on the page */
-  .hero{padding:18px 0 4px}
-  .ask{position:relative;max-width:760px;margin:0 auto}
-  .ask input{width:100%;background:var(--s1);border:1px solid var(--line2);color:var(--fg);border-radius:8px;
-    font-family:var(--mono);font-size:15px;padding:15px 84px 15px 44px;outline:none;transition:border-color .15s, box-shadow .15s}
+  .hero{padding:16px 0 0}
+  .ask{position:relative}
+  .ask input{width:100%;height:var(--ask-h);background:var(--s1);border:1px solid var(--line2);color:var(--fg);border-radius:var(--r-card);
+    font:400 var(--fs-lead)/var(--lh-lead) var(--mono);padding:0 84px 0 40px;outline:none;transition:border-color var(--t-base) var(--ease), box-shadow var(--t-base) var(--ease)}
   .ask input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(245,166,35,.14)}
   .ask .k{position:absolute;left:17px;top:50%;transform:translateY(-50%);color:var(--accent);font-family:var(--mono);font-size:15px}
   .ask .hint{position:absolute;right:12px;top:50%;transform:translateY(-50%);display:flex;gap:4px;align-items:center}
-  .askchips{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:6px;padding:8px 0 0;max-width:900px;margin:0 auto}
+  .askchips{display:flex;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;justify-content:flex-start;align-items:center;gap:8px;padding:12px 0 0}
+  .askchips::-webkit-scrollbar{display:none}
   .chiplbl{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut2)}
   .chip{font-family:var(--mono);font-size:11px;color:var(--mut);border:1px solid var(--line);padding:4px 11px;border-radius:99px;cursor:pointer;transition:.15s;background:transparent}
   .chip:hover{color:var(--accent);border-color:var(--accent)}
 
   /* zone 2 — the answer slot: one card, zero height when unused */
-  .answer{max-width:760px;margin:14px auto 0;background:var(--s1);border:1px solid var(--line2);border-radius:8px;padding:16px 18px}
+  .answer{margin:14px 0 0;background:var(--s1);border:1px solid var(--line2);border-radius:var(--r-card);padding:var(--card-pad);min-height:64px;animation:rise var(--t-base) var(--ease-out)}
   .answer[hidden]{display:none}
   .answer .atext{font-size:15px;line-height:1.55;white-space:pre-wrap}
   .answer .achart{margin-top:14px;border-top:1px solid var(--line);padding-top:14px}
@@ -96,14 +128,14 @@
   .abtn.pinned{border-color:var(--accent);color:var(--accent)}
 
   /* zone 3 — verdict sentences (not a card) */
-  .verdict{max-width:860px;margin:16px auto 0}
-  .vline{padding:4px 0;font-size:14px;line-height:1.55}
+  .verdict{margin:var(--zone) 0 0}
+  .vline{padding:4px 0;font-size:var(--fs-lead);line-height:var(--lh-lead)}
   .vline .vdot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-right:9px;position:relative;top:-2px;animation:pulse 1.6s infinite}
   .vline.warn .vdot{background:var(--warn);animation:none}
   .vline .vt{font-weight:600}
   .vline .vsep{color:var(--mut2);margin:0 8px}
   .vline .vd{color:var(--mut)}
-  .vline .vwhy{color:var(--accent);font-family:var(--mono);font-size:12px;text-decoration:none;white-space:nowrap;cursor:pointer;margin-left:8px}
+  .vline .vwhy{color:var(--accent);font-family:var(--mono);font-size:11px;text-decoration:none;white-space:nowrap;cursor:pointer;margin-left:8px}
   .vline .vwhy:hover{text-decoration:underline}
   .vcalm{color:var(--mut);font-size:15px;padding:5px 0}
   .weekline{margin-top:4px}
@@ -117,15 +149,16 @@
   .weekbody .vrow.warn .vt{color:var(--warn)}
 
   /* zone 4 — glance row: numbers separated by hairlines, no card chrome */
-  .glance{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0;margin:18px 0 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .glance{display:grid;grid-template-columns:repeat(auto-fit,minmax(126px,1fr));gap:0;margin:var(--zone) 0 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
   .gtile{padding:12px 16px;border-right:1px solid var(--line)}
   .gtile:last-child{border-right:none}
   .gtile .l{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--mut2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .gtile .v{font-family:var(--mono);font-size:30px;font-weight:700;letter-spacing:-.02em;margin-top:4px;line-height:1.15}
+  .gtile .v{margin-top:4px}
   .gtile .v.acc{color:var(--accent)}
 
   /* zone 5 — the one chart */
-  .chartzone{margin:18px 0 0}
+  .chartzone{margin:var(--zone) 0 0}
+  .chartzone+.chartzone{margin-top:var(--zone)}
   .zonelbl{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--mut2);margin-bottom:10px;display:flex;align-items:baseline;gap:8px}
   .zonelbl .sub{text-transform:none;letter-spacing:0;color:var(--mut2)}
   .zonesel{background:var(--s1);border:1px solid var(--line);color:var(--fg);font-family:var(--mono);font-size:11px;padding:2px 6px;border-radius:4px;margin-right:6px}
@@ -142,19 +175,18 @@
   table.ctab .cbar div{height:8px;background:rgba(245,166,35,.35);border-radius:2px}
   .chartwrap{display:flex;gap:10px}
   .yaxis{display:flex;flex-direction:column;justify-content:space-between;text-align:right;color:var(--mut2);font-family:var(--mono);font-size:10px;padding:24px 0 0;height:174px;min-width:28px}
-  .yaxis .ymid::before{content:""}
-  .plot{flex:1;position:relative}
+    .plot{flex:1;position:relative}
   .gridlines{position:absolute;inset:24px 0 0;display:flex;flex-direction:column;justify-content:space-between;pointer-events:none}
-  .gridlines div{border-top:1px solid var(--s2);height:0}
+  .gridlines div{border-top:1px solid var(--grid);height:0}
   .bars{display:flex;align-items:flex-end;gap:3px;height:150px;padding-top:24px;position:relative}
   .bars .col{flex:1;display:flex;flex-direction:row;align-items:flex-end;gap:1px;height:100%;position:relative}
-  .bars .bar{flex:2;background:var(--accent);opacity:.5;min-height:2px;border-radius:2px 2px 0 0;transition:opacity .1s}
-  .bars .ghost{flex:1;background:var(--mut2);opacity:.35;min-height:1px;border-radius:2px 2px 0 0}
-  .bars .col:hover .bar{opacity:1}
+  .bars .bar{flex:2;background:var(--accent-bar);min-height:2px;border-radius:2px 2px 0 0;transition:background var(--t-fast) var(--ease)}
+  .bars .ghost{flex:1;background:var(--ghost);min-height:1px;border-radius:2px 2px 0 0}
+  .bars .col:hover .bar{background:var(--accent)}
   /* instant tooltip — pure css, zero native-title delay, readable size */
   .bars .col .tip{display:none;position:absolute;bottom:calc(100% + 4px);left:50%;transform:translateX(-50%);
-    background:var(--s3);border:1px solid var(--line2);border-radius:5px;padding:3px 9px;
-    font-family:var(--mono);font-size:12px;color:var(--fg);white-space:nowrap;z-index:5}
+    background:var(--s3);border:1px solid var(--line2);border-radius:var(--r-ctl);padding:3px 9px;
+    font-family:var(--mono);font-size:11px;color:var(--fg);white-space:nowrap;z-index:5}
   .bars .col:hover .tip{display:block}
   /* the peak is annotated permanently — the most important number needs no hover */
   .bars .col .peaklbl{position:absolute;bottom:calc(100% + 2px);left:50%;transform:translateX(-50%);
@@ -164,7 +196,7 @@
   .xaxis .xt{flex:1;color:var(--mut2);font-family:var(--mono);font-size:10px;white-space:nowrap;overflow:visible}
 
   /* zone 7 — the board: pinned questions as live cards */
-  .board{margin:18px 0 0}
+  .board{margin:var(--zone) 0 0}
   .boardgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
   @media(max-width:820px){.boardgrid{grid-template-columns:1fr}}
   .bcard{background:var(--s1);border:1px solid var(--line);border-radius:8px;padding:16px 18px}
@@ -175,21 +207,16 @@
   .bcard .bprov{margin-top:12px;display:flex;align-items:center;gap:8px}
 
   /* zone 8 — breakdowns: one tabbed panel */
-  .breakdowns{margin:18px 0 0}
-  .tabrail{display:flex;flex-wrap:wrap;gap:2px;border-bottom:1px solid var(--line)}
-  .tabbtn{background:transparent;border:none;color:var(--mut);font-family:var(--mono);font-size:12px;padding:8px 13px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
-  .tabbtn:hover{color:var(--fg)}
-  .tabbtn.on{color:var(--fg);border-bottom-color:var(--accent)}
-  .pane{display:none;padding:18px 0 0}
-  .pane.on{display:block}
+  .breakdowns{margin:var(--zone) 0 0}
   .pane h3{font-size:13px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.07em;color:var(--mut2);margin:0 0 12px;font-weight:500}
 
   /* rows with share-of-total bars behind them */
-  .seg{position:relative;height:32px;margin-bottom:4px;background:var(--s1);border:1px solid var(--line);border-radius:5px;overflow:hidden}
-  .segbar{position:absolute;inset:0 auto 0 0;background:rgba(245,166,35,.13);border-right:2px solid rgba(245,166,35,.45)}
+  .seg{position:relative;height:var(--row-h);margin-bottom:4px;background:transparent;border:none;border-radius:var(--r-ctl);overflow:hidden;transition:background var(--t-fast) var(--ease)}
+  .seg:hover{background:var(--s2)}
+  .segbar{position:absolute;inset:0 auto 0 0;background:var(--a14);border-right:2px solid var(--a45)}
   .segmeta{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 12px}
   .segname{font-size:13px}
-  .segnums{font-family:var(--mono);font-size:12px;color:var(--mut)}
+  .segnums{font-family:var(--mono);font-size:var(--fs-body);color:var(--mut)}
   .webcols{display:grid;grid-template-columns:1fr 1fr;gap:22px}
   @media(max-width:820px){.webcols{grid-template-columns:1fr}}
 
@@ -197,7 +224,7 @@
   .fstep{margin-bottom:6px}
   .fdrop{font-family:var(--mono);font-size:11px;color:var(--warn);margin:8px 0 4px 2px}
   .fbarwrap{position:relative;height:40px;background:var(--s1);border:1px solid var(--line);border-radius:5px;overflow:hidden}
-  .fbar{position:absolute;inset:0 auto 0 0;background:linear-gradient(90deg,rgba(245,166,35,.26),rgba(245,166,35,.1));border-right:2px solid var(--accent)}
+  .fbar{position:absolute;inset:0 auto 0 0;background:linear-gradient(90deg,var(--a25),var(--a14));border-right:2px solid var(--accent)}
   .fmeta{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 13px}
   .fname{font-weight:600;font-size:13px}
   .fnums{font-family:var(--mono);font-size:12px}
@@ -219,7 +246,8 @@
   table.heat .cell{display:flex;align-items:center;justify-content:center;height:28px}
 
   /* live feed */
-  .live .row{display:flex;gap:12px;padding:6px 0;border-bottom:1px solid var(--s2);font-family:var(--mono);font-size:12px}
+  .pane .live{max-height:400px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--line2) transparent}
+  .live .row{display:flex;gap:12px;padding:6px 0;border-bottom:1px solid var(--s2);font-family:var(--mono);font-size:var(--fs-body)}
   .live .ev{color:var(--accent);min-width:130px}
   .live .who{color:var(--mut);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .live .ago{color:var(--mut2)}
@@ -235,7 +263,8 @@
 
   /* power tools (explore/cohorts/defined) — a sheet behind a quiet disclosure */
   .power{margin:26px 0 0}
-  .power>summary{cursor:pointer;list-style:none;font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--mut2);padding:10px 0;border-top:1px solid var(--line)}
+  .power{margin:var(--zone) 0 0}
+  .power>summary{cursor:pointer;list-style:none;font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:var(--track-lbl);color:var(--mut2);padding:10px 0;border-top:1px solid var(--line)}
   .power>summary::-webkit-details-marker{display:none}
   .power>summary:hover{color:var(--accent)}
   .ptool{background:var(--s1);border:1px solid var(--line);border-radius:8px;padding:16px 18px;margin-bottom:12px}
@@ -270,7 +299,8 @@
 
   /* connect-your-agent sheet */
   .connect{margin:26px 0 0}
-  .connect>summary{cursor:pointer;list-style:none;font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--mut2);padding:10px 0;border-top:1px solid var(--line)}
+  .connect{margin:var(--zone) 0 0}
+  .connect>summary{cursor:pointer;list-style:none;font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:var(--track-lbl);color:var(--mut2);padding:10px 0;border-top:1px solid var(--line)}
   .connect>summary::-webkit-details-marker{display:none}
   .connect>summary:hover{color:var(--accent)}
   .crow{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--s2)}
@@ -278,7 +308,7 @@
   .cbtn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line2);border-radius:5px;background:var(--s2);color:var(--fg);font-family:var(--mono);font-size:11px;padding:5px 12px;cursor:pointer;text-decoration:none}
   .cbtn:hover{border-color:var(--accent);color:var(--accent)}
   .cbtn.primary{border-color:var(--accent);color:var(--accent)}
-  .ccode{background:#0D0D0D;border:1px solid var(--line);border-radius:5px;padding:8px 11px;font-family:var(--mono);font-size:11px;color:var(--mut);overflow:auto;white-space:nowrap;flex:1;min-width:200px}
+  .ccode{background:var(--well);border:1px solid var(--line);border-radius:var(--r-ctl);padding:6px 12px;font-family:var(--mono);font-size:11px;color:var(--mut);overflow:auto;white-space:nowrap;flex:1;min-width:200px}
   .cnote{font-family:var(--mono);font-size:11px;color:var(--mut2);padding:10px 0 0;line-height:1.7}
   .cnote em{color:var(--mut);font-style:normal}
 
@@ -287,7 +317,7 @@
   .obcard{background:var(--s1);border:1px solid var(--line);border-radius:8px;padding:20px;margin-bottom:14px}
   .obh{font-size:15px;font-weight:600;margin-bottom:10px}
   .obsub{font-family:var(--mono);font-size:11px;color:var(--mut2);margin-bottom:10px}
-  pre.code{background:#0D0D0D;border:1px solid var(--line);border-radius:6px;padding:13px;overflow:auto;font-family:var(--mono);font-size:12px;line-height:1.6;color:var(--fg);margin:0;white-space:pre-wrap;word-break:break-word}
+  pre.code{background:var(--well);border:1px solid var(--line);border-radius:var(--r-ctl);padding:13px;overflow:auto;font-family:var(--mono);font-size:12px;line-height:1.6;color:var(--fg);margin:0;white-space:pre-wrap;word-break:break-word}
   .copy{margin-top:8px;background:transparent;border:1px solid var(--line);border-radius:4px;color:var(--mut);font-family:var(--mono);font-size:11px;padding:5px 12px;cursor:pointer}
   .copy:hover{border-color:var(--accent);color:var(--accent)}
   .obstatus{font-family:var(--mono);font-size:12px;color:var(--mut2);padding-top:14px}
@@ -298,8 +328,8 @@
 
   /* the journey overlay: click any visitor to see what that one human actually did —
      the drill-through GA4 users name as their #1 missing thing */
-  .jshade{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:40}
-  .journey{position:fixed;top:0;right:0;bottom:0;width:min(440px,92vw);background:var(--s1);border-left:1px solid var(--line2);z-index:41;padding:20px;overflow-y:auto}
+  .jshade{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:40;animation:fadein var(--t-base) var(--ease)}
+  .journey{position:fixed;top:0;right:0;bottom:0;width:min(440px,92vw);background:var(--s1);border-left:1px solid var(--line2);z-index:41;padding:var(--card-pad);overflow-y:auto;animation:slidein var(--t-slow) var(--ease-out)}
   .journey .jh{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:4px}
   .journey .jid{font-family:var(--mono);font-size:13px;font-weight:700;word-break:break-all}
   .journey .jclose{color:var(--mut2);cursor:pointer;font-family:var(--mono);font-size:12px;white-space:nowrap}
@@ -313,9 +343,52 @@
   .live .who:hover{color:var(--accent);text-decoration:underline}
 
   /* zone 9 — the covenant */
-  .foot{color:var(--mut2);font-size:11px;text-align:center;padding:34px 0 28px;font-family:var(--mono);line-height:2}
+  .foot{color:var(--mut2);font-size:11px;text-align:left;padding:32px 0 40px;font-family:var(--mono);line-height:1.8;border-top:1px solid var(--line);margin-top:var(--zone)}
   .foot a{color:var(--mut2)}
   .foot a:hover{color:var(--accent)}
+
+
+  /* ═══ THE DECK — always-visible 2-col card grid replaces the 13-tab rail ═══ */
+  .deck{display:grid;grid-template-columns:1fr 1fr;gap:var(--gap);margin:var(--zone) 0 0;align-items:start}
+  @media(max-width:880px){.deck{grid-template-columns:1fr}}
+  .deck .pane{display:block;background:var(--s1);border:1px solid var(--line);border-radius:var(--r-card);padding:var(--card-pad);min-width:0}
+  .deck .pane.wide{grid-column:1/-1}
+  .deck #pane-retention{overflow-x:auto}
+  .deck .pane h3{margin:0 0 12px}
+  .deck .pane h3 .sub{text-transform:none;letter-spacing:0;color:var(--dis);font-weight:400;margin-left:8px}
+
+  /* ═══ THE CONTROL KIT — one select, one input, one button pair, one chip, one tab.
+     Appended last so it wins the cascade over every legacy per-component rule. ═══ */
+  select,.zonesel,.siteselect,.exrow select,.fbuilder select{
+    height:var(--ctl-h);padding:0 26px 0 10px;background:var(--s1);border:1px solid var(--line2);
+    color:var(--fg);font:400 12px/1 var(--mono);border-radius:var(--r-ctl);cursor:pointer;
+    appearance:none;-webkit-appearance:none;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%237A7A7A'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right 9px center;transition:border-color var(--t-base) var(--ease)}
+  select:hover,.zonesel:hover{border-color:var(--line3)}
+  input[type="text"],input[type="date"],input:not([type]),.exrow input,.fbuilder input,.customrange input{
+    height:var(--ctl-h);padding:0 10px;background:var(--s1);border:1px solid var(--line2);
+    color:var(--fg);font:400 12px/1 var(--mono);border-radius:var(--r-ctl);
+    transition:border-color var(--t-base) var(--ease);color-scheme:dark;min-width:0}
+  input:hover{border-color:var(--line3)}
+  input::placeholder{color:var(--mut2)}
+  .btn,.exrow button,.rangego,.copy,.cbtn,.abtn,.fbuilder .chip{
+    height:var(--ctl-h);padding:0 12px;border-radius:var(--r-ctl);font:500 12px/1 var(--mono);
+    cursor:pointer;transition:background var(--t-fast) var(--ease),border-color var(--t-base) var(--ease),color var(--t-base) var(--ease)}
+  .exrow button,.rangego,.copy,.cbtn,.abtn{background:transparent;border:1px solid var(--line2);color:var(--mut)}
+  .exrow button:hover,.rangego:hover,.copy:hover,.cbtn:hover,.abtn:hover{border-color:var(--accent);color:var(--accent)}
+  .exrow button:not(.btn2){background:var(--accent);border-color:var(--accent);color:#0A0A0A;font-weight:600}
+  .exrow button:not(.btn2):hover{background:var(--accent-hi);color:#0A0A0A}
+  .exrow button:not(.btn2):active{background:var(--accent-dim)}
+  .chip{display:inline-flex;align-items:center;height:var(--chip-h);padding:0 10px;border:1px solid var(--line);
+    border-radius:var(--r-pill);background:transparent;color:var(--mut);font:400 11px/1 var(--mono);cursor:pointer;
+    transition:color var(--t-base) var(--ease),border-color var(--t-base) var(--ease);white-space:nowrap}
+  .chip:hover{color:var(--accent);border-color:var(--accent)}
+  .zonelbl,.chiplbl,.gtile .l,.dcard h3,.pane h3{font-family:var(--mono);font-size:var(--fs-lbl);line-height:var(--lh-lbl);
+    text-transform:uppercase;letter-spacing:var(--track-lbl);color:var(--mut2);font-weight:500}
+  .gtile .v,.skv,.gnum{font:600 var(--fs-num)/var(--lh-num) var(--mono);letter-spacing:var(--track-num)}
+  kbd{border-color:var(--line2);border-radius:3px}
+
 </style>
 </head>
 <body>
@@ -403,13 +476,13 @@
 
   <!-- zone 4: the glance row — every number carries its delta vs the prior window -->
   <div class="glance">
-    {{if .HasWeb}}<div class="gtile"><div class="l">Visitors · {{.RangeDays}}d</div><div class="v">{{.Visitors}}</div>{{if .VisitorsDelta}}<div class="d{{if eq (slice .VisitorsDelta 0 1) "+"}} up{{else if eq (slice .VisitorsDelta 0 1) "-"}} down{{end}}">{{.VisitorsDelta}} vs prior {{$.RangeDays}}d</div>{{end}}</div>
-    <div class="gtile"><div class="l">Pageviews · {{.RangeDays}}d</div><div class="v">{{.Pageviews}}</div>{{if .PageviewsDelta}}<div class="d{{if eq (slice .PageviewsDelta 0 1) "+"}} up{{else if eq (slice .PageviewsDelta 0 1) "-"}} down{{end}}">{{.PageviewsDelta}} vs prior {{$.RangeDays}}d</div>{{end}}</div>{{end}}
-    <div class="gtile"><div class="l">Users · all time</div><div class="v">{{.TotalUsers}}</div></div>
-    <div class="gtile"><div class="l">{{.StatEventLabel}} · {{.RangeDays}}d</div><div class="v">{{.Signups}}</div>{{if .SignupsDelta}}<div class="d{{if eq (slice .SignupsDelta 0 1) "+"}} up{{else if eq (slice .SignupsDelta 0 1) "-"}} down{{end}}">{{.SignupsDelta}} vs prior {{$.RangeDays}}d</div>{{end}}</div>
+    {{if .HasWeb}}<div class="gtile"><div class="l">Visitors · {{.RangeDays}}d</div><div class="v">{{comma .Visitors}}</div>{{if .VisitorsDelta}}<div class="d{{if eq (slice .VisitorsDelta 0 1) "+"}} up{{else if eq (slice .VisitorsDelta 0 1) "-"}} down{{end}}">{{.VisitorsDelta}} vs prior {{$.RangeDays}}d</div>{{end}}</div>
+    <div class="gtile"><div class="l">Pageviews · {{.RangeDays}}d</div><div class="v">{{comma .Pageviews}}</div>{{if .PageviewsDelta}}<div class="d{{if eq (slice .PageviewsDelta 0 1) "+"}} up{{else if eq (slice .PageviewsDelta 0 1) "-"}} down{{end}}">{{.PageviewsDelta}} vs prior {{$.RangeDays}}d</div>{{end}}</div>{{end}}
+    <div class="gtile"><div class="l">Users · all time</div><div class="v">{{comma .TotalUsers}}</div></div>
+    <div class="gtile"><div class="l">{{.StatEventLabel}} · {{.RangeDays}}d</div><div class="v">{{comma .Signups}}</div>{{if .SignupsDelta}}<div class="d{{if eq (slice .SignupsDelta 0 1) "+"}} up{{else if eq (slice .SignupsDelta 0 1) "-"}} down{{end}}">{{.SignupsDelta}} vs prior {{$.RangeDays}}d</div>{{end}}</div>
     <div class="gtile"><div class="l">{{.ConvLabel}}</div><div class="v acc">{{.OverallConv}}%</div></div>
     {{if .HasEngagement}}<div class="gtile"><div class="l">Engaged · avg</div><div class="v" style="font-size:22px;padding-top:6px">{{.EngagedHuman}}</div></div>{{end}}
-    {{if gt .AIVisitors 0}}<div class="gtile"><div class="l">From AI</div><div class="v acc">{{.AIVisitors}}</div></div>{{end}}
+    {{if gt .AIVisitors 0}}<div class="gtile"><div class="l">From AI</div><div class="v acc">{{comma .AIVisitors}}</div></div>{{end}}
   </div>
 
   <!-- zone 5: exactly one chart -->
@@ -437,7 +510,7 @@
     <div id="chartAlt" hidden></div>
     <div id="chartMain">
     <div class="chartwrap">
-      <div class="yaxis"><span>{{.TrendMax}}</span><span class="ymid"></span><span>0</span></div>
+      <div class="yaxis"><span>{{comma .TrendMax}}</span><span class="ymid">{{comma .TrendMid}}</span><span>0</span></div>
       <div class="plot">
         <div class="gridlines"><div></div><div></div><div></div></div>
         <div class="bars">
@@ -469,7 +542,7 @@
 
   {{if .Hours}}
   <div class="chartzone" style="margin-top:18px">
-    <div class="zonelbl">activity by hour <span class="sub">· UTC · last {{.RangeDays}}d</span></div>
+    <div class="zonelbl">activity by hour <span class="sub">· UTC · last {{.RangeDays}}d · peak {{comma .HoursMax}}/hr</span></div>
     <div class="bars" style="height:44px;padding-top:18px">
       {{range .Hours}}<div class="col"><span class="tip">{{.Hour}}:00 UTC · {{.Count}}</span><div class="bar" style="height:{{.HeightPct}}%"></div></div>{{end}}
     </div>
@@ -483,26 +556,11 @@
     <div class="boardgrid" id="boardgrid"></div>
   </div>
 
-  <!-- zone 8: breakdowns — one tabbed panel, every deep report reachable, none shouting -->
-  <div class="breakdowns">
-    <div class="tabrail" id="tabrail">
-      {{if .HasWeb}}<button class="tabbtn" data-tab="pages">pages</button>
-      <button class="tabbtn" data-tab="referrers">referrers</button>
-      {{if .HasGeo}}<button class="tabbtn" data-tab="geo">geo</button>{{end}}
-      <button class="tabbtn" data-tab="devices">devices</button>
-      {{if .UTMSources}}<button class="tabbtn" data-tab="campaigns">campaigns</button>{{end}}{{end}}
-      <button class="tabbtn" data-tab="funnel">funnel</button>
-      {{if .HasConvBy}}<button class="tabbtn" data-tab="conversion">conversion</button>{{end}}
-      <button class="tabbtn" data-tab="retention">retention</button>
-      {{if .HasSource}}<button class="tabbtn" data-tab="sources">sources</button>{{end}}
-      {{if .HasSearch}}<button class="tabbtn" data-tab="search">search</button>{{end}}
-      {{if .HasWeb}}<button class="tabbtn" data-tab="goals">goals</button>{{end}}
-      <button class="tabbtn" data-tab="live">live</button>
-      <button class="tabbtn" data-tab="events">events</button>
-    </div>
+  <!-- zone 8: the deck — every report always on the table, nothing hiding behind a tab -->
+  <div class="deck">
 
     {{if .HasWeb}}
-    <div class="pane" id="pane-pages">
+    <div class="pane wide" id="pane-pages">
       <div class="webcols">
         <div>
           <h3>top pages</h3>
@@ -515,6 +573,7 @@
       </div>
     </div>
     <div class="pane" id="pane-referrers">
+      <h3>referrers</h3>
       {{range .Referrers}}<div class="seg" data-fp="referrer" data-fv="{{.Value}}" title="click to filter every zone to this referrer"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
     </div>
     {{end}}
@@ -527,7 +586,7 @@
     </div>
     {{end}}
 
-    <div class="pane" id="pane-devices">
+    <div class="pane wide" id="pane-devices">
       <div class="webcols">
         <div>
           <h3>device</h3>
@@ -543,7 +602,7 @@
     </div>
 
     {{if .UTMSources}}
-    <div class="pane" id="pane-campaigns">
+    <div class="pane wide" id="pane-campaigns">
       <div class="webcols">
         <div>
           <h3>utm source</h3>
@@ -559,7 +618,7 @@
     </div>
     {{end}}
 
-    <div class="pane" id="pane-funnel">
+    <div class="pane wide" id="pane-funnel">
       <h3>{{.FunnelTitle}}
         <select id="funnelOrder" class="zonesel" title="step matching discipline" style="margin-left:8px">
           <option value="ordered" {{if eq .FunnelOrder "ordered"}}selected{{end}}>in order</option>
@@ -582,7 +641,39 @@
     </div>
     {{end}}
 
-    <div class="pane" id="pane-retention">
+    {{if .HasSource}}
+    <div class="pane" id="pane-sources">
+      <h3>{{.SourceTitle}}</h3>
+      {{range .BySource}}<div class="seg" data-fp="{{$.SourceProp}}" data-fv="{{.Value}}" title="click to filter every zone to this segment"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}
+    </div>
+    {{end}}
+
+    {{if .HasSearch}}
+    <div class="pane" id="pane-search">
+      <h3>google search queries · 28d clicks</h3>
+      {{range .SearchRows}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
+    </div>
+    {{end}}
+
+    {{if .HasWeb}}
+    <div class="pane" id="pane-goals">
+      <h3>goals</h3>
+      {{if .Goals}}
+      <div class="goalrow">
+        {{range .Goals}}<div class="goalcard"><div class="gname">{{.Name}}</div><div class="gnum">{{.Conversions}} <span class="gpct">{{.Pct}}%</span></div>{{if .TopChannel}}<div class="gchan">top channel: {{.TopChannel}}</div>{{end}}</div>{{end}}
+      </div>
+      {{else if .HasGoalsStore}}
+      <div class="exrow" style="margin-bottom:0">
+        <input id="gName" autocomplete="off" placeholder="goal name (e.g. Signed up)">
+        <input id="gValue" autocomplete="off" placeholder="event name (signup) or path glob (/thanks*)">
+        <button id="gCreate">Create goal</button>
+      </div>
+      <div class="exsummary" id="gNote">no goals yet — name what counts as success. a value starting with / matches a page path; anything else is an event name.</div>
+      {{end}}
+    </div>
+    {{end}}
+
+    <div class="pane wide" id="pane-retention">
       <h3>returning users
         <select id="retDays" class="zonesel" style="margin-left:8px">
           <option value="7" {{if eq .RetDays 7}}selected{{end}}>7 periods</option>
@@ -607,42 +698,13 @@
       </table>
     </div>
 
-    {{if .HasSource}}
-    <div class="pane" id="pane-sources">
-      <h3>{{.SourceTitle}}</h3>
-      {{range .BySource}}<div class="seg" data-fp="{{$.SourceProp}}" data-fv="{{.Value}}" title="click to filter every zone to this segment"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}
-    </div>
-    {{end}}
-
-    {{if .HasSearch}}
-    <div class="pane" id="pane-search">
-      <h3>google search queries · 28d clicks</h3>
-      {{range .SearchRows}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
-    </div>
-    {{end}}
-
-    {{if .HasWeb}}
-    <div class="pane" id="pane-goals">
-      {{if .Goals}}
-      <div class="goalrow">
-        {{range .Goals}}<div class="goalcard"><div class="gname">{{.Name}}</div><div class="gnum">{{.Conversions}} <span class="gpct">{{.Pct}}%</span></div>{{if .TopChannel}}<div class="gchan">top channel: {{.TopChannel}}</div>{{end}}</div>{{end}}
-      </div>
-      {{else if .HasGoalsStore}}
-      <div class="exrow" style="margin-bottom:0">
-        <input id="gName" autocomplete="off" placeholder="goal name (e.g. Signed up)">
-        <input id="gValue" autocomplete="off" placeholder="event name (signup) or path glob (/thanks*)">
-        <button id="gCreate">Create goal</button>
-      </div>
-      <div class="exsummary" id="gNote">no goals yet — name what counts as success. a value starting with / matches a page path; anything else is an event name.</div>
-      {{end}}
-    </div>
-    {{end}}
-
     <div class="pane" id="pane-live">
+      <h3>live <span class="sub">· events as they land</span></h3>
       <div id="live" class="live"><div class="livemuted">waiting for events…</div></div>
     </div>
 
     <div class="pane" id="pane-events">
+      <h3>event stream <span class="sub">· latest 200 · computed by /v1/events/recent</span></h3>
       <div class="exrow" style="margin-bottom:8px">
         <input id="evFilter" autocomplete="off" placeholder="filter the stream: event name, visitor id, path, any property value…">
       </div>
@@ -800,11 +862,25 @@
 
     // click-to-filter: any row with data-fp adds a global filter chip and reloads —
     // state lives in the querystring so the filtered view is a shareable URL
-    document.addEventListener('click',function(e){
-      var s=e.target.closest('.seg[data-fp]');if(!s)return;
+    function drillTo(s){
       var u=new URL(location.href);
       u.searchParams.append('f',s.getAttribute('data-fp')+':'+s.getAttribute('data-fv'));
       u.hash='';location.href=u.toString();
+    }
+    document.addEventListener('click',function(e){
+      var s=e.target.closest('.seg[data-fp]');if(!s)return;
+      drillTo(s);
+    });
+    // every drill row is a keyboard target too: tab to it, enter to filter
+    Array.prototype.forEach.call(document.querySelectorAll('.seg[data-fp],.fbarwrap[data-whostep]'),function(el){
+      el.tabIndex=0;el.setAttribute('role','button');
+    });
+    document.addEventListener('keydown',function(e){
+      if(e.key!=='Enter'&&e.key!==' ')return;
+      var s=e.target.closest&&e.target.closest('.seg[data-fp]');
+      if(s){e.preventDefault();drillTo(s);return;}
+      var fs=e.target.closest&&e.target.closest('.fbarwrap[data-whostep]');
+      if(fs){e.preventDefault();fs.click();}
     });
 
     // liveness, visible: "last event Ns ago" ticks every second and refreshes from
@@ -958,29 +1034,11 @@
     }
     loadBoard();
 
-    // ---- breakdowns: one tab rail, state in the hash so views are linkable
-    var rail=document.getElementById('tabrail');
-    if(rail){
-      var btns=rail.querySelectorAll('.tabbtn');
-      function show(name){
-        var found=false;
-        btns.forEach?void 0:0;
-        Array.prototype.forEach.call(btns,function(b){
-          var on=b.getAttribute('data-tab')===name;
-          b.classList.toggle('on',on); if(on)found=true;
-          var p=document.getElementById('pane-'+b.getAttribute('data-tab'));
-          if(p)p.classList.toggle('on',on);
-        });
-        if(!found&&btns.length){show(btns[0].getAttribute('data-tab'));return;}
-      }
-      Array.prototype.forEach.call(btns,function(b){
-        b.onclick=function(){var n=b.getAttribute('data-tab');history.replaceState(null,'','#tab='+n);show(n);};
-      });
-      var m=/tab=([\w-]+)/.exec(location.hash);
-      show(m?m[1]:(btns[0]&&btns[0].getAttribute('data-tab')));
-      var lp=document.getElementById('livepill');
-      if(lp)lp.onclick=function(e){e.preventDefault();history.replaceState(null,'','#tab=live');show('live');document.getElementById('pane-live').scrollIntoView({behavior:'smooth',block:'center'});};
-    }
+    // ---- the deck: every report is always on the table; old #tab= links scroll to the card
+    var tm=/tab=([\w-]+)/.exec(location.hash);
+    if(tm){var tp=document.getElementById('pane-'+tm[1]);if(tp)tp.scrollIntoView({block:'start'});}
+    var lp=document.getElementById('livepill');
+    if(lp)lp.onclick=function(e){e.preventDefault();var p=document.getElementById('pane-live');if(p)p.scrollIntoView({behavior:'smooth',block:'center'});};
 
     // agent pill opens the connect sheet
     // the agent badge: presence from the MCP server's own traffic, polled live —

@@ -27,7 +27,27 @@ import (
 //go:embed dashboard.tmpl.html
 var dashboardHTML string
 
-var dashTmpl = template.Must(template.New("dash").Parse(dashboardHTML))
+// comma renders 12345 as "12,345" — big numbers must be readable at a glance.
+func comma(n int) string {
+	s := fmt.Sprintf("%d", n)
+	neg := false
+	if len(s) > 0 && s[0] == '-' {
+		neg, s = true, s[1:]
+	}
+	var out []byte
+	for i, c := range []byte(s) {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			out = append(out, ',')
+		}
+		out = append(out, c)
+	}
+	if neg {
+		return "-" + string(out)
+	}
+	return string(out)
+}
+
+var dashTmpl = template.Must(template.New("dash").Funcs(template.FuncMap{"comma": comma}).Parse(dashboardHTML))
 
 type funnelRow struct {
 	Event   string
@@ -188,6 +208,8 @@ type dashVM struct {
 	LastEventSecs  int        // seconds since the newest ingested event; -1 = none
 	ComputeMS      int        // wall time this page took to compute — printed in the footer as a brag
 	TrendMax       int        // the chart's y-axis top — rendered as a real scale, not a hover secret
+	TrendMid       int        // the y-axis middle tick, so the scale reads without arithmetic
+	HoursMax       int        // the hour chart's peak count — its only number, so it gets printed
 	GhostTotal     int        // prior window's total — 0 hides the ghost legend instead of promising invisible bars
 	ChartMetric    string     // the charted event (?metric=), defaults to the detected headline event
 	Gran           string     // chart bucket grain (?gran=): day|week|month (hour capped upstream)
@@ -665,9 +687,15 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			frac := float64(c.Returned[d]) / float64(c.Size)
+			a := 0.08 + 0.92*frac
+			// light text drowns on a strong amber wash — flip it dark past the threshold
+			cellFg := "#EDEDED"
+			if a >= 0.45 {
+				cellFg = "#0A0A0A"
+			}
 			row.Cells = append(row.Cells, retCell{
 				Label: fmt.Sprintf("%d%%", int(math.Round(frac*100))),
-				Style: template.CSS(fmt.Sprintf("background:rgba(245,166,35,%.2f)", 0.08+0.92*frac)),
+				Style: template.CSS(fmt.Sprintf("background:rgba(245,166,35,%.2f);color:%s", a, cellFg)),
 			})
 		}
 		vm.Retention = append(vm.Retention, row)
@@ -712,6 +740,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		vm.Trend = append(vm.Trend, b)
 	}
 	vm.TrendMax = maxT
+	vm.TrendMid = (maxT + 1) / 2
 	vm.ChartMetric = trendEvent
 	vm.Gran = string(gran)
 	// the data-table half of the chart+table unit: newest first, capped at 15 rows
@@ -879,6 +908,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		for h, c := range wv.Hours {
 			vm.Hours = append(vm.Hours, hourBar{Hour: h, Count: c, HeightPct: int(math.Round(float64(c) / float64(maxH) * 100))})
 		}
+		vm.HoursMax = maxH
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
