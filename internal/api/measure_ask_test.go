@@ -121,3 +121,45 @@ func TestAskQAFixes(t *testing.T) {
 		t.Errorf("windowDays for yesterday = %d, want 1", d)
 	}
 }
+
+// The evaluator's exact failing questions — pinned so they never regress.
+func TestAskEvaluatorQuestions(t *testing.T) {
+	now := time.Now().UTC()
+	// "last 6 hours" parses as a 6-hour window
+	w, unsup := parseWindow("engagement in the last 6 hours", now)
+	if unsup != "" || !w.scoped() {
+		t.Fatalf("'last 6 hours' must parse: unsup=%q scoped=%v", unsup, w.scoped())
+	}
+	if span := w.to.Sub(w.from); span != 6*time.Hour {
+		t.Fatalf("window span = %v, want 6h", span)
+	}
+	// engagement routes to the engagement intent, never the generic fallback
+	if got := string(classifyAsk("how much engagement in the last 6 hours")); got != "engagement" {
+		t.Fatalf("engagement question = %q, want engagement", got)
+	}
+	// sub-day windows never render a nonsense per-day rate
+	today := now.Truncate(24 * time.Hour)
+	evs := []event.Event{
+		{Name: "signup", DistinctID: "a", Timestamp: now.Add(-2 * time.Hour)},
+		{Name: "signup", DistinctID: "b", Timestamp: now.Add(-3 * time.Hour)},
+	}
+	_ = today
+	win, _ := parseWindow("signups in the last 6 hours", now)
+	ans := answerSignups(scope(evs, win), []string{"signup"}, win)
+	if strings.Contains(ans, "/day") {
+		t.Fatalf("6-hour answer must not carry a per-day rate: %q", ans)
+	}
+	if !strings.Contains(ans, "2") {
+		t.Fatalf("answer should count both signups: %q", ans)
+	}
+	// engagement answer computes from $engagement events
+	eevs := []event.Event{
+		{Name: "$engagement", DistinctID: "u1", Timestamp: now.Add(-time.Hour), Properties: map[string]any{"engaged_ms": 90000.0}},
+		{Name: "$engagement", DistinctID: "u2", Timestamp: now.Add(-time.Hour), Properties: map[string]any{"engaged_ms": 30000.0}},
+	}
+	ewin, _ := parseWindow("engagement in the last 6 hours", now)
+	eans := answerEngagement(scope(eevs, ewin), ewin)
+	if !strings.Contains(eans, "2 engaged visitors") || !strings.Contains(eans, "1m 0s") {
+		t.Fatalf("engagement answer wrong: %q", eans)
+	}
+}

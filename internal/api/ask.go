@@ -106,6 +106,8 @@ func computedBy(q string, now time.Time) string {
 		report = "the top-pages report"
 	case intentGeo:
 		report = "the geo (countries) breakdown of the web-overview report"
+	case intentEngagement:
+		report = "the engagement report (visible+focused time measured by the SDK)"
 	case intentMeasure:
 		report = "the numeric-aggregation report (a deterministic sum/avg/median/p90 over a property you sent)"
 	default:
@@ -119,20 +121,21 @@ func computedBy(q string, now time.Time) string {
 type askIntent string
 
 const (
-	intentAction    askIntent = "action"
-	intentBrief     askIntent = "brief"
-	intentRetention askIntent = "retention"
-	intentChannels  askIntent = "channels"
-	intentGeo       askIntent = "geo"
-	intentWebDim    askIntent = "webdim"
-	intentLive      askIntent = "live"
-	intentTopPages  askIntent = "toppages"
-	intentWeb       askIntent = "web"
-	intentFunnel    askIntent = "funnel"
-	intentActive    askIntent = "active"
-	intentSignups   askIntent = "signups"
-	intentMeasure   askIntent = "measure"
-	intentUnknown   askIntent = "unknown"
+	intentAction     askIntent = "action"
+	intentBrief      askIntent = "brief"
+	intentRetention  askIntent = "retention"
+	intentChannels   askIntent = "channels"
+	intentGeo        askIntent = "geo"
+	intentWebDim     askIntent = "webdim"
+	intentEngagement askIntent = "engagement"
+	intentLive       askIntent = "live"
+	intentTopPages   askIntent = "toppages"
+	intentWeb        askIntent = "web"
+	intentFunnel     askIntent = "funnel"
+	intentActive     askIntent = "active"
+	intentSignups    askIntent = "signups"
+	intentMeasure    askIntent = "measure"
+	intentUnknown    askIntent = "unknown"
 )
 
 // classifyAsk routes a lowercased question to one intent. Order is the whole
@@ -176,6 +179,11 @@ func classifyAsk(q string) askIntent {
 	case hasAny(q, "right now", "on the site now", "online now", "live visitor", "who's on",
 		"whos on", "active right now", "currently on", "here now"):
 		return intentLive
+	// engagement questions answer from $engagement (visible+focused time the SDK
+	// measures) — before webdim so they never bounce to the capabilities menu
+	case hasAny(q, "engagement", "engaged", "time on site", "time on page", "session duration",
+		"how long do people stay", "how long do users stay", "dwell"):
+		return intentEngagement
 	// standard web dimensions the dashboard shows (device/browser/os/bounce) — before
 	// the web-volume case so "what devices" isn't answered as a pageview count
 	case hasAny(q, "device", "mobile vs desktop", "browser", "operating system", " os ",
@@ -226,7 +234,7 @@ func answer(q string, evs []event.Event, now time.Time) string {
 	win, unsupported := parseWindow(q, now)
 	if unsupported != "" {
 		return fmt.Sprintf("I can't scope to %q from the ask bar, supported windows: today, yesterday, "+
-			"this/last week, this/last month, and \"last N days\". Re-ask with one of those, or drop the "+
+			"this/last week, this/last month, \"last N days\", and \"last N hours\". Re-ask with one of those, or drop the "+
 			"time phrase for all recorded history. For arbitrary ranges, ask your agent over MCP, the "+
 			"trends and funnel tools take exact dates.", unsupported)
 	}
@@ -269,6 +277,8 @@ func answer(q string, evs []event.Event, now time.Time) string {
 		return answerGeo(scoped, evs, win)
 	case intentWebDim:
 		return answerWebDim(scoped, q, win)
+	case intentEngagement:
+		return answerEngagement(scoped, win)
 	case intentLive:
 		return answerLive(evs, now)
 	case intentWeb:
@@ -500,6 +510,7 @@ func windowClause(w askWindow) string {
 }
 
 var lastNDaysRe = regexp.MustCompile(`(?:last|past)\s+(\d+)\s+days?`)
+var lastNHoursRe = regexp.MustCompile(`(?:last|past)\s+(\d+)\s+hours?`)
 
 // parseWindow maps time phrases to real windows (UTC, like every computation
 // here). Recognized: today, yesterday, this/last week (calendar, Monday start),
@@ -536,6 +547,15 @@ func parseWindow(q string, now time.Time) (win askWindow, unsupported string) {
 		first := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 		return askWindow{from: first.AddDate(0, -1, 0), to: first,
 			label: "last month (" + first.AddDate(0, -1, 0).Format("January 2006") + ", UTC)"}, ""
+	}
+	if m := lastNHoursRe.FindStringSubmatch(q); m != nil {
+		if n, err := strconv.Atoi(m[1]); err == nil && n > 0 && n <= 24*366 {
+			return askWindow{from: now.Add(-time.Duration(n) * time.Hour), to: now,
+				label: fmt.Sprintf("the last %d hours (UTC)", n)}, ""
+		}
+	}
+	if strings.Contains(q, "last hour") || strings.Contains(q, "past hour") {
+		return askWindow{from: now.Add(-time.Hour), to: now, label: "the last hour (UTC)"}, ""
 	}
 	if m := lastNDaysRe.FindStringSubmatch(q); m != nil {
 		if n, err := strconv.Atoi(m[1]); err == nil && n > 0 {
@@ -833,6 +853,17 @@ func pickConversion(evs []event.Event, vol []string) string {
 // one and understates the rate (291 over a 7-day week read as 36/day, not 42).
 // For a scoped window, count the whole days it actually spans; otherwise the
 // point count is the day count.
+// rateSuffix renders ", about N/day" only when the window is long enough for a
+// daily rate to mean anything — "49 events yesterday, about 49/day" was noise,
+// and a 6-hour window divided into days is nonsense.
+func rateSuffix(total int, win askWindow, points int) string {
+	d := windowDays(win, points)
+	if d < 2 {
+		return ""
+	}
+	return fmt.Sprintf(", about %d/day", total/d)
+}
+
 func windowDays(win askWindow, points int) int {
 	if win.scoped() {
 		d := int(win.to.Sub(win.from).Hours()/24 + 0.5)
@@ -861,9 +892,9 @@ func answerSignups(evs []event.Event, vol []string, win askWindow) string {
 		return fmt.Sprintf("No \"%s\" events %s, widen the window, or drop the time phrase for all history.", ev, win.label)
 	}
 	if win.scoped() {
-		return fmt.Sprintf("%d \"%s\" events %s, about %d/day.", tr.Total, ev, win.label, tr.Total/windowDays(win, days))
+		return fmt.Sprintf("%d \"%s\" events %s%s.", tr.Total, ev, win.label, rateSuffix(tr.Total, win, days))
 	}
-	return fmt.Sprintf("%d \"%s\" events over the last %d days, about %d/day.", tr.Total, ev, days, tr.Total/windowDays(win, days))
+	return fmt.Sprintf("%d \"%s\" events over the last %d days%s.", tr.Total, ev, days, rateSuffix(tr.Total, win, days))
 }
 
 func answerActive(evs []event.Event, win askWindow, now time.Time) string {
@@ -897,11 +928,10 @@ func answerEvent(evs []event.Event, ev string, win askWindow) string {
 		}
 		return fmt.Sprintf("No %q events recorded yet.", ev)
 	}
-	per := tr.Total / windowDays(win, days)
 	if win.scoped() {
-		return fmt.Sprintf("%d %q events %s, about %d/day.", tr.Total, ev, win.label, per)
+		return fmt.Sprintf("%d %q events %s%s.", tr.Total, ev, win.label, rateSuffix(tr.Total, win, days))
 	}
-	return fmt.Sprintf("%d %q events over the last %d days, about %d/day.", tr.Total, ev, days, per)
+	return fmt.Sprintf("%d %q events over the last %d days%s.", tr.Total, ev, days, rateSuffix(tr.Total, win, days))
 }
 
 // answerPage answers "visitors to /pricing" / "how many pageviews for /pqr" from
@@ -936,6 +966,42 @@ func answerPage(evs []event.Event, path string, win askWindow) string {
 
 // answerWebDim answers device/browser/os/bounce questions from the same web report
 // the dashboard renders — the ask bar must never deny a dimension the dashboard shows.
+
+// answerEngagement reports engaged visitors + average engaged time over the window,
+// from the SDK's $engagement events (visible AND focused time — background tabs
+// don't count). The metric evaluators actually ask for by name.
+func answerEngagement(evs []event.Event, win askWindow) string {
+	perUser := map[string]float64{}
+	for _, e := range evs {
+		if e.Name != "$engagement" {
+			continue
+		}
+		if ms, ok := e.Properties["engaged_ms"].(float64); ok && ms > 0 {
+			perUser[e.DistinctID] += ms
+		}
+	}
+	if len(perUser) == 0 {
+		if win.scoped() {
+			return "No engagement measured " + win.label + ". Engagement comes from the SDK's $engagement events (visible + focused time) — widen the window, or drop the time phrase for all history."
+		}
+		return "No engagement data yet. The browser SDK measures it automatically once installed (visible + focused time per visitor)."
+	}
+	var total float64
+	for _, ms := range perUser {
+		total += ms
+	}
+	avgSecs := int(total / float64(len(perUser)) / 1000)
+	human := fmt.Sprintf("%ds", avgSecs)
+	if avgSecs >= 60 {
+		human = fmt.Sprintf("%dm %ds", avgSecs/60, avgSecs%60)
+	}
+	scope := "across all recorded history"
+	if win.scoped() {
+		scope = win.label
+	}
+	return fmt.Sprintf("%d engaged visitors %s, averaging %s of active time each (visible and focused — background tabs don't count).", len(perUser), scope, human)
+}
+
 func answerWebDim(evs []event.Event, q string, win askWindow) string {
 	pick := func(prop string) []struct {
 		v string
@@ -1133,6 +1199,14 @@ func namedEvent(q string, vol []string) string {
 		}
 		if toks[strings.ToLower(ev)] {
 			return ev
+		}
+	}
+	// autocapture synonyms: "clicks" means $click (nobody types the dollar sign)
+	if hasAny(q, "clicks", "click count", "how many click") {
+		for _, ev := range vol {
+			if ev == "$click" {
+				return ev
+			}
 		}
 	}
 	// purchase synonyms map to a real purchase-shaped event so "how many purchases"
