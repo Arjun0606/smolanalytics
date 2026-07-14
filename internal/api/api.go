@@ -476,6 +476,20 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 	s.recordAgent(body) // the header's agent badge: presence from real MCP traffic
 	status, resp := s.mcp.HTTPDispatch(body)
 	w.Header().Set("Content-Type", "application/json")
+	// Streamable-HTTP session id: strict MCP clients expect an Mcp-Session-Id on the
+	// initialize response. We stay stateless (any/no session id is accepted on later
+	// calls), but echo the client's id if present, else mint one on initialize, so a
+	// strict client gets the header it waits for and a tolerant client is unaffected.
+	if sid := r.Header.Get("Mcp-Session-Id"); sid != "" {
+		w.Header().Set("Mcp-Session-Id", sid)
+	} else {
+		var probe struct {
+			Method string `json:"method"`
+		}
+		if json.Unmarshal(body, &probe); probe.Method == "initialize" {
+			w.Header().Set("Mcp-Session-Id", newID())
+		}
+	}
 	w.WriteHeader(status)
 	_, _ = w.Write(resp)
 }

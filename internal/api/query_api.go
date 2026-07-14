@@ -344,7 +344,11 @@ func parseTrendWindow(r *http.Request) (from, to time.Time, err error) {
 		if n > 365 {
 			n = 365
 		}
-		return time.Now().UTC().AddDate(0, 0, -n), time.Time{}, nil
+		// align to whole calendar days: "last N days" is N complete day-buckets ending
+		// today, so the first daily bucket is a full day, never a clipped mid-day window
+		// that renders a phantom leading 0 on the chart. from = midnight, (n-1) days back.
+		today := time.Now().UTC().Truncate(24 * time.Hour)
+		return today.AddDate(0, 0, -(n - 1)), time.Time{}, nil
 	}
 	parse := func(key string) (time.Time, error) {
 		v := q.Get(key)
@@ -408,12 +412,30 @@ func (s *Server) apiBreakdown(w http.ResponseWriter, r *http.Request) {
 		}
 		scoped = append(scoped, e)
 	}
+	unique := boolParam(r.URL.Query().Get("unique"))
 	groups := query.Breakdown(scoped, property)
 	rows := make([]map[string]any, 0, len(groups))
 	for _, g := range groups {
-		rows = append(rows, map[string]any{"value": g.Value, "count": g.Count})
+		// distinct users per bucket, so "how many USERS signed up on desktop" is
+		// answerable and unique=true is honored (it was a silent no-op — the report
+		// only ever returned event volume). Both are always exposed; count follows the
+		// unique flag so the primary number matches what was asked for.
+		usered := make(map[string]struct{}, len(g.Events))
+		for _, e := range g.Events {
+			usered[e.DistinctID] = struct{}{}
+		}
+		visitors := len(usered)
+		count := g.Count
+		if unique {
+			count = visitors
+		}
+		rows = append(rows, map[string]any{"value": g.Value, "count": count, "events": g.Count, "visitors": visitors})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"event": eventName, "property": property, "groups": rows})
+	// when unique, re-sort by the distinct-user count so ordering matches the number.
+	if unique {
+		sort.SliceStable(rows, func(i, j int) bool { return rows[i]["count"].(int) > rows[j]["count"].(int) })
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"event": eventName, "property": property, "unique": unique, "groups": rows})
 }
 
 // GET /v1/retention?event=open&days=7&filters=...

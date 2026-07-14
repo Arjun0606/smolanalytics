@@ -389,6 +389,7 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		var a struct {
 			Event    string    `json:"event"`
 			Property string    `json:"property"`
+			Unique   bool      `json:"unique"`
 			Filters  FilterSet `json:"filters"`
 		}
 		if err := unmarshalArgs(args, &a); err != nil {
@@ -417,9 +418,21 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		}
 		rows := make([]map[string]any, 0, len(groups))
 		for _, g := range groups {
-			rows = append(rows, map[string]any{"value": g.Value, "count": g.Count})
+			usered := make(map[string]struct{}, len(g.Events))
+			for _, e := range g.Events {
+				usered[e.DistinctID] = struct{}{}
+			}
+			visitors := len(usered)
+			count := g.Count
+			if a.Unique {
+				count = visitors
+			}
+			rows = append(rows, map[string]any{"value": g.Value, "count": count, "events": g.Count, "visitors": visitors})
 		}
-		return jsonText(map[string]any{"event": a.Event, "property": a.Property, "groups": rows})
+		if a.Unique {
+			sort.SliceStable(rows, func(i, j int) bool { return rows[i]["count"].(int) > rows[j]["count"].(int) })
+		}
+		return jsonText(map[string]any{"event": a.Event, "property": a.Property, "unique": a.Unique, "groups": rows})
 	case "web_overview":
 		var a struct {
 			Days    int       `json:"days"`
