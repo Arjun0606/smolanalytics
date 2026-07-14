@@ -326,3 +326,33 @@ func TestContractRetentionModes(t *testing.T) {
 		t.Fatalf("bucket=weekly must 400 (it silently meant daily before), got %d", resp.StatusCode)
 	}
 }
+
+// CONTRACT TRENDS-XAU: each WAU point = distinct users active in the rolling
+// 7 days up to and including that day; the total echoes the LAST point.
+func TestContractXAU(t *testing.T) {
+	now := time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC)
+	today := now.Truncate(24 * time.Hour)
+	evs := []event.Event{
+		{Name: "open", DistinctID: "a", Timestamp: today.AddDate(0, 0, -9).Add(9 * time.Hour)},
+		{Name: "open", DistinctID: "b", Timestamp: today.AddDate(0, 0, -2).Add(9 * time.Hour)},
+	}
+	r := trends.ComputeXAU(evs, "open", today.AddDate(0, 0, -10), today, 7)
+	byDay := map[string]int{}
+	for _, p := range r.Points {
+		byDay[p.Date.Format("2006-01-02")] = p.Count
+	}
+	d := func(back int) string { return today.AddDate(0, 0, -back).Format("2006-01-02") }
+	// 9 days ago: only a active -> 1; 3 days ago: a fell out of the 7d window -> 0... but b arrives day -2
+	if byDay[d(9)] != 1 {
+		t.Fatalf("day -9 WAU: want 1 (a), got %d", byDay[d(9)])
+	}
+	if byDay[d(3)] != 1 {
+		t.Fatalf("day -3 WAU: a active day -9 is within (d-3 - 7, d-3]; want 1, got %d", byDay[d(3)])
+	}
+	if byDay[d(2)] != 1 {
+		t.Fatalf("day -2 WAU: a expired (day -9 is 7 back), b arrives; want 1, got %d", byDay[d(2)])
+	}
+	if r.Total != byDay[d(1)] {
+		t.Fatalf("total must echo the LAST point (current WAU), got %d want %d", r.Total, byDay[d(1)])
+	}
+}

@@ -519,3 +519,77 @@ func ComputeInterval(events []event.Event, eventName string, from, to time.Time,
 	}
 	return r
 }
+
+// ComputeXAU plots DAU/WAU/MAU as a daily series: each point = distinct users
+// active in the rolling half-open window (point − windowDays, point], per the
+// TRENDS-XAU contract (mixpanel XAU semantics; posthog words it "the N days
+// leading up to the label"). The Total echoes the LAST point (the current
+// value) — summing rolling actives would double-count meaninglessly.
+func ComputeXAU(events []event.Event, eventName string, from, to time.Time, windowDays int) Result {
+	if windowDays < 1 {
+		windowDays = 1
+	}
+	label := map[int]string{1: "dau", 7: "wau", 30: "mau"}[windowDays]
+	if label == "" {
+		label = fmt.Sprintf("%dd_active", windowDays)
+	}
+	r := Result{Event: eventName, Unique: true}
+	// collect qualifying (user, day) pairs once
+	type ud struct {
+		day int64
+		id  string
+	}
+	var pairs []ud
+	var loD, hiD int64
+	have := false
+	for _, e := range events {
+		if eventName != "" && e.Name != eventName {
+			continue
+		}
+		ts := e.Timestamp.UTC()
+		if !from.IsZero() && ts.Before(from) {
+			continue
+		}
+		if !to.IsZero() && !ts.Before(to) {
+			continue
+		}
+		d := ts.Truncate(24*time.Hour).Unix() / 86400
+		pairs = append(pairs, ud{d, e.DistinctID})
+		if !have || d < loD {
+			loD = d
+		}
+		if !have || d > hiD {
+			hiD = d
+		}
+		have = true
+	}
+	if !from.IsZero() {
+		loD = from.UTC().Unix() / 86400
+	}
+	if !to.IsZero() {
+		hiD = to.UTC().Add(-time.Nanosecond).Unix() / 86400
+	}
+	if !have || hiD < loD {
+		return r
+	}
+	byDay := map[int64]map[string]bool{}
+	for _, p := range pairs {
+		if byDay[p.day] == nil {
+			byDay[p.day] = map[string]bool{}
+		}
+		byDay[p.day][p.id] = true
+	}
+	for d := loD; d <= hiD; d++ {
+		active := map[string]bool{}
+		for back := int64(0); back < int64(windowDays); back++ {
+			for id := range byDay[d-back] {
+				active[id] = true
+			}
+		}
+		r.Points = append(r.Points, Point{Date: time.Unix(d*86400, 0).UTC(), Count: len(active)})
+	}
+	if n := len(r.Points); n > 0 {
+		r.Total = r.Points[n-1].Count // the CURRENT value, never a sum of rolling windows
+	}
+	return r
+}

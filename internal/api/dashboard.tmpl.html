@@ -327,6 +327,7 @@
   {{if ge .LastEventSecs 0}}<span class="hlink" id="lastev" data-secs="{{.LastEventSecs}}" title="seconds since the newest ingested event — proof this page is live">·</span>{{end}}
   {{if .HasData}}<a class="livepill{{if gt .LiveNow 0}} on{{end}}" href="#tab=live" id="livepill"><span class="dot"></span><span id="livecount">{{if gt .LiveNow 0}}{{.LiveNow}} now{{else}}live{{end}}</span></a>{{end}}
   <span class="agentpill" id="agentpill" title="connect your coding agent over MCP">⌁ agent</span>
+  <a class="hlink" href="#explore" id="exploreLink" title="run any report on your own events">explore</a>
   {{if .HasShares}}<a class="hlink" href="/settings/shares" id="shareBtn" title="mint a revocable read-only link">share</a>{{end}}
   <a class="hlink" href="https://smolanalytics.com" target="_blank" style="color:var(--accent)">Cloud ↗</a>
   <a class="hlink" href="/settings">settings</a>
@@ -974,6 +975,8 @@
     }
 
     // agent pill opens the connect sheet
+    var el=document.getElementById('exploreLink'),pw=document.querySelector('.power');
+    if(el&&pw)el.onclick=function(e){e.preventDefault();pw.open=true;pw.scrollIntoView({behavior:'smooth',block:'start'});};
     var ap=document.getElementById('agentpill'),cs=document.getElementById('connect');
     if(ap&&cs)ap.onclick=function(){cs.open=true;cs.scrollIntoView({behavior:'smooth',block:'center'});};
 

@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -34,6 +35,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/geo"
 	"github.com/Arjun0606/smolanalytics/internal/goal"
 	"github.com/Arjun0606/smolanalytics/internal/gsc"
+	"github.com/Arjun0606/smolanalytics/internal/insight"
 	"github.com/Arjun0606/smolanalytics/internal/insights"
 	"github.com/Arjun0606/smolanalytics/internal/mcp"
 	"github.com/Arjun0606/smolanalytics/internal/query"
@@ -53,22 +55,24 @@ var sdkJS string
 var Version = "0.1.0"
 
 type Server struct {
-	store    store.Store
-	mcp      *mcp.Server
-	insights *insights.Store
-	cohorts  *cohort.Store
-	settings *settings.Store
-	audit    *audit.Log
-	webhooks *webhook.Store
-	alerts   *alert.Store
-	shares   *share.Store
-	aliases  *alias.Map
-	gsc      *gsc.Store
-	goals    *goal.Store
-	exports  *exportlink.Store
-	defined  *defined.Store // retroactive zero-code events (Heap wedge)
-	writeKey string         // if set, POST /v1/events requires Authorization: Bearer <writeKey>
-	geo      *geo.Resolver  // ingest-time IP→country (IP never stored); nil = disabled
+	store        store.Store
+	mcp          *mcp.Server
+	insights     *insights.Store
+	cohorts      *cohort.Store
+	settings     *settings.Store
+	audit        *audit.Log
+	webhooks     *webhook.Store
+	alerts       *alert.Store
+	shares       *share.Store
+	aliases      *alias.Map
+	gsc          *gsc.Store
+	goals        *goal.Store
+	exports      *exportlink.Store
+	defined      *defined.Store // retroactive zero-code events (Heap wedge)
+	writeKey     string         // if set, POST /v1/events requires Authorization: Bearer <writeKey>
+	geo          *geo.Resolver  // ingest-time IP→country (IP never stored); nil = disabled
+	anomalyMu    sync.Mutex
+	anomalyFired map[string]time.Time // finding title -> last webhook fire (24h dedup)
 	// autocaptured events dropped because the UA was a known crawler/bot — surfaced in
 	// /v1/usage so "why is my dashboard lower than GA?" has a visible, honest answer.
 	botsFiltered atomic.Int64
@@ -122,7 +126,53 @@ func (s *Server) rec(action, detail string) { s.audit.Record(action, detail) }
 
 // EvaluateAlerts runs every enabled alert against the current data and fires those
 // whose condition is met (debounced to once per window). Called on a schedule.
+
+// evaluateAnomalies pushes the verdict engine's WARN findings to the configured
+// webhooks — the "signups down 34%: it's mobile safari at checkout" pull, with the
+// finding itself as the proven diagnosis (same engine as the dashboard verdict, so
+// the alert and the page can never disagree). Per-finding 24h dedup + a global cap
+// of 2 anomaly sends per 24h (the plausible rule: alerts that fire rarely get read).
+func (s *Server) evaluateAnomalies() {
+	if s.webhooks == nil {
+		return
+	}
+	evs, err := s.store.Range(time.Time{}, time.Time{})
+	if err != nil {
+		return
+	}
+	evs = query.Apply(evs, nil)
+	findings := insight.Generate(evs)
+	now := time.Now().UTC()
+	s.anomalyMu.Lock()
+	defer s.anomalyMu.Unlock()
+	if s.anomalyFired == nil {
+		s.anomalyFired = map[string]time.Time{}
+	}
+	sent := 0
+	for _, t := range s.anomalyFired {
+		if now.Sub(t) < 24*time.Hour {
+			sent++
+		}
+	}
+	for _, f := range findings {
+		if f.Severity != "warn" || sent >= 2 {
+			continue
+		}
+		if last, ok := s.anomalyFired[f.Title]; ok && now.Sub(last) < 24*time.Hour {
+			continue
+		}
+		s.anomalyFired[f.Title] = now
+		sent++
+		payload := map[string]any{
+			"type": "anomaly", "title": f.Title, "detail": f.Detail, "fired_at": now,
+			"computed_by": "the verdict engine (notable-change detection), the same computation the dashboard's 'what to look at' renders",
+		}
+		s.webhooks.DeliverAll(payload, "⚠ "+f.Title+" — "+f.Detail)
+	}
+}
+
 func (s *Server) EvaluateAlerts() {
+	s.evaluateAnomalies()
 	if s.alerts == nil {
 		return
 	}

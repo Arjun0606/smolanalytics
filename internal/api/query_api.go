@@ -223,6 +223,19 @@ func (s *Server) apiTrends(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, werr.Error())
 		return
 	}
+	// XAU: measure=dau|wau|mau plots rolling distinct-actives per day (TRENDS-XAU) —
+	// intercepted before property measures because they need no property.
+	switch q.Get("measure") {
+	case "dau":
+		writeJSON(w, http.StatusOK, trends.ComputeXAU(evs, event, from, to, 1))
+		return
+	case "wau":
+		writeJSON(w, http.StatusOK, trends.ComputeXAU(evs, event, from, to, 7))
+		return
+	case "mau":
+		writeJSON(w, http.StatusOK, trends.ComputeXAU(evs, event, from, to, 30))
+		return
+	}
 	// numeric aggregation: measure=sum|avg|min|max|median|p90 over a numeric property
 	// (revenue, AOV, p90 latency) — the money/growth questions Count can't answer.
 	if meas := q.Get("measure"); meas != "" {

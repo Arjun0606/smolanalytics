@@ -29,7 +29,7 @@ func TestComputeMeasure_Aggregations(t *testing.T) {
 		wantDay0  float64
 	}{
 		{Sum, 60, 30},
-		{Avg, 20, 15},   // window avg = (10+20+30)/3 = 20, NOT (15+30)/2 = 22.5
+		{Avg, 20, 15}, // window avg = (10+20+30)/3 = 20, NOT (15+30)/2 = 22.5
 		{Min, 10, 10},
 		{Max, 30, 20},
 		{Median, 20, 15}, // window median of [10,20,30] = 20; day0 [10,20] = 15
@@ -55,9 +55,9 @@ func TestComputeMeasure_Aggregations(t *testing.T) {
 func TestComputeMeasure_SkipsMissingAndNonNumeric(t *testing.T) {
 	evs := []event.Event{
 		evAmt(0, 10.0),
-		evAmt(0, "not-a-number"),                 // skipped
+		evAmt(0, "not-a-number"), // skipped
 		{Name: "checkout", DistinctID: "u", Timestamp: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC), Properties: map[string]any{"other": 99}}, // no amount, skipped
-		evAmt(0, "29.99"),                        // numeric string, parsed
+		evAmt(0, "29.99"), // numeric string, parsed
 	}
 	r := ComputeMeasure(evs, "checkout", "amount", Sum, time.Time{}, time.Time{})
 	if d := r.Total - 39.99; d > 1e-9 || d < -1e-9 { // float tolerance
