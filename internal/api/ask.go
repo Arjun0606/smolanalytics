@@ -1046,29 +1046,34 @@ func answerChannels(evs []event.Event, vol []string, win askWindow) string {
 		}
 		return "No events recorded yet."
 	}
-	srcProp := detectProp(evs, "source")
-	if srcProp == "" {
-		return "Your events don't carry any properties to attribute a channel from yet, send a " +
-			"source/referrer/utm_source property with your events and ask again."
-	}
 	conv := pickConversion(evs, vol)
 
-	// first-touch: a user's channel is srcProp on their FIRST event in the window
+	// first-touch: a user's channel comes from their FIRST event, read from the best
+	// available signal — source, else the referrer host, else utm_source, else direct.
+	// Keying off a single "source" property collapsed everyone to "direct" on real
+	// autocapture data (where the landing $pageview carries `referrer`, not `source`),
+	// which is exactly the misleading "direct 220 users" answer this fixes.
 	firstTS := map[string]time.Time{}
 	firstSrc := map[string]string{}
 	converted := map[string]bool{}
+	anySignal := false
 	for _, e := range evs {
 		if t, ok := firstTS[e.DistinctID]; !ok || e.Timestamp.Before(t) {
 			firstTS[e.DistinctID] = e.Timestamp
-			src, _ := e.Properties[srcProp].(string)
-			if src == "" {
-				src = "direct"
+			ch := channelOf(e)
+			if ch != "direct" {
+				anySignal = true
 			}
-			firstSrc[e.DistinctID] = src
+			firstSrc[e.DistinctID] = ch
 		}
 		if e.Name == conv {
 			converted[e.DistinctID] = true
 		}
+	}
+	if !anySignal {
+		return "Every visitor here is untagged (no referrer, source, or utm on their first event), so there's " +
+			"nothing to attribute a channel from — they'd all read as \"direct\". Tag inbound links with utm_source, " +
+			"or make sure the SDK captures the referrer, and ask again."
 	}
 	type row struct {
 		src              string
@@ -1097,28 +1102,62 @@ func answerChannels(evs []event.Event, vol []string, win askWindow) string {
 		}
 		return rows[i].src < rows[j].src
 	})
+	if len(converted) == 0 {
+		// no conversions yet — just rank the channels by volume, no "best" to name
+		parts := []string{}
+		for i, r := range rows {
+			if i >= 3 {
+				break
+			}
+			parts = append(parts, fmt.Sprintf("%s %d users", r.src, r.users))
+		}
+		return fmt.Sprintf("By channel, first-touch%s: %s. No %q conversions in this data yet, so there is no honest \"best\" to rank.",
+			windowClause(win), strings.Join(parts, ", "), conv)
+	}
+	// "best" = highest conversion rate; users break ties so a bigger sample wins
+	rateOf := func(r *row) float64 { return float64(r.converted) / float64(r.users) }
+	best := rows[0]
+	for _, r := range rows[1:] {
+		if rateOf(r) > rateOf(best) || (rateOf(r) == rateOf(best) && r.users > best.users) {
+			best = r
+		}
+	}
+	// the listing shows the top channels AND always includes the named winner, so the
+	// channel we call "best" never goes missing from the evidence list beneath it.
 	parts := []string{}
+	shown := map[string]bool{}
 	for i, r := range rows {
 		if i >= 3 {
 			break
 		}
 		parts = append(parts, fmt.Sprintf("%s %d users → %d %s (%d%%)",
-			r.src, r.users, r.converted, conv, int(float64(r.converted)/float64(r.users)*100+0.5)))
+			r.src, r.users, r.converted, conv, int(rateOf(r)*100+0.5)))
+		shown[r.src] = true
 	}
-	listing := fmt.Sprintf("By %s, first-touch%s: %s.", srcProp, windowClause(win), strings.Join(parts, ", "))
-	if len(converted) == 0 {
-		return listing + fmt.Sprintf(" No %q conversions in this data yet, so there is no honest \"best\" to rank.", conv)
+	if !shown[best.src] {
+		parts = append(parts, fmt.Sprintf("%s %d users → %d %s (%d%%)",
+			best.src, best.users, best.converted, conv, int(rateOf(best)*100+0.5)))
 	}
-	// "best" = highest conversion rate; users break ties so a bigger sample wins
-	best := rows[0]
-	rate := func(r *row) float64 { return float64(r.converted) / float64(r.users) }
-	for _, r := range rows[1:] {
-		if rate(r) > rate(best) || (rate(r) == rate(best) && r.users > best.users) {
-			best = r
+	listing := fmt.Sprintf("By channel, first-touch%s: %s.", windowClause(win), strings.Join(parts, ", "))
+	return fmt.Sprintf("%s converts best to \"%s\": %d of %d first-touch users (%d%%). %s",
+		best.src, conv, best.converted, best.users, int(rateOf(best)*100+0.5), listing)
+}
+
+// channelOf reads a visitor's acquisition channel from an event, best signal first:
+// an explicit source property, else the referrer host, else utm_source, else direct.
+func channelOf(e event.Event) string {
+	if s, _ := e.Properties["source"].(string); s != "" {
+		return s
+	}
+	if r, _ := e.Properties["referrer"].(string); r != "" {
+		if h := hostOf(r); h != "" {
+			return h
 		}
 	}
-	return fmt.Sprintf("%s converts best to \"%s\": %d of %d first-touch users (%d%%). %s",
-		best.src, conv, best.converted, best.users, int(rate(best)*100+0.5), listing)
+	if u, _ := e.Properties["utm_source"].(string); u != "" {
+		return u
+	}
+	return "direct"
 }
 
 // pickConversion picks the event "converts" means for this dataset: the

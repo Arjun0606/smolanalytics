@@ -87,7 +87,7 @@ func TestAskRouterAndAnswers(t *testing.T) {
 		{
 			q:           "which channel converts best?",
 			intent:      intentChannels,
-			contains:    []string{`google converts best to "signup"`, "2 of 4 first-touch users (50%)", "By source"},
+			contains:    []string{`google converts best to "signup"`, "2 of 4 first-touch users (50%)", "By channel"},
 			notContains: []string{"drop-off"}, // the funnel answer this used to return
 		},
 		{

@@ -232,3 +232,40 @@ func TestAskRetentionCovenant(t *testing.T) {
 		t.Errorf("segment-scoped retention must say its scope, got: %s", a)
 	}
 }
+
+// TestChannelAttributionUsesReferrer pins the journey-caught bug: on realistic
+// autocapture data the landing $pageview carries `referrer` (not `source`), so keying
+// channel attribution off a single `source` property collapsed every visitor to
+// "direct". Attribution must fall back to the referrer host. (Also pins that the named
+// winner appears in the by-channel list beneath it.)
+func TestChannelAttributionUsesReferrer(t *testing.T) {
+	base := batNow.AddDate(0, 0, -3)
+	evs := []event.Event{}
+	// 3 reddit visitors (2 sign up), 2 google visitors (0 sign up), 1 direct (1 signs up).
+	// referrer lives on the pageview; signup carries no source — the realistic shape.
+	mk := func(u, ref string, signs bool) {
+		p := map[string]any{"path": "/"}
+		if ref != "" {
+			p["referrer"] = "https://" + ref + "/"
+		}
+		evs = append(evs, event.Event{DistinctID: u, Name: "$pageview", Timestamp: base, Properties: p})
+		if signs {
+			evs = append(evs, event.Event{DistinctID: u, Name: "signup", Timestamp: base.Add(time.Minute)})
+		}
+	}
+	mk("r1", "reddit.com", true)
+	mk("r2", "reddit.com", true)
+	mk("r3", "reddit.com", false)
+	mk("g1", "google.com", false)
+	mk("g2", "google.com", false)
+	mk("d1", "", true)
+	got := answer("which channel converts best", evs, batNow)
+	// must NOT collapse to one "direct" row of everyone
+	if strings.Contains(got, "direct 6") || !strings.Contains(got, "reddit.com") {
+		t.Errorf("channel attribution collapsed / ignored referrer: %s", got)
+	}
+	// direct (1/1 = 100%) is the highest rate → named winner, and it must appear in the list
+	if !strings.Contains(got, "direct converts best") {
+		t.Errorf("expected direct (100%%) as winner, got: %s", got)
+	}
+}
