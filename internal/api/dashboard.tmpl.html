@@ -725,9 +725,15 @@
         <a class="cbtn" href="{{.VSCodeLink}}">add to VS Code</a>
       </div>
       <div class="crow">
-        <span class="cn">Claude Desktop / any client</span>
-        <span class="ccode" id="c3">{{.MCPConfig}}</span>
+        <span class="cn">Claude Desktop</span>
+        <span class="ccode" id="c3">{{.DesktopConfig}}</span>
         <button class="copy" data-c="c3">copy</button>
+      </div>
+      <div class="cnote" style="padding:0 0 8px">desktop's connector UI only takes an OAuth URL, so don't paste anything there. instead: Settings → Developer → Edit Config, paste the JSON above into claude_desktop_config.json, restart Claude Desktop. the 47 tools appear under smolanalytics.</div>
+      <div class="crow">
+        <span class="cn">any mcp.json client (Windsurf, Zed…)</span>
+        <span class="ccode" id="c4">{{.MCPServersJSON}}</span>
+        <button class="copy" data-c="c4">copy</button>
       </div>
       <div class="cnote">
         then ask from your editor: <em>"what changed on my site this week?"</em> · <em>"why did {{.StatEventLabel}} drop?"</em> · <em>"which referrer converts best?"</em><br>

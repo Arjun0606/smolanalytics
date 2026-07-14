@@ -166,11 +166,13 @@ type dashVM struct {
 	// connect-your-agent artifacts, computed server-side from this instance's own
 	// URL + key so every snippet is complete and correct as rendered — never a
 	// "<YOUR_KEY_HERE>" placeholder the user has to hand-edit.
-	MCPURL        string       // {base}/mcp
-	MCPConfig     string       // the single-server JSON object ({"url":...,"headers":...})
-	CursorLink    template.URL // cursor://anysphere.cursor-deeplink/mcp/install?name=...&config=b64
-	VSCodeLink    template.URL // vscode:mcp/install?{urlencoded JSON}
-	ClaudeCodeCmd string       // claude mcp add --transport http ...
+	MCPURL         string       // {base}/mcp
+	MCPConfig      string       // the single-server JSON object ({"url":...,"headers":...})
+	CursorLink     template.URL // cursor://anysphere.cursor-deeplink/mcp/install?name=...&config=b64
+	VSCodeLink     template.URL // vscode:mcp/install?{urlencoded JSON}
+	ClaudeCodeCmd  string       // claude mcp add --transport http ...
+	DesktopConfig  string       // claude_desktop_config.json bridge via mcp-remote (Desktop UI is OAuth-only)
+	MCPServersJSON string       // full {"mcpServers":{...}} wrapper for mcp.json clients
 
 	// range + click-to-filter state: one global window and one global filter set that
 	// EVERY zone inherits, exactly like the site selector. All state lives in the
@@ -611,6 +613,15 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	vsCfg += "}"
 	vm.MCPURL = mcpURL
 	vm.MCPConfig = cfg
+	// Claude Desktop's connector UI is OAuth-only (a bare URL field — a static key
+	// cannot work there), so Desktop gets the config-file bridge via mcp-remote,
+	// complete and paste-ready. Other mcp.json clients get the full wrapper.
+	hdrArg := ""
+	if s.writeKey != "" {
+		hdrArg = fmt.Sprintf(`, "--header", "Authorization: Bearer %s"`, s.writeKey)
+	}
+	vm.DesktopConfig = fmt.Sprintf(`{ "mcpServers": { "smolanalytics": { "command": "npx", "args": ["-y", "mcp-remote", %q%s] } } }`, mcpURL, hdrArg)
+	vm.MCPServersJSON = fmt.Sprintf(`{ "mcpServers": { "smolanalytics": %s } }`, cfg)
 	vm.ClaudeCodeCmd = cmd
 	vm.CursorLink = template.URL("cursor://anysphere.cursor-deeplink/mcp/install?name=smolanalytics&config=" + base64.StdEncoding.EncodeToString([]byte(cfg)))
 	vm.VSCodeLink = template.URL("vscode:mcp/install?" + url.QueryEscape(vsCfg))
