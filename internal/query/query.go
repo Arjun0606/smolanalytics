@@ -6,9 +6,11 @@ package query
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/Arjun0606/smolanalytics/internal/event"
 )
@@ -17,15 +19,17 @@ import (
 type Op string
 
 const (
-	Eq       Op = "eq"
-	Neq      Op = "neq"
-	Contains Op = "contains"
-	Gt       Op = "gt"
-	Lt       Op = "lt"
-	In       Op = "in"     // value is one of a list — expresses OR over one property (source in [hn, twitter])
-	NotIn    Op = "notin"  // value is none of a list (or the property is missing)
-	Set      Op = "set"    // the property exists on the event (value ignored)
-	NotSet   Op = "notset" // the property is missing (value ignored)
+	Eq          Op = "eq"
+	Neq         Op = "neq"
+	Contains    Op = "contains"
+	Gt          Op = "gt"
+	Lt          Op = "lt"
+	In          Op = "in"     // value is one of a list — expresses OR over one property (source in [hn, twitter])
+	NotIn       Op = "notin"  // value is none of a list (or the property is missing)
+	Set         Op = "set"    // the property exists on the event (value ignored)
+	NotSet      Op = "notset" // the property is missing (value ignored)
+	Regex       Op = "regex"  // value is a Go regexp matched against the stringified property
+	NotContains Op = "ncontains"
 )
 
 // Filter is a single predicate over an event property. Filters combine with AND.
@@ -56,8 +60,56 @@ func (f Filter) match(e event.Event) bool {
 		return ok
 	case NotSet:
 		return !ok
+	case Regex:
+		if !ok {
+			return false
+		}
+		re, err := regexCached(toStr(f.Value))
+		return err == nil && re.MatchString(toStr(v))
+	case NotContains:
+		return !ok || !strings.Contains(toStr(v), toStr(f.Value))
 	}
 	return false
+}
+
+// regexCached compiles patterns once — filters run per event over the whole log,
+// and recompiling a regexp per event would turn one filtered report into seconds.
+var regexCache sync.Map // pattern -> *regexp.Regexp (or error sentinel)
+
+func regexCached(pat string) (*regexp.Regexp, error) {
+	if v, ok := regexCache.Load(pat); ok {
+		if re, ok := v.(*regexp.Regexp); ok {
+			return re, nil
+		}
+		return nil, fmt.Errorf("bad regex")
+	}
+	re, err := regexp.Compile(pat)
+	if err != nil {
+		regexCache.Store(pat, err.Error())
+		return nil, err
+	}
+	regexCache.Store(pat, re)
+	return re, nil
+}
+
+// ApplyMode is Apply with an any/all switch: all = every filter must match (the
+// default AND), any = at least one must (the OR mode of the dashboard's filter
+// builder). Dev-traffic exclusion applies in both modes, before the user filters.
+func ApplyMode(evs []event.Event, filters []Filter, anyMode bool) []event.Event {
+	if !anyMode || len(filters) <= 1 {
+		return Apply(evs, filters)
+	}
+	base := Apply(evs, nil) // keeps the default dev-env exclusion
+	out := make([]event.Event, 0, len(base))
+	for _, e := range base {
+		for _, f := range filters {
+			if f.match(e) {
+				out = append(out, e)
+				break
+			}
+		}
+	}
+	return out
 }
 
 // inList reports whether v (stringified) equals any element of list. list is a JSON array
@@ -82,7 +134,11 @@ func inList(v any, list any) bool {
 func Validate(filters []Filter) error {
 	for _, f := range filters {
 		switch f.Op {
-		case Eq, Neq, Contains, Gt, Lt, Set, NotSet:
+		case Eq, Neq, Contains, Gt, Lt, Set, NotSet, NotContains:
+		case Regex:
+			if _, err := regexCached(toStr(f.Value)); err != nil {
+				return fmt.Errorf("filter op %q on property %q: invalid regex", f.Op, f.Property)
+			}
 		case In, NotIn:
 			// a list op with a non-list value would silently match nothing — reject it so a
 			// malformed "in" can't return a real-looking zero (the silent-wrong-number trap).

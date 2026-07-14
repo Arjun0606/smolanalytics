@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"log"
 	"math"
 	"net/http"
 	"net/url"
@@ -18,6 +19,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/goal"
 	"github.com/Arjun0606/smolanalytics/internal/insight"
 	"github.com/Arjun0606/smolanalytics/internal/query"
+	"github.com/Arjun0606/smolanalytics/internal/retention"
 	"github.com/Arjun0606/smolanalytics/internal/trends"
 	"github.com/Arjun0606/smolanalytics/internal/web"
 )
@@ -25,7 +27,27 @@ import (
 //go:embed dashboard.tmpl.html
 var dashboardHTML string
 
-var dashTmpl = template.Must(template.New("dash").Parse(dashboardHTML))
+// comma renders 12345 as "12,345" — big numbers must be readable at a glance.
+func comma(n int) string {
+	s := fmt.Sprintf("%d", n)
+	neg := false
+	if len(s) > 0 && s[0] == '-' {
+		neg, s = true, s[1:]
+	}
+	var out []byte
+	for i, c := range []byte(s) {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			out = append(out, ',')
+		}
+		out = append(out, c)
+	}
+	if neg {
+		return "-" + string(out)
+	}
+	return string(out)
+}
+
+var dashTmpl = template.Must(template.New("dash").Funcs(template.FuncMap{"comma": comma}).Parse(dashboardHTML))
 
 type funnelRow struct {
 	Event   string
@@ -50,11 +72,13 @@ type retRow struct {
 
 type trendBar struct {
 	Date      string
+	ISO       string // YYYY-MM-DD — the who-descriptor's date key
 	Count     int
 	HeightPct int
 	Tip       string // instant CSS tooltip: "Jul 4 · 27" — no native-title hover delay
 	Tick      string // x-axis date label under this bar ("" = no tick); every ~5th day
 	Peak      bool   // the window's max — annotated with its value, always visible
+	GhostPct  int    // the prior equal window's same-position value, same y-scale
 }
 
 type segRow struct {
@@ -162,11 +186,17 @@ type dashVM struct {
 	// connect-your-agent artifacts, computed server-side from this instance's own
 	// URL + key so every snippet is complete and correct as rendered — never a
 	// "<YOUR_KEY_HERE>" placeholder the user has to hand-edit.
-	MCPURL        string       // {base}/mcp
-	MCPConfig     string       // the single-server JSON object ({"url":...,"headers":...})
-	CursorLink    template.URL // cursor://anysphere.cursor-deeplink/mcp/install?name=...&config=b64
-	VSCodeLink    template.URL // vscode:mcp/install?{urlencoded JSON}
-	ClaudeCodeCmd string       // claude mcp add --transport http ...
+	MCPURL         string       // {base}/mcp
+	MCPConfig      string       // the single-server JSON object ({"url":...,"headers":...})
+	CursorLink     template.URL // cursor://anysphere.cursor-deeplink/mcp/install?name=...&config=b64
+	VSCodeLink     template.URL // vscode:mcp/install?{urlencoded JSON}
+	ClaudeCodeCmd  string       // claude mcp add --transport http ...
+	DesktopConfig  string       // claude_desktop_config.json bridge via mcp-remote (Desktop UI is OAuth-only)
+	MCPServersJSON string       // full {"mcpServers":{...}} wrapper for mcp.json clients
+	ConnectPrompt  string       // the universal paste: any agent reads it and connects itself
+	WindsurfConfig string       // windsurf mcp_config.json (serverUrl, NOT url)
+	ZedConfig      string       // zed settings.json context_servers block
+	ClineConfig    string       // cline_mcp_settings.json (type streamableHttp)
 
 	// range + click-to-filter state: one global window and one global filter set that
 	// EVERY zone inherits, exactly like the site selector. All state lives in the
@@ -177,11 +207,29 @@ type dashVM struct {
 	VisitorsDelta  string // vs the prior equal window; "" when unknowable
 	PageviewsDelta string
 	SignupsDelta   string
-	SourceProp     string // the property behind the sources rows (click-to-filter)
-	ConvByProp     string // the property behind conversion-by rows
-	LastEventSecs  int    // seconds since the newest ingested event; -1 = none
-	ComputeMS      int    // wall time this page took to compute — printed in the footer as a brag
-	TrendMax       int    // the chart's y-axis top — rendered as a real scale, not a hover secret
+	SourceProp     string     // the property behind the sources rows (click-to-filter)
+	ConvByProp     string     // the property behind conversion-by rows
+	LastEventSecs  int        // seconds since the newest ingested event; -1 = none
+	ComputeMS      int        // wall time this page took to compute — printed in the footer as a brag
+	TrendMax       int        // the chart's y-axis top — rendered as a real scale, not a hover secret
+	TrendMid       int        // the y-axis middle tick, so the scale reads without arithmetic
+	HoursMax       int        // the hour chart's peak count — its only number, so it gets printed
+	GhostTotal     int        // prior window's total — 0 hides the ghost legend instead of promising invisible bars
+	ChartMetric    string     // the charted event (?metric=), defaults to the detected headline event
+	Gran           string     // chart bucket grain (?gran=): day|week|month (hour capped upstream)
+	ChartTable     []chartRow // the sortable-data-table half of the chart+table unit
+	FunnelOrder    string     // the funnel discipline (?forder=): ordered|strict|unordered
+	RetDays        int        // retention horizon (?rdays=): 7|30|90
+	RetBucket      string     // retention bucket (?rbucket=): day|week|month
+	RetRolling     bool       // on-or-after mode (?rroll=1)
+	AgentName      string     // most recent MCP client ("" = never connected)
+	AgentAgo       string     // "2m ago"
+	AgentLive      bool       // seen within 5 minutes
+	AgentCalls     int
+	CustomRange    bool   // an explicit ?from/?to window is active
+	AnyMode        bool   // filters join with OR (?fm=any) instead of AND
+	RangeFrom      string // the custom window's inputs, echoed into the date pickers
+	RangeTo        string
 	EngagedHuman   string // "13m 23s", never "803s"
 
 	// the data-richness dimensions (geo/devices/campaigns/entries/hours) — computed
@@ -214,13 +262,53 @@ func flagOf(cc string) string {
 	return string(r1) + string(r2)
 }
 
+type chartRow struct {
+	Label string // bucket label ("Jul 8" / "wk of Jul 7" / "Jul 2026")
+	Count int
+	Prior int    // same-position prior-window value (-1 = unknown)
+	Delta string // signed % vs prior, "" when unknowable
+	Bar   int    // count as % of the max, for the inline bar
+}
+
 type rangeVM struct {
 	Label string
 	URL   string
 	On    bool
 }
 
-type chipVM struct{ Prop, Value, RemoveURL string }
+type chipVM struct{ Prop, Op, Value, Raw, RemoveURL string }
+
+// parseChip decodes one ?f token: "prop:value" (eq) or "prop:op:value"; set/notset
+// need no value ("prop:set:"). Caps guard against abuse, not honest use.
+func parseChip(raw string) (prop string, op query.Op, val string, ok bool) {
+	if len(raw) > 300 {
+		return "", "", "", false
+	}
+	parts := strings.SplitN(raw, ":", 3)
+	switch len(parts) {
+	case 2:
+		if parts[0] == "" || parts[1] == "" {
+			return "", "", "", false
+		}
+		op = query.Eq
+		if parts[0] == "referrer" {
+			op = query.Contains
+		}
+		return parts[0], op, parts[1], true
+	case 3:
+		o := query.Op(parts[1])
+		switch o {
+		case query.Eq, query.Neq, query.Contains, query.NotContains, query.Regex, query.Gt, query.Lt, query.Set, query.NotSet:
+		default:
+			return "", "", "", false
+		}
+		if parts[0] == "" || (parts[2] == "" && o != query.Set && o != query.NotSet) {
+			return "", "", "", false
+		}
+		return parts[0], o, parts[2], true
+	}
+	return "", "", "", false
+}
 
 // deltaStr renders a signed percent vs the prior window. A zero baseline returns ""
 // (no prior period = say nothing) — never a fabricated percentage or filler copy.
@@ -316,7 +404,9 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		evs = query.Apply(evs, []query.Filter{{Property: "site", Op: query.Eq, Value: site}})
 	}
 
-	// range control: ?days=7|30|90 — every windowed zone below recomputes over it
+	// range control: ?days=7|30|90 presets, or ?from=YYYY-MM-DD&to=YYYY-MM-DD for
+	// arbitrary time travel — every windowed zone below recomputes over the window,
+	// and it lives in the querystring so any past view is a shareable URL
 	rangeDays := 30
 	switch r.URL.Query().Get("days") {
 	case "7":
@@ -324,36 +414,59 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	case "90":
 		rangeDays = 90
 	}
+	var rangeAsof time.Time // zero = now (presets); set = custom range's end
+	customRange := false
+	if fs, ts := r.URL.Query().Get("from"), r.URL.Query().Get("to"); fs != "" && ts != "" {
+		fromT, errF := time.Parse("2006-01-02", fs)
+		toT, errT := time.Parse("2006-01-02", ts)
+		if errF == nil && errT == nil && toT.After(fromT) {
+			toT = toT.AddDate(0, 0, 1) // inclusive end date
+			rangeDays = int(toT.Sub(fromT).Hours() / 24)
+			rangeAsof = toT
+			customRange = true
+		}
+	}
 
-	// click-to-filter: repeatable ?f=prop:value chips scope every report below.
-	// Referrer matches by substring — rows show the host, the property stores the URL.
+	// click-to-filter + the filter builder: repeatable ?f chips scope every report
+	// below. Grammar: prop:value (eq) or prop:op:value with op in eq|neq|contains|
+	// ncontains|regex|gt|lt|set|notset; multi-value ORs via v1|v2 (the In op).
+	// ?fm=any switches the rows from AND to OR. Referrer defaults to substring
+	// match — rows show the host, the property stores the URL.
+	anyMode := r.URL.Query().Get("fm") == "any"
 	var chips []chipVM
 	{
 		qv := r.URL.Query()
 		fs := qv["f"]
-		if len(fs) > 5 {
-			fs = fs[:5]
+		if len(fs) > 8 {
+			fs = fs[:8]
 		}
 		var filters []query.Filter
 		for _, raw := range fs {
-			p, v, ok := strings.Cut(raw, ":")
-			if !ok || p == "" || v == "" || len(raw) > 200 {
-				continue
-			}
-			op := query.Eq
-			if p == "referrer" {
-				op = query.Contains
-			}
-			filters = append(filters, query.Filter{Property: p, Op: op, Value: v})
-		}
-		if len(filters) > 0 {
-			evs = query.Apply(evs, filters)
-		}
-		for i, raw := range fs {
-			p, v, ok := strings.Cut(raw, ":")
+			p, op, v, ok := parseChip(raw)
 			if !ok {
 				continue
 			}
+			f := query.Filter{Property: p, Op: op, Value: v}
+			if vs := strings.Split(fmt.Sprint(v), "|"); len(vs) > 1 && (op == query.Eq) {
+				arr := make([]any, len(vs))
+				for i, x := range vs {
+					arr[i] = x
+				}
+				f = query.Filter{Property: p, Op: query.In, Value: arr}
+			}
+			filters = append(filters, f)
+		}
+		if len(filters) > 0 {
+			if err := query.Validate(filters); err == nil {
+				evs = query.ApplyMode(evs, filters, anyMode)
+			}
+		}
+		for i, raw := range fs {
+			p, op, v, ok := parseChip(raw)
+			if !ok {
+				continue
+			}
+			_ = op
 			nq := url.Values{}
 			for k, vals := range qv {
 				if k != "f" {
@@ -369,7 +482,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 			if enc := nq.Encode(); enc != "" {
 				u += "?" + enc
 			}
-			chips = append(chips, chipVM{Prop: p, Value: v, RemoveURL: u})
+			chips = append(chips, chipVM{Prop: p, Op: string(op), Value: v, Raw: raw, RemoveURL: u})
 		}
 	}
 
@@ -395,18 +508,48 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	vol := eventsByVolume(evs)
 	fsteps, ftitle := detectFunnel(evs, vol)
 	trendEvent := pickEvent(vol, "signup")
-	retEvent := pickEvent(vol, "open")
+	retEvent := "" // any activity — the same anchor /v1/retention, MCP, and the ask bar use
 	segProp := detectProp(evs, "plan")
 	srcProp := detectProp(evs, "source")
 
+	forder, _ := funnel.ParseOrder(r.URL.Query().Get("forder"))
+	rdays := 7
+	switch r.URL.Query().Get("rdays") {
+	case "30":
+		rdays = 30
+	case "90":
+		rdays = 90
+	}
+	rbucket := r.URL.Query().Get("rbucket")
+	switch rbucket {
+	case "", "day", "week", "month":
+	default:
+		rbucket = "day"
+	}
+	rroll := boolParam(r.URL.Query().Get("rroll"))
 	nowT := time.Now().UTC()
-	fr := funnel.Compute(evs, fsteps, 7*24*time.Hour)
-	rr := retentionOf(evs, 7, retEvent)
+	endT := nowT
+	if !rangeAsof.IsZero() {
+		endT = rangeAsof
+	}
+	// the chart's metric + grain are user-selectable and live in the URL like all
+	// analysis state (?metric=checkout&gran=week)
+	chartMetric := r.URL.Query().Get("metric")
+	gran, granErr := trends.ParseInterval(r.URL.Query().Get("gran"))
+	if granErr != nil {
+		gran = trends.Day
+	}
+	fr := funnel.ComputeOpts(evs, fsteps, 7*24*time.Hour, funnel.Options{Order: forder})
+	rr := retention.ComputeBucketed(evs, rdays, retEvent, rbucket, rroll)
 	// the chart and the headline stat both follow the selected range, and the stat
 	// carries a delta vs the prior equal window so movement is visible at a glance
-	tr := trends.Compute(evs, trendEvent, nowT.AddDate(0, 0, -rangeDays), time.Time{}, false)
+	if chartMetric != "" {
+		trendEvent = chartMetric
+	}
+	tr := trends.ComputeInterval(evs, trendEvent, endT.AddDate(0, 0, -rangeDays), rangeAsof, false, gran)
+	trPrior := trends.ComputeInterval(evs, trendEvent, endT.AddDate(0, 0, -2*rangeDays), endT.AddDate(0, 0, -rangeDays), false, gran)
 	sig30 := tr.Total
-	sigPrior := trends.Compute(evs, trendEvent, nowT.AddDate(0, 0, -2*rangeDays), nowT.AddDate(0, 0, -rangeDays), false).Total
+	sigPrior := trPrior.Total
 
 	convLabel := ftitle
 	if n := len(fsteps); n >= 2 {
@@ -439,12 +582,36 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		HasShares:      s.shares != nil,
 		HasGoalsStore:  s.goals != nil,
 		RangeDays:      rangeDays,
+		GhostTotal:     trPrior.Total,
+		FunnelOrder:    string(forder),
+		RetDays:        rdays,
+		RetBucket:      map[bool]string{true: rbucket, false: "day"}[rbucket != ""],
+		RetRolling:     rroll,
+		CustomRange:    customRange,
+		AnyMode:        anyMode,
+		RangeFrom:      r.URL.Query().Get("from"),
+		RangeTo:        r.URL.Query().Get("to"),
 		Ranges:         []rangeVM{mkRange(7), mkRange(30), mkRange(90)},
 		Chips:          chips,
 		SourceProp:     srcProp,
 		ConvByProp:     segProp,
 		SignupsDelta:   deltaStr(sig30, sigPrior),
 		LastEventSecs:  -1,
+	}
+	if ags := s.agentStatus(); len(ags) > 0 {
+		a := ags[0]
+		vm.AgentName = a.Name
+		vm.AgentCalls = a.Calls24h
+		since := nowT.Sub(a.LastSeen)
+		vm.AgentLive = since < 5*time.Minute
+		switch {
+		case since < time.Minute:
+			vm.AgentAgo = "now"
+		case since < time.Hour:
+			vm.AgentAgo = fmt.Sprintf("%dm ago", int(since.Minutes()))
+		default:
+			vm.AgentAgo = fmt.Sprintf("%dh ago", int(since.Hours()))
+		}
 	}
 	if n := len(evsAll); n > 0 {
 		// events append in arrival order, so the tail is the newest — this powers the
@@ -461,7 +628,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	mcpURL := vm.Base + "/mcp"
 	cfg := fmt.Sprintf(`{"url":%q`, mcpURL)
 	vsCfg := fmt.Sprintf(`{"name":"smolanalytics","type":"http","url":%q`, mcpURL)
-	cmd := "claude mcp add --transport http smolanalytics " + mcpURL
+	cmd := "claude mcp add --transport http --scope user smolanalytics " + mcpURL
 	if s.writeKey != "" {
 		hdr := fmt.Sprintf(`,"headers":{"Authorization":"Bearer %s"}`, s.writeKey)
 		cfg += hdr
@@ -472,7 +639,49 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	vsCfg += "}"
 	vm.MCPURL = mcpURL
 	vm.MCPConfig = cfg
+	// Claude Desktop's connector UI is OAuth-only (a bare URL field — a static key
+	// cannot work there), so Desktop gets the config-file bridge via mcp-remote,
+	// complete and paste-ready. Other mcp.json clients get the full wrapper.
+	// Desktop bridges over mcp-remote. Windows Claude Desktop mangles spaces inside
+	// args when invoking npx, so the header value (which needs "Bearer <key>") lives
+	// in env and the arg carries no spaces — the documented mcp-remote workaround,
+	// and it works identically on macOS/Linux.
+	hdrArg, hdrEnv := "", ""
+	if s.writeKey != "" {
+		hdrArg = `, "--header", "Authorization:${SMOL_AUTH}"`
+		hdrEnv = fmt.Sprintf(`, "env": { "SMOL_AUTH": "Bearer %s" }`, s.writeKey)
+	}
+	vm.DesktopConfig = fmt.Sprintf(`{ "mcpServers": { "smolanalytics": { "command": "npx", "args": ["-y", "mcp-remote", %q%s]%s } } }`, mcpURL, hdrArg, hdrEnv)
+	vm.MCPServersJSON = fmt.Sprintf(`{ "mcpServers": { "smolanalytics": %s } }`, cfg)
 	vm.ClaudeCodeCmd = cmd
+	// each client's config dialect, exactly: Windsurf wants serverUrl (url fails
+	// silently), Zed wants context_servers, Cline wants an explicit streamableHttp type.
+	hdrJSON := ""
+	if s.writeKey != "" {
+		hdrJSON = fmt.Sprintf(`, "headers": { "Authorization": "Bearer %s" }`, s.writeKey)
+	}
+	vm.WindsurfConfig = fmt.Sprintf(`{ "mcpServers": { "smolanalytics": { "serverUrl": %q%s } } }`, mcpURL, hdrJSON)
+	vm.ZedConfig = fmt.Sprintf(`{ "context_servers": { "smolanalytics": { "url": %q%s } } }`, mcpURL, hdrJSON)
+	vm.ClineConfig = fmt.Sprintf(`{ "mcpServers": { "smolanalytics": { "type": "streamableHttp", "url": %q%s } } }`, mcpURL, hdrJSON)
+	// the universal paste: one block that tells WHATEVER agent is reading it how to
+	// wire itself up — the user copies once, pastes into any AI, done. Every path is
+	// complete (url + key baked in); the agent picks its own.
+	authLine := ""
+	if s.writeKey != "" {
+		authLine = "\nAuth header: Authorization: Bearer " + s.writeKey
+	}
+	vm.ConnectPrompt = "Connect the smolanalytics MCP server to yourself, then verify it.\n\n" +
+		"Server: " + mcpURL + " (Streamable HTTP)" + authLine + "\n\n" +
+		"Pick the path for the client you are:\n" +
+		"- Claude Code: run " + cmd + "\n" +
+		"- Cursor: merge into ~/.cursor/mcp.json: {\"mcpServers\": {\"smolanalytics\": " + cfg + "}}\n" +
+		"- VS Code: merge the same object into .vscode/mcp.json under \"servers\" with \"type\": \"http\"\n" +
+		"- Windsurf: merge into ~/.codeium/windsurf/mcp_config.json (note serverUrl, not url): " + vm.WindsurfConfig + "\n" +
+		"- Cline: merge into cline_mcp_settings.json: " + vm.ClineConfig + "\n" +
+		"- Zed: merge into ~/.config/zed/settings.json: " + vm.ZedConfig + "\n" +
+		"- Claude Desktop (config file only, the connector UI is OAuth-only): open Settings > Developer > Edit Config and merge: " + vm.DesktopConfig + " then restart Claude Desktop\n" +
+		"- anything else that reads an mcp.json: {\"mcpServers\": {\"smolanalytics\": " + cfg + "}}\n\n" +
+		"After connecting, call the \"overview\" tool and report the visitor count so I know it works."
 	vm.CursorLink = template.URL("cursor://anysphere.cursor-deeplink/mcp/install?name=smolanalytics&config=" + base64.StdEncoding.EncodeToString([]byte(cfg)))
 	vm.VSCodeLink = template.URL("vscode:mcp/install?" + url.QueryEscape(vsCfg))
 
@@ -487,8 +696,15 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	plabel := "D"
+	switch rr.Bucket {
+	case "week":
+		plabel = "W"
+	case "month":
+		plabel = "M"
+	}
 	for d := 0; d <= rr.MaxDays; d++ {
-		vm.RetDayHeaders = append(vm.RetDayHeaders, fmt.Sprintf("D%d", d))
+		vm.RetDayHeaders = append(vm.RetDayHeaders, fmt.Sprintf("%s%d", plabel, d))
 	}
 	// most-recent cohorts first, capped for a clean grid
 	start := 0
@@ -508,9 +724,15 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			frac := float64(c.Returned[d]) / float64(c.Size)
+			a := 0.08 + 0.92*frac
+			// light text drowns on a strong amber wash — flip it dark past the threshold
+			cellFg := "#EDEDED"
+			if a >= 0.45 {
+				cellFg = "#0A0A0A"
+			}
 			row.Cells = append(row.Cells, retCell{
 				Label: fmt.Sprintf("%d%%", int(math.Round(frac*100))),
-				Style: template.CSS(fmt.Sprintf("background:rgba(245,166,35,%.2f)", 0.08+0.92*frac)),
+				Style: template.CSS(fmt.Sprintf("background:rgba(245,166,35,%.2f);color:%s", a, cellFg)),
 			})
 		}
 		vm.Retention = append(vm.Retention, row)
@@ -523,6 +745,13 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 			peakIdx = i
 		}
 	}
+	// the ghost: the prior equal window aligned position-by-position onto the same
+	// x-axis and the SAME y-scale, so "vs what?" is answered by the chart itself
+	for _, p := range trPrior.Points {
+		if p.Count > maxT {
+			maxT = p.Count
+		}
+	}
 	// tick cadence scales with the window so labels never crowd (~6 ticks)
 	tickEvery := len(tr.Points) / 6
 	if tickEvery < 1 {
@@ -531,6 +760,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	for i, p := range tr.Points {
 		b := trendBar{
 			Date:      p.Date.Format("1/2"),
+			ISO:       p.Date.Format("2006-01-02"),
 			Count:     p.Count,
 			HeightPct: int(math.Round(float64(p.Count) / float64(maxT) * 100)),
 			Tip:       fmt.Sprintf("%s · %d", p.Date.Format("Jan 2"), p.Count),
@@ -539,9 +769,47 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		if i%tickEvery == 0 {
 			b.Tick = p.Date.Format("Jan 2")
 		}
+		if i < len(trPrior.Points) {
+			pp := trPrior.Points[i]
+			b.GhostPct = int(math.Round(float64(pp.Count) / float64(maxT) * 100))
+			b.Tip = fmt.Sprintf("%s · %d (prior window %s: %d)", p.Date.Format("Jan 2"), p.Count, pp.Date.Format("Jan 2"), pp.Count)
+		}
 		vm.Trend = append(vm.Trend, b)
 	}
 	vm.TrendMax = maxT
+	vm.TrendMid = (maxT + 1) / 2
+	vm.ChartMetric = trendEvent
+	vm.Gran = string(gran)
+	// the data-table half of the chart+table unit: newest first, capped at 15 rows
+	{
+		n := len(tr.Points)
+		start := 0
+		if n > 15 {
+			start = n - 15
+		}
+		lbl := func(t time.Time) string {
+			switch gran {
+			case trends.Week:
+				return "wk of " + t.Format("Jan 2")
+			case trends.Month:
+				return t.Format("Jan 2006")
+			default:
+				return t.Format("Jan 2")
+			}
+		}
+		for i := n - 1; i >= start; i-- {
+			p := tr.Points[i]
+			row := chartRow{Label: lbl(p.Date), Count: p.Count, Prior: -1}
+			if maxT > 0 {
+				row.Bar = int(math.Round(float64(p.Count) / float64(maxT) * 100))
+			}
+			if i < len(trPrior.Points) {
+				row.Prior = trPrior.Points[i].Count
+				row.Delta = deltaStr(p.Count, trPrior.Points[i].Count)
+			}
+			vm.ChartTable = append(vm.ChartTable, row)
+		}
+	}
 
 	// Segmentation: the headline event broken down by the detected source property.
 	if srcProp != "" {
@@ -606,9 +874,9 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	// the web glance — live now, visitors, top pages, referrers over the selected
 	// range, with deltas vs the prior equal window. Only shown when $pageview data
 	// exists; a backend-only instance stays product-only.
-	wv := web.Compute(evs, rangeDays, time.Time{})
+	wv := web.Compute(evs, rangeDays, rangeAsof)
 	if wv.Pageviews > 0 {
-		wvPrior := web.Compute(evs, rangeDays, nowT.AddDate(0, 0, -rangeDays))
+		wvPrior := web.Compute(evs, rangeDays, endT.AddDate(0, 0, -rangeDays))
 		vm.VisitorsDelta = deltaStr(wv.Visitors, wvPrior.Visitors)
 		vm.PageviewsDelta = deltaStr(wv.Pageviews, wvPrior.Pageviews)
 		vm.HasWeb = true
@@ -652,7 +920,17 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		vm.UTMMediums = toRows(wv.UTMMediums, 6)
 		vm.UTMCampaigns = toRows(wv.UTMCampaigns, 6)
 		vm.Countries = toRows(wv.Countries, 10)
+		// share-of-total for a PARTIAL dimension is computed against events that carry
+		// it — geo stamping starts at the first geo-enabled ingest, so dividing by all
+		// pageviews would render an honest 4-visitor day as a bogus "1%"
+		geoTotal := 0
+		for _, r := range wv.Countries {
+			geoTotal += r.Count
+		}
 		for i := range vm.Countries {
+			if geoTotal > 0 {
+				vm.Countries[i].Pct = int(math.Round(float64(vm.Countries[i].Count) / float64(geoTotal) * 100))
+			}
 			if fl := flagOf(vm.Countries[i].Value); fl != "" {
 				vm.Countries[i].Value = fl + " " + vm.Countries[i].Value
 			}
@@ -667,11 +945,16 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		for h, c := range wv.Hours {
 			vm.Hours = append(vm.Hours, hourBar{Hour: h, Count: c, HeightPct: int(math.Round(float64(c) / float64(maxH) * 100))})
 		}
+		vm.HoursMax = maxH
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	vm.ComputeMS = int(time.Since(renderStart).Milliseconds())
-	_ = dashTmpl.Execute(w, vm)
+	// a template execution error TRUNCATES the page silently (it already cost us a
+	// missing funnel pane once) — always log it, loudly
+	if err := dashTmpl.Execute(w, vm); err != nil {
+		log.Printf("smolanalytics: DASHBOARD RENDER ERROR (page truncated): %v", err)
+	}
 }
 
 func pct(f float64) int { return int(math.Round(f * 100)) }

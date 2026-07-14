@@ -5,12 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/cohort"
 	"github.com/Arjun0606/smolanalytics/internal/engagement"
 	"github.com/Arjun0606/smolanalytics/internal/event"
+	"github.com/Arjun0606/smolanalytics/internal/funnel"
 	"github.com/Arjun0606/smolanalytics/internal/groups"
 	"github.com/Arjun0606/smolanalytics/internal/paths"
 	"github.com/Arjun0606/smolanalytics/internal/query"
@@ -24,18 +27,43 @@ import (
 // ERROR, never ignored — silently returning unfiltered data as if it were the
 // segment is the worst kind of wrong answer.
 func filtersFrom(r *http.Request) ([]query.Filter, error) {
-	raw := r.URL.Query().Get("filters")
-	if raw == "" {
-		return nil, nil
-	}
+	fs, _, err := filterSetFrom(r)
+	return fs, err
+}
+
+// filterSetFrom is the ONE filter parser every /v1 endpoint and the dashboard share,
+// so the ask bar, an agent over MCP, a pasted URL, and the dashboard all speak one
+// filter language. It accepts both the ?f=prop:op:value chip grammar (repeatable,
+// the URL-native form) and ?filters=<JSON array> (the programmatic form), and honors
+// ?fm=any to OR the rows. Malformed input is an ERROR, never ignored — silently
+// returning unfiltered data as if it were the segment is the worst kind of wrong answer.
+func filterSetFrom(r *http.Request) ([]query.Filter, bool, error) {
 	var fs []query.Filter
-	if err := json.Unmarshal([]byte(raw), &fs); err != nil {
-		return nil, badRequestError{fmt.Sprintf("invalid filters JSON: %v", err)}
+	if raw := r.URL.Query().Get("filters"); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &fs); err != nil {
+			return nil, false, badRequestError{fmt.Sprintf("invalid filters JSON: %v", err)}
+		}
+	}
+	// ?f=prop:op:value (or prop:value for eq); multi-value a|b becomes an In list.
+	for _, raw := range r.URL.Query()["f"] {
+		p, op, v, ok := parseChip(raw)
+		if !ok {
+			return nil, false, badRequestError{fmt.Sprintf("bad filter %q: use prop:op:value with op in eq,neq,contains,ncontains,regex,gt,lt,set,notset", raw)}
+		}
+		flt := query.Filter{Property: p, Op: op, Value: v}
+		if parts := strings.Split(v, "|"); len(parts) > 1 && op == query.Eq {
+			arr := make([]any, len(parts))
+			for i, x := range parts {
+				arr[i] = x
+			}
+			flt = query.Filter{Property: p, Op: query.In, Value: arr}
+		}
+		fs = append(fs, flt)
 	}
 	if err := query.Validate(fs); err != nil {
-		return nil, badRequestError{err.Error()}
+		return nil, false, badRequestError{err.Error()}
 	}
-	return fs, nil
+	return fs, r.URL.Query().Get("fm") == "any", nil
 }
 
 // badRequestError marks a caller mistake (bad filters) so handlers return 400, not 500.
@@ -57,7 +85,7 @@ func writeQueryErr(w http.ResponseWriter, err error) {
 // ?cohort=<id> is set) scopes to that cohort's members. Cohort membership is
 // resolved over the full history, then the filtered events are kept for those users.
 func (s *Server) filtered(r *http.Request) ([]event.Event, error) {
-	fs, err := filtersFrom(r)
+	fs, anyMode, err := filterSetFrom(r)
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +93,7 @@ func (s *Server) filtered(r *http.Request) ([]event.Event, error) {
 	if err != nil {
 		return nil, err
 	}
-	evs := query.Apply(all, fs)
+	evs := query.ApplyMode(all, fs, anyMode)
 	if cid := r.URL.Query().Get("cohort"); cid != "" && s.cohorts != nil {
 		if d, ok := s.cohorts.Get(cid); ok {
 			evs = cohort.FilterToUsers(evs, cohort.Resolve(all, d))
@@ -79,13 +107,101 @@ func (s *Server) filtered(r *http.Request) ([]event.Event, error) {
 // event names — this just exposes it over REST (the MCP tools do the same for AI).
 
 // GET /v1/meta — the event names available, so the UI can offer them.
-func (s *Server) apiMeta(w http.ResponseWriter, _ *http.Request) {
+// boolParam accepts exactly {true, 1, yes}, case-insensitive — ERRORS-1: a boolean
+// the caller clearly set must never be silently ignored because of its spelling.
+func boolParam(v string) bool {
+	switch strings.ToLower(v) {
+	case "true", "1", "yes":
+		return true
+	}
+	return false
+}
+
+// knownEventOr400 enforces ERRORS-1's honest-failure rule: naming an event that has
+// never been seen returns 400 listing what exists, never a real-looking zero report.
+func (s *Server) knownEventOr400(w http.ResponseWriter, name string) bool {
+	if name == "" {
+		return true
+	}
+	names, err := s.store.Names()
+	if err != nil {
+		return true // storage trouble surfaces elsewhere; don't mask it as a 400
+	}
+	for _, n := range names {
+		if n == name {
+			return true
+		}
+	}
+	writeErr(w, http.StatusBadRequest, fmt.Sprintf("unknown event %q — known events: %s", name, strings.Join(names, ", ")))
+	return false
+}
+
+func (s *Server) apiMeta(w http.ResponseWriter, r *http.Request) {
 	names, err := s.store.Names()
 	if err != nil {
 		writeQueryErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"events": names})
+	out := map[string]any{"events": names}
+	// ?props=1 adds the property catalog: every property seen in the last 30 days
+	// with its top values — the typeahead behind the filter builder, so filtering
+	// is picking from what your data actually contains, never guessing names.
+	if r.URL.Query().Get("props") == "1" {
+		evs, err := s.store.Range(time.Now().UTC().AddDate(0, 0, -30), time.Time{})
+		if err == nil {
+			evs = query.Apply(evs, nil)
+			counts := map[string]map[string]int{}
+			for _, e := range evs {
+				for k, v := range e.Properties {
+					if k == "env" || k == "engaged_ms" || k == "session_id" {
+						continue // internal / high-cardinality noise
+					}
+					sv, ok := v.(string)
+					if !ok || sv == "" || len(sv) > 80 {
+						continue
+					}
+					m := counts[k]
+					if m == nil {
+						m = map[string]int{}
+						counts[k] = m
+					}
+					if len(m) <= 200 {
+						m[sv]++
+					}
+				}
+			}
+			props := map[string][]string{}
+			keys := make([]string, 0, len(counts))
+			for k := range counts {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			if len(keys) > 50 {
+				keys = keys[:50]
+			}
+			for _, k := range keys {
+				type vc struct {
+					v string
+					n int
+				}
+				vs := make([]vc, 0, len(counts[k]))
+				for v, n := range counts[k] {
+					vs = append(vs, vc{v, n})
+				}
+				sort.Slice(vs, func(i, j int) bool { return vs[i].n > vs[j].n })
+				if len(vs) > 20 {
+					vs = vs[:20]
+				}
+				vals := make([]string, len(vs))
+				for i, x := range vs {
+					vals[i] = x.v
+				}
+				props[k] = vals
+			}
+			out["properties"] = props
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // GET /v1/trends?event=signup&unique=true&breakdown=source&filters=...
@@ -97,11 +213,27 @@ func (s *Server) apiTrends(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	unique := q.Get("unique") == "true"
+	unique := boolParam(q.Get("unique"))
 	event := q.Get("event")
+	if !s.knownEventOr400(w, event) {
+		return
+	}
 	from, to, werr := parseTrendWindow(r)
 	if werr != nil {
 		writeErr(w, http.StatusBadRequest, werr.Error())
+		return
+	}
+	// XAU: measure=dau|wau|mau plots rolling distinct-actives per day (TRENDS-XAU) —
+	// intercepted before property measures because they need no property.
+	switch q.Get("measure") {
+	case "dau":
+		writeJSON(w, http.StatusOK, trends.ComputeXAU(evs, event, from, to, 1))
+		return
+	case "wau":
+		writeJSON(w, http.StatusOK, trends.ComputeXAU(evs, event, from, to, 7))
+		return
+	case "mau":
+		writeJSON(w, http.StatusOK, trends.ComputeXAU(evs, event, from, to, 30))
 		return
 	}
 	// numeric aggregation: measure=sum|avg|min|max|median|p90 over a numeric property
@@ -112,8 +244,17 @@ func (s *Server) apiTrends(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadRequest, "measure needs a numeric property, e.g. measure=sum&property=amount")
 			return
 		}
-		m, _ := trends.ParseMeasure(meas)
+		m, ok := trends.ParseMeasure(meas)
+		if !ok {
+			writeErr(w, http.StatusBadRequest, "unknown measure "+meas+" (want sum, avg, min, max, median or p90)")
+			return
+		}
 		writeJSON(w, http.StatusOK, trends.ComputeMeasure(evs, event, property, m, from, to))
+		return
+	}
+	iv, iverr := trends.ParseInterval(q.Get("interval"))
+	if iverr != nil {
+		writeErr(w, http.StatusBadRequest, iverr.Error())
 		return
 	}
 	if bd := q.Get("breakdown"); bd != "" {
@@ -123,7 +264,25 @@ func (s *Server) apiTrends(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	writeJSON(w, http.StatusOK, trends.Compute(evs, event, from, to, unique))
+	// multi-series: events=a,b,c charts several events on one canvas (the
+	// signups-vs-checkouts question). Single event= stays the simple path.
+	if multi := q.Get("events"); multi != "" {
+		names := strings.Split(multi, ",")
+		if len(names) > 8 {
+			names = names[:8]
+		}
+		series := make([]trends.Result, 0, len(names))
+		for _, n := range names {
+			n = strings.TrimSpace(n)
+			if n == "" {
+				continue
+			}
+			series = append(series, trends.ComputeInterval(evs, n, from, to, unique, iv))
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"interval": string(iv), "series": series})
+		return
+	}
+	writeJSON(w, http.StatusOK, trends.ComputeInterval(evs, event, from, to, unique, iv))
 }
 
 // parseTrendWindow reads the time scope for /v1/trends from the query: days=N is a
@@ -134,6 +293,13 @@ func (s *Server) apiTrends(w http.ResponseWriter, r *http.Request) {
 // ignore these entirely, so days=7 and days=90 returned the same series.
 func parseTrendWindow(r *http.Request) (from, to time.Time, err error) {
 	q := r.URL.Query()
+	if v := q.Get("hours"); v != "" {
+		n, perr := strconv.ParseFloat(v, 64)
+		if perr != nil || n <= 0 || n > 24*366 {
+			return from, to, fmt.Errorf("hours must be a positive number (got %q)", v)
+		}
+		return time.Now().UTC().Add(-time.Duration(n * float64(time.Hour))), time.Time{}, nil
+	}
 	if v := q.Get("days"); v != "" {
 		n, e := strconv.Atoi(v)
 		if e != nil || n <= 0 {
@@ -178,12 +344,30 @@ func (s *Server) apiBreakdown(w http.ResponseWriter, r *http.Request) {
 		writeQueryErr(w, err)
 		return
 	}
+	// BREAKDOWN-WINDOW: days/from/to scope this report exactly like trends — it
+	// used to ignore them entirely, so every "windowed" breakdown was all-time
+	from, to, werr := parseTrendWindow(r)
+	if werr != nil {
+		writeErr(w, http.StatusBadRequest, werr.Error())
+		return
+	}
 	eventName := r.URL.Query().Get("event")
+	if !s.knownEventOr400(w, eventName) {
+		return
+	}
 	scoped := evs[:0:0]
 	for _, e := range evs {
-		if eventName == "" || e.Name == eventName {
-			scoped = append(scoped, e)
+		if eventName != "" && e.Name != eventName {
+			continue
 		}
+		ts := e.Timestamp.UTC()
+		if !from.IsZero() && ts.Before(from) {
+			continue
+		}
+		if !to.IsZero() && !ts.Before(to) {
+			continue
+		}
+		scoped = append(scoped, e)
 	}
 	groups := query.Breakdown(scoped, property)
 	rows := make([]map[string]any, 0, len(groups))
@@ -210,7 +394,14 @@ func (s *Server) apiRetention(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	// bucket=week|month groups cohorts into 7-/30-day periods (a weekly product read daily
 	// looks broken); rolling=true is unbounded "active on or after period n" retention.
-	rr := retention.ComputeBucketed(evs, days, q.Get("event"), q.Get("bucket"), q.Get("rolling") == "true")
+	// ERRORS-1: an unknown bucket is a 400 naming the valid set, never silently daily.
+	switch q.Get("bucket") {
+	case "", "day", "week", "month":
+	default:
+		writeErr(w, http.StatusBadRequest, fmt.Sprintf("unknown bucket %q (want day, week or month)", q.Get("bucket")))
+		return
+	}
+	rr := retention.ComputeBucketed(evs, days, q.Get("event"), q.Get("bucket"), boolParam(q.Get("rolling")))
 	// the honest headline summaries come from retention.Summarize — the SAME function the MCP
 	// tool serializes, so the two surfaces can't drift (agreement_test locks it).
 	out := retention.Summarize(rr, time.Now().UTC())
@@ -302,4 +493,157 @@ func (s *Server) apiGroups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, groups.Compute(evs, property, time.Time{}, limit))
+}
+
+// apiWho is the Microscope: the people behind any datapoint. Three descriptor
+// modes, each REUSING the exact engine that computed the aggregate, so the list
+// always sums to the number on the chart:
+//
+//	trends point:  event=X&date=YYYY-MM-DD (+ window/filters)
+//	breakdown row: event=X&property=P&value=V (+ window/filters)
+//	funnel step:   steps=a,b,c&step=N&state=reached|dropped|converted (+ order/exclude/window)
+//
+// Response: {mode, total, users:[{distinct_id, events, last_seen}]}, capped at 200.
+func (s *Server) apiWho(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	evs, err := s.filtered(r)
+	if err != nil {
+		writeQueryErr(w, err)
+		return
+	}
+	type row struct {
+		ID       string    `json:"distinct_id"`
+		Events   int       `json:"events"`
+		LastSeen time.Time `json:"last_seen"`
+	}
+	collect := func(match func(event.Event) bool) []row {
+		agg := map[string]*row{}
+		for _, e := range evs {
+			if !match(e) {
+				continue
+			}
+			a := agg[e.DistinctID]
+			if a == nil {
+				a = &row{ID: e.DistinctID}
+				agg[e.DistinctID] = a
+			}
+			a.Events++
+			if e.Timestamp.After(a.LastSeen) {
+				a.LastSeen = e.Timestamp
+			}
+		}
+		out := make([]row, 0, len(agg))
+		for _, a := range agg {
+			out = append(out, *a)
+		}
+		sort.Slice(out, func(i, j int) bool { return out[i].LastSeen.After(out[j].LastSeen) })
+		return out
+	}
+	respond := func(mode string, rows []row) {
+		total := len(rows)
+		if len(rows) > 200 {
+			rows = rows[:200]
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"mode": mode, "total_users": total, "users": rows})
+	}
+
+	// funnel-step mode
+	if stepsQ := q.Get("steps"); stepsQ != "" {
+		steps := parseSteps(stepsQ)
+		if len(steps) < 2 {
+			writeErr(w, http.StatusBadRequest, "steps must list at least two event names")
+			return
+		}
+		stepN, err := strconv.Atoi(q.Get("step"))
+		if err != nil || stepN < 0 || stepN >= len(steps) {
+			writeErr(w, http.StatusBadRequest, fmt.Sprintf("step must be 0..%d", len(steps)-1))
+			return
+		}
+		state := q.Get("state")
+		window, _ := time.ParseDuration(q.Get("window"))
+		if window <= 0 {
+			window = 7 * 24 * time.Hour
+		}
+		order, oerr := funnel.ParseOrder(q.Get("order"))
+		if oerr != nil {
+			writeErr(w, http.StatusBadRequest, oerr.Error())
+			return
+		}
+		outcomes := funnel.Users(evs, steps, window, funnel.Options{Order: order})
+		wanted := map[string]bool{}
+		for _, o := range outcomes {
+			switch state {
+			case "dropped": // reached step N, did NOT reach N+1
+				if o.Reached == stepN+1 && !o.Converted {
+					wanted[o.DistinctID] = true
+				}
+			case "converted":
+				if o.Converted {
+					wanted[o.DistinctID] = true
+				}
+			default: // "reached" (or empty): reached at least step N
+				if o.Reached >= stepN+1 {
+					wanted[o.DistinctID] = true
+				}
+			}
+		}
+		respond("funnel", collect(func(e event.Event) bool { return wanted[e.DistinctID] }))
+		return
+	}
+
+	eventName := q.Get("event")
+	if !s.knownEventOr400(w, eventName) {
+		return
+	}
+	from, to, werr := parseTrendWindow(r)
+	if werr != nil {
+		writeErr(w, http.StatusBadRequest, werr.Error())
+		return
+	}
+	inWindow := func(e event.Event) bool {
+		ts := e.Timestamp.UTC()
+		if !from.IsZero() && ts.Before(from) {
+			return false
+		}
+		if !to.IsZero() && !ts.Before(to) {
+			return false
+		}
+		return true
+	}
+
+	// trends-point mode: one bucket's day
+	if d := q.Get("date"); d != "" {
+		day, derr := time.Parse("2006-01-02", d)
+		if derr != nil {
+			writeErr(w, http.StatusBadRequest, "date must be YYYY-MM-DD")
+			return
+		}
+		next := day.AddDate(0, 0, 1)
+		respond("trends_point", collect(func(e event.Event) bool {
+			if eventName != "" && e.Name != eventName {
+				return false
+			}
+			ts := e.Timestamp.UTC()
+			return !ts.Before(day) && ts.Before(next) && inWindow(e)
+		}))
+		return
+	}
+
+	// breakdown-row mode
+	if prop := q.Get("property"); prop != "" {
+		val := q.Get("value")
+		respond("breakdown_row", collect(func(e event.Event) bool {
+			if eventName != "" && e.Name != eventName {
+				return false
+			}
+			got, _ := e.Properties[prop].(string)
+			return got == val && inWindow(e)
+		}))
+		return
+	}
+
+	// plain event-in-window mode
+	respond("event", collect(func(e event.Event) bool {
+		return (eventName == "" || e.Name == eventName) && inWindow(e)
+	}))
 }

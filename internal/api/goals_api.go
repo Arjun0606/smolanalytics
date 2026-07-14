@@ -56,3 +56,12 @@ func (s *Server) deleteGoal(w http.ResponseWriter, r *http.Request) {
 	s.rec("goal.deleted", r.PathValue("id"))
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": r.PathValue("id")})
 }
+
+// listGoals returns the configured goals. API-1: POST-ed resources are GET-listable.
+func (s *Server) listGoals(w http.ResponseWriter, _ *http.Request) {
+	if s.goals == nil {
+		writeErr(w, http.StatusNotFound, "goals are not enabled on this instance")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"goals": s.goals.List()})
+}

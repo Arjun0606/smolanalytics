@@ -109,13 +109,13 @@ func TestAskRouterAndAnswers(t *testing.T) {
 		},
 		{
 			q:        "where do users come from?",
-			intent:   intentChannels,
-			contains: []string{"By source", "first-touch"},
+			intent:   intentSources,
+			contains: []string{"Traffic by source"},
 		},
 		{
 			q:        "top sources?",
-			intent:   intentChannels,
-			contains: []string{"By source"},
+			intent:   intentSources,
+			contains: []string{"Traffic by source"},
 		},
 		// --- action-y asks must not return a metric ---
 		{

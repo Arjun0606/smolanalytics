@@ -70,3 +70,97 @@ func TestAskIntentExposed(t *testing.T) {
 		}
 	}
 }
+
+// Geo questions must land on the geo intent (never signups/channels), natural
+// time phrases must parse, and a refused window must return NO intent so no UI
+// renders a chart under a refusal.
+func TestAskGeoAndWindows(t *testing.T) {
+	if got := string(classifyAsk("from how many countries did i get viewership in the past week")); got != "geo" {
+		t.Errorf("countries question classified as %q, want geo", got)
+	}
+	if got := string(classifyAsk("where are my visitors from")); got != "sources" {
+		t.Errorf("visitors-from is a traffic ranking (sources), got %q", got)
+	}
+	now := time.Now().UTC()
+	if _, unsup := parseWindow("how many signups in the past week", now); unsup != "" {
+		t.Errorf("'past week' should parse, got unsupported=%q", unsup)
+	}
+	if w, _ := parseWindow("visitors in the past month", now); !w.scoped() {
+		t.Error("'past month' should scope to a rolling 30-day window")
+	}
+	if _, unsup := parseWindow("signups this quarter", now); unsup == "" {
+		t.Error("'quarter' must still be named unsupported")
+	}
+}
+
+// The QA teardown's confirmed ask-bar bugs — each must stay fixed.
+func TestAskQAFixes(t *testing.T) {
+	if got := string(classifyAsk("what devices do people use")); got != "webdim" {
+		t.Errorf("devices question = %q, want webdim", got)
+	}
+	if got := string(classifyAsk("whats my bounce rate")); got != "webdim" {
+		t.Errorf("bounce question = %q, want webdim", got)
+	}
+	if got := string(classifyAsk("who is on the site right now")); got != "live" {
+		t.Errorf("live question = %q, want live", got)
+	}
+	now := time.Now().UTC()
+	// 'since monday' now parses via the extra-window layer instead of refusing
+	if w, ok := parseExtraWindow("signups since monday", now); !ok || !w.scoped() {
+		t.Error("'since monday' must parse to a real window")
+	}
+	// 'best day' routes to the peak-day report instead of refusing
+	if got := string(classifyAsk("best day for signups")); got != "peakday" {
+		t.Errorf("'best day' = %q, want peakday", got)
+	}
+	// per-day rate: a scoped 7-day window divides by 7, not 8
+	w := askWindow{from: now.Truncate(24*time.Hour).AddDate(0, 0, -7), to: now.Truncate(24 * time.Hour)}
+	if d := windowDays(w, 8); d != 7 {
+		t.Errorf("windowDays for a 7-day window = %d, want 7 (the off-by-one rate bug)", d)
+	}
+	if d := windowDays(askWindow{from: now.Truncate(24*time.Hour).AddDate(0, 0, -1), to: now.Truncate(24 * time.Hour)}, 2); d != 1 {
+		t.Errorf("windowDays for yesterday = %d, want 1", d)
+	}
+}
+
+// The evaluator's exact failing questions — pinned so they never regress.
+func TestAskEvaluatorQuestions(t *testing.T) {
+	now := time.Now().UTC()
+	// "last 6 hours" parses as a 6-hour window
+	w, unsup := parseWindow("engagement in the last 6 hours", now)
+	if unsup != "" || !w.scoped() {
+		t.Fatalf("'last 6 hours' must parse: unsup=%q scoped=%v", unsup, w.scoped())
+	}
+	if span := w.to.Sub(w.from); span != 6*time.Hour {
+		t.Fatalf("window span = %v, want 6h", span)
+	}
+	// engagement routes to the engagement intent, never the generic fallback
+	if got := string(classifyAsk("how much engagement in the last 6 hours")); got != "engagement" {
+		t.Fatalf("engagement question = %q, want engagement", got)
+	}
+	// sub-day windows never render a nonsense per-day rate
+	today := now.Truncate(24 * time.Hour)
+	evs := []event.Event{
+		{Name: "signup", DistinctID: "a", Timestamp: now.Add(-2 * time.Hour)},
+		{Name: "signup", DistinctID: "b", Timestamp: now.Add(-3 * time.Hour)},
+	}
+	_ = today
+	win, _ := parseWindow("signups in the last 6 hours", now)
+	ans := answerSignups(scope(evs, win), []string{"signup"}, win)
+	if strings.Contains(ans, "/day") {
+		t.Fatalf("6-hour answer must not carry a per-day rate: %q", ans)
+	}
+	if !strings.Contains(ans, "2") {
+		t.Fatalf("answer should count both signups: %q", ans)
+	}
+	// engagement answer computes from $engagement events
+	eevs := []event.Event{
+		{Name: "$engagement", DistinctID: "u1", Timestamp: now.Add(-time.Hour), Properties: map[string]any{"engaged_ms": 90000.0}},
+		{Name: "$engagement", DistinctID: "u2", Timestamp: now.Add(-time.Hour), Properties: map[string]any{"engaged_ms": 30000.0}},
+	}
+	ewin, _ := parseWindow("engagement in the last 6 hours", now)
+	eans := answerEngagement(scope(eevs, ewin), ewin)
+	if !strings.Contains(eans, "2 engaged visitors") || !strings.Contains(eans, "1m 0s") {
+		t.Fatalf("engagement answer wrong: %q", eans)
+	}
+}

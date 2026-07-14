@@ -427,8 +427,23 @@
     bindErrors(); // $exception on window errors + unhandled rejections (deduped)
   }
 
+  // self-exclusion (the Plausible pattern): open your site once per browser with
+  // ?sa_optout=1 and that browser's visits stop being tracked entirely — so a
+  // founder testing their own product doesn't dominate their own numbers.
+  // ?sa_optout=0 re-enables. Cookieless visitors can also use it: the flag lives
+  // in localStorage on YOUR device by YOUR choice, which needs no banner.
+  var optedOut = false;
+  try {
+    var qs = new URLSearchParams(location.search);
+    if (qs.get("sa_optout") === "1") localStorage.setItem("sa_optout", "1");
+    if (qs.get("sa_optout") === "0") localStorage.removeItem("sa_optout");
+    optedOut = localStorage.getItem("sa_optout") === "1";
+    if (optedOut && window.console) console.info("smolanalytics: this browser is excluded from tracking (sa_optout=1). Visit any page with ?sa_optout=0 to re-enable.");
+  } catch (e) {}
+
   var smol = {
     init: function (writeKey, opts) {
+      if (optedOut) return; // excluded browser: the SDK is a complete no-op
       opts = opts || {};
       key = writeKey || "";
       host = (opts.host || "").replace(/\/$/, "");

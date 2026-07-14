@@ -50,10 +50,24 @@ func (s *Server) ask(w http.ResponseWriter, r *http.Request) {
 	// verify before they trust. The intent is the deterministic route the classifier picked,
 	// exposed so a UI can render the matching chart under the answer (reports-as-answers)
 	// without re-classifying the question and drifting from the engine.
+	// a refusal (unsupported time window) must return NO intent: the UIs chart by
+	// intent, and a chart under "I can't answer that" reads as an answer anyway —
+	// the exact incoherence the proof chip exists to prevent.
+	intent := string(classifyAsk(q))
+	if _, unsupported := parseWindow(q, now); unsupported != "" {
+		intent = "" // a refused window renders no chart (would sit under "I can't answer")
+	}
+	// a question that resolved to a SPECIFIC named event (e.g. "purchases" -> checkout)
+	// must not chart the classified intent's default series — better no chart than a
+	// signups line under a checkout answer. webdim/live/geo are list answers with no
+	// trend chart, so they render nothing anyway.
+	if ev := namedEvent(q, eventsByVolume(query.Apply(evs, nil))); ev != "" && countish(q) {
+		intent = ""
+	}
 	writeJSON(w, http.StatusOK, map[string]string{
 		"answer":      answer(q, evs, now),
 		"computed_by": computedBy(q, now),
-		"intent":      string(classifyAsk(q)),
+		"intent":      intent,
 	})
 }
 
@@ -90,8 +104,30 @@ func computedBy(q string, now time.Time) string {
 		report = "the web-overview report"
 	case intentTopPages:
 		report = "the top-pages report"
+	case intentGeo:
+		report = "the geo (countries) breakdown of the web-overview report"
+	case intentEngagement:
+		report = "the engagement report (visible+focused time measured by the SDK)"
 	case intentMeasure:
 		report = "the numeric-aggregation report (a deterministic sum/avg/median/p90 over a property you sent)"
+	case intentSources:
+		report = "the traffic-by-source ranking (referrer breakdown of the web-overview report, direct included)"
+	case intentStickiness:
+		report = "the stickiness report (DAU/MAU over exact distinct users)"
+	case intentLifecycle:
+		report = "the lifecycle report (new vs returning vs dormant, exact distinct users)"
+	case intentHours:
+		report = "the activity-by-hour histogram"
+	case intentEntryPages:
+		report = "the entry-pages report (each user's first pageview in the window)"
+	case intentPeakDay:
+		report = "the daily event-trend report (peak bucket)"
+	case intentSplit:
+		report = "the referrer/utm split of the web-overview report"
+	case intentAI:
+		report = "the AI-referrers breakdown of the web-overview report"
+	case intentConvBy:
+		report = "the conversion-by-segment report (distinct users per bucket)"
 	default:
 		report = "a deterministic report"
 	}
@@ -103,17 +139,30 @@ func computedBy(q string, now time.Time) string {
 type askIntent string
 
 const (
-	intentAction    askIntent = "action"
-	intentBrief     askIntent = "brief"
-	intentRetention askIntent = "retention"
-	intentChannels  askIntent = "channels"
-	intentTopPages  askIntent = "toppages"
-	intentWeb       askIntent = "web"
-	intentFunnel    askIntent = "funnel"
-	intentActive    askIntent = "active"
-	intentSignups   askIntent = "signups"
-	intentMeasure   askIntent = "measure"
-	intentUnknown   askIntent = "unknown"
+	intentAction     askIntent = "action"
+	intentBrief      askIntent = "brief"
+	intentRetention  askIntent = "retention"
+	intentChannels   askIntent = "channels"
+	intentGeo        askIntent = "geo"
+	intentWebDim     askIntent = "webdim"
+	intentEngagement askIntent = "engagement"
+	intentLive       askIntent = "live"
+	intentTopPages   askIntent = "toppages"
+	intentWeb        askIntent = "web"
+	intentFunnel     askIntent = "funnel"
+	intentActive     askIntent = "active"
+	intentSignups    askIntent = "signups"
+	intentMeasure    askIntent = "measure"
+	intentSources    askIntent = "sources"
+	intentStickiness askIntent = "stickiness"
+	intentLifecycle  askIntent = "lifecycle"
+	intentHours      askIntent = "hours"
+	intentEntryPages askIntent = "entrypages"
+	intentPeakDay    askIntent = "peakday"
+	intentSplit      askIntent = "split"
+	intentAI         askIntent = "ai"
+	intentConvBy     askIntent = "convby"
+	intentUnknown    askIntent = "unknown"
 )
 
 // classifyAsk routes a lowercased question to one intent. Order is the whole
@@ -131,33 +180,97 @@ func classifyAsk(q string) askIntent {
 		"weekly report", "week in review", "summary", "overview", "digest", "brief",
 		"what should i fix", "what to fix", "needs fixing", "fix first", "broken",
 		"what's wrong", "whats wrong", "going wrong", "wrong with", "problem",
-		"needs attention", "what should i do", "priorit", "red flag", "biggest issue"):
+		"needs attention", "what should i do", "priorit", "red flag", "biggest issue",
+		"why did", "why are", "why is"):
 		return intentBrief
 	// numeric aggregation (revenue = sum of amount, AOV = avg, p90 latency) BEFORE the
 	// count-y intents, so "total revenue"/"average order value" aren't answered as a
 	// checkout count. Resolves to a real number only if the property was actually sent.
 	case isMeasureAsk(q):
 		return intentMeasure
-	case hasAny(q, "retention", "retain", "come back", "comeback", "returning", "stick"):
+	// splits and rankings that would otherwise fall into channels or refuse
+	case hasAny(q, "direct vs search", "search vs direct", "paid vs organic", "organic vs paid"):
+		return intentSplit
+	case hasAny(q, "ai tools", "ai assistants", "ai referrers", "from ai", "llm traffic"):
+		return intentAI
+	case hasAny(q, "land on", "landing page", "entry page", "enter the site", "enter on"):
+		return intentEntryPages
+	case hasAny(q, "best day", "biggest day", "peak day", "busiest day", "biggest traffic day", "worst day",
+		"slowest day", "which day", "what day"):
+		return intentPeakDay
+	case hasAny(q, "when are users most active", "when are people most active", "what hour", "which hour",
+		"busiest hour", "busiest time", "peak hour", "time of day", "hour of the day", "hour of day"):
+		return intentHours
+	case hasAny(q, "stickiness", "how sticky", "dau over mau", "dau/mau", "dau to mau"):
+		return intentStickiness
+	case hasAny(q, "churn", "dormant", "went quiet", "stopped coming", "stopped using",
+		"new or returning", "new vs returning", "returning vs new", "returning users", "returning visitors"):
+		return intentLifecycle
+	// conversion by a segment dimension ("which browser converts best") — before
+	// retention/channels/funnel so the dimension wins the route
+	case hasAny(q, "convert", "conversion", "converts") && hasAny(q, "by country", "by device", "by browser",
+		"by os", "by plan", "by source", "which country", "which browser", "which device", "which os",
+		"country has the best", "browser converts", "device converts", "mobile or desktop users convert",
+		"desktop or mobile users convert"):
+		return intentConvBy
+	case hasAny(q, "retention", "retain", "come back", "comeback", "coming back", "came back", "stick around", "sticking around"):
 		return intentRetention
 	// top-pages must outrank both channels ("which pages" ≠ "which sources") and the
 	// web-volume case below.
 	case hasAny(q, "top page", "top pages", "most visited", "popular page", "most viewed",
 		"which page", "best page", "top url", "top path", "top content"):
 		return intentTopPages
-	// channels = WHERE traffic comes from (sources), not how much of it there is.
+	// geo = country questions. Before channels so "how many countries" and "which
+	// countries" never land on sources or a signup trend.
+	case hasAny(q, "countr", "geograph", "which nations", "around the world", "worldwide",
+		"where are my users", "where are our users", "where are users from", "where our users are"):
+		return intentGeo
+	// sources = the traffic RANKING (referrers by visitors, direct included). channels =
+	// first-touch conversion attribution — only when the question is about converting.
+	case hasAny(q, "where is our traffic coming from", "where is traffic coming from", "where does our traffic come from",
+		"top referrer", "top referrers", "referrers", "how are folks finding", "how are people finding",
+		"how do people find", "where do people find"):
+		return intentSources
 	case hasAny(q, "channel", "source", "acquisition", "referr", "utm", "campaign",
 		"come from", "coming from", "came from", "where do my", "where are my visitors"):
-		return intentChannels
+		if hasAny(q, "convert", "conversion", "drives the most", "drive the most", "signup", "sign up", "best channel") {
+			return intentChannels
+		}
+		return intentSources
+	// who's here now — the live count, before the generic web case
+	case hasAny(q, "right now", "on the site now", "online now", "live visitor", "who's on",
+		"whos on", "active right now", "currently on", "here now", " rn", "anyone live"):
+		if hasAny(q, "last hour", "past hour", "last 6 hours", "hours") {
+			return intentWeb // a windowed count, not the live-now feed
+		}
+		return intentLive
+	case hasAny(q, "anyone on the site", "anybody on the site", "anyone visit"):
+		return intentWeb
+	// engagement questions answer from $engagement (visible+focused time the SDK
+	// measures) — before webdim so they never bounce to the capabilities menu
+	case hasAny(q, "engagement", "engaged", "time on site", "time on page", "session duration",
+		"session time", "how long do people stay", "how long do users stay", "how long do folks",
+		"actually stay", "stay on the site", "dwell"):
+		return intentEngagement
+	// standard web dimensions the dashboard shows (device/browser/os/bounce) — before
+	// the web-volume case so "what devices" isn't answered as a pageview count
+	case hasAny(q, "device", "mobile vs desktop", "browser", "operating system", " os ",
+		"bounce", "bounce rate"):
+		return intentWebDim
 	// web volume = pageviews / visitors / traffic counts. After channels so "where do
 	// visitors come from" stays a channel question, but BEFORE signups so "how many
 	// pageviews" is never answered as a signup count (the confidently-wrong bug).
-	case hasAny(q, "pageview", "page view", "traffic", "visits", "visitor", "unique visitor",
-		"how many views"):
+	case hasAny(q, "pageview", "page view", "traffic", "visits", "visit", "visited", "visitor",
+		"unique visitor", "how many views", "people came", "folks came", "people landed"):
+		if hasAny(q, "convert", "conversion") {
+			return intentFunnel // "does traffic from reddit actually convert"
+		}
 		return intentWeb
-	case hasAny(q, "convert", "conversion", "funnel", "drop", "checkout", "activat"):
+	case hasAny(q, "convert", "conversion", "funnel", "drop", "checkout", "check out", "checking out",
+		"activat", "end up", "go on to"):
 		return intentFunnel
-	case hasAny(q, "active", "dau", "wau", "total users", "how many users", "user count"):
+	case hasAny(q, "active", "dau", "wau", "mau", "total users", "how many users", "user count",
+		"used the product", "using the product", "used the app", "used the site"):
 		return intentActive
 	case hasAny(q, "signup", "sign up", "sign-up", "new user", "growth", "trend", "how many"):
 		return intentSignups
@@ -193,8 +306,20 @@ func answer(q string, evs []event.Event, now time.Time) string {
 
 	win, unsupported := parseWindow(q, now)
 	if unsupported != "" {
+		// the window shapes parseWindow can't do (since monday, june 20 – june 30)
+		if xw, ok := parseExtraWindow(q, now); ok {
+			win, unsupported = xw, ""
+		}
+	}
+	// a two-period comparison carries its own windows ("week over week pageviews"),
+	// so the unsupported-window refusal must not fire ahead of it
+	curW, priorW, cok := parseCompare(q, now)
+	// intents whose vocabulary contains day/week/month/hour AS THE METRIC ("week 1
+	// retention", "peak hour") must not bounce off the window parser
+	if unsupported != "" && !cok && !windowTolerantIntent(intent) {
 		return fmt.Sprintf("I can't scope to %q from the ask bar, supported windows: today, yesterday, "+
-			"this/last week, this/last month, and \"last N days\". Re-ask with one of those, or drop the "+
+			"this/last week, this/last month, \"last N days\", \"last N hours\", \"since monday\", and "+
+			"\"between jun 20 and jun 30\". Re-ask with one of those, or drop the "+
 			"time phrase for all recorded history. For arbitrary ranges, ask your agent over MCP, the "+
 			"trends and funnel tools take exact dates.", unsupported)
 	}
@@ -207,6 +332,72 @@ func answer(q string, evs []event.Event, now time.Time) string {
 		return answerMeasure(scoped, q, volAll, win)
 	}
 
+	// The comparison and segment layer (ask_scope.go): "this week vs last week",
+	// "traffic from reddit", "android vs ios signups" — the three question shapes the
+	// ask battery failed hardest on. Runs before the named-event shortcut so
+	// "checkouts this week vs last week" compares instead of counting one window.
+	qe := normalizeEventWords(q)
+	segs := extractSegments(q, evs)
+	m := resolveMetric(qe, volAll)
+	if cok {
+		if intent == intentFunnel && (m.kind == "visitors" || hasAny(q, "rate", "conversion", "convert")) {
+			return answerCompareFunnel(evs, volAll, q, curW, priorW)
+		}
+		cmpSegs := segs
+		if len(cmpSegs) == 0 {
+			if p := extractPath(q); p != "" {
+				cmpSegs = []askSeg{{prop: "path", value: p, label: p, found: true}}
+			}
+		}
+		return answerCompareWindows(evs, m, cmpSegs, curW, priorW)
+	}
+	// "how does our conversion compare to industry benchmarks" — we have no benchmark
+	// data and must say so before showing the real funnel
+	if hasAny(q, "benchmark", "industry average", "industry standard") {
+		return "I only compute from your own events — there's no industry-benchmark data here, and I won't invent one. Your funnel, exactly: " +
+			answerFunnel(scoped, volAll, win, q)
+	}
+	// "what share of visitors ever sign up" — the event-per-visitor rate
+	if hasAny(q, "share of visitors", "percent of visitors", "% of visitors", "fraction of visitors") {
+		if ev := namedEvent(qe, volAll); ev != "" {
+			return answerVisitorShare(scoped, ev, win)
+		}
+	}
+	// "social traffic trend over the last 30 days" wants a SERIES, not one scalar
+	if hasAny(q, "trend", "over time", "trajectory") && (len(segs) == 1 || m.kind == "event") {
+		return answerTrendText(evs, m, segs, win, now)
+	}
+	if intent != intentConvBy && intent != intentSplit {
+		if len(segs) == 2 {
+			if intent == intentRetention {
+				return answerRetentionVsSeg(evs, win, now, segs[0], segs[1])
+			}
+			return answerSegVsSeg(evs, m, segs[0], segs[1], win)
+		}
+		if len(segs) == 1 {
+			switch intent {
+			case intentGeo, intentWebDim, intentFunnel, intentRetention, intentEngagement, intentHours, intentTopPages, intentEntryPages, intentAI, intentPeakDay, intentStickiness, intentLifecycle:
+				// the segment FILTERS a breakdown-style report ("retention for mobile
+				// users", "which countries does our twitter traffic come from").
+				// user-journey reports scope by USER — a reddit visitor's signup event
+				// doesn't carry the referrer property.
+				if !segs[0].found {
+					return fmt.Sprintf("0 — no events with %s = %s have been sent, so there's nothing to report for %s.", segs[0].prop, segs[0].label, segs[0].label)
+				}
+				if intent == intentFunnel || intent == intentRetention || intent == intentEngagement || intent == intentStickiness || intent == intentLifecycle {
+					evs = segFilterUsers(evs, segs[0])
+				} else {
+					evs = segFilter(evs, segs[0])
+				}
+				scoped = scope(evs, win)
+				segNote := " (scoped to " + segs[0].label + ")"
+				return answerScopedIntent(intent, evs, scoped, volAll, win, now, q) + segNote
+			default:
+				return answerSegment(evs, m, segs[0], win)
+			}
+		}
+	}
+
 	// Explicit page-path or event-name mentions answer about exactly what the user named,
 	// taking priority over the generic intents. This is what lets the "your pages" and
 	// "your events" discovery chips resolve to a real answer instead of a generic one, and
@@ -214,7 +405,12 @@ func answer(q string, evs []event.Event, now time.Time) string {
 	if path := extractPath(q); path != "" {
 		return answerPage(scoped, path, win)
 	}
-	if ev := namedEvent(q, volAll); ev != "" && countish(q) {
+	if ev := namedEvent(qe, volAll); ev != "" && (countish(q) || len(strings.Fields(q)) <= 3 || win.scoped()) &&
+		intent != intentConvBy &&
+		!hasAny(q, "by country", "by device", "by browser", "by os", "by source", "by referrer", "break down", "breakdown") &&
+		!(intent == intentFunnel && hasAny(q, "all the way", "made it", "complete", "end up", "go on to",
+			"percent", "% of", "share of", "rate", "dropped between", "drop between",
+			"funnel", "conversion", "convert")) {
 		return answerEvent(scoped, ev, win)
 	}
 	// If the user explicitly named an event ("the X event", "X events fire") that we
@@ -226,18 +422,69 @@ func answer(q string, evs []event.Event, now time.Time) string {
 		return answerUnknownEvent(miss, volAll)
 	}
 
+	return answerScopedIntent(intent, evs, scoped, volAll, win, now, q)
+}
+
+// answerScopedIntent dispatches the report-shaped intents; pulled out of answer so the
+// segment layer can run the SAME reports over a filtered event set.
+func answerScopedIntent(intent askIntent, evs []event.Event, scoped []event.Event, volAll []string, win askWindow, now time.Time, q string) string {
 	switch intent {
 	case intentRetention:
+		// "how many people came back today" over a 1-2 day window is a returning-users
+		// count over FULL history (first-seen needs it); a day-cohort rate over the
+		// same window would have an empty denominator
+		if win.scoped() && win.to.Sub(win.from) <= 48*time.Hour {
+			return answerReturning(evs, q, win)
+		}
 		return answerRetention(scoped, volAll, win, now, q)
+	case intentSources:
+		for _, u := range []struct{ words, prop string }{
+			{"utm medium", "utm_medium"}, {"utm source", "utm_source"}, {"utm campaign", "utm_campaign"},
+		} {
+			if strings.Contains(q, u.words) {
+				return answerPropBreakdown(evs, u.prop, win)
+			}
+		}
+		return answerSources(evs, win)
+	case intentStickiness:
+		return answerStickiness(evs, now)
+	case intentLifecycle:
+		return answerLifecycle(evs, q, win, now)
+	case intentHours:
+		return answerHours(evs, win, now)
+	case intentEntryPages:
+		return answerEntryPages(evs, win)
+	case intentPeakDay:
+		return answerPeakDay(evs, resolveMetric(q, volAll), win, now)
+	case intentSplit:
+		return answerSplit(evs, q, win)
+	case intentAI:
+		return answerAIReferrers(evs, win)
+	case intentConvBy:
+		return answerConvByQ(evs, volAll, q, win)
 	case intentChannels:
 		return answerChannels(scoped, volAll, win)
 	case intentTopPages:
 		return answerTopPages(scoped, win)
+	case intentGeo:
+		if ev := namedEvent(normalizeEventWords(q), volAll); ev != "" {
+			return answerPropBreakdownLabel(filterByName(scoped, ev), "country", ev+" users", win)
+		}
+		return answerGeo(scoped, evs, win)
+	case intentWebDim:
+		return answerWebDim(scoped, q, win)
+	case intentEngagement:
+		return answerEngagement(scoped, win)
+	case intentLive:
+		return answerLive(evs, now)
 	case intentWeb:
 		return answerWeb(scoped, win)
 	case intentFunnel:
-		return answerFunnel(scoped, volAll, win)
+		return answerFunnel(scoped, volAll, win, q)
 	case intentActive:
+		if hasAny(q, "dau", "wau", "mau", "daily active", "weekly active", "monthly active") {
+			return answerActiveUsers(evs, q, now)
+		}
 		return answerActive(scoped, win, now)
 	case intentSignups:
 		return answerSignups(scoped, volAll, win)
@@ -255,9 +502,26 @@ func answer(q string, evs []event.Event, now time.Time) string {
 	}
 }
 
+// normalizeEventWords maps the ways people write event names (plurals, spaced forms)
+// onto the tracked names, so "signups this week vs last week" counts signup events
+// instead of silently falling back to visitors.
+var eventWordNorm = strings.NewReplacer(
+	"sign-ups", "signup", "signups", "signup", "sign ups", "signup", "sign up", "signup", "signed up", "signup", "sign-up", "signup",
+	"checkouts", "checkout", "checking out", "checkout", "checked out", "checkout", "check out", "checkout",
+	"activations", "activate", "activation", "activate", "activated", "activate", "activating", "activate",
+	"purchases", "purchase", "subscriptions", "subscribe", "subscribed", "subscribe",
+	"opens", "open", "opened", "open",
+)
+
+func normalizeEventWords(q string) string { return eventWordNorm.Replace(q) }
+
 // isMeasureAsk spots a numeric-aggregation question (revenue, AOV, median, p90) vs a count.
 // Kept to STRONG signals so "how much traffic" stays a web question, not a measure.
 func isMeasureAsk(q string) bool {
+	// engagement time is its own report — "avg session time" is not a numeric-property ask
+	if hasAny(q, "session time", "time on site", "time on page", "session duration", "engaged", "engagement") {
+		return false
+	}
 	if hasAny(q, "revenue", "order value", "aov", "arpu", "sum of", "median",
 		"percentile", "p90", "p95", "p99", "average", "avg ", "mean ",
 		"how much money", "how much did", "total spend", "total amount", "total revenue") {
@@ -462,6 +726,7 @@ func windowClause(w askWindow) string {
 }
 
 var lastNDaysRe = regexp.MustCompile(`(?:last|past)\s+(\d+)\s+days?`)
+var lastNHoursRe = regexp.MustCompile(`(?:last|past)\s+(\d+)\s+hours?`)
 
 // parseWindow maps time phrases to real windows (UTC, like every computation
 // here). Recognized: today, yesterday, this/last week (calendar, Monday start),
@@ -486,6 +751,10 @@ func parseWindow(q string, now time.Time) (win askWindow, unsupported string) {
 		from := monday.AddDate(0, 0, -7)
 		return askWindow{from: from, to: monday,
 			label: "last week (Mon " + from.Format("Jan 2") + " – Sun " + monday.AddDate(0, 0, -1).Format("Jan 2") + ", UTC)"}, ""
+	case strings.Contains(q, "past week"), strings.Contains(q, "previous week"):
+		return askWindow{from: now.AddDate(0, 0, -7), to: now, label: "the last 7 days (UTC)"}, ""
+	case strings.Contains(q, "past month"), strings.Contains(q, "previous month"):
+		return askWindow{from: now.AddDate(0, 0, -30), to: now, label: "the last 30 days (UTC)"}, ""
 	case strings.Contains(q, "this month"):
 		first := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 		return askWindow{from: first, to: now,
@@ -494,6 +763,15 @@ func parseWindow(q string, now time.Time) (win askWindow, unsupported string) {
 		first := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 		return askWindow{from: first.AddDate(0, -1, 0), to: first,
 			label: "last month (" + first.AddDate(0, -1, 0).Format("January 2006") + ", UTC)"}, ""
+	}
+	if m := lastNHoursRe.FindStringSubmatch(q); m != nil {
+		if n, err := strconv.Atoi(m[1]); err == nil && n > 0 && n <= 24*366 {
+			return askWindow{from: now.Add(-time.Duration(n) * time.Hour), to: now,
+				label: fmt.Sprintf("the last %d hours (UTC)", n)}, ""
+		}
+	}
+	if strings.Contains(q, "last hour") || strings.Contains(q, "past hour") {
+		return askWindow{from: now.Add(-time.Hour), to: now, label: "the last hour (UTC)"}, ""
 	}
 	if m := lastNDaysRe.FindStringSubmatch(q); m != nil {
 		if n, err := strconv.Atoi(m[1]); err == nil && n > 0 {
@@ -516,10 +794,16 @@ func mondayOffset(t time.Time) int { return (int(t.Weekday()) + 6) % 7 }
 func unsupportedTimePhrase(q string) string {
 	for _, tok := range []string{"quarter", "year", "month", "week", "hour", "minute",
 		"q1", "q2", "q3", "q4", "january", "february", "march", "april", "june", "july",
-		"august", "september", "october", "november", "december"} {
+		"august", "september", "october", "november", "december",
+		"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"} {
 		if containsWord(q, tok) {
 			return tok
 		}
+	}
+	// "since <x>" and "best/worst day" are scope-shaped phrasings the parser doesn't
+	// support — refuse them by name instead of silently answering the 30-day total.
+	if strings.Contains(q, "since ") {
+		return "since"
 	}
 	return ""
 }
@@ -555,7 +839,7 @@ func scope(evs []event.Event, w askWindow) []event.Event {
 	return out
 }
 
-func answerFunnel(evs []event.Event, vol []string, win askWindow) string {
+func answerFunnel(evs []event.Event, vol []string, win askWindow, q string) string {
 	fsteps, ftitle := detectFunnel(evs, vol)
 	fr := funnel.Compute(evs, fsteps, 7*24*time.Hour)
 	if len(fr.Steps) == 0 || fr.Steps[0].Count == 0 {
@@ -570,6 +854,28 @@ func answerFunnel(evs []event.Event, vol []string, win askWindow) string {
 		// honestly and name the next action instead.
 		return fmt.Sprintf("%d users did %q%s, that's the only event type tracked, so there's no funnel to measure yet. Add a later step (activate, checkout) to see where users drop off.",
 			fr.Steps[0].Count, fr.Steps[0].Event, windowClause(win))
+	}
+	// step-pair sub-metrics: "signup to activation rate", "how many dropped between
+	// activate and checkout" — answer the exact pair, not the whole-funnel headline
+	if named := stepsInQuestion(q, fr); len(named) == 2 && named[0] < named[1] {
+		a, b := fr.Steps[named[0]], fr.Steps[named[1]]
+		if a.Count == 0 {
+			return fmt.Sprintf("No %q users%s to compute a rate from.", a.Event, windowClause(win))
+		}
+		rate := int(float64(b.Count)/float64(a.Count)*100 + 0.5)
+		if hasAny(q, "drop", "dropped", "fall off", "fell off", "lost", "lose") {
+			return fmt.Sprintf("%d users dropped between %q and %q%s (%d → %d, %d%% continue).",
+				a.Count-b.Count, a.Event, b.Event, windowClause(win), a.Count, b.Count, rate)
+		}
+		return fmt.Sprintf("%d%% of %q users go on to %q%s (%d of %d).",
+			rate, a.Event, b.Event, windowClause(win), b.Count, a.Count)
+	}
+	// completers: "made it all the way through", "what percent of signups end up checking out"
+	if hasAny(q, "all the way", "complete the funnel", "made it through", "finish the funnel",
+		"end up", "full funnel", "whole funnel", "every step") {
+		last := fr.Steps[len(fr.Steps)-1]
+		return fmt.Sprintf("%d users completed the full funnel %s%s — %d%% of the %d who started.",
+			last.Count, ftitle, windowClause(win), pct(fr.OverallConversion), fr.Steps[0].Count)
 	}
 	worst, worstDrop := "", -1
 	for _, st := range fr.Steps[1:] {
@@ -604,13 +910,31 @@ func humanDuration(secs float64) string {
 	}
 }
 
-func answerRetention(evs []event.Event, vol []string, win askWindow, now time.Time, q string) string {
+func answerRetention(evs []event.Event, _ []string, win askWindow, now time.Time, q string) string {
+
 	// weekly/monthly/rolling asks take the bucketed path; the default daily path below is
 	// kept byte-identical so nothing about the common case changes.
 	if hasAny(q, "weekly", "week", "monthly", "month", "rolling", "unbounded") {
-		return answerRetentionBucketed(evs, vol, win, now, q)
+		return answerRetentionBucketed(evs, nil, win, now, q)
 	}
-	rr := retention.Compute(evs, 7, pickEvent(vol, "open"))
+	// anchor: ANY event ("" = general activity) — the same default /v1/retention and the
+	// MCP tool use, so the four surfaces can't quote different numbers for one question.
+	// "day 30 retention" widens the horizon to the asked day and answers honestly when
+	// no cohort is old enough to observe it.
+	askDay := retentionPeriodAsked(q)
+	maxD := 7
+	if askDay > maxD {
+		maxD = askDay
+	}
+	rr := retention.Compute(evs, maxD, "")
+	if askDay > 7 {
+		dN, sizeN := retention.DayN(rr, askDay, now)
+		if sizeN == 0 {
+			return fmt.Sprintf("Not enough history to measure day-%d retention yet — no cohort is %d days old. The oldest data supports day-%d at most.", askDay, askDay, oldestObservableDay(rr, now))
+		}
+		return fmt.Sprintf("Day-%d retention is %d%% (of %d users old enough to measure, any activity counts as returning).",
+			askDay, int(float64(dN)/float64(sizeN)*100+0.5), sizeN)
+	}
 	// honest denominators: only cohorts old enough to observe day N (retention.DayN)
 	d1, size1 := retention.DayN(rr, 1, now)
 	if size1 == 0 {
@@ -634,7 +958,7 @@ func answerRetention(evs []event.Event, vol []string, win askWindow, now time.Ti
 
 // answerRetentionBucketed handles weekly/monthly/rolling retention asks: same honest
 // denominator (only cohorts old enough to observe period N), reported in the unit asked for.
-func answerRetentionBucketed(evs []event.Event, vol []string, win askWindow, now time.Time, q string) string {
+func answerRetentionBucketed(evs []event.Event, _ []string, win askWindow, now time.Time, q string) string {
 	bucket, unit, p1, p2, maxP := "day", "day", 1, 7, 7
 	if hasAny(q, "weekly", "week") {
 		bucket, unit, p1, p2, maxP = "week", "week", 1, 4, 4
@@ -643,7 +967,7 @@ func answerRetentionBucketed(evs []event.Event, vol []string, win askWindow, now
 		bucket, unit, p1, p2, maxP = "month", "month", 1, 3, 3
 	}
 	rolling := hasAny(q, "rolling", "unbounded")
-	rr := retention.ComputeBucketed(evs, maxP, pickEvent(vol, "open"), bucket, rolling)
+	rr := retention.ComputeBucketed(evs, maxP, "", bucket, rolling)
 
 	r1, s1 := retention.PeriodN(rr, p1, now)
 	kind := unit
@@ -777,6 +1101,36 @@ func pickConversion(evs []event.Event, vol []string) string {
 	return ""
 }
 
+// windowDays is the honest denominator for a per-day rate. len(trend.Points)
+// includes the exclusive end-boundary's bucket, so it overstates the divisor by
+// one and understates the rate (291 over a 7-day week read as 36/day, not 42).
+// For a scoped window, count the whole days it actually spans; otherwise the
+// point count is the day count.
+// rateSuffix renders ", about N/day" only when the window is long enough for a
+// daily rate to mean anything — "49 events yesterday, about 49/day" was noise,
+// and a 6-hour window divided into days is nonsense.
+func rateSuffix(total int, win askWindow, points int) string {
+	d := windowDays(win, points)
+	if d < 2 {
+		return ""
+	}
+	return fmt.Sprintf(", about %d/day", total/d)
+}
+
+func windowDays(win askWindow, points int) int {
+	if win.scoped() {
+		d := int(win.to.Sub(win.from).Hours()/24 + 0.5)
+		if d < 1 {
+			d = 1
+		}
+		return d
+	}
+	if points < 1 {
+		return 1
+	}
+	return points
+}
+
 func answerSignups(evs []event.Event, vol []string, win askWindow) string {
 	ev := pickEvent(vol, "signup")
 	if ev == "" {
@@ -791,9 +1145,9 @@ func answerSignups(evs []event.Event, vol []string, win askWindow) string {
 		return fmt.Sprintf("No \"%s\" events %s, widen the window, or drop the time phrase for all history.", ev, win.label)
 	}
 	if win.scoped() {
-		return fmt.Sprintf("%d \"%s\" events %s, about %d/day.", tr.Total, ev, win.label, tr.Total/days)
+		return fmt.Sprintf("%d \"%s\" events %s%s.", tr.Total, ev, win.label, rateSuffix(tr.Total, win, days))
 	}
-	return fmt.Sprintf("%d \"%s\" events over the last %d days, about %d/day.", tr.Total, ev, days, tr.Total/days)
+	return fmt.Sprintf("%d \"%s\" events over the last %d days%s.", tr.Total, ev, days, rateSuffix(tr.Total, win, days))
 }
 
 func answerActive(evs []event.Event, win askWindow, now time.Time) string {
@@ -827,14 +1181,10 @@ func answerEvent(evs []event.Event, ev string, win askWindow) string {
 		}
 		return fmt.Sprintf("No %q events recorded yet.", ev)
 	}
-	per := tr.Total
-	if days > 0 {
-		per = tr.Total / days
-	}
 	if win.scoped() {
-		return fmt.Sprintf("%d %q events %s, about %d/day.", tr.Total, ev, win.label, per)
+		return fmt.Sprintf("%d %q events %s%s.", tr.Total, ev, win.label, rateSuffix(tr.Total, win, days))
 	}
-	return fmt.Sprintf("%d %q events over the last %d days, about %d/day.", tr.Total, ev, days, per)
+	return fmt.Sprintf("%d %q events over the last %d days%s.", tr.Total, ev, days, rateSuffix(tr.Total, win, days))
 }
 
 // answerPage answers "visitors to /pricing" / "how many pageviews for /pqr" from
@@ -866,6 +1216,143 @@ func answerPage(evs []event.Event, path string, win askWindow) string {
 // answerWeb answers "how many pageviews / visitors / traffic" from autocaptured
 // $pageview events — the fix for the router answering a signup count when the user
 // asked about pageviews. Counts views and the distinct visitors behind them.
+
+// answerWebDim answers device/browser/os/bounce questions from the same web report
+// the dashboard renders — the ask bar must never deny a dimension the dashboard shows.
+
+// answerEngagement reports engaged visitors + average engaged time over the window,
+// from the SDK's $engagement events (visible AND focused time — background tabs
+// don't count). The metric evaluators actually ask for by name.
+func answerEngagement(evs []event.Event, win askWindow) string {
+	perUser := map[string]float64{}
+	for _, e := range evs {
+		if e.Name != "$engagement" {
+			continue
+		}
+		if ms, ok := e.Properties["engaged_ms"].(float64); ok && ms > 0 {
+			perUser[e.DistinctID] += ms
+		}
+	}
+	if len(perUser) == 0 {
+		if win.scoped() {
+			return "No engagement measured " + win.label + ". Engagement comes from the SDK's $engagement events (visible + focused time) — widen the window, or drop the time phrase for all history."
+		}
+		return "No engagement data yet. The browser SDK measures it automatically once installed (visible + focused time per visitor)."
+	}
+	var total float64
+	for _, ms := range perUser {
+		total += ms
+	}
+	avgSecs := int(total / float64(len(perUser)) / 1000)
+	human := fmt.Sprintf("%ds", avgSecs)
+	if avgSecs >= 60 {
+		human = fmt.Sprintf("%dm %ds", avgSecs/60, avgSecs%60)
+	}
+	scope := "across all recorded history"
+	if win.scoped() {
+		scope = win.label
+	}
+	return fmt.Sprintf("%d engaged visitors %s, averaging %s of active time each (visible and focused — background tabs don't count).", len(perUser), scope, human)
+}
+
+func answerWebDim(evs []event.Event, q string, win askWindow) string {
+	pick := func(prop string) []struct {
+		v string
+		n int
+	} {
+		counts := map[string]int{}
+		for _, e := range evs {
+			if e.Name != "$pageview" {
+				continue
+			}
+			if val, _ := e.Properties[prop].(string); val != "" {
+				counts[val]++
+			}
+		}
+		type kv struct {
+			v string
+			n int
+		}
+		rows := make([]kv, 0, len(counts))
+		for v, n := range counts {
+			rows = append(rows, kv{v, n})
+		}
+		sort.Slice(rows, func(i, j int) bool { return rows[i].n > rows[j].n })
+		out := make([]struct {
+			v string
+			n int
+		}, 0, len(rows))
+		for i, r := range rows {
+			if i == 5 {
+				break
+			}
+			out = append(out, struct {
+				v string
+				n int
+			}{r.v, r.n})
+		}
+		return out
+	}
+	label, prop := "devices", "device"
+	switch {
+	case strings.Contains(q, "browser"):
+		label, prop = "browsers", "browser"
+	case strings.Contains(q, "os"), strings.Contains(q, "operating system"):
+		label, prop = "operating systems", "os"
+	case strings.Contains(q, "bounce"):
+		// bounce rate: one-pageview visitors who engaged under 10s (the web report's rule)
+		pv := map[string]int{}
+		eng := map[string]float64{}
+		for _, e := range evs {
+			if e.Name == "$pageview" {
+				pv[e.DistinctID]++
+			} else if e.Name == "$engagement" {
+				if ms, _ := e.Properties["engaged_ms"].(float64); ms > 0 {
+					eng[e.DistinctID] += ms
+				}
+			}
+		}
+		if len(pv) == 0 {
+			return "No pageviews" + winSuffix(win) + " to measure bounce rate."
+		}
+		bounced := 0
+		for u, n := range pv {
+			if n == 1 && eng[u] < 10000 {
+				bounced++
+			}
+		}
+		return fmt.Sprintf("Bounce rate is %d%% (%d of %d visitors left after one page in under 10s)%s.", int(float64(bounced)/float64(len(pv))*100+0.5), bounced, len(pv), winSuffix(win))
+	}
+	rows := pick(prop)
+	if len(rows) == 0 {
+		return "No " + label + " recorded" + winSuffix(win) + " yet — these are parsed from the user agent at ingest, so they appear as visitors arrive."
+	}
+	parts := make([]string, len(rows))
+	for i, r := range rows {
+		parts[i] = fmt.Sprintf("%s (%d)", r.v, r.n)
+	}
+	return "Top " + label + winSuffix(win) + ": " + strings.Join(parts, ", ") + "."
+}
+
+// answerLive answers "who's on the site right now" from the last-5-minute window,
+// the same live count the dashboard header shows.
+func answerLive(evs []event.Event, now time.Time) string {
+	cutoff := now.Add(-5 * time.Minute)
+	live := map[string]bool{}
+	for _, e := range evs {
+		if e.Name == "$pageview" && !e.Timestamp.Before(cutoff) {
+			live[e.DistinctID] = true
+		}
+	}
+	if len(live) == 0 {
+		return "Nobody on the site in the last 5 minutes."
+	}
+	if len(live) == 1 {
+		return "1 visitor on the site right now (active in the last 5 minutes)."
+	}
+	return fmt.Sprintf("%d visitors on the site right now (active in the last 5 minutes).", len(live))
+}
+
 func answerWeb(evs []event.Event, win askWindow) string {
 	visitors := map[string]bool{}
 	views := 0
@@ -965,6 +1452,25 @@ func namedEvent(q string, vol []string) string {
 		}
 		if toks[strings.ToLower(ev)] {
 			return ev
+		}
+	}
+	// autocapture synonyms: "clicks" means $click (nobody types the dollar sign)
+	if hasAny(q, "clicks", "click count", "how many click") {
+		for _, ev := range vol {
+			if ev == "$click" {
+				return ev
+			}
+		}
+	}
+	// purchase synonyms map to a real purchase-shaped event so "how many purchases"
+	// answers about checkout/order/payment instead of silently falling to signups
+	if hasAny(q, "purchase", "bought", "buy", "order", "sale", "revenue event", "payment") {
+		for _, want := range []string{"checkout", "purchase", "order", "payment", "buy", "sale"} {
+			for _, ev := range vol {
+				if strings.ToLower(ev) == want {
+					return ev
+				}
+			}
 		}
 	}
 	return ""
@@ -1123,4 +1629,84 @@ func hasAny(s string, subs ...string) bool {
 		}
 	}
 	return false
+}
+
+// answerGeo counts distinct visitor countries (ingest-time geo). Geo stamping
+// began when the operator's instance first ran a geo-enabled build and IPs are
+// never stored, so history before that carries no country — the answer SAYS so
+// whenever the asked window predates the first stamped event, instead of letting
+// an honest small number read as a broken one.
+func answerGeo(scoped, all []event.Event, win askWindow) string {
+	type cAgg struct {
+		visitors map[string]bool
+		views    int
+	}
+	byCC := map[string]*cAgg{}
+	for _, e := range scoped {
+		if e.Name != "$pageview" {
+			continue
+		}
+		cc, _ := e.Properties["country"].(string)
+		if cc == "" {
+			continue
+		}
+		a := byCC[cc]
+		if a == nil {
+			a = &cAgg{visitors: map[string]bool{}}
+			byCC[cc] = a
+		}
+		a.views++
+		a.visitors[e.DistinctID] = true
+	}
+	// the honesty clause: when did geo stamping actually begin on this instance?
+	var firstGeo time.Time
+	for _, e := range all {
+		if _, ok := e.Properties["country"].(string); ok {
+			if firstGeo.IsZero() || e.Timestamp.Before(firstGeo) {
+				firstGeo = e.Timestamp
+			}
+		}
+	}
+	note := ""
+	if !firstGeo.IsZero() && (!win.scoped() || win.from.Before(firstGeo)) {
+		note = " Geo stamping began " + firstGeo.Format("Jan 2") + " on this instance (the IP is used for one lookup at ingest and never stored), so earlier events carry no country."
+	}
+	if len(byCC) == 0 {
+		if firstGeo.IsZero() {
+			return "No country data yet. Geo stamps at ingest from the free DB-IP database, so countries appear as new visitors arrive (IPs are never stored). If this instance runs with SMOLANALYTICS_GEO=off, that is why."
+		}
+		if win.scoped() {
+			return "No geo-stamped pageviews " + win.label + "." + note
+		}
+		return "No geo-stamped pageviews yet." + note
+	}
+	type row struct {
+		cc       string
+		visitors int
+	}
+	rows := make([]row, 0, len(byCC))
+	for cc, a := range byCC {
+		rows = append(rows, row{cc, len(a.visitors)})
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].visitors > rows[j].visitors })
+	parts := make([]string, 0, 5)
+	for i, r := range rows {
+		if i == 5 {
+			break
+		}
+		parts = append(parts, fmt.Sprintf("%s (%d)", r.cc, r.visitors))
+	}
+	scope := "across all recorded geo data"
+	if win.scoped() {
+		scope = win.label
+	}
+	more := ""
+	if len(rows) > 5 {
+		more = fmt.Sprintf(" and %d more", len(rows)-5)
+	}
+	noun := "countries"
+	if len(rows) == 1 {
+		noun = "country"
+	}
+	return fmt.Sprintf("Visitors came from %d %s %s: %s%s.%s", len(rows), noun, scope, strings.Join(parts, ", "), more, note)
 }

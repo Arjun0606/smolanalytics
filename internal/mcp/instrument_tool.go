@@ -18,7 +18,7 @@ import (
 func init() {
 	toolList = append(toolList,
 		map[string]any{
-			"name": "propose_instrumentation",
+			"name":        "propose_instrumentation",
 			"description": "Read the user's repository and return the exact instrumentation to add: the base autocapture <script> (host + key resolved) and where it goes, plus the custom-event track() calls to insert at the signup / login / checkout / activation call-sites found in the code, each with file, line, the exact snippet, and expected properties. This is how you instrument the app: call this, then APPLY the returned edits with your own editor, then declare them with set_tracking_plan and confirm with verify_instrumentation. Deterministic and re-runnable. Pass the project's host + write key (from the project page / connect) so the snippet is copy-paste ready.",
 			"inputSchema": map[string]any{
 				"type": "object",
@@ -30,7 +30,7 @@ func init() {
 			},
 		},
 		map[string]any{
-			"name": "suggest_instrumentation_fix",
+			"name":        "suggest_instrumentation_fix",
 			"description": "When instrumentation_health reports an event as MISSING (planned but never arriving), call this to get the exact fix: the call-site in the code where that event should fire and the precise track() snippet to insert. Turns 'this event isn't arriving' into an applied patch. Pass the event name.",
 			"inputSchema": map[string]any{
 				"type": "object",
@@ -47,7 +47,7 @@ func init() {
 			"inputSchema": map[string]any{"type": "object", "properties": map[string]any{"repo_path": map[string]any{"type": "string", "description": "Path to the repo root (default: current directory)"}}},
 		},
 		map[string]any{
-			"name": "verify_instrumentation",
+			"name":        "verify_instrumentation",
 			"description": "Prove the tracking is real: for every event in the tracking plan, cross-reference the code (is there a track() call?) with live traffic (has it fired?) and return a green/red table — FIRING, WIRED (call-site found, no traffic yet: run the app and exercise it), or MISSING (no call-site and no traffic: not wired). Call this after applying instrumentation to confirm the job is done. Pass repo_path so it can read the call-sites.",
 			"inputSchema": map[string]any{
 				"type": "object",

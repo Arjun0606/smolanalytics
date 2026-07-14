@@ -18,7 +18,9 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -34,6 +36,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/geo"
 	"github.com/Arjun0606/smolanalytics/internal/goal"
 	"github.com/Arjun0606/smolanalytics/internal/gsc"
+	"github.com/Arjun0606/smolanalytics/internal/insight"
 	"github.com/Arjun0606/smolanalytics/internal/insights"
 	"github.com/Arjun0606/smolanalytics/internal/mcp"
 	"github.com/Arjun0606/smolanalytics/internal/query"
@@ -53,22 +56,27 @@ var sdkJS string
 var Version = "0.1.0"
 
 type Server struct {
-	store    store.Store
-	mcp      *mcp.Server
-	insights *insights.Store
-	cohorts  *cohort.Store
-	settings *settings.Store
-	audit    *audit.Log
-	webhooks *webhook.Store
-	alerts   *alert.Store
-	shares   *share.Store
-	aliases  *alias.Map
-	gsc      *gsc.Store
-	goals    *goal.Store
-	exports  *exportlink.Store
-	defined  *defined.Store // retroactive zero-code events (Heap wedge)
-	writeKey string         // if set, POST /v1/events requires Authorization: Bearer <writeKey>
-	geo      *geo.Resolver  // ingest-time IP→country (IP never stored); nil = disabled
+	store        store.Store
+	mcp          *mcp.Server
+	insights     *insights.Store
+	cohorts      *cohort.Store
+	settings     *settings.Store
+	audit        *audit.Log
+	webhooks     *webhook.Store
+	alerts       *alert.Store
+	shares       *share.Store
+	aliases      *alias.Map
+	gsc          *gsc.Store
+	goals        *goal.Store
+	exports      *exportlink.Store
+	defined      *defined.Store // retroactive zero-code events (Heap wedge)
+	writeKey     string         // if set, POST /v1/events requires Authorization: Bearer <writeKey>
+	geo          *geo.Resolver  // ingest-time IP→country (IP never stored); nil = disabled
+	anomalyMu    sync.Mutex
+	anomalyFired map[string]time.Time // finding title -> last webhook fire (24h dedup)
+
+	agentMu sync.Mutex
+	agents  map[string]*agentSeen // MCP client name -> presence (in-memory; resets on reboot)
 	// autocaptured events dropped because the UA was a known crawler/bot — surfaced in
 	// /v1/usage so "why is my dashboard lower than GA?" has a visible, honest answer.
 	botsFiltered atomic.Int64
@@ -122,7 +130,53 @@ func (s *Server) rec(action, detail string) { s.audit.Record(action, detail) }
 
 // EvaluateAlerts runs every enabled alert against the current data and fires those
 // whose condition is met (debounced to once per window). Called on a schedule.
+
+// evaluateAnomalies pushes the verdict engine's WARN findings to the configured
+// webhooks — the "signups down 34%: it's mobile safari at checkout" pull, with the
+// finding itself as the proven diagnosis (same engine as the dashboard verdict, so
+// the alert and the page can never disagree). Per-finding 24h dedup + a global cap
+// of 2 anomaly sends per 24h (the plausible rule: alerts that fire rarely get read).
+func (s *Server) evaluateAnomalies() {
+	if s.webhooks == nil {
+		return
+	}
+	evs, err := s.store.Range(time.Time{}, time.Time{})
+	if err != nil {
+		return
+	}
+	evs = query.Apply(evs, nil)
+	findings := insight.Generate(evs)
+	now := time.Now().UTC()
+	s.anomalyMu.Lock()
+	defer s.anomalyMu.Unlock()
+	if s.anomalyFired == nil {
+		s.anomalyFired = map[string]time.Time{}
+	}
+	sent := 0
+	for _, t := range s.anomalyFired {
+		if now.Sub(t) < 24*time.Hour {
+			sent++
+		}
+	}
+	for _, f := range findings {
+		if f.Severity != "warn" || sent >= 2 {
+			continue
+		}
+		if last, ok := s.anomalyFired[f.Title]; ok && now.Sub(last) < 24*time.Hour {
+			continue
+		}
+		s.anomalyFired[f.Title] = now
+		sent++
+		payload := map[string]any{
+			"type": "anomaly", "title": f.Title, "detail": f.Detail, "fired_at": now,
+			"computed_by": "the verdict engine (notable-change detection), the same computation the dashboard's 'what to look at' renders",
+		}
+		s.webhooks.DeliverAll(payload, "⚠ "+f.Title+" — "+f.Detail)
+	}
+}
+
 func (s *Server) EvaluateAlerts() {
+	s.evaluateAnomalies()
 	if s.alerts == nil {
 		return
 	}
@@ -209,6 +263,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/brief", s.apiBrief)
 	mux.HandleFunc("GET /v1/events/recent", s.recentEvents)
 	mux.HandleFunc("GET /v1/users/{id}", s.userActivity)
+	mux.HandleFunc("GET /v1/who", s.apiWho) // the microscope: the people behind any datapoint
+	mux.HandleFunc("GET /v1/agent-status", s.apiAgentStatus)
 	mux.HandleFunc("GET /v1/export", s.export)
 	mux.HandleFunc("GET /v1/insights", s.listInsights)
 	mux.HandleFunc("POST /v1/insights", s.saveInsight)
@@ -239,6 +295,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /v1/settings/keys/{id}", s.revokeKey)
 	mux.HandleFunc("POST /v1/settings/clear", s.clearData)
 	mux.HandleFunc("DELETE /v1/users/{id}/data", s.deleteUserData)
+	// API-1 (resource symmetry): every store with a POST has a GET list, payload-
+	// matched to its MCP list_* tool — and /v1/* never falls through to an HTML 404.
+	mux.HandleFunc("GET /v1/webhooks", s.listWebhooks)
+	mux.HandleFunc("GET /v1/alerts", s.listAlerts)
+	mux.HandleFunc("GET /v1/shares", s.listShares)
+	mux.HandleFunc("GET /v1/goals", s.listGoals)
 	mux.HandleFunc("POST /v1/webhooks", s.createWebhook)
 	mux.HandleFunc("DELETE /v1/webhooks/{id}", s.deleteWebhook)
 	mux.HandleFunc("POST /v1/webhooks/{id}/test", s.testWebhook)
@@ -315,6 +377,88 @@ func (s *Server) keyAuthed(r *http.Request) bool {
 	return s.authorized(r)
 }
 
+// agentSeen is one MCP client's presence — the "is my Claude actually connected?"
+// answer, driven by the MCP server's own traffic instead of asserted.
+type agentSeen struct {
+	Name     string    `json:"name"`
+	Version  string    `json:"version,omitempty"`
+	LastSeen time.Time `json:"last_seen"`
+	LastTool string    `json:"last_tool,omitempty"`
+	Calls24h int       `json:"calls_24h"`
+	firstIn  time.Time // start of the rolling calls window
+}
+
+// recordAgent notes MCP activity. initialize carries clientInfo (who connected);
+// every other method bumps the most recent client's liveness.
+func (s *Server) recordAgent(body []byte) {
+	var probe struct {
+		Method string `json:"method"`
+		Params struct {
+			Name       string `json:"name"` // tools/call: the tool
+			ClientInfo struct {
+				Name    string `json:"name"`
+				Version string `json:"version"`
+			} `json:"clientInfo"`
+		} `json:"params"`
+	}
+	if json.Unmarshal(body, &probe) != nil {
+		return
+	}
+	now := time.Now().UTC()
+	s.agentMu.Lock()
+	defer s.agentMu.Unlock()
+	if s.agents == nil {
+		s.agents = map[string]*agentSeen{}
+	}
+	name := probe.Params.ClientInfo.Name
+	if probe.Method == "initialize" && name != "" {
+		a := s.agents[name]
+		if a == nil {
+			a = &agentSeen{Name: name, firstIn: now}
+			s.agents[name] = a
+		}
+		a.Version = probe.Params.ClientInfo.Version
+		a.LastSeen = now
+		a.Calls24h++
+		return
+	}
+	// non-initialize: attribute to the most recently seen client
+	var latest *agentSeen
+	for _, a := range s.agents {
+		if latest == nil || a.LastSeen.After(latest.LastSeen) {
+			latest = a
+		}
+	}
+	if latest == nil {
+		return
+	}
+	if now.Sub(latest.firstIn) > 24*time.Hour {
+		latest.firstIn = now
+		latest.Calls24h = 0
+	}
+	latest.LastSeen = now
+	latest.Calls24h++
+	if probe.Method == "tools/call" && probe.Params.Name != "" {
+		latest.LastTool = probe.Params.Name
+	}
+}
+
+// agentStatus returns the connected agents, most recent first.
+func (s *Server) agentStatus() []agentSeen {
+	s.agentMu.Lock()
+	defer s.agentMu.Unlock()
+	out := make([]agentSeen, 0, len(s.agents))
+	for _, a := range s.agents {
+		out = append(out, *a)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].LastSeen.After(out[j].LastSeen) })
+	return out
+}
+
+func (s *Server) apiAgentStatus(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"agents": s.agentStatus()})
+}
+
 // handleMCP is the Streamable-HTTP MCP transport: point a remote MCP client
 // (Claude, Cursor) at http://host/mcp and it reads this server's live data. When a
 // key is configured it's required here too — otherwise a public deploy would leak
@@ -329,6 +473,7 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "read error")
 		return
 	}
+	s.recordAgent(body) // the header's agent badge: presence from real MCP traffic
 	status, resp := s.mcp.HTTPDispatch(body)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -519,6 +664,38 @@ func (s *Server) apiFunnel(w http.ResponseWriter, r *http.Request) {
 	if window <= 0 {
 		window = 7 * 24 * time.Hour // same default as the MCP funnel tool — one question, one answer
 	}
+	// the funnel options contract (phase 1): order= discipline, exclude= disqualifying
+	// events, sf<N>=prop:value per-step filters. Unknown enum values are a 400 naming
+	// the valid set (ERRORS-1), never a silently different funnel.
+	q := r.URL.Query()
+	order, oerr := funnel.ParseOrder(q.Get("order"))
+	if oerr != nil {
+		writeErr(w, http.StatusBadRequest, oerr.Error())
+		return
+	}
+	opts := funnel.Options{Order: order}
+	if ex := q.Get("exclude"); ex != "" {
+		for _, name := range strings.Split(ex, "|") {
+			if name = strings.TrimSpace(name); name != "" {
+				opts.Exclusions = append(opts.Exclusions, name)
+			}
+		}
+	}
+	for i := range steps {
+		raw := q.Get(fmt.Sprintf("sf%d", i))
+		if raw == "" {
+			continue
+		}
+		prop, val, ok := strings.Cut(raw, ":")
+		if !ok || prop == "" || val == "" {
+			writeErr(w, http.StatusBadRequest, fmt.Sprintf("bad step filter sf%d=%q — use sf%d=property:value", i, raw, i))
+			return
+		}
+		if opts.StepFilters == nil {
+			opts.StepFilters = make([]map[string]string, len(steps))
+		}
+		opts.StepFilters[i] = map[string]string{prop: val}
+	}
 	evs, err := s.filtered(r)
 	if err != nil {
 		writeQueryErr(w, err)
@@ -526,7 +703,7 @@ func (s *Server) apiFunnel(w http.ResponseWriter, r *http.Request) {
 	}
 	// breakdown=source runs the funnel per segment (conversion by property) — the same
 	// shape the MCP funnel tool returns, so agreement_test locks the two together.
-	if bd := r.URL.Query().Get("breakdown"); bd != "" {
+	if bd := q.Get("breakdown"); bd != "" {
 		names := make([]string, len(steps))
 		for i, st := range steps {
 			names[i] = st.Event
@@ -534,7 +711,7 @@ func (s *Server) apiFunnel(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"steps": names, "breakdown": bd, "segments": funnel.ComputeBreakdown(evs, steps, window, bd)})
 		return
 	}
-	writeJSON(w, http.StatusOK, funnel.Compute(evs, steps, window))
+	writeJSON(w, http.StatusOK, funnel.ComputeOpts(evs, steps, window, opts))
 }
 
 // --- helpers ---

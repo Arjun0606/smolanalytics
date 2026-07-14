@@ -155,3 +155,13 @@ func (s *Server) sharePage(w http.ResponseWriter, r *http.Request) {
 		"Refs":    shareRows(wv.Referrers, 8),
 	})
 }
+
+// listShares returns every minted share link's metadata (never the token itself —
+// the server stores only its hash). API-1: POST-ed resources are GET-listable.
+func (s *Server) listShares(w http.ResponseWriter, _ *http.Request) {
+	if s.shares == nil {
+		writeErr(w, http.StatusNotFound, "share links are not enabled on this instance")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"shares": s.shares.List()})
+}

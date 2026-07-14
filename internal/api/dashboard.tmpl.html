@@ -11,62 +11,108 @@
      4-step surface ladder. elevation is tone + a 1px hairline — no box-shadow anywhere.
      exactly four type sizes: 30px focal numbers, 15px sentences, 13px body, 11px labels. */
   :root{
-    --bg:#0A0A0A; --s1:#111111; --s2:#161616; --s3:#1C1C1C; --line:#262626; --line2:#2E2E2E;
-    --fg:#EDEDED; --mut:#8A8A8A; --mut2:#5F5F5F; --accent:#F5A623; --warn:#E5544B; --ok:#3FB27F;
-    --mono:ui-monospace,"JetBrains Mono",SFMono-Regular,Menlo,monospace;
-    --sans:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    /* surfaces — one ladder, strays named */
+    --bg:#0A0A0A; --well:#0D0D0D; --s1:#111111; --s2:#161616; --s3:#1C1C1C;
+    --line:#262626; --line2:#2E2E2E; --line3:#3E3E3E;
+    /* text — three reading tones + disabled, every one AA on its surface */
+    --fg:#EDEDED; --mut:#8A8A8A; --mut2:#7A7A7A; --dis:#5F5F5F;
+    /* amber — one accent, a real ladder */
+    --accent:#F5A623; --accent-hi:#FFC24D; --accent-dim:#C77F0A; --accent-bar:#C98A1E;
+    --a14:rgba(245,166,35,.14); --a25:rgba(245,166,35,.25); --a45:rgba(245,166,35,.45);
+    --warn:#E5544B; --ok:#3FB27F; --ghost:#3A3A3A; --grid:#1C1C1C;
+    /* type — exactly four sizes, weights 400/500/600 */
+    --fs-lbl:11px; --lh-lbl:16px; --fs-body:13px; --lh-body:20px;
+    --fs-lead:15px; --lh-lead:22px; --fs-num:24px; --lh-num:30px;
+    --track-lbl:.06em; --track-num:-.02em; --track-body:-.01em;
+    /* space — 4px base */
+    --sp1:4px; --sp2:8px; --sp3:12px; --sp4:16px; --sp6:24px; --sp8:32px;
+    --zone:24px; --card-pad:16px; --gap:16px;
+    /* radii — three, nested smaller than parent */
+    --r-ctl:4px; --r-card:8px; --r-pill:999px;
+    /* control metrics — four heights replace eleven */
+    --chip-h:24px; --ctl-h:28px; --tab-h:32px; --ask-h:46px; --row-h:32px;
+    /* motion — two speeds + one slow, ease-out only */
+    --t-fast:100ms; --t-base:150ms; --t-slow:200ms;
+    --ease:cubic-bezier(.4,0,.2,1); --ease-out:cubic-bezier(.215,.61,.355,1);
+    --ring:0 0 0 3px var(--a14);
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Cascadia Mono",monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     font-variant-numeric:tabular-nums;
   }
+  /* companion globals: keyboard focus, reduced motion, entrances */
+  :where(a,button,select,input,summary,[tabindex]):focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  :where(a,button,select,input,summary):focus:not(:focus-visible){outline:none}
+  .ask input:focus-visible{outline:none}
+  @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+  @keyframes rise{from{opacity:0;transform:translateY(2px)}to{opacity:1;transform:none}}
+  @keyframes fadein{from{opacity:0}}
+  @keyframes slidein{from{transform:translateX(24px);opacity:0}}
   *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:var(--fs-body);line-height:1.5;letter-spacing:var(--track-body);-webkit-font-smoothing:antialiased}
   a{color:inherit}
   .wrap{max-width:1060px;margin:0 auto;padding:0 24px}
   kbd{border:1px solid var(--line2);border-bottom-width:2px;border-radius:3px;padding:0 5px;font-family:var(--mono);font-size:10px;color:var(--mut)}
 
   /* zone 0 — header: one quiet 48px row */
   header{border-bottom:1px solid var(--line);background:var(--bg)}
-  .bar{display:flex;align-items:center;gap:14px;min-height:48px}
-  .logo{font-weight:800;letter-spacing:-.02em;font-size:15px;white-space:nowrap}
+  .bar{display:flex;align-items:center;gap:12px;min-height:48px;flex-wrap:nowrap}
+  @media(max-width:880px){.bar{flex-wrap:wrap;padding:6px 0}}
+  .logo{font-family:var(--mono);font-weight:600;letter-spacing:-.02em;font-size:15px;white-space:nowrap}
   .logo b{color:var(--accent)}
-  .siteselect{background:transparent;border:1px solid var(--line);color:var(--mut);font-family:var(--mono);font-size:11px;padding:4px 8px;border-radius:4px}
+  .siteselect{background:transparent;border:1px solid var(--line);color:var(--mut);font-family:var(--mono);font-size:11px;padding:4px 8px;border-radius:4px;max-width:180px}
   .spacer{flex:1}
-  .hlink{color:var(--mut);font-family:var(--mono);font-size:11px;text-decoration:none;white-space:nowrap}
+  .hlink{color:var(--mut);font-family:var(--mono);font-size:11px;text-decoration:none;white-space:nowrap;flex:none;padding:6px 4px;margin:-6px -4px}
   .hlink:hover{color:var(--fg)}
-  .livepill{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--mut);border:1px solid var(--line);padding:3px 9px;border-radius:99px;cursor:pointer;text-decoration:none}
+  .livepill{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;flex:none;font-family:var(--mono);font-size:11px;color:var(--mut);border:1px solid var(--line);padding:3px 9px;border-radius:99px;cursor:pointer;text-decoration:none}
   .livepill .dot{width:6px;height:6px;border-radius:50%;background:var(--line2)}
   .ranges{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
   .rangebtn{font-family:var(--mono);font-size:11px;color:var(--mut);padding:4px 10px;text-decoration:none;border-right:1px solid var(--line)}
   .rangebtn:last-child{border-right:none}
   .rangebtn.on{color:var(--accent);background:var(--s2)}
+  .customrange{display:inline-flex;align-items:center;gap:5px}
+  .customrange input{background:var(--s1);border:1px solid var(--line);color:var(--mut);font-family:var(--mono);font-size:10px;padding:3px 6px;border-radius:4px;color-scheme:dark}
+  .customrange.on input{border-color:var(--accent);color:var(--fg)}
+  .customrange .rangego{background:transparent;border:1px solid var(--line);color:var(--mut);font-family:var(--mono);font-size:10px;padding:3px 8px;border-radius:4px;cursor:pointer}
+  .customrange .rangego:hover{border-color:var(--accent);color:var(--accent)}
   .rangebtn:hover{color:var(--fg)}
-  .chiprail{display:flex;flex-wrap:wrap;gap:8px;align-items:center;max-width:760px;margin:14px auto 0}
+  .toolbar{position:sticky;top:0;z-index:30;background:var(--bg);display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;margin:16px 0 0;padding:8px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .chiprail{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0 0}
   .fchip{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(245,166,35,.5);color:var(--accent);border-radius:99px;font-family:var(--mono);font-size:11px;padding:4px 11px}
   .fchip a{color:var(--mut);text-decoration:none}
   .fchip a:hover{color:var(--warn)}
+  .fchip .fop{font-weight:600;cursor:pointer}
+  .fchip .fop:hover{text-decoration:underline}
+  .fchip.fmode{border-color:var(--line);color:var(--mut);text-decoration:none}
+  .fchip.fmode:hover{color:var(--accent);border-color:var(--accent)}
+  .fbuilder{display:inline-flex;align-items:center;gap:6px}
+  .fbuilder input,.fbuilder select{background:var(--s1);border:1px solid var(--line);color:var(--fg);font-family:var(--mono);font-size:11px;padding:4px 8px;border-radius:5px;max-width:170px}
   .gtile .d{font-family:var(--mono);font-size:11px;margin-top:2px;color:var(--mut2)}
   .gtile .d.up{color:var(--ok)} .gtile .d.down{color:var(--warn)}
   .seg[data-fp]{cursor:pointer}
-  .seg[data-fp]:hover{border-color:var(--accent)}
+  .seg[data-fp]:hover .segbar{border-right-color:var(--accent)}
   .livepill.on .dot{background:var(--accent);animation:pulse 1.6s infinite}
-  .agentpill{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--mut);border:1px solid var(--line);padding:3px 9px;border-radius:99px;cursor:pointer}
+  .agentpill{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;flex:none;font-family:var(--mono);font-size:11px;color:var(--mut);border:1px solid var(--line);padding:3px 9px;border-radius:99px;cursor:pointer}
   .agentpill:hover{border-color:var(--accent);color:var(--accent)}
+  .agentpill.on{border-color:rgba(245,166,35,.6);color:var(--accent)}
+  .agentpill.on::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-right:6px;animation:pulse 1.6s infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 
   /* zone 1 — the ask hero: the one focal point on the page */
-  .hero{padding:34px 0 6px}
-  .ask{position:relative;max-width:760px;margin:0 auto}
-  .ask input{width:100%;background:var(--s1);border:1px solid var(--line2);color:var(--fg);border-radius:8px;
-    font-family:var(--mono);font-size:15px;padding:15px 84px 15px 44px;outline:none;transition:border-color .15s, box-shadow .15s}
+  .hero{padding:16px 0 0}
+  .ask{position:relative}
+  .ask input{width:100%;height:var(--ask-h);background:var(--s1);border:1px solid var(--line2);color:var(--fg);border-radius:var(--r-card);
+    font:400 var(--fs-lead)/var(--lh-lead) var(--mono);padding:0 84px 0 44px;outline:none;transition:border-color var(--t-base) var(--ease), box-shadow var(--t-base) var(--ease)}
   .ask input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(245,166,35,.14)}
   .ask .k{position:absolute;left:17px;top:50%;transform:translateY(-50%);color:var(--accent);font-family:var(--mono);font-size:15px}
   .ask .hint{position:absolute;right:12px;top:50%;transform:translateY(-50%);display:flex;gap:4px;align-items:center}
-  .askchips{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:8px;padding:12px 0 0;max-width:820px;margin:0 auto}
+  .askchips{display:flex;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;justify-content:flex-start;align-items:center;gap:8px;padding:12px 0 0}
+  .askchips::-webkit-scrollbar{display:none}
   .chiplbl{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut2)}
   .chip{font-family:var(--mono);font-size:11px;color:var(--mut);border:1px solid var(--line);padding:4px 11px;border-radius:99px;cursor:pointer;transition:.15s;background:transparent}
   .chip:hover{color:var(--accent);border-color:var(--accent)}
 
   /* zone 2 — the answer slot: one card, zero height when unused */
-  .answer{max-width:760px;margin:14px auto 0;background:var(--s1);border:1px solid var(--line2);border-radius:8px;padding:16px 18px}
+  .answer{margin:14px 0 0;background:var(--s1);border:1px solid var(--line2);border-radius:var(--r-card);padding:var(--card-pad);min-height:64px;animation:rise var(--t-base) var(--ease-out)}
   .answer[hidden]{display:none}
   .answer .atext{font-size:15px;line-height:1.55;white-space:pre-wrap}
   .answer .achart{margin-top:14px;border-top:1px solid var(--line);padding-top:14px}
@@ -82,13 +128,14 @@
   .abtn.pinned{border-color:var(--accent);color:var(--accent)}
 
   /* zone 3 — verdict sentences (not a card) */
-  .verdict{max-width:760px;margin:26px auto 0}
-  .vline{padding:6px 0;font-size:15px;line-height:1.6}
+  .verdict{margin:var(--zone) 0 0}
+  .vline{padding:4px 0;font-size:var(--fs-lead);line-height:var(--lh-lead)}
   .vline .vdot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-right:9px;position:relative;top:-2px;animation:pulse 1.6s infinite}
   .vline.warn .vdot{background:var(--warn);animation:none}
   .vline .vt{font-weight:600}
+  .vline .vsep{color:var(--mut2);margin:0 8px}
   .vline .vd{color:var(--mut)}
-  .vline .vwhy{color:var(--accent);font-family:var(--mono);font-size:12px;text-decoration:none;white-space:nowrap;cursor:pointer;margin-left:8px}
+  .vline .vwhy{color:var(--accent);font-family:var(--mono);font-size:11px;text-decoration:none;white-space:nowrap;cursor:pointer;margin-left:8px}
   .vline .vwhy:hover{text-decoration:underline}
   .vcalm{color:var(--mut);font-size:15px;padding:5px 0}
   .weekline{margin-top:4px}
@@ -102,30 +149,44 @@
   .weekbody .vrow.warn .vt{color:var(--warn)}
 
   /* zone 4 — glance row: numbers separated by hairlines, no card chrome */
-  .glance{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:0;margin:30px 0 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
-  .gtile{padding:16px 18px;border-right:1px solid var(--line)}
+  .glance{display:grid;grid-template-columns:repeat(auto-fit,minmax(126px,1fr));gap:0;margin:var(--zone) 0 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .gtile{padding:12px 16px;border-right:1px solid var(--line)}
   .gtile:last-child{border-right:none}
-  .gtile .l{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--mut2);white-space:nowrap}
-  .gtile .v{font-family:var(--mono);font-size:30px;font-weight:700;letter-spacing:-.02em;margin-top:4px;line-height:1.15}
+  .gtile .l{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--mut2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .gtile .v{margin-top:4px}
   .gtile .v.acc{color:var(--accent)}
 
   /* zone 5 — the one chart */
-  .chartzone{margin:26px 0 0}
+  .chartzone{margin:var(--zone) 0 0}
+  .chartzone+.chartzone{margin-top:var(--zone)}
   .zonelbl{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--mut2);margin-bottom:10px;display:flex;align-items:baseline;gap:8px}
   .zonelbl .sub{text-transform:none;letter-spacing:0;color:var(--mut2)}
+  .zonesel{background:var(--s1);border:1px solid var(--line);color:var(--fg);font-family:var(--mono);font-size:11px;padding:2px 6px;border-radius:4px;margin-right:6px}
+  .charttable{margin-top:10px}
+  .charttable summary{cursor:pointer;list-style:none;font-family:var(--mono);font-size:11px;color:var(--mut2);padding:4px 0}
+  .charttable summary:hover{color:var(--accent)}
+  table.ctab{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:12px;margin-top:6px}
+  table.ctab th{color:var(--mut2);font-weight:500;text-align:left;padding:4px 10px 4px 0;border-bottom:1px solid var(--line);font-size:10px;text-transform:uppercase;letter-spacing:.06em}
+  table.ctab td{padding:4px 10px 4px 0;border-bottom:1px solid var(--s2)}
+  table.ctab .n{text-align:right}
+  table.ctab .mut{color:var(--mut2)}
+  table.ctab .up{color:var(--ok)} table.ctab .down{color:var(--warn)}
+  table.ctab .cbar{width:30%}
+  table.ctab .cbar div{height:8px;background:rgba(245,166,35,.35);border-radius:2px}
   .chartwrap{display:flex;gap:10px}
   .yaxis{display:flex;flex-direction:column;justify-content:space-between;text-align:right;color:var(--mut2);font-family:var(--mono);font-size:10px;padding:24px 0 0;height:174px;min-width:28px}
-  .plot{flex:1;position:relative}
+    .plot{flex:1;position:relative}
   .gridlines{position:absolute;inset:24px 0 0;display:flex;flex-direction:column;justify-content:space-between;pointer-events:none}
-  .gridlines div{border-top:1px solid var(--s2);height:0}
+  .gridlines div{border-top:1px solid var(--grid);height:0}
   .bars{display:flex;align-items:flex-end;gap:3px;height:150px;padding-top:24px;position:relative}
-  .bars .col{flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%;position:relative}
-  .bars .bar{background:var(--accent);opacity:.5;min-height:2px;border-radius:2px 2px 0 0;transition:opacity .1s}
-  .bars .col:hover .bar{opacity:1}
+  .bars .col{flex:1;display:flex;flex-direction:row;align-items:flex-end;gap:1px;height:100%;position:relative}
+  .bars .bar{flex:2;background:var(--accent-bar);min-height:2px;border-radius:2px 2px 0 0;transition:background var(--t-fast) var(--ease)}
+  .bars .ghost{flex:1;background:var(--ghost);min-height:1px;border-radius:2px 2px 0 0}
+  .bars .col:hover .bar{background:var(--accent)}
   /* instant tooltip — pure css, zero native-title delay, readable size */
   .bars .col .tip{display:none;position:absolute;bottom:calc(100% + 4px);left:50%;transform:translateX(-50%);
-    background:var(--s3);border:1px solid var(--line2);border-radius:5px;padding:3px 9px;
-    font-family:var(--mono);font-size:12px;color:var(--fg);white-space:nowrap;z-index:5}
+    background:var(--s3);border:1px solid var(--line2);border-radius:var(--r-ctl);padding:3px 9px;
+    font-family:var(--mono);font-size:11px;color:var(--fg);white-space:nowrap;z-index:5}
   .bars .col:hover .tip{display:block}
   /* the peak is annotated permanently — the most important number needs no hover */
   .bars .col .peaklbl{position:absolute;bottom:calc(100% + 2px);left:50%;transform:translateX(-50%);
@@ -135,7 +196,7 @@
   .xaxis .xt{flex:1;color:var(--mut2);font-family:var(--mono);font-size:10px;white-space:nowrap;overflow:visible}
 
   /* zone 7 — the board: pinned questions as live cards */
-  .board{margin:30px 0 0}
+  .board{margin:var(--zone) 0 0}
   .boardgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
   @media(max-width:820px){.boardgrid{grid-template-columns:1fr}}
   .bcard{background:var(--s1);border:1px solid var(--line);border-radius:8px;padding:16px 18px}
@@ -146,21 +207,16 @@
   .bcard .bprov{margin-top:12px;display:flex;align-items:center;gap:8px}
 
   /* zone 8 — breakdowns: one tabbed panel */
-  .breakdowns{margin:30px 0 0}
-  .tabrail{display:flex;flex-wrap:wrap;gap:2px;border-bottom:1px solid var(--line)}
-  .tabbtn{background:transparent;border:none;color:var(--mut);font-family:var(--mono);font-size:12px;padding:8px 13px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
-  .tabbtn:hover{color:var(--fg)}
-  .tabbtn.on{color:var(--fg);border-bottom-color:var(--accent)}
-  .pane{display:none;padding:18px 0 0}
-  .pane.on{display:block}
+  .breakdowns{margin:var(--zone) 0 0}
   .pane h3{font-size:13px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.07em;color:var(--mut2);margin:0 0 12px;font-weight:500}
 
   /* rows with share-of-total bars behind them */
-  .seg{position:relative;height:32px;margin-bottom:4px;background:var(--s1);border:1px solid var(--line);border-radius:5px;overflow:hidden}
-  .segbar{position:absolute;inset:0 auto 0 0;background:rgba(245,166,35,.13);border-right:2px solid rgba(245,166,35,.45)}
+  .seg{position:relative;height:var(--row-h);margin-bottom:4px;background:transparent;border:none;border-radius:var(--r-ctl);overflow:hidden;transition:background var(--t-fast) var(--ease)}
+  .seg:hover{background:var(--s2)}
+  .segbar{position:absolute;inset:0 auto 0 0;background:var(--a14);border-right:2px solid var(--a45)}
   .segmeta{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 12px}
   .segname{font-size:13px}
-  .segnums{font-family:var(--mono);font-size:12px;color:var(--mut)}
+  .segnums{font-family:var(--mono);font-size:var(--fs-body);color:var(--mut)}
   .webcols{display:grid;grid-template-columns:1fr 1fr;gap:22px}
   @media(max-width:820px){.webcols{grid-template-columns:1fr}}
 
@@ -168,7 +224,7 @@
   .fstep{margin-bottom:6px}
   .fdrop{font-family:var(--mono);font-size:11px;color:var(--warn);margin:8px 0 4px 2px}
   .fbarwrap{position:relative;height:40px;background:var(--s1);border:1px solid var(--line);border-radius:5px;overflow:hidden}
-  .fbar{position:absolute;inset:0 auto 0 0;background:linear-gradient(90deg,rgba(245,166,35,.26),rgba(245,166,35,.1));border-right:2px solid var(--accent)}
+  .fbar{position:absolute;inset:0 auto 0 0;background:linear-gradient(90deg,var(--a25),var(--a14));border-right:2px solid var(--accent)}
   .fmeta{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 13px}
   .fname{font-weight:600;font-size:13px}
   .fnums{font-family:var(--mono);font-size:12px}
@@ -190,7 +246,8 @@
   table.heat .cell{display:flex;align-items:center;justify-content:center;height:28px}
 
   /* live feed */
-  .live .row{display:flex;gap:12px;padding:6px 0;border-bottom:1px solid var(--s2);font-family:var(--mono);font-size:12px}
+  .pane .live{max-height:400px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--line2) transparent}
+  .live .row{display:flex;gap:12px;padding:6px 0;border-bottom:1px solid var(--s2);font-family:var(--mono);font-size:var(--fs-body)}
   .live .ev{color:var(--accent);min-width:130px}
   .live .who{color:var(--mut);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .live .ago{color:var(--mut2)}
@@ -206,7 +263,8 @@
 
   /* power tools (explore/cohorts/defined) — a sheet behind a quiet disclosure */
   .power{margin:26px 0 0}
-  .power>summary{cursor:pointer;list-style:none;font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--mut2);padding:10px 0;border-top:1px solid var(--line)}
+  .power{margin:var(--zone) 0 0}
+  .power>summary{cursor:pointer;list-style:none;font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:var(--track-lbl);color:var(--mut2);padding:10px 0;border-top:1px solid var(--line)}
   .power>summary::-webkit-details-marker{display:none}
   .power>summary:hover{color:var(--accent)}
   .ptool{background:var(--s1);border:1px solid var(--line);border-radius:8px;padding:16px 18px;margin-bottom:12px}
@@ -241,7 +299,8 @@
 
   /* connect-your-agent sheet */
   .connect{margin:26px 0 0}
-  .connect>summary{cursor:pointer;list-style:none;font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--mut2);padding:10px 0;border-top:1px solid var(--line)}
+  .connect{margin:var(--zone) 0 0}
+  .connect>summary{cursor:pointer;list-style:none;font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:var(--track-lbl);color:var(--mut2);padding:10px 0;border-top:1px solid var(--line)}
   .connect>summary::-webkit-details-marker{display:none}
   .connect>summary:hover{color:var(--accent)}
   .crow{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--s2)}
@@ -249,7 +308,7 @@
   .cbtn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line2);border-radius:5px;background:var(--s2);color:var(--fg);font-family:var(--mono);font-size:11px;padding:5px 12px;cursor:pointer;text-decoration:none}
   .cbtn:hover{border-color:var(--accent);color:var(--accent)}
   .cbtn.primary{border-color:var(--accent);color:var(--accent)}
-  .ccode{background:#0D0D0D;border:1px solid var(--line);border-radius:5px;padding:8px 11px;font-family:var(--mono);font-size:11px;color:var(--mut);overflow:auto;white-space:nowrap;flex:1;min-width:200px}
+  .ccode{background:var(--well);border:1px solid var(--line);border-radius:var(--r-ctl);padding:6px 12px;font-family:var(--mono);font-size:11px;color:var(--mut);overflow:auto;white-space:nowrap;flex:1;min-width:200px}
   .cnote{font-family:var(--mono);font-size:11px;color:var(--mut2);padding:10px 0 0;line-height:1.7}
   .cnote em{color:var(--mut);font-style:normal}
 
@@ -258,7 +317,7 @@
   .obcard{background:var(--s1);border:1px solid var(--line);border-radius:8px;padding:20px;margin-bottom:14px}
   .obh{font-size:15px;font-weight:600;margin-bottom:10px}
   .obsub{font-family:var(--mono);font-size:11px;color:var(--mut2);margin-bottom:10px}
-  pre.code{background:#0D0D0D;border:1px solid var(--line);border-radius:6px;padding:13px;overflow:auto;font-family:var(--mono);font-size:12px;line-height:1.6;color:var(--fg);margin:0;white-space:pre-wrap;word-break:break-word}
+  pre.code{background:var(--well);border:1px solid var(--line);border-radius:var(--r-ctl);padding:13px;overflow:auto;font-family:var(--mono);font-size:12px;line-height:1.6;color:var(--fg);margin:0;white-space:pre-wrap;word-break:break-word}
   .copy{margin-top:8px;background:transparent;border:1px solid var(--line);border-radius:4px;color:var(--mut);font-family:var(--mono);font-size:11px;padding:5px 12px;cursor:pointer}
   .copy:hover{border-color:var(--accent);color:var(--accent)}
   .obstatus{font-family:var(--mono);font-size:12px;color:var(--mut2);padding-top:14px}
@@ -269,8 +328,8 @@
 
   /* the journey overlay: click any visitor to see what that one human actually did —
      the drill-through GA4 users name as their #1 missing thing */
-  .jshade{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:40}
-  .journey{position:fixed;top:0;right:0;bottom:0;width:min(440px,92vw);background:var(--s1);border-left:1px solid var(--line2);z-index:41;padding:20px;overflow-y:auto}
+  .jshade{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:40;animation:fadein var(--t-base) var(--ease)}
+  .journey{position:fixed;top:0;right:0;bottom:0;width:min(440px,92vw);background:var(--s1);border-left:1px solid var(--line2);z-index:41;padding:var(--card-pad);overflow-y:auto;animation:slidein var(--t-slow) var(--ease-out)}
   .journey .jh{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:4px}
   .journey .jid{font-family:var(--mono);font-size:13px;font-weight:700;word-break:break-all}
   .journey .jclose{color:var(--mut2);cursor:pointer;font-family:var(--mono);font-size:12px;white-space:nowrap}
@@ -284,9 +343,55 @@
   .live .who:hover{color:var(--accent);text-decoration:underline}
 
   /* zone 9 — the covenant */
-  .foot{color:var(--mut2);font-size:11px;text-align:center;padding:34px 0 28px;font-family:var(--mono);line-height:2}
+  .foot{color:var(--mut2);font-size:11px;text-align:left;padding:32px 0 40px;font-family:var(--mono);line-height:1.8;border-top:1px solid var(--line);margin-top:var(--zone)}
   .foot a{color:var(--mut2)}
   .foot a:hover{color:var(--accent)}
+
+
+  /* ═══ THE DECK — always-visible 2-col card grid replaces the 13-tab rail ═══ */
+  .deck{display:grid;grid-template-columns:1fr 1fr;gap:var(--gap);margin:var(--zone) 0 0;align-items:start}
+  @media(max-width:880px){.deck{grid-template-columns:1fr}}
+  .deck .pane{display:block;background:var(--s1);border:1px solid var(--line);border-radius:var(--r-card);padding:var(--card-pad);min-width:0}
+  .deck .pane.wide{grid-column:1/-1}
+  .deck #pane-retention{overflow-x:auto}
+  .deck .pane h3{margin:0 0 12px}
+  .deck .pane h3 .sub{text-transform:none;letter-spacing:0;color:var(--dis);font-weight:400;margin-left:8px}
+
+  /* ═══ THE CONTROL KIT — one select, one input, one button pair, one chip, one tab.
+     Appended last so it wins the cascade over every legacy per-component rule. ═══ */
+  select,.zonesel,.siteselect,.exrow select,.fbuilder select{
+    height:var(--ctl-h);padding:0 26px 0 10px;background:var(--s1);border:1px solid var(--line2);
+    color:var(--fg);font:400 12px/1 var(--mono);border-radius:var(--r-ctl);cursor:pointer;
+    appearance:none;-webkit-appearance:none;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%237A7A7A'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right 9px center;transition:border-color var(--t-base) var(--ease)}
+  select:hover,.zonesel:hover{border-color:var(--line3)}
+  input[type="text"],input[type="date"],input:not([type]),.exrow input,.fbuilder input,.customrange input{
+    height:var(--ctl-h);padding:0 10px;background:var(--s1);border:1px solid var(--line2);
+    color:var(--fg);font:400 12px/1 var(--mono);border-radius:var(--r-ctl);
+    transition:border-color var(--t-base) var(--ease);color-scheme:dark;min-width:0}
+  input:hover{border-color:var(--line3)}
+  input::placeholder{color:var(--mut2)}
+  .btn,.exrow button,.rangego,.copy,.cbtn,.abtn,.fbuilder .chip{
+    height:var(--ctl-h);padding:0 12px;border-radius:var(--r-ctl);font:500 12px/1 var(--mono);
+    cursor:pointer;transition:background var(--t-fast) var(--ease),border-color var(--t-base) var(--ease),color var(--t-base) var(--ease)}
+  .exrow button,.rangego,.copy,.cbtn,.abtn{background:transparent;border:1px solid var(--line2);color:var(--mut)}
+  .exrow button:hover,.rangego:hover,.copy:hover,.cbtn:hover,.abtn:hover{border-color:var(--accent);color:var(--accent)}
+  .exrow button:not(.btn2){background:var(--accent);border-color:var(--accent);color:#0A0A0A;font-weight:600}
+  .exrow button:not(.btn2):hover{background:var(--accent-hi);color:#0A0A0A}
+  .exrow button:not(.btn2):active{background:var(--accent-dim)}
+  .chip{display:inline-flex;align-items:center;height:var(--chip-h);padding:0 10px;border:1px solid var(--line);
+    border-radius:var(--r-pill);background:transparent;color:var(--mut);font:400 11px/1 var(--mono);cursor:pointer;
+    transition:color var(--t-base) var(--ease),border-color var(--t-base) var(--ease);white-space:nowrap}
+  .chip:hover{color:var(--accent);border-color:var(--accent)}
+  .zonelbl,.chiplbl,.gtile .l,.dcard h3,.pane h3{font-family:var(--mono);font-size:var(--fs-lbl);line-height:var(--lh-lbl);
+    text-transform:uppercase;letter-spacing:var(--track-lbl);color:var(--mut2);font-weight:500}
+  .gtile .v,.skv,.gnum{font:600 var(--fs-num)/var(--lh-num) var(--mono);letter-spacing:var(--track-num)}
+  kbd{border-color:var(--line2);border-radius:3px}
+  /* the hero input outranks the kit: it is the page's one 46px control */
+  .ask input{height:var(--ask-h);padding:0 84px 0 44px;background:var(--s1);border:1px solid var(--line2);
+    border-radius:var(--r-card);font:400 var(--fs-lead)/var(--lh-lead) var(--mono);color:var(--fg)}
+
 </style>
 </head>
 <body>
@@ -296,11 +401,11 @@
     <option value="">all sites</option>
     {{range .Sites}}<option value="{{.}}" {{if eq . $.Site}}selected{{end}}>{{.}}</option>{{end}}
   </select>{{end}}
-  {{if .HasData}}<nav class="ranges">{{range .Ranges}}<a class="rangebtn{{if .On}} on{{end}}" href="{{.URL}}">{{.Label}}</a>{{end}}</nav>{{end}}
   <div class="spacer"></div>
   {{if ge .LastEventSecs 0}}<span class="hlink" id="lastev" data-secs="{{.LastEventSecs}}" title="seconds since the newest ingested event — proof this page is live">·</span>{{end}}
   {{if .HasData}}<a class="livepill{{if gt .LiveNow 0}} on{{end}}" href="#tab=live" id="livepill"><span class="dot"></span><span id="livecount">{{if gt .LiveNow 0}}{{.LiveNow}} now{{else}}live{{end}}</span></a>{{end}}
-  <span class="agentpill" id="agentpill" title="connect your coding agent over MCP">⌁ your agent</span>
+  <span class="agentpill{{if .AgentLive}} on{{end}}" id="agentpill" title="{{if .AgentName}}your agent, seen via real MCP traffic — click for connect options{{else}}connect your coding agent over MCP{{end}}">⌁ <span id="agentlbl">{{if .AgentName}}{{.AgentName}} · {{.AgentAgo}}{{if gt .AgentCalls 0}} · {{.AgentCalls}} calls{{end}}{{else}}agent{{end}}</span></span>
+  <a class="hlink" href="#explore" id="exploreLink" title="run any report on your own events">explore</a>
   {{if .HasShares}}<a class="hlink" href="/settings/shares" id="shareBtn" title="mint a revocable read-only link">share</a>{{end}}
   <a class="hlink" href="https://smolanalytics.com" target="_blank" style="color:var(--accent)">Cloud ↗</a>
   <a class="hlink" href="/settings">settings</a>
@@ -329,18 +434,44 @@
     <div id="askresult" class="answer" hidden></div>
     <div id="shareresult" class="answer" hidden></div>
 
-    <!-- zone 6: active filters — every chip scopes EVERY zone; click any row to add one -->
-    {{if .Chips}}<div class="chiprail">
-      <span class="chiplbl">filtered to</span>
-      {{range .Chips}}<span class="fchip">{{.Prop}}: {{.Value}} <a href="{{.RemoveURL}}" title="remove this filter">×</a></span>{{end}}
-    </div>{{end}}
+    <!-- zone 6: the analysis toolbar — range, dates, filters. one row, where the
+         incumbents put it; every control writes the querystring so views share -->
+    {{if .HasData}}<div class="toolbar">
+      <nav class="ranges">{{range .Ranges}}<a class="rangebtn{{if and .On (not $.CustomRange)}} on{{end}}" href="{{.URL}}">{{.Label}}</a>{{end}}</nav>
+      <form class="customrange{{if .CustomRange}} on{{end}}" id="rangeform">
+        <input type="date" id="rfrom" value="{{.RangeFrom}}" aria-label="from date">
+        <span style="color:var(--mut2)">→</span>
+        <input type="date" id="rto" value="{{.RangeTo}}" aria-label="to date">
+        <button type="submit" class="rangego" title="apply custom range">go</button>
+      </form>
+    </div>
+    <div class="chiprail">
+      {{if .Chips}}<span class="chiplbl">filtered to</span>
+      {{range .Chips}}<span class="fchip" data-raw="{{.Raw}}"><b class="fop" title="click to flip: is / is not / contains / doesn't contain">{{.Prop}} {{.Op}}</b> {{.Value}} <a href="{{.RemoveURL}}" title="remove this filter">×</a></span>{{end}}
+      {{if gt (len .Chips) 1}}<a class="fchip fmode" id="fmode" href="#" title="how the filters combine">match: {{if .AnyMode}}any{{else}}all{{end}}</a>{{end}}
+      {{end}}
+      <button class="chip" id="fadd" type="button">+ filter</button>
+      <span class="fbuilder" id="fbuilder" hidden>
+        <input list="fbProps" id="fbProp" placeholder="property" autocomplete="off">
+        <select id="fbOp">
+          <option value="eq">is</option><option value="neq">is not</option>
+          <option value="contains">contains</option><option value="ncontains">doesn't contain</option>
+          <option value="regex">matches regex</option><option value="gt">&gt;</option><option value="lt">&lt;</option>
+          <option value="set">is set</option><option value="notset">is not set</option>
+        </select>
+        <input list="fbVals" id="fbVal" placeholder="value (a|b for either)" autocomplete="off">
+        <button class="chip" id="fbGo" type="button">apply</button>
+        <datalist id="fbProps"></datalist><datalist id="fbVals"></datalist>
+      </span>
+    </div>
+    {{end}}
   </div>
 
   {{if .HasData}}
   <!-- zone 3: the verdict as sentences. empty verdict = one calm line, never a card -->
   <div class="verdict">
     <div id="verdict">
-      {{range .Verdict}}<div class="vline{{if eq .Severity "warn"}} warn{{end}}"><span class="vdot"></span><span class="vt">{{.Title}}</span><span class="vd">{{.Detail}}</span><a class="vwhy" data-q="{{.Title}}">why? →</a></div>
+      {{range .Verdict}}<div class="vline{{if eq .Severity "warn"}} warn{{end}}"><span class="vdot"></span><span class="vt">{{.Title}}</span><span class="vsep">·</span><span class="vd">{{.Detail}}</span><a class="vwhy" data-q="{{.Title}}">why? →</a></div>
       {{else}}<div class="vcalm">nothing unusual right now — traffic and conversion look within normal range.</div>{{end}}
     </div>
     <details class="weekline"><summary>this week →</summary><div class="weekbody" id="brief"><div class="exsummary">…</div></div></details>
@@ -348,35 +479,73 @@
 
   <!-- zone 4: the glance row — every number carries its delta vs the prior window -->
   <div class="glance">
-    {{if .HasWeb}}<div class="gtile"><div class="l">Visitors · {{.RangeDays}}d</div><div class="v">{{.Visitors}}</div>{{if .VisitorsDelta}}<div class="d{{if eq (slice .VisitorsDelta 0 1) "+"}} up{{else if eq (slice .VisitorsDelta 0 1) "-"}} down{{end}}">{{.VisitorsDelta}} vs prior {{$.RangeDays}}d</div>{{end}}</div>
-    <div class="gtile"><div class="l">Pageviews · {{.RangeDays}}d</div><div class="v">{{.Pageviews}}</div>{{if .PageviewsDelta}}<div class="d{{if eq (slice .PageviewsDelta 0 1) "+"}} up{{else if eq (slice .PageviewsDelta 0 1) "-"}} down{{end}}">{{.PageviewsDelta}} vs prior {{$.RangeDays}}d</div>{{end}}</div>{{end}}
-    <div class="gtile"><div class="l">Users · all time</div><div class="v">{{.TotalUsers}}</div></div>
-    <div class="gtile"><div class="l">{{.StatEventLabel}} · {{.RangeDays}}d</div><div class="v">{{.Signups}}</div>{{if .SignupsDelta}}<div class="d{{if eq (slice .SignupsDelta 0 1) "+"}} up{{else if eq (slice .SignupsDelta 0 1) "-"}} down{{end}}">{{.SignupsDelta}} vs prior {{$.RangeDays}}d</div>{{end}}</div>
+    {{if .HasWeb}}<div class="gtile"><div class="l">Visitors · {{.RangeDays}}d</div><div class="v">{{comma .Visitors}}</div>{{if .VisitorsDelta}}<div class="d{{if eq (slice .VisitorsDelta 0 1) "+"}} up{{else if eq (slice .VisitorsDelta 0 1) "-"}} down{{end}}">{{.VisitorsDelta}} vs prior {{$.RangeDays}}d</div>{{end}}</div>
+    <div class="gtile"><div class="l">Pageviews · {{.RangeDays}}d</div><div class="v">{{comma .Pageviews}}</div>{{if .PageviewsDelta}}<div class="d{{if eq (slice .PageviewsDelta 0 1) "+"}} up{{else if eq (slice .PageviewsDelta 0 1) "-"}} down{{end}}">{{.PageviewsDelta}} vs prior {{$.RangeDays}}d</div>{{end}}</div>{{end}}
+    <div class="gtile"><div class="l">Users · all time</div><div class="v">{{comma .TotalUsers}}</div></div>
+    <div class="gtile"><div class="l">{{.StatEventLabel}} · {{.RangeDays}}d</div><div class="v">{{comma .Signups}}</div>{{if .SignupsDelta}}<div class="d{{if eq (slice .SignupsDelta 0 1) "+"}} up{{else if eq (slice .SignupsDelta 0 1) "-"}} down{{end}}">{{.SignupsDelta}} vs prior {{$.RangeDays}}d</div>{{end}}</div>
     <div class="gtile"><div class="l">{{.ConvLabel}}</div><div class="v acc">{{.OverallConv}}%</div></div>
     {{if .HasEngagement}}<div class="gtile"><div class="l">Engaged · avg</div><div class="v" style="font-size:22px;padding-top:6px">{{.EngagedHuman}}</div></div>{{end}}
-    {{if gt .AIVisitors 0}}<div class="gtile"><div class="l">From AI</div><div class="v acc">{{.AIVisitors}}</div></div>{{end}}
+    {{if gt .AIVisitors 0}}<div class="gtile"><div class="l">From AI</div><div class="v acc">{{comma .AIVisitors}}</div></div>{{end}}
   </div>
 
   <!-- zone 5: exactly one chart -->
   <div class="chartzone">
-    <div class="zonelbl">{{.TrendLabel}} per day <span class="sub">· last {{.RangeDays}}d · computed by /v1/trends</span></div>
+    <div class="zonelbl">
+      <select id="chartMetric" class="zonesel" title="chart any event">
+        {{range .Events}}<option value="{{.}}" {{if eq . $.ChartMetric}}selected{{end}}>{{.}}</option>{{end}}
+      </select>
+      <select id="chartGran" class="zonesel" title="bucket size">
+        <option value="day" {{if eq .Gran "day"}}selected{{end}}>daily</option>
+        <option value="week" {{if eq .Gran "week"}}selected{{end}}>weekly</option>
+        <option value="month" {{if eq .Gran "month"}}selected{{end}}>monthly</option>
+      </select>
+      <span class="sub">· last {{.RangeDays}}d{{if gt .GhostTotal 0}} · grey = prior {{.RangeDays}}d, same scale{{end}} · computed by /v1/trends</span>
+      <select id="chartBreak" style="margin-left:auto;background:var(--s1);border:1px solid var(--line);color:var(--mut);font-family:var(--mono);font-size:10px;padding:2px 6px;border-radius:4px">
+        <option value="">no breakdown</option>
+        <option value="country">by country</option>
+        <option value="device">by device</option>
+        <option value="browser">by browser</option>
+        <option value="os">by os</option>
+        <option value="source">by source</option>
+        <option value="utm_source">by utm source</option>
+      </select>
+    </div>
+    <div id="chartAlt" hidden></div>
+    <div id="chartMain">
     <div class="chartwrap">
-      <div class="yaxis"><span>{{.TrendMax}}</span><span>0</span></div>
+      <div class="yaxis"><span>{{comma .TrendMax}}</span><span class="ymid">{{comma .TrendMid}}</span><span>0</span></div>
       <div class="plot">
         <div class="gridlines"><div></div><div></div><div></div></div>
         <div class="bars">
-          {{range .Trend}}<div class="col"><span class="tip">{{.Tip}}</span>{{if and .Peak (gt .Count 0)}}<span class="peaklbl">{{.Count}}</span>{{end}}<div class="bar" style="height:{{.HeightPct}}%"></div></div>{{end}}
+          {{range .Trend}}<div class="col" data-who="event={{$.ChartMetric}}&date={{.ISO}}" title="click: who is behind this bar"><span class="tip">{{.Tip}}</span>{{if and .Peak (gt .Count 0)}}<span class="peaklbl">{{.Count}}</span>{{end}}<div class="bar" style="height:{{.HeightPct}}%"></div>{{if gt $.GhostTotal 0}}<div class="ghost" style="height:{{.GhostPct}}%" aria-hidden="true"></div>{{end}}</div>{{end}}
         </div>
         <div class="xaxis">
           {{range .Trend}}<span class="xt">{{.Tick}}</span>{{end}}
         </div>
       </div>
     </div>
+    </div>
+    {{if .ChartTable}}
+    <details class="charttable">
+      <summary>data table · newest first ▾</summary>
+      <table class="ctab">
+        <thead><tr><th>bucket</th><th class="n">{{.ChartMetric}}</th>{{if gt .GhostTotal 0}}<th class="n">prior</th><th class="n">change</th>{{end}}<th></th></tr></thead>
+        <tbody>
+        {{range .ChartTable}}<tr>
+          <td>{{.Label}}</td><td class="n">{{.Count}}</td>
+          {{if gt $.GhostTotal 0}}<td class="n mut">{{if ge .Prior 0}}{{.Prior}}{{end}}</td>
+          <td class="n {{if .Delta}}{{if eq (slice .Delta 0 1) "+"}}up{{else if eq (slice .Delta 0 1) "-"}}down{{end}}{{end}}">{{.Delta}}</td>{{end}}
+          <td class="cbar"><div style="width:{{.Bar}}%"></div></td>
+        </tr>{{end}}
+        </tbody>
+      </table>
+    </details>
+    {{end}}
   </div>
 
   {{if .Hours}}
   <div class="chartzone" style="margin-top:18px">
-    <div class="zonelbl">activity by hour <span class="sub">· UTC · last {{.RangeDays}}d</span></div>
+    <div class="zonelbl">activity by hour <span class="sub">· UTC · last {{.RangeDays}}d · peak {{comma .HoursMax}}/hr</span></div>
     <div class="bars" style="height:44px;padding-top:18px">
       {{range .Hours}}<div class="col"><span class="tip">{{.Hour}}:00 UTC · {{.Count}}</span><div class="bar" style="height:{{.HeightPct}}%"></div></div>{{end}}
     </div>
@@ -390,25 +559,11 @@
     <div class="boardgrid" id="boardgrid"></div>
   </div>
 
-  <!-- zone 8: breakdowns — one tabbed panel, every deep report reachable, none shouting -->
-  <div class="breakdowns">
-    <div class="tabrail" id="tabrail">
-      {{if .HasWeb}}<button class="tabbtn" data-tab="pages">pages</button>
-      <button class="tabbtn" data-tab="referrers">referrers</button>
-      {{if .HasGeo}}<button class="tabbtn" data-tab="geo">geo</button>{{end}}
-      <button class="tabbtn" data-tab="devices">devices</button>
-      {{if .UTMSources}}<button class="tabbtn" data-tab="campaigns">campaigns</button>{{end}}{{end}}
-      <button class="tabbtn" data-tab="funnel">funnel</button>
-      {{if .HasConvBy}}<button class="tabbtn" data-tab="conversion">conversion</button>{{end}}
-      <button class="tabbtn" data-tab="retention">retention</button>
-      {{if .HasSource}}<button class="tabbtn" data-tab="sources">sources</button>{{end}}
-      {{if .HasSearch}}<button class="tabbtn" data-tab="search">search</button>{{end}}
-      {{if .HasWeb}}<button class="tabbtn" data-tab="goals">goals</button>{{end}}
-      <button class="tabbtn" data-tab="live">live</button>
-    </div>
+  <!-- zone 8: the deck — every report always on the table, nothing hiding behind a tab -->
+  <div class="deck">
 
     {{if .HasWeb}}
-    <div class="pane" id="pane-pages">
+    <div class="pane wide" id="pane-pages">
       <div class="webcols">
         <div>
           <h3>top pages</h3>
@@ -421,6 +576,7 @@
       </div>
     </div>
     <div class="pane" id="pane-referrers">
+      <h3>referrers</h3>
       {{range .Referrers}}<div class="seg" data-fp="referrer" data-fv="{{.Value}}" title="click to filter every zone to this referrer"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
     </div>
     {{end}}
@@ -428,11 +584,12 @@
     {{if .HasGeo}}
     <div class="pane" id="pane-geo">
       <h3>countries · geo by <a href="https://db-ip.com" target="_blank" rel="noopener" style="color:var(--mut2)">db-ip.com</a></h3>
+      <div class="exsummary" style="margin-bottom:10px">countries stamp at ingest from the moment geo is enabled (the IP is used for one lookup and never stored, so no backfill). your own visits count too: open your site once with ?sa_optout=1 to exclude this browser, ?sa_optout=0 to undo</div>
       {{range .Countries}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}
     </div>
     {{end}}
 
-    <div class="pane" id="pane-devices">
+    <div class="pane wide" id="pane-devices">
       <div class="webcols">
         <div>
           <h3>device</h3>
@@ -448,7 +605,7 @@
     </div>
 
     {{if .UTMSources}}
-    <div class="pane" id="pane-campaigns">
+    <div class="pane wide" id="pane-campaigns">
       <div class="webcols">
         <div>
           <h3>utm source</h3>
@@ -464,11 +621,17 @@
     </div>
     {{end}}
 
-    <div class="pane" id="pane-funnel">
-      <h3>{{.FunnelTitle}} <span style="text-transform:none;letter-spacing:0">· computed by /v1/funnel</span></h3>
+    <div class="pane wide" id="pane-funnel">
+      <h3>{{.FunnelTitle}}
+        <select id="funnelOrder" class="zonesel" title="step matching discipline" style="margin-left:8px">
+          <option value="ordered" {{if eq .FunnelOrder "ordered"}}selected{{end}}>in order</option>
+          <option value="strict" {{if eq .FunnelOrder "strict"}}selected{{end}}>strictly consecutive</option>
+          <option value="unordered" {{if eq .FunnelOrder "unordered"}}selected{{end}}>any order</option>
+        </select>
+        <span style="text-transform:none;letter-spacing:0">· computed by /v1/funnel</span></h3>
       {{range .Funnel}}
         {{if not .First}}<div class="fdrop">↓ {{.PctPrev}}% continue · {{.Dropped}} dropped</div>{{end}}
-        <div class="fstep"><div class="fbarwrap"><div class="fbar" style="width:{{.PctTop}}%"></div><div class="fmeta"><span class="fname">{{.Event}}</span><span class="fnums"><span class="c">{{.Count}}</span><span class="p">{{.PctTop}}%</span></span></div></div></div>
+        <div class="fstep"><div class="fbarwrap" data-whostep="{{.Event}}" title="click: the people who reached this step"><div class="fbar" style="width:{{.PctTop}}%"></div><div class="fmeta"><span class="fname">{{.Event}}</span><span class="fnums"><span class="c">{{.Count}}</span><span class="p">{{.PctTop}}%</span></span></div></div></div>
       {{end}}
     </div>
 
@@ -480,16 +643,6 @@
       </div>
     </div>
     {{end}}
-
-    <div class="pane" id="pane-retention">
-      <h3>returning users · computed by /v1/retention</h3>
-      <table class="heat">
-        <thead><tr><th>Cohort</th><th>n</th>{{range .RetDayHeaders}}<th>{{.}}</th>{{end}}</tr></thead>
-        <tbody>
-          {{range .Retention}}<tr><td class="lab">{{.Date}}</td><td class="lab">{{.Size}}</td>{{range .Cells}}{{if .Empty}}<td class="empty"></td>{{else}}<td style="{{.Style}}"><div class="cell">{{.Label}}</div></td>{{end}}{{end}}</tr>{{end}}
-        </tbody>
-      </table>
-    </div>
 
     {{if .HasSource}}
     <div class="pane" id="pane-sources">
@@ -507,6 +660,7 @@
 
     {{if .HasWeb}}
     <div class="pane" id="pane-goals">
+      <h3>goals</h3>
       {{if .Goals}}
       <div class="goalrow">
         {{range .Goals}}<div class="goalcard"><div class="gname">{{.Name}}</div><div class="gnum">{{.Conversions}} <span class="gpct">{{.Pct}}%</span></div>{{if .TopChannel}}<div class="gchan">top channel: {{.TopChannel}}</div>{{end}}</div>{{end}}
@@ -522,8 +676,43 @@
     </div>
     {{end}}
 
+    <div class="pane wide" id="pane-retention">
+      <h3>returning users
+        <select id="retDays" class="zonesel" style="margin-left:8px">
+          <option value="7" {{if eq .RetDays 7}}selected{{end}}>7 periods</option>
+          <option value="30" {{if eq .RetDays 30}}selected{{end}}>30 periods</option>
+          <option value="90" {{if eq .RetDays 90}}selected{{end}}>90 periods</option>
+        </select>
+        <select id="retBucket" class="zonesel">
+          <option value="day" {{if eq .RetBucket "day"}}selected{{end}}>daily</option>
+          <option value="week" {{if eq .RetBucket "week"}}selected{{end}}>weekly</option>
+          <option value="month" {{if eq .RetBucket "month"}}selected{{end}}>monthly</option>
+        </select>
+        <select id="retRoll" class="zonesel" title="on = returned in exactly period N; on-or-after = still active at period N or later">
+          <option value="" {{if not .RetRolling}}selected{{end}}>returned on</option>
+          <option value="1" {{if .RetRolling}}selected{{end}}>on or after</option>
+        </select>
+        <span style="text-transform:none;letter-spacing:0">· computed by /v1/retention</span></h3>
+      <table class="heat">
+        <thead><tr><th>Cohort</th><th>n</th>{{range .RetDayHeaders}}<th>{{.}}</th>{{end}}</tr></thead>
+        <tbody>
+          {{range .Retention}}<tr><td class="lab">{{.Date}}</td><td class="lab">{{.Size}}</td>{{range .Cells}}{{if .Empty}}<td class="empty"></td>{{else}}<td style="{{.Style}}"><div class="cell">{{.Label}}</div></td>{{end}}{{end}}</tr>{{end}}
+        </tbody>
+      </table>
+    </div>
+
     <div class="pane" id="pane-live">
+      <h3>live <span class="sub">· events as they land</span></h3>
       <div id="live" class="live"><div class="livemuted">waiting for events…</div></div>
+    </div>
+
+    <div class="pane" id="pane-events">
+      <h3>event stream <span class="sub">· latest 200 · computed by /v1/events/recent</span></h3>
+      <div class="exrow" style="margin-bottom:8px">
+        <input id="evFilter" autocomplete="off" placeholder="filter the stream: event name, visitor id, path, any property value…">
+      </div>
+      <div id="evTable" class="live"><div class="livemuted">loading…</div></div>
+      <div class="exsummary" style="margin-top:8px">latest 200 events · click a visitor to open their journey · computed by /v1/events/recent</div>
     </div>
   </div>
 
@@ -586,6 +775,12 @@
   <details class="connect" id="connect" {{if not .HasData}}open{{end}}>
     <summary>⌁ connect your coding agent ▾</summary>
     <div style="padding-top:8px">
+      <div class="crow" style="align-items:flex-start">
+        <span class="cn" style="padding-top:6px">any AI · one paste</span>
+        <pre class="code" id="cuni" style="flex:1;margin:0;white-space:pre-wrap;font-size:11px;line-height:1.6;max-height:150px;overflow-y:auto">{{.ConnectPrompt}}</pre>
+        <button class="copy" data-c="cuni">copy</button>
+      </div>
+      <div class="cnote" style="padding:0 0 10px">copy once, paste into whatever you use — Claude Code, Cursor, Windsurf, Zed, Cline. the agent wires itself up (url + key included) and proves the connection by reading your visitor count. Claude Desktop can't edit its own config, so paste its JSON from below by hand. or pick your client manually:</div>
       <div class="crow">
         <span class="cn">Cursor</span>
         <a class="cbtn primary" href="{{.CursorLink}}">⚡ add to Cursor</a>
@@ -601,13 +796,36 @@
         <a class="cbtn" href="{{.VSCodeLink}}">add to VS Code</a>
       </div>
       <div class="crow">
-        <span class="cn">Claude Desktop / any client</span>
-        <span class="ccode" id="c3">{{.MCPConfig}}</span>
+        <span class="cn">Claude Desktop</span>
+        <span class="ccode" id="c3">{{.DesktopConfig}}</span>
         <button class="copy" data-c="c3">copy</button>
+      </div>
+      <div class="cnote" style="padding:0 0 8px">desktop's connector UI only takes an OAuth URL, so don't paste anything there. instead: Settings → Developer → Edit Config, paste the JSON above into claude_desktop_config.json, restart Claude Desktop. the tools appear under smolanalytics. (the key rides in env because windows mangles spaces in args — works everywhere.)</div>
+      <div class="crow">
+        <span class="cn">Windsurf</span>
+        <span class="ccode" id="c5">{{.WindsurfConfig}}</span>
+        <button class="copy" data-c="c5">copy</button>
+      </div>
+      <div class="cnote" style="padding:0 0 8px">into ~/.codeium/windsurf/mcp_config.json — windsurf wants serverUrl, not url</div>
+      <div class="crow">
+        <span class="cn">Cline</span>
+        <span class="ccode" id="c6">{{.ClineConfig}}</span>
+        <button class="copy" data-c="c6">copy</button>
+      </div>
+      <div class="crow">
+        <span class="cn">Zed</span>
+        <span class="ccode" id="c7">{{.ZedConfig}}</span>
+        <button class="copy" data-c="c7">copy</button>
+      </div>
+      <div class="cnote" style="padding:0 0 8px">into ~/.config/zed/settings.json</div>
+      <div class="crow">
+        <span class="cn">anything else (mcp.json)</span>
+        <span class="ccode" id="c4">{{.MCPServersJSON}}</span>
+        <button class="copy" data-c="c4">copy</button>
       </div>
       <div class="cnote">
         then ask from your editor: <em>"what changed on my site this week?"</em> · <em>"why did {{.StatEventLabel}} drop?"</em> · <em>"which referrer converts best?"</em><br>
-        your own model reads your data through 47 read-only tools — we never run a model, so it's free and unmetered.
+        your own model reads your data through the smolanalytics report tools — we never run a model, so it's free and unmetered.
         every answer is a deterministic report, and a <a href="https://github.com/Arjun0606/smolanalytics/blob/main/internal/api/agreement_test.go" target="_blank" rel="noopener" style="color:var(--accent)">CI test ↗</a> proves the editor, this dashboard, and the ask bar always return the same number.
         self-hosting? <em>smolanalytics connect</em> wires Claude Desktop / Cursor in one command.
       </div>
@@ -670,11 +888,25 @@
 
     // click-to-filter: any row with data-fp adds a global filter chip and reloads —
     // state lives in the querystring so the filtered view is a shareable URL
-    document.addEventListener('click',function(e){
-      var s=e.target.closest('.seg[data-fp]');if(!s)return;
+    function drillTo(s){
       var u=new URL(location.href);
       u.searchParams.append('f',s.getAttribute('data-fp')+':'+s.getAttribute('data-fv'));
       u.hash='';location.href=u.toString();
+    }
+    document.addEventListener('click',function(e){
+      var s=e.target.closest('.seg[data-fp]');if(!s)return;
+      drillTo(s);
+    });
+    // every drill row is a keyboard target too: tab to it, enter to filter
+    Array.prototype.forEach.call(document.querySelectorAll('.seg[data-fp],.fbarwrap[data-whostep]'),function(el){
+      el.tabIndex=0;el.setAttribute('role','button');
+    });
+    document.addEventListener('keydown',function(e){
+      if(e.key!=='Enter'&&e.key!==' ')return;
+      var s=e.target.closest&&e.target.closest('.seg[data-fp]');
+      if(s){e.preventDefault();drillTo(s);return;}
+      var fs=e.target.closest&&e.target.closest('.fbarwrap[data-whostep]');
+      if(fs){e.preventDefault();fs.click();}
     });
 
     // liveness, visible: "last event Ns ago" ticks every second and refreshes from
@@ -828,31 +1060,29 @@
     }
     loadBoard();
 
-    // ---- breakdowns: one tab rail, state in the hash so views are linkable
-    var rail=document.getElementById('tabrail');
-    if(rail){
-      var btns=rail.querySelectorAll('.tabbtn');
-      function show(name){
-        var found=false;
-        btns.forEach?void 0:0;
-        Array.prototype.forEach.call(btns,function(b){
-          var on=b.getAttribute('data-tab')===name;
-          b.classList.toggle('on',on); if(on)found=true;
-          var p=document.getElementById('pane-'+b.getAttribute('data-tab'));
-          if(p)p.classList.toggle('on',on);
-        });
-        if(!found&&btns.length){show(btns[0].getAttribute('data-tab'));return;}
-      }
-      Array.prototype.forEach.call(btns,function(b){
-        b.onclick=function(){var n=b.getAttribute('data-tab');history.replaceState(null,'','#tab='+n);show(n);};
-      });
-      var m=/tab=([\w-]+)/.exec(location.hash);
-      show(m?m[1]:(btns[0]&&btns[0].getAttribute('data-tab')));
-      var lp=document.getElementById('livepill');
-      if(lp)lp.onclick=function(e){e.preventDefault();history.replaceState(null,'','#tab=live');show('live');document.getElementById('pane-live').scrollIntoView({behavior:'smooth',block:'center'});};
-    }
+    // ---- the deck: every report is always on the table; old #tab= links scroll to the card
+    var tm=/tab=([\w-]+)/.exec(location.hash);
+    if(tm){var tp=document.getElementById('pane-'+tm[1]);if(tp)tp.scrollIntoView({block:'start'});}
+    var lp=document.getElementById('livepill');
+    if(lp)lp.onclick=function(e){e.preventDefault();var p=document.getElementById('pane-live');if(p)p.scrollIntoView({behavior:'smooth',block:'center'});};
 
     // agent pill opens the connect sheet
+    // the agent badge: presence from the MCP server's own traffic, polled live —
+    // watch it flip to "claude-code · now" the moment an editor connects
+    var albl=document.getElementById('agentlbl'),apill=document.getElementById('agentpill');
+    function pollAgent(){
+      fetch('/v1/agent-status').then(function(r){return r.json()}).then(function(j){
+        var a=(j.agents||[])[0];if(!a||!albl)return;
+        var s2=Math.max(0,(Date.now()-new Date(a.last_seen).getTime())/1000);
+        var ago=s2<60?'now':s2<3600?Math.floor(s2/60)+'m ago':Math.floor(s2/3600)+'h ago';
+        albl.textContent=a.name+' · '+ago+(a.calls_24h?' · '+a.calls_24h+' calls':'');
+        apill.classList.toggle('on',s2<300);
+      }).catch(function(){});
+    }
+    pollAgent(); setInterval(pollAgent,10000);
+
+    var el=document.getElementById('exploreLink'),pw=document.querySelector('.power');
+    if(el&&pw)el.onclick=function(e){e.preventDefault();pw.open=true;pw.scrollIntoView({behavior:'smooth',block:'start'});};
     var ap=document.getElementById('agentpill'),cs=document.getElementById('connect');
     if(ap&&cs)ap.onclick=function(){cs.open=true;cs.scrollIntoView({behavior:'smooth',block:'center'});};
 
@@ -874,6 +1104,124 @@
       }).catch(function(){});
     }
     pollLive(); setInterval(pollLive, 4000);
+
+    // the filter builder: property/op/value -> a ?f chip; typeahead from /v1/meta
+    var fadd=document.getElementById('fadd'),fbuilder=document.getElementById('fbuilder');
+    if(fadd&&fbuilder){
+      var fbProp=document.getElementById('fbProp'),fbOp=document.getElementById('fbOp'),
+          fbVal=document.getElementById('fbVal'),fbProps=document.getElementById('fbProps'),
+          fbVals=document.getElementById('fbVals'),metaProps=null;
+      fadd.onclick=function(){
+        fbuilder.hidden=!fbuilder.hidden;
+        if(!fbuilder.hidden&&!metaProps){
+          fetch('/v1/meta?props=1').then(function(r){return r.json()}).then(function(j){
+            metaProps=j.properties||{};
+            fbProps.innerHTML=Object.keys(metaProps).map(function(k){return '<option value="'+esc(k)+'">';}).join('');
+          }).catch(function(){});
+        }
+        if(!fbuilder.hidden)fbProp.focus();
+      };
+      fbProp.addEventListener('input',function(){
+        var vs=(metaProps&&metaProps[fbProp.value])||[];
+        fbVals.innerHTML=vs.map(function(v){return '<option value="'+esc(v)+'">';}).join('');
+      });
+      function fbApply(){
+        var p=fbProp.value.trim(),o=fbOp.value,v=fbVal.value.trim();
+        if(!p)return;
+        if(!v&&o!=='set'&&o!=='notset')return;
+        var u=new URL(location.href);
+        u.searchParams.append('f',p+':'+o+':'+v);u.hash='';
+        location.href=u.toString();
+      }
+      document.getElementById('fbGo').onclick=fbApply;
+      fbVal.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();fbApply();}});
+    }
+    // op cycling on chips: is -> is not -> contains -> doesn't contain -> is
+    document.addEventListener('click',function(e){
+      var op=e.target.closest('.fchip .fop');if(!op)return;
+      var chip=op.closest('.fchip'),raw=chip.getAttribute('data-raw');if(!raw)return;
+      var parts=raw.split(':');
+      var prop=parts[0],cur=parts.length>2?parts[1]:'eq',val=parts.length>2?parts.slice(2).join(':'):parts.slice(1).join(':');
+      var cycle={eq:'neq',neq:'contains',contains:'ncontains',ncontains:'eq'};
+      var next=cycle[cur]||'eq';
+      var u=new URL(location.href);
+      var all=u.searchParams.getAll('f');u.searchParams.delete('f');
+      all.forEach(function(x){u.searchParams.append('f',x===raw?prop+':'+next+':'+val:x);});
+      u.hash='';location.href=u.toString();
+    });
+    // all/any join toggle
+    var fmode=document.getElementById('fmode');
+    if(fmode)fmode.onclick=function(e){
+      e.preventDefault();
+      var u=new URL(location.href);
+      if(u.searchParams.get('fm')==='any')u.searchParams.delete('fm');else u.searchParams.set('fm','any');
+      u.hash='';location.href=u.toString();
+    };
+
+    // custom date range: two inputs -> ?from&to (clears the preset)
+    var rform=document.getElementById('rangeform');
+    if(rform){
+      rform.addEventListener('submit',function(e){
+        e.preventDefault();
+        var f=document.getElementById('rfrom').value,t=document.getElementById('rto').value;
+        if(!f||!t)return;
+        var u=new URL(location.href);
+        u.searchParams.set('from',f);u.searchParams.set('to',t);u.searchParams.delete('days');u.hash='';
+        location.href=u.toString();
+      });
+    }
+
+    // chart metric + grain: server-rendered via the URL so views stay shareable
+    var cm=document.getElementById('chartMetric'),cg=document.getElementById('chartGran');
+    function setParam(k,v,dflt){
+      var u=new URL(location.href);
+      if(v===dflt)u.searchParams.delete(k);else u.searchParams.set(k,v);
+      u.hash='';location.href=u.toString();
+    }
+    if(cm)cm.onchange=function(){setParam('metric',cm.value,'{{.StatEventLabel}}');};
+    if(cg)cg.onchange=function(){setParam('gran',cg.value,'day');};
+    var fo=document.getElementById('funnelOrder');
+    if(fo)fo.onchange=function(){setParam('forder',fo.value,'ordered');};
+    var rd=document.getElementById('retDays'),rb=document.getElementById('retBucket'),rl=document.getElementById('retRoll');
+    if(rd)rd.onchange=function(){setParam('rdays',rd.value,'7');};
+    if(rb)rb.onchange=function(){setParam('rbucket',rb.value,'day');};
+    if(rl)rl.onchange=function(){setParam('rroll',rl.value,'');};
+
+    // chart breakdown: split the main series by any dimension, same /v1/trends engine
+    var cbreak=document.getElementById('chartBreak'),calt=document.getElementById('chartAlt'),cmain=document.getElementById('chartMain');
+    if(cbreak){
+      cbreak.onchange=function(){
+        if(!cbreak.value){calt.hidden=true;cmain.hidden=false;return;}
+        cmain.hidden=true;calt.hidden=false;
+        runInto('trend',{event:SA_EVENT||'$pageview',breakdown:cbreak.value},calt);
+      };
+    }
+
+    // events explorer: the raw stream, filterable, every row drills to a journey
+    var evTable=document.getElementById('evTable'),evFilter=document.getElementById('evFilter'),evRows=[];
+    function renderEvTable(){
+      if(!evTable)return;
+      var q=(evFilter&&evFilter.value||'').toLowerCase();
+      var rows=evRows.filter(function(e){return !q||JSON.stringify(e).toLowerCase().indexOf(q)>=0;});
+      if(!rows.length){evTable.innerHTML='<div class="livemuted">'+(evRows.length?'nothing matches that filter':'no events yet')+'</div>';return;}
+      evTable.innerHTML=rows.slice(0,200).map(function(e){
+        var p=e.properties||{};
+        var detail=[p.path,p.country,p.device,p.browser,p.source].filter(Boolean).join(' · ');
+        return '<div class="row"><span class="ev">'+esc(e.name)+'</span>'+
+          '<span class="who">'+esc(e.distinct_id)+'</span>'+
+          '<span class="who" style="flex:1.4">'+esc(detail)+'</span>'+
+          '<span class="ago">'+ago(e.timestamp)+'</span></div>';
+      }).join('');
+    }
+    if(evTable){
+      fetch('/v1/events/recent?limit=200').then(function(r){return r.json()}).then(function(evs){
+        evRows=evs||[];renderEvTable();
+      }).catch(function(){evTable.innerHTML='<div class="livemuted">could not load</div>';});
+      if(evFilter)evFilter.addEventListener('input',renderEvTable);
+      evTable.addEventListener('click',function(e){
+        var w=e.target.closest('.who');if(!w)return;openJourney(w.textContent);
+      });
+    }
 
     // the journey drill-through: click any visitor id -> that one human's timeline
     function openJourney(id){
@@ -902,6 +1250,44 @@
     document.addEventListener('click',function(e){
       var w=e.target.closest('.live .who');if(!w)return;
       openJourney(w.textContent);
+    });
+
+    // the microscope: any chart bar or funnel step opens the PEOPLE behind it —
+    // same engine as the aggregate, so the list always sums to the bar
+    var SA_FSTEPS=SA_FUNNEL.join(',');
+    function openWho(query,label){
+      var shade=document.createElement('div');shade.className='jshade';
+      var panel=document.createElement('div');panel.className='journey';
+      panel.innerHTML='<div class="jh"><span class="jid">'+esc(label)+'</span><span class="jclose">close ×</span></div><div class="jmeta">loading…</div>';
+      function close(){shade.remove();panel.remove();document.removeEventListener('keydown',onEsc);}
+      function onEsc(ev){if(ev.key==='Escape')close();}
+      shade.onclick=close;document.addEventListener('keydown',onEsc);
+      document.body.appendChild(shade);document.body.appendChild(panel);
+      panel.querySelector('.jclose').onclick=close;
+      fetch('/v1/who?'+query).then(function(r){return r.json()}).then(function(j){
+        if(j.error){panel.querySelector('.jmeta').textContent=j.error;return;}
+        var rows=(j.users||[]).map(function(u){
+          return '<div class="jrow" style="cursor:pointer" data-uid="'+esc(u.distinct_id)+'"><span class="je" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">'+esc(u.distinct_id)+'</span><span class="jt">'+u.events+' ev</span><span class="jt">'+ago(u.last_seen)+' ago</span></div>';
+        }).join('');
+        panel.innerHTML='<div class="jh"><span class="jid">'+esc(label)+'</span><span class="jclose">close ×</span></div>'+
+          '<div class="jmeta">'+j.total_users+' people · click one for their journey · computed by /v1/who, same engine as the chart</div>'+rows;
+        panel.querySelector('.jclose').onclick=close;
+        panel.addEventListener('click',function(ev){
+          var r2=ev.target.closest('.jrow[data-uid]');if(!r2)return;
+          close();openJourney(r2.getAttribute('data-uid'));
+        });
+      }).catch(function(){panel.querySelector('.jmeta').textContent='could not load';});
+    }
+    document.addEventListener('click',function(e){
+      var c=e.target.closest('.col[data-who]');
+      if(c){openWho(c.getAttribute('data-who'),'people behind this bar');return;}
+      var fs=e.target.closest('.fbarwrap[data-whostep]');
+      if(fs&&SA_FUNNEL.length>1){
+        var idx=SA_FUNNEL.indexOf(fs.getAttribute('data-whostep'));
+        if(idx<0)return;
+        openWho('steps='+encodeURIComponent(SA_FSTEPS)+'&step='+idx+'&state=reached'+({{.FunnelOrder | printf "%q"}}!=='ordered'?'&order='+{{.FunnelOrder | printf "%q"}}:''),
+          'reached "'+fs.getAttribute('data-whostep')+'"');
+      }
     });
 
     {{if .HasData}}
@@ -1030,7 +1416,7 @@
         vEl.innerHTML='';
         fs.forEach(function(fd){
           var row=document.createElement('div'); row.className='vline'+(fd.severity==='warn'?' warn':'');
-          row.innerHTML='<span class="vdot"></span><span class="vt">'+esc(fd.title)+'</span><span class="vd">'+esc(fd.detail)+'</span><a class="vwhy" data-q="'+esc(fd.title)+'">why? →</a>';
+          row.innerHTML='<span class="vdot"></span><span class="vt">'+esc(fd.title)+'</span><span class="vsep">·</span><span class="vd">'+esc(fd.detail)+'</span><a class="vwhy" data-q="'+esc(fd.title)+'">why? →</a>';
           vEl.appendChild(row);
         });
       }).catch(function(){});
