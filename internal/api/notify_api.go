@@ -95,3 +95,21 @@ func (s *Server) deleteAlert(w http.ResponseWriter, r *http.Request) {
 	s.rec("alert.deleted", r.PathValue("id"))
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": r.PathValue("id")})
 }
+
+// listAlerts / listWebhooks — API-1: POST-ed resources are GET-listable, matching
+// the MCP list_* tools' payloads.
+func (s *Server) listAlerts(w http.ResponseWriter, _ *http.Request) {
+	if s.alerts == nil {
+		writeErr(w, http.StatusNotFound, "alerts are not enabled on this instance")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"alerts": s.alerts.List()})
+}
+
+func (s *Server) listWebhooks(w http.ResponseWriter, _ *http.Request) {
+	if s.webhooks == nil {
+		writeErr(w, http.StatusNotFound, "webhooks are not enabled on this instance")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"webhooks": s.webhooks.List()})
+}

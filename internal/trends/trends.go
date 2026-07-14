@@ -34,17 +34,31 @@ type Result struct {
 func Compute(events []event.Event, eventName string, from, to time.Time, unique bool) Result {
 	r := Result{Event: eventName, Unique: unique}
 	perDay := map[int64]map[string]int{} // day -> (user->count) or (""->count)
+	windowUsers := map[string]bool{}     // TRENDS-UNIQUE: range total dedups across the WHOLE window
 
+	// WINDOW-1: strict timestamp filtering, [from, to) — identical to ComputeInterval,
+	// so day/week/month buckets of the same window always sum to the same total
+	// (WINDOW-2). The old code span-clipped day INDICES, silently widening the window
+	// to whole calendar days: "last 7 days" gained a partial 8th day and every
+	// derived rate was wrong. Contract tests pin this now.
 	for _, e := range events {
 		if eventName != "" && e.Name != eventName {
 			continue
 		}
-		d := e.Timestamp.UTC().Truncate(24*time.Hour).Unix() / 86400
+		ts := e.Timestamp.UTC()
+		if !from.IsZero() && ts.Before(from) {
+			continue
+		}
+		if !to.IsZero() && !ts.Before(to) {
+			continue
+		}
+		d := ts.Truncate(24*time.Hour).Unix() / 86400
 		if perDay[d] == nil {
 			perDay[d] = map[string]int{}
 		}
 		if unique {
 			perDay[d][e.DistinctID]++
+			windowUsers[e.DistinctID] = true
 		} else {
 			perDay[d][""]++
 		}
@@ -66,9 +80,14 @@ func Compute(events []event.Event, eventName string, from, to time.Time, unique 
 		lo = from.UTC().Unix() / 86400
 	}
 	if !to.IsZero() {
-		hi = to.UTC().Unix() / 86400
+		// to is exclusive: the last bucket is the day containing to−ε, not to's day —
+		// the off-by-one that made "yesterday" an 8-bucket week
+		hi = to.UTC().Add(-time.Nanosecond).Unix() / 86400
 	}
-	if !have && from.IsZero() {
+	if !have && (from.IsZero() || to.IsZero()) {
+		return r
+	}
+	if hi < lo {
 		return r
 	}
 
@@ -82,7 +101,13 @@ func Compute(events []event.Event, eventName string, from, to time.Time, unique 
 			}
 		}
 		r.Points = append(r.Points, Point{Date: time.Unix(d*86400, 0).UTC(), Count: c})
-		r.Total += c
+		if !unique {
+			r.Total += c
+		}
+	}
+	if unique {
+		// a user active on 3 days is ONE user in the window, not three (TRENDS-UNIQUE)
+		r.Total = len(windowUsers)
 	}
 	sort.Slice(r.Points, func(i, j int) bool { return r.Points[i].Date.Before(r.Points[j].Date) })
 	return r

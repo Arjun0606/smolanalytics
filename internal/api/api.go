@@ -239,6 +239,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /v1/settings/keys/{id}", s.revokeKey)
 	mux.HandleFunc("POST /v1/settings/clear", s.clearData)
 	mux.HandleFunc("DELETE /v1/users/{id}/data", s.deleteUserData)
+	// API-1 (resource symmetry): every store with a POST has a GET list, payload-
+	// matched to its MCP list_* tool — and /v1/* never falls through to an HTML 404.
+	mux.HandleFunc("GET /v1/webhooks", s.listWebhooks)
+	mux.HandleFunc("GET /v1/alerts", s.listAlerts)
+	mux.HandleFunc("GET /v1/shares", s.listShares)
+	mux.HandleFunc("GET /v1/goals", s.listGoals)
 	mux.HandleFunc("POST /v1/webhooks", s.createWebhook)
 	mux.HandleFunc("DELETE /v1/webhooks/{id}", s.deleteWebhook)
 	mux.HandleFunc("POST /v1/webhooks/{id}/test", s.testWebhook)

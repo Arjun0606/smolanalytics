@@ -106,6 +106,35 @@ func (s *Server) filtered(r *http.Request) ([]event.Event, error) {
 // event names — this just exposes it over REST (the MCP tools do the same for AI).
 
 // GET /v1/meta — the event names available, so the UI can offer them.
+// boolParam accepts exactly {true, 1, yes}, case-insensitive — ERRORS-1: a boolean
+// the caller clearly set must never be silently ignored because of its spelling.
+func boolParam(v string) bool {
+	switch strings.ToLower(v) {
+	case "true", "1", "yes":
+		return true
+	}
+	return false
+}
+
+// knownEventOr400 enforces ERRORS-1's honest-failure rule: naming an event that has
+// never been seen returns 400 listing what exists, never a real-looking zero report.
+func (s *Server) knownEventOr400(w http.ResponseWriter, name string) bool {
+	if name == "" {
+		return true
+	}
+	names, err := s.store.Names()
+	if err != nil {
+		return true // storage trouble surfaces elsewhere; don't mask it as a 400
+	}
+	for _, n := range names {
+		if n == name {
+			return true
+		}
+	}
+	writeErr(w, http.StatusBadRequest, fmt.Sprintf("unknown event %q — known events: %s", name, strings.Join(names, ", ")))
+	return false
+}
+
 func (s *Server) apiMeta(w http.ResponseWriter, r *http.Request) {
 	names, err := s.store.Names()
 	if err != nil {
@@ -183,8 +212,11 @@ func (s *Server) apiTrends(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	unique := q.Get("unique") == "true" || q.Get("unique") == "1" || q.Get("unique") == "yes"
+	unique := boolParam(q.Get("unique"))
 	event := q.Get("event")
+	if !s.knownEventOr400(w, event) {
+		return
+	}
 	from, to, werr := parseTrendWindow(r)
 	if werr != nil {
 		writeErr(w, http.StatusBadRequest, werr.Error())
@@ -291,12 +323,30 @@ func (s *Server) apiBreakdown(w http.ResponseWriter, r *http.Request) {
 		writeQueryErr(w, err)
 		return
 	}
+	// BREAKDOWN-WINDOW: days/from/to scope this report exactly like trends — it
+	// used to ignore them entirely, so every "windowed" breakdown was all-time
+	from, to, werr := parseTrendWindow(r)
+	if werr != nil {
+		writeErr(w, http.StatusBadRequest, werr.Error())
+		return
+	}
 	eventName := r.URL.Query().Get("event")
+	if !s.knownEventOr400(w, eventName) {
+		return
+	}
 	scoped := evs[:0:0]
 	for _, e := range evs {
-		if eventName == "" || e.Name == eventName {
-			scoped = append(scoped, e)
+		if eventName != "" && e.Name != eventName {
+			continue
 		}
+		ts := e.Timestamp.UTC()
+		if !from.IsZero() && ts.Before(from) {
+			continue
+		}
+		if !to.IsZero() && !ts.Before(to) {
+			continue
+		}
+		scoped = append(scoped, e)
 	}
 	groups := query.Breakdown(scoped, property)
 	rows := make([]map[string]any, 0, len(groups))
@@ -323,7 +373,7 @@ func (s *Server) apiRetention(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	// bucket=week|month groups cohorts into 7-/30-day periods (a weekly product read daily
 	// looks broken); rolling=true is unbounded "active on or after period n" retention.
-	rr := retention.ComputeBucketed(evs, days, q.Get("event"), q.Get("bucket"), q.Get("rolling") == "true")
+	rr := retention.ComputeBucketed(evs, days, q.Get("event"), q.Get("bucket"), boolParam(q.Get("rolling")))
 	// the honest headline summaries come from retention.Summarize — the SAME function the MCP
 	// tool serializes, so the two surfaces can't drift (agreement_test locks it).
 	out := retention.Summarize(rr, time.Now().UTC())
