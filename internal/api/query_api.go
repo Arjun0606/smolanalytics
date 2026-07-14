@@ -373,6 +373,13 @@ func (s *Server) apiRetention(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	// bucket=week|month groups cohorts into 7-/30-day periods (a weekly product read daily
 	// looks broken); rolling=true is unbounded "active on or after period n" retention.
+	// ERRORS-1: an unknown bucket is a 400 naming the valid set, never silently daily.
+	switch q.Get("bucket") {
+	case "", "day", "week", "month":
+	default:
+		writeErr(w, http.StatusBadRequest, fmt.Sprintf("unknown bucket %q (want day, week or month)", q.Get("bucket")))
+		return
+	}
 	rr := retention.ComputeBucketed(evs, days, q.Get("event"), q.Get("bucket"), boolParam(q.Get("rolling")))
 	// the honest headline summaries come from retention.Summarize — the SAME function the MCP
 	// tool serializes, so the two surfaces can't drift (agreement_test locks it).

@@ -249,10 +249,13 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		return jsonText(map[string]any{"events": names})
 	case "funnel":
 		var a struct {
-			Steps       []string  `json:"steps"`
-			WindowHours float64   `json:"window_hours"`
-			Breakdown   string    `json:"breakdown"`
-			Filters     FilterSet `json:"filters"`
+			Steps       []string            `json:"steps"`
+			WindowHours float64             `json:"window_hours"`
+			Breakdown   string              `json:"breakdown"`
+			Filters     FilterSet           `json:"filters"`
+			Order       string              `json:"order"`
+			Exclude     []string            `json:"exclude"`
+			StepFilters []map[string]string `json:"step_filters"`
 		}
 		if err := unmarshalArgs(args, &a); err != nil {
 			return "", err
@@ -282,7 +285,12 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 			return jsonText(map[string]any{"steps": a.Steps, "breakdown": a.Breakdown,
 				"segments": funnel.ComputeBreakdown(query.Apply(evs, a.Filters), steps, window, a.Breakdown)})
 		}
-		return jsonText(funnel.Compute(query.Apply(evs, a.Filters), steps, window))
+		order, oerr := funnel.ParseOrder(a.Order)
+		if oerr != nil {
+			return "", oerr
+		}
+		return jsonText(funnel.ComputeOpts(query.Apply(evs, a.Filters), steps, window,
+			funnel.Options{Order: order, Exclusions: a.Exclude, StepFilters: a.StepFilters}))
 	case "retention":
 		var a struct {
 			Event   string    `json:"event"`

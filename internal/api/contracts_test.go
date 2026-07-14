@@ -17,6 +17,7 @@ import (
 
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
+	"github.com/Arjun0606/smolanalytics/internal/retention"
 	"github.com/Arjun0606/smolanalytics/internal/store/memory"
 	"github.com/Arjun0606/smolanalytics/internal/trends"
 )
@@ -279,5 +280,49 @@ func TestContractFunnelDisciplines(t *testing.T) {
 	// and the default Compute path is literally ComputeOpts (one engine)
 	if a, b := funnel.Compute(evs, steps, day), funnel.ComputeOpts(evs, steps, day, funnel.Options{}); a.Converted != b.Converted || a.Order != b.Order {
 		t.Fatalf("Compute must delegate to ComputeOpts identically: %+v vs %+v", a, b)
+	}
+}
+
+// CONTRACT RETENTION-MODES: "returned on period N" vs rolling "on or after N",
+// week bucketing groups cohorts correctly, and an unknown bucket 400s.
+func TestContractRetentionModes(t *testing.T) {
+	base := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	evs := []event.Event{
+		// alice: first day 0, returns day 2 only
+		{Name: "open", DistinctID: "alice", Timestamp: base},
+		{Name: "open", DistinctID: "alice", Timestamp: base.AddDate(0, 0, 2)},
+	}
+	strict := retention.ComputeBucketed(evs, 3, "open", "day", false)
+	rolling := retention.ComputeBucketed(evs, 3, "open", "day", true)
+	if len(strict.Cohorts) == 0 {
+		t.Fatal("no cohorts")
+	}
+	c, cr := strict.Cohorts[0], rolling.Cohorts[0]
+	// strict: day1=0 (didn't return), day2=1
+	if c.Returned[1] != 0 || c.Returned[2] != 1 {
+		t.Fatalf("returned-on: want day1=0 day2=1, got %v", c.Returned)
+	}
+	// rolling: day1=1 (active ON OR AFTER day 1 — she came back on day 2)
+	if cr.Returned[1] != 1 || cr.Returned[2] != 1 {
+		t.Fatalf("on-or-after: want day1=1 day2=1, got %v", cr.Returned)
+	}
+	// week bucket: day-2 return is the SAME week → period 0, not a later period
+	wk := retention.ComputeBucketed(evs, 2, "open", "week", false)
+	if wk.Bucket != "week" {
+		t.Fatalf("bucket echo: %q", wk.Bucket)
+	}
+
+	// unknown bucket must 400 at the API (never silently daily)
+	st := memory.New()
+	_ = st.Ingest(evs...)
+	srv := httptest.NewServer(New(st).Handler())
+	t.Cleanup(srv.Close)
+	resp, err := http.Get(srv.URL + "/v1/retention?bucket=weekly")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("bucket=weekly must 400 (it silently meant daily before), got %d", resp.StatusCode)
 	}
 }

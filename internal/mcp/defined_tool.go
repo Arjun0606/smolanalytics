@@ -16,7 +16,7 @@ import (
 func init() {
 	toolList = append(toolList,
 		map[string]any{
-			"name": "define_event",
+			"name":        "define_event",
 			"description": "Create (or replace) a retroactive, zero-code event from autocaptured data. It names a slice of $click / $pageview / $form_submit rows and becomes a first-class event across every report, retroactive to install — no tracking code needed. Example: define \"checkout\" as $click where text contains \"Buy\". Great for a non-technical user, and you can propose one when you see many uncaptured clicks on a key element.",
 			"inputSchema": map[string]any{
 				"type": "object",
@@ -49,10 +49,10 @@ func (s *Server) callDefined(name string, args json.RawMessage) (bool, string, e
 			return true, "", fmt.Errorf(noStore, "defined-events")
 		}
 		var p struct {
-			Name        string               `json:"name"`
-			Event       string               `json:"event"`
-			Where       []defined.Condition  `json:"where"`
-			Description string               `json:"description"`
+			Name        string              `json:"name"`
+			Event       string              `json:"event"`
+			Where       []defined.Condition `json:"where"`
+			Description string              `json:"description"`
 		}
 		if err := json.Unmarshal(args, &p); err != nil {
 			return true, "", err

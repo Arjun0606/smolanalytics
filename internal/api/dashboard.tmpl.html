@@ -580,7 +580,22 @@
     {{end}}
 
     <div class="pane" id="pane-retention">
-      <h3>returning users · computed by /v1/retention</h3>
+      <h3>returning users
+        <select id="retDays" class="zonesel" style="margin-left:8px">
+          <option value="7" {{if eq .RetDays 7}}selected{{end}}>7 periods</option>
+          <option value="30" {{if eq .RetDays 30}}selected{{end}}>30 periods</option>
+          <option value="90" {{if eq .RetDays 90}}selected{{end}}>90 periods</option>
+        </select>
+        <select id="retBucket" class="zonesel">
+          <option value="day" {{if eq .RetBucket "day"}}selected{{end}}>daily</option>
+          <option value="week" {{if eq .RetBucket "week"}}selected{{end}}>weekly</option>
+          <option value="month" {{if eq .RetBucket "month"}}selected{{end}}>monthly</option>
+        </select>
+        <select id="retRoll" class="zonesel" title="on = returned in exactly period N; on-or-after = still active at period N or later">
+          <option value="" {{if not .RetRolling}}selected{{end}}>returned on</option>
+          <option value="1" {{if .RetRolling}}selected{{end}}>on or after</option>
+        </select>
+        <span style="text-transform:none;letter-spacing:0">· computed by /v1/retention</span></h3>
       <table class="heat">
         <thead><tr><th>Cohort</th><th>n</th>{{range .RetDayHeaders}}<th>{{.}}</th>{{end}}</tr></thead>
         <tbody>
@@ -1058,6 +1073,10 @@
     if(cg)cg.onchange=function(){setParam('gran',cg.value,'day');};
     var fo=document.getElementById('funnelOrder');
     if(fo)fo.onchange=function(){setParam('forder',fo.value,'ordered');};
+    var rd=document.getElementById('retDays'),rb=document.getElementById('retBucket'),rl=document.getElementById('retRoll');
+    if(rd)rd.onchange=function(){setParam('rdays',rd.value,'7');};
+    if(rb)rb.onchange=function(){setParam('rbucket',rb.value,'day');};
+    if(rl)rl.onchange=function(){setParam('rroll',rl.value,'');};
 
     // chart breakdown: split the main series by any dimension, same /v1/trends engine
     var cbreak=document.getElementById('chartBreak'),calt=document.getElementById('chartAlt'),cmain=document.getElementById('chartMain');

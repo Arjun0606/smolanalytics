@@ -59,6 +59,21 @@ var toolList = []map[string]any{
 				"type":        "string",
 				"description": "Optional property to segment the funnel by (from the user's first step). Returns one funnel per value, e.g. breakdown \"source\" gives conversion by acquisition channel.",
 			},
+			"order": map[string]any{
+				"type":        "string",
+				"enum":        []string{"ordered", "strict", "unordered"},
+				"description": "Step matching discipline: ordered (default, other events may interleave), strict (no other events between matched steps), unordered (all steps within the window, any order).",
+			},
+			"exclude": map[string]any{
+				"type":        "array",
+				"items":       map[string]any{"type": "string"},
+				"description": "Disqualifying event names: a user who fires one between entering the funnel and converting is dropped for that attempt (a later clean attempt still counts).",
+			},
+			"step_filters": map[string]any{
+				"type":        "array",
+				"items":       map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}},
+				"description": "Per-step property equals-filters, positionally matched to steps; null/omitted entries mean no filter. Example: [null, {\"plan\": \"pro\"}] makes step 2 only match events with plan=pro.",
+			},
 			"filters": filtersSchema,
 		}, []string{"steps"}),
 	},
