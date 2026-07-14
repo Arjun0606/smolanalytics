@@ -24,9 +24,9 @@ func writeTree(t *testing.T, files map[string]string) string {
 
 func TestDetectFrameworkNextApp(t *testing.T) {
 	root := writeTree(t, map[string]string{
-		"package.json":    `{"dependencies":{"next":"15.0.0","react":"18"}}`,
-		"tsconfig.json":   `{}`,
-		"app/layout.tsx":  "export default function L(){return null}",
+		"package.json":   `{"dependencies":{"next":"15.0.0","react":"18"}}`,
+		"tsconfig.json":  `{}`,
+		"app/layout.tsx": "export default function L(){return null}",
 	})
 	fw := DetectFramework(root)
 	if fw.Name != "next-app" {
@@ -63,7 +63,7 @@ func TestDetectFrameworkOthers(t *testing.T) {
 
 func TestScanFindsCallSitesWithExactSnippet(t *testing.T) {
 	root := writeTree(t, map[string]string{
-		"package.json": `{"dependencies":{"next":"15","typescript":"5"}}`,
+		"package.json":   `{"dependencies":{"next":"15","typescript":"5"}}`,
 		"app/layout.tsx": "export default function L(){return null}",
 		"app/api/auth/route.ts": `
 export async function POST(req: Request) {
@@ -124,9 +124,9 @@ export async function pay() {
 
 func TestScanSkipsNodeModules(t *testing.T) {
 	root := writeTree(t, map[string]string{
-		"package.json":                  `{"dependencies":{"react":"18"}}`,
-		"node_modules/pkg/index.js":     `stripe.checkout.sessions.create({})`, // must be ignored
-		"src/main.jsx":                  `console.log("hi")`,
+		"package.json":              `{"dependencies":{"react":"18"}}`,
+		"node_modules/pkg/index.js": `stripe.checkout.sessions.create({})`, // must be ignored
+		"src/main.jsx":              `console.log("hi")`,
 	})
 	for _, s := range Propose(root, "h", "k").Events {
 		if contains(s.File, "node_modules") {
@@ -135,7 +135,9 @@ func TestScanSkipsNodeModules(t *testing.T) {
 	}
 }
 
-func contains(s, sub string) bool { return len(sub) == 0 || (len(s) >= len(sub) && indexOf(s, sub) >= 0) }
+func contains(s, sub string) bool {
+	return len(sub) == 0 || (len(s) >= len(sub) && indexOf(s, sub) >= 0)
+}
 func indexOf(s, sub string) int {
 	for i := 0; i+len(sub) <= len(s); i++ {
 		if s[i:i+len(sub)] == sub {
@@ -143,4 +145,36 @@ func indexOf(s, sub string) int {
 		}
 	}
 	return -1
+}
+
+// TestFindAllTrackedMatchesOptionalChaining pins the regression caught by end-to-end
+// testing on a real repo (2026-07-14): agents commonly write track() calls with
+// optional chaining or a window cast, and the scanner must see all of them or
+// verify_instrumentation falsely reports correctly-wired events as MISSING.
+func TestFindAllTrackedMatchesOptionalChaining(t *testing.T) {
+	dir := t.TempDir()
+	src := `
+export function f() {
+  smolanalytics.track("plain", { a: 1 });
+  smolanalytics?.track("optchain", { b: 2 });
+  (window as any).smolanalytics?.track("windowcast", { c: 3 });
+  window.smolanalytics.track("windowdot");
+}`
+	if err := os.WriteFile(filepath.Join(dir, "app.tsx"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := FindAllTracked(dir)
+	for _, want := range []string{"plain", "optchain", "windowcast", "windowdot"} {
+		if _, ok := got[want]; !ok {
+			t.Errorf("FindAllTracked missed %q — scanner blind to a real track() form; got %v", want, keysOf(got))
+		}
+	}
+}
+
+func keysOf(m map[string]TrackedEvent) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }

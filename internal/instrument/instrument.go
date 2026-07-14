@@ -52,10 +52,10 @@ type SnippetProposal struct {
 // Proposal is the whole instrumentation plan for a repo: the base snippet, the custom
 // events found, and the tracking-plan the agent should declare.
 type Proposal struct {
-	Framework Framework  `json:"framework"`
+	Framework Framework       `json:"framework"`
 	Snippet   SnippetProposal `json:"snippet"`
-	Events    []CallSite `json:"events"`
-	Notes     []string   `json:"notes"`
+	Events    []CallSite      `json:"events"`
+	Notes     []string        `json:"notes"`
 }
 
 // skipDir are directories never worth scanning — dependencies, builds, vcs.
@@ -434,7 +434,12 @@ type TrackedEvent struct {
 }
 
 var backtick = "`"
-var trackCallRe = regexp.MustCompile(`smolanalytics\.track\(\s*["'` + backtick + `]([^"'` + backtick + `]+)`)
+
+// matches smolanalytics.track("name") AND the optional-chaining form agents commonly
+// generate: smolanalytics?.track("name"), (window as any).smolanalytics?.track("name").
+// Without the \?? the verify/regenerate scanners falsely report correctly-wired events
+// as MISSING (caught by end-to-end testing on a real repo, 2026-07-14).
+var trackCallRe = regexp.MustCompile(`smolanalytics\??\.track\(\s*["'` + backtick + `]([^"'` + backtick + `]+)`)
 var nameFieldRe = regexp.MustCompile(`["']?name["']?\s*[:=]\s*["'` + backtick + `]([^"'` + backtick + `]+)`)
 
 // Wired scans the repo for each of the given event names and returns where it is already
