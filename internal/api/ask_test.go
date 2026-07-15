@@ -1,6 +1,8 @@
 package api
 
 import (
+	"fmt"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -177,7 +179,7 @@ func TestAskRouterAndAnswers(t *testing.T) {
 		{
 			q:        "how many signups?",
 			intent:   intentSignups,
-			contains: []string{`6 "signup" events over the last`},
+			contains: []string{`6 "signup" events all time`}, // unscoped → honest all-time label, not a fabricated "last N days"
 		},
 		// --- the tagline question must return the verdict, never a menu ---
 		{
@@ -251,7 +253,7 @@ func TestParseWindow(t *testing.T) {
 		{q: "signups last week", from: time.Date(2026, 6, 15, 0, 0, 0, 0, time.UTC), to: time.Date(2026, 6, 22, 0, 0, 0, 0, time.UTC)},
 		{q: "signups this month", from: time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC), to: askNow},
 		{q: "signups last month", from: time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC), to: time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)},
-		{q: "signups in the last 14 days", from: askNow.AddDate(0, 0, -14), to: askNow},
+		{q: "signups in the last 14 days", from: today.AddDate(0, 0, -13), to: askNow}, // 14 whole calendar days, aligned to /v1 & MCP
 		{q: "signups this quarter", unsupported: "quarter"},
 		{q: "signups last year", unsupported: "year"},
 		{q: "signups in january", unsupported: "january"},
@@ -268,6 +270,34 @@ func TestParseWindow(t *testing.T) {
 				t.Errorf("parseWindow(%q) = [%v, %v), want [%v, %v)", tc.q, win.from, win.to, tc.from, tc.to)
 			}
 		})
+	}
+}
+
+// TestWindowCovenant locks the window covenant that a real bug broke: the ask bar's
+// "last N days" MUST resolve to the SAME calendar-aligned window as GET /v1/trends?days=N
+// (parseTrendWindow) — the one MCP also uses. When the ask bar used a rolling now−N·24h
+// window instead, the four surfaces reported different totals for the identical question.
+func TestWindowCovenant(t *testing.T) {
+	for _, n := range []int{7, 14, 30} {
+		// ask side: parseWindow, fixed clock
+		now := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
+		q := fmt.Sprintf("signups in the last %d days", n)
+		win, _ := parseWindow(q, now)
+		wantFrom := now.Truncate(24 * time.Hour).AddDate(0, 0, -(n - 1))
+		if !win.from.Equal(wantFrom) {
+			t.Errorf("ask %q from = %v, want calendar-aligned %v", q, win.from, wantFrom)
+		}
+		// /v1 side: parseTrendWindow uses the real clock, so assert it produces the SAME
+		// formula (midnight today, n-1 days back) against the real now.
+		req := httptest.NewRequest("GET", fmt.Sprintf("/v1/trends?event=signup&days=%d", n), nil)
+		from, _, err := parseTrendWindow(req)
+		if err != nil {
+			t.Fatalf("parseTrendWindow(days=%d): %v", n, err)
+		}
+		realWant := time.Now().UTC().Truncate(24 * time.Hour).AddDate(0, 0, -(n - 1))
+		if !from.Equal(realWant) {
+			t.Errorf("/v1/trends days=%d from = %v, want calendar-aligned %v", n, from, realWant)
+		}
 	}
 }
 

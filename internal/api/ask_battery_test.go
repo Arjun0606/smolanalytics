@@ -112,7 +112,7 @@ func TestAskBatteryContracts(t *testing.T) {
 		{"os scope", "how much of my traffic is on ios",
 			[]string{"1 visitors", "iOS"}, nil},
 		{"path scope", "homepage pageviews last 7 days",
-			[]string{"8 pageviews", "the homepage"}, []string{"9 pageviews"}}, // 6 landings + r2 return + w1; /pricing excluded
+			[]string{"2 pageviews", "the homepage"}, []string{"8 pageviews"}}, // calendar-aligned 7 days (Jun19–25): r2 return + w1; the 6 landings are Jun18 (7d ago, outside), /pricing excluded. "8" = the old rolling window, must not regress
 		// --- the honest zero: a named segment with no data answers 0, not the total ---
 		{"honest zero tiktok", "any signups from tiktok",
 			[]string{"0 — no events", "tiktok"}, []string{"5 "}},

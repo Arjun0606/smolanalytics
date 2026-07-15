@@ -99,7 +99,7 @@ type segRow struct {
 // query.match); "direct" (no referrer at all) isn't a single-value filter, so it's left
 // non-clickable rather than filtering to a wrong subset.
 func channelWithFilter(e event.Event) (channel, fprop, fval string) {
-	if s, _ := e.Properties["source"].(string); s != "" {
+	if s, _ := e.Properties["source"].(string); s != "" && !genericSource(s) {
 		return s, "source", s
 	}
 	if r, _ := e.Properties["referrer"].(string); r != "" {
@@ -129,7 +129,11 @@ func funnelBySegment(evs []event.Event, property string, steps []funnel.Step) []
 	if len(steps) == 0 {
 		return nil
 	}
-	segs := funnel.ComputeBreakdown(evs, steps, 7*24*time.Hour, property)
+	// StampFirstTouch so a segment property that lives only on the acquisition event
+	// (source/referrer/device on the landing pageview, not on later funnel steps) still
+	// segments the whole funnel — matching /v1/funnel and the MCP funnel tool, which both
+	// stamp. Without it this card rendered empty while those surfaces reported the segment.
+	segs := funnel.ComputeBreakdown(query.StampFirstTouch(evs, property), steps, 7*24*time.Hour, property)
 	out := make([]segConv, 0, len(segs))
 	for _, s := range segs {
 		if s.Value == "(none)" {
@@ -453,6 +457,30 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Young-account default: when the range wasn't explicitly chosen (?days / custom
+	// from-to), a 30-day default renders mostly-empty bars for an account only a few days
+	// old — reads as "flat/dead" rather than "new". Shrink the DEFAULT to fit the data's
+	// real span (floor 7d) so the first view is full. This changes only the default
+	// selection; "30d" still means 30 whole days everywhere it's explicitly chosen, so the
+	// cross-surface window covenant is untouched.
+	if !customRange && r.URL.Query().Get("days") == "" {
+		var oldest time.Time
+		for _, e := range evs {
+			if oldest.IsZero() || e.Timestamp.Before(oldest) {
+				oldest = e.Timestamp
+			}
+		}
+		if !oldest.IsZero() {
+			span := int(time.Now().UTC().Sub(oldest).Hours()/24) + 1
+			if span < 7 {
+				span = 7
+			}
+			if span < rangeDays {
+				rangeDays = span
+			}
+		}
+	}
+
 	// click-to-filter + the filter builder: repeatable ?f chips scope every report
 	// below. Grammar: prop:value (eq) or prop:op:value with op in eq|neq|contains|
 	// ncontains|regex|gt|lt|set|notset; multi-value ORs via v1|v2 (the In op).
@@ -593,8 +621,20 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	if chartMetric != "" {
 		trendEvent = chartMetric
 	}
-	tr := trends.ComputeInterval(evs, trendEvent, endT.AddDate(0, 0, -rangeDays), rangeAsof, false, gran)
-	trPrior := trends.ComputeInterval(evs, trendEvent, endT.AddDate(0, 0, -2*rangeDays), endT.AddDate(0, 0, -rangeDays), false, gran)
+	// Calendar-day-aligned window, IDENTICAL to /v1/trends (parseTrendWindow) and the MCP
+	// trends tool, so the "· Nd" tile/chart, the API, and MCP report the SAME number for
+	// "last N days". The old rolling now−N·24h start pulled in a clipped partial leading
+	// day, rendering a phantom bar and a headline that disagreed with /v1 and MCP.
+	curFrom, curTo := endT.AddDate(0, 0, -rangeDays), rangeAsof
+	priorFrom, priorTo := endT.AddDate(0, 0, -2*rangeDays), endT.AddDate(0, 0, -rangeDays)
+	if rangeAsof.IsZero() && gran == trends.Day { // preset day-range → align to whole days
+		day0 := nowT.Truncate(24 * time.Hour)
+		curFrom = day0.AddDate(0, 0, -(rangeDays - 1))
+		priorFrom = day0.AddDate(0, 0, -(2*rangeDays - 1))
+		priorTo = day0.AddDate(0, 0, -(rangeDays - 1))
+	}
+	tr := trends.ComputeInterval(evs, trendEvent, curFrom, curTo, false, gran)
+	trPrior := trends.ComputeInterval(evs, trendEvent, priorFrom, priorTo, false, gran)
 	sig30 := tr.Total
 	sigPrior := trPrior.Total
 
@@ -944,6 +984,10 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	if segProp != "" {
 		vm.ConvBySeg = funnelBySegment(evs, segProp, fsteps)
 	}
+	// Show the card only when it has renderable rows — a property that exists but sits
+	// off the funnel-entry step (so every segment is "(none)", filtered out) otherwise
+	// renders as an empty box. Gate on content, not mere property existence.
+	vm.HasConvBy = len(vm.ConvBySeg) > 0
 
 	vm.ShowProduct = true // default; flipped to tabbed mode below when web data exists
 	if s.goals != nil {

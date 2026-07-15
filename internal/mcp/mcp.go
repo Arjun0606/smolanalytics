@@ -49,7 +49,7 @@ const protocolVersion = "2025-03-26" // Streamable HTTP; we echo the client's ve
 const instructions = `You are a sharp product analyst with live access to this user's own product analytics — their real events, on their own instance. Nothing is shared with anyone; you (their model) do the reasoning, for free, right here in their editor. The whole point: they never build a report, they just ask you.
 
 How to work:
-- ALWAYS answer analytics questions through these tools — never by fetching the HTTP API yourself, scraping the dashboard, or estimating. The tools ARE the deterministic report engine; a CI test proves their numbers equal the dashboard's. Time questions map directly: "last 6 hours" = trends(hours=6, interval="hour"), "this week" = trends(days=7), any range = from/to.
+- ALWAYS answer analytics questions through these tools — never by fetching the HTTP API yourself, scraping the dashboard, or estimating. The tools ARE the deterministic report engine; a CI test proves their numbers equal the dashboard's. Time questions map directly: "last 6 hours" = trends(hours=6, interval="hour"), "last 7 days"/"past week" = trends(days=7), any range = from/to. NOTE: "this week" means the current calendar week (since Monday), NOT the last 7 days — use trends(from=<this Monday 00:00 UTC>, to=now) for it, so your answer matches the ask bar and dashboard. Reserve days=N for "last N days".
 - Orient first. Call overview for the headline numbers and list_events to see exactly what's tracked. Never invent event or property names — use the real ones.
 - Pick the right tool: funnel (conversion + where users drop off), retention (do they come back), trends (counts over time, optionally broken down by a property), breakdown (segment by a property), web_overview (traffic: visitors, live-now, top pages, referrers, UTM sources, devices), lifecycle (new/returning/resurrected/dormant), stickiness (DAU/WAU/MAU), paths (what users do after an event), groups (B2B accounts), recent_events (debug instrumentation), user_activity (one user's timeline). Every report accepts filters to segment (e.g. plan=pro, source=hacker news).
 - Answer like an analyst, not a database. Lead with the number, say what it means, then offer the most useful next cut. If conversion dropped, find the step; if a segment underperforms, name it; if retention is flat, say so plainly.
@@ -347,7 +347,7 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 			// calendar-day aligned, IDENTICAL to GET /v1/trends (parseTrendWindow): N
 			// whole day-buckets ending today, so MCP and the dashboard never disagree
 			// (the old rolling calc prepended a phantom empty leading day — a covenant break).
-			from = nowW.Truncate(24 * time.Hour).AddDate(0, 0, -(int(a.Days) - 1))
+			from = nowW.Truncate(24*time.Hour).AddDate(0, 0, -(int(a.Days) - 1))
 		}
 		if a.Hours > 0 {
 			from = nowW.Add(-time.Duration(a.Hours * float64(time.Hour)))

@@ -577,7 +577,7 @@
     </div>
     <div class="pane" id="pane-referrers">
       <h3>referrers</h3>
-      {{range .Referrers}}<div class="seg" data-fp="referrer" data-fv="{{.Value}}" title="click to filter every zone to this referrer"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
+      {{range .Referrers}}<div class="seg"{{if and (ne .Value "direct") (ne .Value "(none)")}} data-fp="referrer" data-fv="{{.Value}}" title="click to filter every zone to this referrer"{{end}}><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
     </div>
     {{end}}
 
@@ -628,7 +628,7 @@
           <option value="strict" {{if eq .FunnelOrder "strict"}}selected{{end}}>strictly consecutive</option>
           <option value="unordered" {{if eq .FunnelOrder "unordered"}}selected{{end}}>any order</option>
         </select>
-        <span style="text-transform:none;letter-spacing:0">· computed by /v1/funnel</span></h3>
+        <span style="text-transform:none;letter-spacing:0">· each step counts users who reached it along this path, so a step can read below that event's raw total in the chart · computed by /v1/funnel</span></h3>
       {{range .Funnel}}
         {{if not .First}}<div class="fdrop">↓ {{.PctPrev}}% continue · {{.Dropped}} dropped</div>{{end}}
         <div class="fstep"><div class="fbarwrap" data-whostep="{{.Event}}" title="click: the people who reached this step"><div class="fbar" style="width:{{.PctTop}}%"></div><div class="fmeta"><span class="fname">{{.Event}}</span><span class="fnums"><span class="c">{{.Count}}</span><span class="p">{{.PctTop}}%</span></span></div></div></div>

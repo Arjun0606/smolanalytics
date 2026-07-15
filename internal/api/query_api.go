@@ -93,6 +93,13 @@ func (s *Server) filtered(r *http.Request) ([]event.Event, error) {
 	if err != nil {
 		return nil, err
 	}
+	// A filter on a property that exists on NO event is almost always a typo (plann=pro),
+	// and returning a silent 0 would read as a real answer — the exact fabrication the
+	// covenant forbids. Say so, and list the properties that do exist. (Value mismatches
+	// on a real property still return an honest 0; only an unknown KEY is an error.)
+	if bad, known := query.FirstUnknownProp(all, fs); bad != "" {
+		return nil, badRequestError{fmt.Sprintf("no events carry the property %q, so this filter can only ever match 0 — check the spelling. Properties seen: %s", bad, strings.Join(known, ", "))}
+	}
 	evs := query.ApplyMode(all, fs, anyMode)
 	if cid := r.URL.Query().Get("cohort"); cid != "" && s.cohorts != nil {
 		if d, ok := s.cohorts.Get(cid); ok {

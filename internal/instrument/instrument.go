@@ -191,16 +191,21 @@ func webSnippet(host, key string) string {
 		`<script>smolanalytics.init("` + key + `", { host: "` + host + `" });</script>`
 }
 
-// trackSnippet renders the exact track() (or server POST) call for an event.
-func trackSnippet(fw Framework, event string, props []string) string {
+// trackSnippet renders the exact track() (or server POST) call for an event — REAL,
+// paste-ready code with host + key already resolved, never commented pseudocode (the
+// tools promise "the exact snippet to insert"; a comment isn't insertable code).
+func trackSnippet(fw Framework, host, key, event string, props []string) string {
 	if fw.Language == "python" {
-		return pyPost(event, props)
+		return pyPost(host, key, event, props)
 	}
 	if fw.Language == "ruby" {
-		return `# POST to ` + "`/v1/events`" + ` with your write key and { name: "` + event + `", distinct_id: current_user.id, properties: {...} }`
+		return `Net::HTTP.post(URI("` + host + `/v1/events"),` + "\n" +
+			`  { name: "` + event + `", distinct_id: current_user.id, properties: {` + rubyProps(props) + `} }.to_json,` + "\n" +
+			`  "Authorization" => "Bearer ` + key + `", "Content-Type" => "application/json")`
 	}
 	if fw.Language == "go" {
-		return `// POST to /v1/events with {"name":"` + event + `","distinct_id":userID,"properties":{...}} using your write key`
+		return `http.Post("` + host + `/v1/events?key=` + key + `", "application/json",` + "\n" +
+			`  strings.NewReader(` + "`" + `{"name":"` + event + `","distinct_id":"` + "`" + `+userID+` + "`" + `","properties":{` + goProps(props) + `}}` + "`" + `))`
 	}
 	// JS/TS (web): the SDK's track()
 	if len(props) == 0 {
@@ -213,14 +218,41 @@ func trackSnippet(fw Framework, event string, props []string) string {
 	return `smolanalytics.track("` + event + `", { ` + strings.Join(pairs, ", ") + ` });`
 }
 
-func pyPost(event string, props []string) string {
-	return `# requests.post(f"{HOST}/v1/events", headers={"Authorization": f"Bearer {WRITE_KEY}"},` + "\n" +
-		`#   json={"name": "` + event + `", "distinct_id": user_id, "properties": {}})`
+func pyPost(host, key, event string, props []string) string {
+	return `requests.post("` + host + `/v1/events",` + "\n" +
+		`  headers={"Authorization": "Bearer ` + key + `"},` + "\n" +
+		`  json={"name": "` + event + `", "distinct_id": user_id, "properties": {` + pyProps(props) + `}})`
+}
+
+// {py,ruby,go}Props render placeholder property keys so the shape is copy-ready; the
+// user fills each value. Empty when the event carries no properties.
+func pyProps(props []string) string {
+	parts := make([]string, len(props))
+	for i, p := range props {
+		parts[i] = `"` + p + `": None`
+	}
+	return strings.Join(parts, ", ")
+}
+
+func rubyProps(props []string) string {
+	parts := make([]string, len(props))
+	for i, p := range props {
+		parts[i] = p + ": nil"
+	}
+	return strings.Join(parts, ", ")
+}
+
+func goProps(props []string) string {
+	parts := make([]string, len(props))
+	for i, p := range props {
+		parts[i] = `"` + p + `":null`
+	}
+	return strings.Join(parts, ",")
 }
 
 // ScanCallSites walks the repo and returns the call-sites that look like a custom event,
 // deduped so the same event doesn't flood the list, capped for a readable proposal.
-func ScanCallSites(root string, fw Framework) []CallSite {
+func ScanCallSites(root, host, key string, fw Framework) []CallSite {
 	var sites []CallSite
 	perEvent := map[string]int{}
 	const maxPerEvent = 4
@@ -269,7 +301,7 @@ func ScanCallSites(root string, fw Framework) []CallSite {
 						File:       filepath.ToSlash(rel),
 						Line:       i + 1,
 						Context:    trimLen(line, 160),
-						Snippet:    trackSnippet(fw, ep.event, ep.props),
+						Snippet:    trackSnippet(fw, host, key, ep.event, ep.props),
 						Properties: ep.props,
 						Confidence: ep.confidence,
 					})
@@ -298,7 +330,7 @@ func ScanCallSites(root string, fw Framework) []CallSite {
 // host+key, scan for custom events, and assemble the tracking-plan advice.
 func Propose(root, host, key string) Proposal {
 	fw := DetectFramework(root)
-	sites := ScanCallSites(root, fw)
+	sites := ScanCallSites(root, host, key, fw)
 
 	p := Proposal{
 		Framework: fw,

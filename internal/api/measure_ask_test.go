@@ -51,7 +51,7 @@ func TestAskMeasure_RefusesToInventWhenNotTracked(t *testing.T) {
 
 func TestAskMeasure_ReceiptPresent(t *testing.T) {
 	now := time.Now().UTC()
-	if cb := computedBy("total revenue", now); !strings.Contains(cb, "numeric-aggregation") {
+	if cb := computedBy("total revenue", nil, now); !strings.Contains(cb, "numeric-aggregation") {
 		t.Errorf("measure answer should carry a numeric-aggregation receipt, got: %q", cb)
 	}
 }

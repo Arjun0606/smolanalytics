@@ -382,7 +382,12 @@ func finishFromCounts(res *Result, steps []Step, counts []int, convTimes []time.
 			res.Steps[i].ConversionFromTop = float64(counts[i]) / float64(counts[0])
 		}
 		if i == 0 {
-			res.Steps[i].ConversionFromPrev = 1
+			// the entry step is 100% of itself — but only when it actually has users.
+			// On a zero-match funnel (e.g. a filter no one satisfies) reporting "100%"
+			// on 0 users reads as a real conversion; leave it 0.
+			if counts[0] > 0 {
+				res.Steps[i].ConversionFromPrev = 1
+			}
 		} else {
 			if counts[i-1] > 0 {
 				res.Steps[i].ConversionFromPrev = float64(counts[i]) / float64(counts[i-1])

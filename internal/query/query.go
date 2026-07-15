@@ -349,3 +349,34 @@ func hostOfURL(v string) string {
 	}
 	return strings.TrimPrefix(v, "www.")
 }
+
+// FirstUnknownProp returns the first filter property that uses a POSITIVE operator
+// (eq/contains/gt/lt/in/set/regex — ones that can only match when the property exists)
+// yet appears on NO event, plus a sorted list of the properties that DO exist. This is
+// how a filtered report tells a typo ("plann=pro" → no such property) apart from a
+// genuine empty result, instead of silently returning 0 as if it were the honest answer.
+// Negative operators (neq/notin/notset/notcontains) are skipped: a missing property
+// legitimately satisfies them. Returns ("", nil) when every positive filter is known.
+func FirstUnknownProp(events []event.Event, filters []Filter) (string, []string) {
+	if len(filters) == 0 {
+		return "", nil
+	}
+	known := map[string]bool{}
+	for _, e := range events {
+		for k := range e.Properties {
+			known[k] = true
+		}
+	}
+	positive := map[Op]bool{Eq: true, Contains: true, Gt: true, Lt: true, In: true, Set: true, Regex: true}
+	for _, f := range filters {
+		if positive[f.Op] && f.Property != "" && !known[f.Property] {
+			list := make([]string, 0, len(known))
+			for k := range known {
+				list = append(list, k)
+			}
+			sort.Strings(list)
+			return f.Property, list
+		}
+	}
+	return "", nil
+}

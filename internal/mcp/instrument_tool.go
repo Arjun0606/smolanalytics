@@ -13,7 +13,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/instrument"
 )
 
@@ -139,13 +141,17 @@ func (s *Server) callInstrument(name string, args json.RawMessage) (bool, string
 		// label the non-firing rows honestly instead of falsely declaring them unwired.
 		haveCode := looksLikeRepo(root)
 
-		// firing = the event name appears in stored traffic
-		firing := map[string]bool{}
-		if names, err := s.store.Names(); err == nil {
-			for _, n := range names {
-				firing[n] = true
-			}
-		}
+		// firing = the event arrived in traffic RECENTLY (last 7 days), not ever. An event
+		// that fired once months ago but is now broken must NOT read as "✓ arriving in
+		// traffic / proven end to end" — that's a false green on the instrumentation check.
+		// Events with older-but-no-recent traffic fall through to WIRED (code is there,
+		// exercise it) or NOT FIRING, which is the honest signal.
+		firing := map[string]int{}
+		recencyFrom := time.Now().UTC().AddDate(0, 0, -7)
+		_ = s.store.Scan(recencyFrom, time.Time{}, func(e event.Event) error {
+			firing[e.Name]++
+			return nil
+		})
 		// wired = a track()/POST call-site exists for the planned name in the code
 		planNames := make([]string, len(plan.Events))
 		for i, e := range plan.Events {
@@ -165,8 +171,8 @@ func (s *Server) callInstrument(name string, args json.RawMessage) (bool, string
 		firingN, wiredN, missingN := 0, 0, 0
 		for _, e := range plan.Events {
 			switch {
-			case firing[e.Name]:
-				rows = append(rows, row{e.Name, "FIRING", "✓ arriving in traffic"})
+			case firing[e.Name] > 0:
+				rows = append(rows, row{e.Name, "FIRING", fmt.Sprintf("✓ arriving in traffic (%d in the last 7 days)", firing[e.Name])})
 				firingN++
 			case wired[e.Name].Name != "":
 				w := wired[e.Name]
