@@ -566,7 +566,7 @@
   <div class="deck">
 
     {{if .HasWeb}}
-    <div class="pane wide" id="pane-pages">
+    <div class="pane wide" id="pane-pages" style="order:7">
       <div class="webcols">
         <div>
           <h3>top pages</h3>
@@ -578,21 +578,21 @@
         </div>
       </div>
     </div>
-    <div class="pane" id="pane-referrers">
+    <div class="pane" id="pane-referrers" style="order:8">
       <h3>referrers</h3>
       {{range .Referrers}}<div class="seg"{{if and (ne .Value "direct") (ne .Value "(none)")}} data-fp="referrer" data-fv="{{.Value}}" title="click to filter every zone to this referrer"{{end}}><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
     </div>
     {{end}}
 
     {{if .HasGeo}}
-    <div class="pane" id="pane-geo">
+    <div class="pane" id="pane-geo" style="order:10">
       <h3>countries · geo by <a href="https://db-ip.com" target="_blank" rel="noopener" style="color:var(--mut2)">db-ip.com</a></h3>
       <div class="exsummary" style="margin-bottom:10px">countries stamp at ingest from the moment geo is enabled (the IP is used for one lookup and never stored, so no backfill). your own visits count too: open your site once with ?sa_optout=1 to exclude this browser, ?sa_optout=0 to undo</div>
       {{range .Countries}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}
     </div>
     {{end}}
 
-    <div class="pane wide" id="pane-devices">
+    <div class="pane wide" id="pane-devices" style="order:11">
       <div class="webcols">
         <div>
           <h3>device</h3>
@@ -608,7 +608,7 @@
     </div>
 
     {{if .UTMSources}}
-    <div class="pane wide" id="pane-campaigns">
+    <div class="pane wide" id="pane-campaigns" style="order:12">
       <div class="webcols">
         <div>
           <h3>utm source</h3>
@@ -624,7 +624,7 @@
     </div>
     {{end}}
 
-    <div class="pane wide" id="pane-funnel">
+    <div class="pane wide" id="pane-funnel" style="order:1">
       <h3>{{.FunnelTitle}}
         <select id="funnelOrder" class="zonesel" title="step matching discipline" style="margin-left:8px">
           <option value="ordered" {{if eq .FunnelOrder "ordered"}}selected{{end}}>in order</option>
@@ -639,7 +639,7 @@
     </div>
 
     {{if .HasConvBy}}
-    <div class="pane" id="pane-conversion">
+    <div class="pane" id="pane-conversion" style="order:2">
       <h3>conversion by {{.ConvByTitle}}</h3>
       <div class="segconv">
         {{range .ConvBySeg}}<div class="sc"><div class="sc-h"><span class="sc-name">{{.Value}}</span><span class="sc-conv">{{.Conv}}%</span></div><div class="sc-track"><div class="sc-fill" style="width:{{.Conv}}%"></div></div><div class="sc-sub">{{.Users}} users</div></div>{{end}}
@@ -648,14 +648,14 @@
     {{end}}
 
     {{if .HasSource}}
-    <div class="pane" id="pane-sources">
+    <div class="pane" id="pane-sources" style="order:9">
       <h3>{{.SourceTitle}}</h3>
       {{range .BySource}}<div class="seg"{{if .FilterProp}} data-fp="{{.FilterProp}}" data-fv="{{.FilterVal}}" title="click to filter every zone to this channel"{{end}}><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}
     </div>
     {{end}}
 
     {{if .HasPaths}}
-    <div class="pane wide" id="pane-paths">
+    <div class="pane wide" id="pane-paths" style="order:3">
       <h3>user journeys <span class="sub">· what users do after {{.PathStart}}</span></h3>
       <div style="display:flex;gap:14px;overflow-x:auto;padding-bottom:2px">
         {{range .PathLevels}}
@@ -669,7 +669,7 @@
     {{end}}
 
     {{if .HasLifecycle}}
-    <div class="pane wide" id="pane-lifecycle">
+    <div class="pane wide" id="pane-lifecycle" style="order:4">
       <h3>lifecycle <span class="sub">· who's active each day — new vs loyal</span></h3>
       <div style="display:flex;gap:14px;flex-wrap:wrap;font-family:var(--mono);font-size:10px;color:var(--mut);margin:2px 0 10px">
         <span><i style="display:inline-block;width:8px;height:8px;background:var(--accent);vertical-align:middle;margin-right:5px"></i>new</span>
@@ -690,7 +690,7 @@
     {{end}}
 
     {{with .Stickiness}}
-    <div class="pane" id="pane-stickiness">
+    <div class="pane" id="pane-stickiness" style="order:5">
       <h3>stickiness <span class="sub">· do they come back?</span></h3>
       <div style="display:flex;align-items:baseline;gap:10px;margin:10px 0 2px">
         <span style="font-size:34px;line-height:1;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums;letter-spacing:-.02em">{{.Ratio}}%</span>
@@ -706,14 +706,14 @@
     {{end}}
 
     {{if .HasSearch}}
-    <div class="pane" id="pane-search">
+    <div class="pane" id="pane-search" style="order:13">
       <h3>google search queries · 28d clicks</h3>
       {{range .SearchRows}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
     </div>
     {{end}}
 
     {{if .HasWeb}}
-    <div class="pane" id="pane-goals">
+    <div class="pane" id="pane-goals" style="order:14">
       <h3>goals</h3>
       {{if .Goals}}
       <div class="goalrow">
@@ -730,7 +730,7 @@
     </div>
     {{end}}
 
-    <div class="pane wide" id="pane-retention">
+    <div class="pane wide" id="pane-retention" style="order:6">
       <h3>returning users
         <select id="retDays" class="zonesel" style="margin-left:8px">
           <option value="7" {{if eq .RetDays 7}}selected{{end}}>7 periods</option>
@@ -759,12 +759,12 @@
       {{end}}
     </div>
 
-    <div class="pane" id="pane-live">
+    <div class="pane" id="pane-live" style="order:15">
       <h3>live <span class="sub">· events as they land</span></h3>
       <div id="live" class="live"><div class="livemuted">waiting for events…</div></div>
     </div>
 
-    <div class="pane" id="pane-events">
+    <div class="pane" id="pane-events" style="order:16">
       <h3>event stream <span class="sub">· latest 200 · computed by /v1/events/recent</span></h3>
       <div class="exrow" style="margin-bottom:8px">
         <input id="evFilter" autocomplete="off" placeholder="filter the stream: event name, visitor id, path, any property value…">

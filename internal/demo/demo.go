@@ -237,6 +237,14 @@ func Seed(s store.Store) error {
 			if source == "hacker news" {
 				activateP += 0.08
 			}
+			// The demo's built-in STORY: mobile onboarding is broken — mobile users sign up
+			// fine but activate ~2× worse than desktop. This is what gives the verdict's
+			// segment-blame a real, actionable root cause to surface ("signups drop at
+			// activate, and it's mobile — 2× worse than desktop"), the diagnosis no rival
+			// ships. It's also a realistic failure (mobile onboarding friction).
+			if device == "mobile" {
+				activateP *= 0.45
+			}
 			if r.Float64() < activateP {
 				if err := emit("activate", user, t.Add(time.Duration(r.Intn(180)+5)*time.Minute), props); err != nil {
 					return err

@@ -98,51 +98,75 @@ var blameProps = []string{"source", "plan", "platform", "device", "channel", "co
 // segmentBlame finds the property value that converts dramatically worse through
 // the from→to step than everyone else — the difference between "conversion is 40%"
 // and "fix mobile, it converts at 9%". Noise-guarded: the segment needs real volume
-// and a gap big enough (< 60% of the overall rate) to be an action, not a wobble.
+// and a gap big enough (≤70% of the overall rate) to be an action, not a wobble.
 func segmentBlame(evs []event.Event, from, to string) *Finding {
-	prop := pickBlameProp(evs, from)
-	if prop == "" {
-		return nil
+	// Acquisition/user attributes (device, browser, source, country…) live on the LANDING
+	// pageview, never on the conversion step — so without stamping each user's first-touch
+	// value onto their events, the blame property is never found on the `from` event and
+	// the verdict stays vague ("conversion is 40%") instead of sharp ("it's mobile, at 9%").
+	// This first-touch stamp is what turns the drop-off into a root cause you can act on.
+	stamped := evs
+	for _, p := range blameProps {
+		if firstTouchBlameProp(p) {
+			stamped = query.StampFirstTouch(stamped, p)
+		}
 	}
-	overall := stepRate(evs, from, to, nil)
+	overall := stepRate(stamped, from, to, nil)
 	if overall.entered < minSample || overall.rate() <= 0 {
 		return nil // too thin to blame anyone
 	}
 
-	values := map[string]bool{}
-	for _, e := range evs {
-		if e.Name != from {
-			continue
-		}
-		if v, ok := e.Properties[prop]; ok {
-			values[fmt.Sprintf("%v", v)] = true // same normalization the eq filter applies
-		}
-	}
+	// Scan EVERY usable property, not just the first — the segment to blame might be
+	// device even when source is also present. We keep the single worst segment across all
+	// of them (the one whose conversion is furthest below the average), so the verdict
+	// names the real root cause wherever it lives (device / source / plan / country).
 	var worst *Finding
 	worstRate := overall.rate()
-	for val := range values {
-		seg := stepRate(evs, from, to, []query.Filter{{Property: prop, Op: query.Eq, Value: val}})
-		if seg.entered < minSample {
-			continue // not enough users in the segment to conclude anything
+	for _, prop := range usableBlameProps(stamped, from) {
+		values := map[string]bool{}
+		for _, e := range stamped {
+			if e.Name != from {
+				continue
+			}
+			if v, ok := e.Properties[prop]; ok {
+				values[fmt.Sprintf("%v", v)] = true
+			}
 		}
-		r := seg.rate()
-		if r < 0.6*overall.rate() && r < worstRate {
-			worstRate = r
-			worst = &Finding{
-				Severity: "warn",
-				Title:    fmt.Sprintf("%s=%s converts far worse at %s → %s", prop, val, from, to),
-				Detail: qualify(fmt.Sprintf("%d%% vs %d%% overall (%d of %d users continue). Fix this segment first.",
-					int(r*100+0.5), int(overall.rate()*100+0.5), seg.converted, seg.entered), seg.entered),
+		for val := range values {
+			seg := stepRate(stamped, from, to, []query.Filter{{Property: prop, Op: query.Eq, Value: val}})
+			if seg.entered < minSample {
+				continue // not enough users in the segment to conclude anything
+			}
+			r := seg.rate()
+			// a segment converting at ≤70% of the average through this step is a real,
+			// actionable gap (e.g. mobile at 32% vs 50% overall — ~1.6× worse), not a
+			// wobble. minSample + the "worst across all props" scan keep it from firing on
+			// noise; the old 0.6 cutoff was strict enough to miss genuine 2× underperformers.
+			if r < 0.7*overall.rate() && r < worstRate {
+				worstRate = r
+				mult := ""
+				if r > 0 {
+					if x := overall.rate() / r; x >= 1.5 {
+						mult = fmt.Sprintf(" — %.1f× worse than average", x)
+					}
+				}
+				worst = &Finding{
+					Severity: "warn",
+					Title:    fmt.Sprintf("It's %s=%s: converts worst at %s → %s%s", prop, val, from, to, mult),
+					Detail: qualify(fmt.Sprintf("only %d%% of %s=%s users continue vs %d%% overall (%d of %d). Fix this segment first — it's the biggest lever on the funnel.",
+						int(r*100+0.5), prop, val, int(overall.rate()*100+0.5), seg.converted, seg.entered), seg.entered),
+				}
 			}
 		}
 	}
 	return worst
 }
 
-// pickBlameProp chooses the property to segment by: a known-explanatory name if
-// present on the step event, else the lowest-cardinality property with wide
-// coverage (2–10 distinct values on ≥60% of the step's events).
-func pickBlameProp(evs []event.Event, from string) string {
+// usableBlameProps returns every property worth segmenting the step by — the known
+// explanatory names plus any other low-cardinality, wide-coverage property — so
+// segmentBlame can find the underperforming segment wherever it lives, not just under
+// the first-listed property.
+func usableBlameProps(evs []event.Event, from string) []string {
 	coverage := map[string]int{}
 	distinct := map[string]map[string]bool{}
 	total := 0
@@ -160,29 +184,40 @@ func pickBlameProp(evs []event.Event, from string) string {
 		}
 	}
 	if total == 0 {
-		return ""
+		return nil
 	}
 	usable := func(k string) bool {
 		n := len(distinct[k])
 		return coverage[k]*10 >= total*6 && n >= 2 && n <= 10
 	}
-	for _, k := range blameProps {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, k := range blameProps { // known-explanatory first, deterministic
 		if usable(k) {
-			return k
+			out = append(out, k)
+			seen[k] = true
 		}
 	}
-	best, bestN := "", 11
-	keys := make([]string, 0, len(coverage))
+	extra := make([]string, 0, len(coverage))
 	for k := range coverage {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys) // deterministic tie-break
-	for _, k := range keys {
-		if usable(k) && len(distinct[k]) < bestN {
-			best, bestN = k, len(distinct[k])
+		if !seen[k] && usable(k) {
+			extra = append(extra, k)
 		}
 	}
-	return best
+	sort.Strings(extra) // deterministic tie-break
+	return append(out, extra...)
+}
+
+// firstTouchBlameProp reports whether a blame property is an acquisition/user attribute
+// that lives on the landing event (so it must be first-touch-stamped onto the whole user
+// stream before segmenting). "plan" is excluded — it's a product attribute set at the
+// step itself, already present where it's needed.
+func firstTouchBlameProp(p string) bool {
+	switch p {
+	case "source", "channel", "device", "country", "browser", "platform", "os", "referrer":
+		return true
+	}
+	return false
 }
 
 // stepRate computes how many users who did `from` went on to `to` (7-day window),

@@ -87,6 +87,44 @@ func TestSegmentBlame(t *testing.T) {
 	}
 }
 
+// TestSegmentBlameFirstTouch is the realistic case: the acquisition attribute (device)
+// lives ONLY on the landing $pageview, not on the signup/activate steps. Without
+// first-touch stamping, segmentBlame can't see device on the step event and stays silent;
+// with it, it names the underperforming segment. This is the fix that makes the verdict
+// sharp ("it's mobile") on real data instead of vague.
+func TestSegmentBlameFirstTouch(t *testing.T) {
+	base := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	var evs []event.Event
+	mk := func(i int, device string, converts bool) {
+		u := fmt.Sprintf("u_%s_%d", device, i)
+		// device is on the landing pageview ONLY — the realistic autocapture shape.
+		evs = append(evs, event.Event{ID: u + "p", DistinctID: u, Name: "$pageview", Timestamp: base,
+			Properties: map[string]any{"device": device, "path": "/"}})
+		evs = append(evs, event.Event{ID: u + "s", DistinctID: u, Name: "signup", Timestamp: base.Add(time.Minute),
+			Properties: map[string]any{}}) // signup carries NO device
+		if converts {
+			evs = append(evs, event.Event{ID: u + "a", DistinctID: u, Name: "activate", Timestamp: base.Add(time.Hour),
+				Properties: map[string]any{}})
+		}
+	}
+	for i := 0; i < 25; i++ {
+		mk(i, "desktop", i < 20) // desktop: 80% activate
+	}
+	for i := 0; i < 25; i++ {
+		mk(i, "mobile", i < 3) // mobile: 12% activate — the segment to blame
+	}
+	f := segmentBlame(evs, "signup", "activate")
+	if f == nil {
+		t.Fatal("expected blame on device=mobile, got nil (first-touch stamp not applied?)")
+	}
+	if !strings.Contains(f.Title, "mobile") || !strings.Contains(f.Title, "device") {
+		t.Fatalf("blame should name device=mobile: %q", f.Title)
+	}
+	if !strings.Contains(f.Title, "×") { // the multiplier makes it land
+		t.Fatalf("blame should quantify how much worse: %q", f.Title)
+	}
+}
+
 // End to end: a product with non-conventional event names gets a journey-ordered
 // funnel finding, and a lopsided segment shows up as a blame finding.
 func TestGenerateIncludesJourneyAndBlame(t *testing.T) {
