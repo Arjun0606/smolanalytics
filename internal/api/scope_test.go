@@ -80,7 +80,8 @@ func TestStatsAPIKeyAuth(t *testing.T) {
 	st := memory.New()
 	_ = st.Ingest(event.Event{ID: "1", Name: "signup", DistinctID: "u1", Timestamp: time.Now().UTC()})
 	s := New(st)
-	s.SetWriteKey("sk_test")
+	s.SetWriteKey("wk_public") // ingest only
+	s.SetReadKey("rk_secret")  // reads + MCP
 	h := s.Handler()
 
 	req := func(method, path, key string) int {
@@ -93,8 +94,31 @@ func TestStatsAPIKeyAuth(t *testing.T) {
 		return w.Code
 	}
 
-	if got := req("GET", "/v1/trends?event=signup", "sk_test"); got != 200 {
-		t.Fatalf("key should read reports, got %d", got)
+	// the READ key reads reports and the raw export.
+	if got := req("GET", "/v1/trends?event=signup", "rk_secret"); got != 200 {
+		t.Fatalf("read key should read reports, got %d", got)
+	}
+	if got := req("GET", "/v1/export", "rk_secret"); got != 200 {
+		t.Fatalf("read key should read export, got %d", got)
+	}
+	// SECURITY REGRESSION: the WRITE key is public (it ships in the SDK). It must NEVER
+	// read a report or the raw export — otherwise a scraped key leaks all data.
+	if got := req("GET", "/v1/trends?event=signup", "wk_public"); got != http.StatusUnauthorized {
+		t.Fatalf("write key must NOT read reports (public key = data leak), got %d", got)
+	}
+	if got := req("GET", "/v1/export", "wk_public"); got != http.StatusUnauthorized {
+		t.Fatalf("write key must NOT read the raw export, got %d", got)
+	}
+	// the write key still authorizes ingest.
+	body := `{"name":"signup","distinct_id":"u9"}`
+	{
+		r := httptest.NewRequest("POST", "/v1/events", strings.NewReader(body))
+		r.Header.Set("Authorization", "Bearer wk_public")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code >= 300 {
+			t.Fatalf("write key should ingest, got %d", w.Code)
+		}
 	}
 	if got := req("GET", "/v1/trends?event=signup", "wrong"); got != http.StatusUnauthorized {
 		t.Fatalf("bad key must 401, got %d", got)
@@ -102,10 +126,7 @@ func TestStatsAPIKeyAuth(t *testing.T) {
 	if got := req("GET", "/v1/trends?event=signup", ""); got != http.StatusUnauthorized {
 		t.Fatalf("no auth must 401, got %d", got)
 	}
-	if got := req("POST", "/v1/settings/clear", "sk_test"); got != http.StatusUnauthorized {
+	if got := req("POST", "/v1/settings/clear", "rk_secret"); got != http.StatusUnauthorized {
 		t.Fatalf("keys must never unlock writes/settings, got %d", got)
-	}
-	if got := req("GET", "/v1/export", "sk_test"); got != 200 {
-		t.Fatalf("export is a GET report, got %d", got)
 	}
 }

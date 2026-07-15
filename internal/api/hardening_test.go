@@ -95,10 +95,10 @@ func TestNotableAcceptsKeyWhenPasswordSet(t *testing.T) {
 	st := memory.New()
 	_ = st.Ingest(event.Event{ID: "1", DistinctID: "u", Name: "open", Timestamp: time.Now().UTC()})
 	s := New(st)
-	s.SetWriteKey("sk_test")
+	s.SetReadKey("sk_test") // reads (notable) require the READ key now, not the public write key
 	h := s.Handler()
 
-	// bearer key → 200 (what the cloud does)
+	// bearer read key → 200 (what the cloud agent does)
 	r := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/v1/notable", nil)
 	req.Header.Set("Authorization", "Bearer sk_test")

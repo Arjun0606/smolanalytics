@@ -23,7 +23,7 @@ func TestWebhookTestEndpointKeyAuth(t *testing.T) {
 	defer receiver.Close()
 
 	srv := New(memory.New())
-	srv.SetWriteKey("k123")
+	srv.SetReadKey("k123") // the webhook test endpoint is key-OR-session — the read key, not the public write key
 	wh, err := webhook.Open("")
 	if err != nil {
 		t.Fatal(err)

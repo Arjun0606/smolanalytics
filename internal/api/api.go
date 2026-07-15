@@ -70,7 +70,8 @@ type Server struct {
 	goals        *goal.Store
 	exports      *exportlink.Store
 	defined      *defined.Store // retroactive zero-code events (Heap wedge)
-	writeKey     string         // if set, POST /v1/events requires Authorization: Bearer <writeKey>
+	writeKey     string         // PUBLIC ingest key (embedded in the SDK): authorizes POST /v1/events ONLY. Never reads.
+	readKey      string         // SECRET read/MCP key: authorizes GET /v1/* reports, export, and MCP. Never shipped in client code.
 	geo          *geo.Resolver  // ingest-time IP→country (IP never stored); nil = disabled
 	anomalyMu    sync.Mutex
 	anomalyFired map[string]time.Time // finding title -> last webhook fire (24h dedup)
@@ -232,6 +233,11 @@ func (s *Server) EvaluateAlerts() {
 // (dev). The SDK passes the same key.
 func (s *Server) SetWriteKey(k string) { s.writeKey = k }
 
+// SetReadKey sets the SECRET read/MCP key. It authorizes reads (GET /v1/* reports, the raw
+// export) and MCP — everything that returns data. It must NEVER be embedded in client code;
+// only the write key is public. This is what stops a scraped write key from reading data.
+func (s *Server) SetReadKey(k string) { s.readKey = k }
+
 // SetGeo enables ingest-time country resolution (the IP is used for one lookup
 // and never stored, only the ISO code lands on the event).
 func (s *Server) SetGeo(g *geo.Resolver) { s.geo = g }
@@ -348,11 +354,30 @@ func (s *Server) serveSDK(w http.ResponseWriter, _ *http.Request) {
 	_, _ = io.WriteString(w, sdkJS)
 }
 
-// authorized checks the env write key (constant-time) or any managed key. Open
-// only when NO key is configured anywhere (local dev).
+// authorized is the READ gate: it authorizes returning data (GET /v1/* reports, the raw
+// export, MCP). It accepts ONLY the secret read key or a managed key — NEVER the write key.
+// This is the fix for the write-key-reads-everything exposure: the write key ships publicly
+// in the SDK, so if it could read, anyone who scraped it could pull GET /v1/export. It
+// can't. Reads are header-only (Bearer) — no ?key= — to keep read creds out of URLs and
+// logs. Open (no auth) only in pure local dev, when NOTHING is configured.
 func (s *Server) authorized(r *http.Request) bool {
 	hasManaged := s.settings != nil && len(s.settings.Keys()) > 0
-	if s.writeKey == "" && !hasManaged {
+	if s.readKey == "" && s.writeKey == "" && !hasManaged {
+		return true // pure local dev: nothing configured at all
+	}
+	got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if s.readKey != "" && subtle.ConstantTimeCompare([]byte(got), []byte(s.readKey)) == 1 {
+		return true
+	}
+	return hasManaged && s.settings.ValidKey(got)
+}
+
+// ingestAuth is the WRITE gate for POST /v1/events. It accepts the public write key (the
+// one the SDK embeds), the secret read key, or a managed key. The write key is accepted
+// HERE and nowhere else. ?key= is honored because sendBeacon can't set headers.
+func (s *Server) ingestAuth(r *http.Request) bool {
+	hasManaged := s.settings != nil && len(s.settings.Keys()) > 0
+	if s.writeKey == "" && s.readKey == "" && !hasManaged {
 		return true
 	}
 	got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
@@ -362,16 +387,19 @@ func (s *Server) authorized(r *http.Request) bool {
 	if s.writeKey != "" && subtle.ConstantTimeCompare([]byte(got), []byte(s.writeKey)) == 1 {
 		return true
 	}
+	if s.readKey != "" && subtle.ConstantTimeCompare([]byte(got), []byte(s.readKey)) == 1 {
+		return true
+	}
 	return hasManaged && s.settings.ValidKey(got)
 }
 
-// keyAuthed is authorized() WITHOUT the open-when-no-keys fallback: it's true only
-// when a key is actually configured and this request presented a valid one. Used by
-// endpoints that accept key-OR-session — the "no keys configured" open mode must not
-// bypass a configured dashboard password.
+// keyAuthed is authorized() WITHOUT the open-when-no-keys fallback: true only when a READ
+// credential is configured and this request presented a valid one. Used by endpoints that
+// accept key-OR-session — the "no keys configured" open mode must not bypass a configured
+// dashboard password.
 func (s *Server) keyAuthed(r *http.Request) bool {
 	hasManaged := s.settings != nil && len(s.settings.Keys()) > 0
-	if s.writeKey == "" && !hasManaged {
+	if s.readKey == "" && !hasManaged {
 		return false
 	}
 	return s.authorized(r)
@@ -534,7 +562,7 @@ func parseUA(ua string) (browser, os string) {
 
 func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 	setCORS(w)
-	if !s.authorized(r) {
+	if !s.ingestAuth(r) { // the ONE place the public write key is accepted
 		writeErr(w, http.StatusUnauthorized, "invalid or missing write key")
 		return
 	}
