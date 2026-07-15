@@ -1,6 +1,6 @@
 package api
 
-// The agreement test — CI enforcement of the product's core promise: the answer your
+// The agreement test: CI enforcement of the product's core promise. The answer your
 // AI gives over MCP is byte-for-byte the SAME computation the HTTP API returns and the
 // dashboard renders. There is no second query path that can drift (competitors' AI
 // layers generate queries and admit results "may not match the UI"; ours cannot,

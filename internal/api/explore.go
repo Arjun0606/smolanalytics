@@ -19,7 +19,7 @@ import (
 // (Authorization: Bearer) — accept either. Session-only here would 401 every
 // cloud poll and silently kill the daily-brief retention hook.
 func (s *Server) notable(w http.ResponseWriter, r *http.Request) {
-	if s.authEnabled() && !s.validSession(r) && !s.keyAuthed(r) {
+	if s.readsGated() && !s.validSession(r) && !s.keyAuthed(r) {
 		writeErr(w, http.StatusUnauthorized, "login or a valid key required")
 		return
 	}
@@ -38,7 +38,7 @@ func (s *Server) notable(w http.ResponseWriter, r *http.Request) {
 // email, `smolanalytics brief`, and this endpoint can never disagree. Session or
 // key auth for the same reason as notable: the control plane polls with the key.
 func (s *Server) apiBrief(w http.ResponseWriter, r *http.Request) {
-	if s.authEnabled() && !s.validSession(r) && !s.keyAuthed(r) {
+	if s.readsGated() && !s.validSession(r) && !s.keyAuthed(r) {
 		writeErr(w, http.StatusUnauthorized, "login or a valid key required")
 		return
 	}

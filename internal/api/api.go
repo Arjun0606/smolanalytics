@@ -405,6 +405,15 @@ func (s *Server) keyAuthed(r *http.Request) bool {
 	return s.authorized(r)
 }
 
+// readsGated reports whether reads should require a credential — true when a dashboard
+// password OR a read key OR a managed key is configured. Endpoints that accept
+// session-OR-key (notable, brief) use it so a read key alone protects them even without a
+// password; only a fully-unconfigured instance (the public demo) leaves them open.
+func (s *Server) readsGated() bool {
+	hasManaged := s.settings != nil && len(s.settings.Keys()) > 0
+	return s.authEnabled() || s.readKey != "" || hasManaged
+}
+
 // agentSeen is one MCP client's presence — the "is my Claude actually connected?"
 // answer, driven by the MCP server's own traffic instead of asserted.
 type agentSeen struct {
