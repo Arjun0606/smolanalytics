@@ -917,7 +917,7 @@
       <div class="cnote">
         then ask from your editor: <em>"what changed on my site this week?"</em> · <em>"why did {{.StatEventLabel}} drop?"</em> · <em>"which referrer converts best?"</em><br>
         your own model reads your data through the smolanalytics report tools — we never run a model, so it's free and unmetered.
-        every answer is a deterministic report, and a <a href="https://github.com/Arjun0606/smolanalytics/blob/main/internal/api/agreement_test.go" target="_blank" rel="noopener" style="color:var(--accent)">CI test ↗</a> proves the editor, this dashboard, and the ask bar always return the same number.
+        every answer is a deterministic report, and a <a href="https://smolanalytics.com/trust" target="_blank" rel="noopener" style="color:var(--accent)">CI test ↗</a> proves the editor, this dashboard, and the ask bar always return the same number.
         self-hosting? <em>smolanalytics connect</em> wires Claude Desktop / Cursor in one command.
       </div>
     </div>
@@ -949,7 +949,7 @@
   <!-- zone 9: the covenant -->
   <div class="foot">
     every row, every event — no sampling, no thresholding, no "(other)" ·
-    ask == dashboard == MCP, <a href="https://github.com/Arjun0606/smolanalytics/blob/main/internal/api/agreement_test.go" target="_blank" rel="noopener">proven in CI ↗</a><br>
+    ask == dashboard == MCP, <a href="https://smolanalytics.com/trust" target="_blank" rel="noopener">proven in CI ↗</a><br>
     updated {{.Updated}} · page computed in {{.ComputeMS}}ms · <a href="https://smolanalytics.com" target="_blank">smolanalytics</a>
   </div>
 </main>
@@ -1106,7 +1106,7 @@
           var chart=chartFor(j.intent||'');
           if(chart)h+='<div class="achart" id="achart"></div>';
           h+='<div class="arow">'+
-            '<a class="proof" href="https://github.com/Arjun0606/smolanalytics/blob/main/internal/api/agreement_test.go" target="_blank" rel="noopener">✓ proven · matches dashboard</a>';
+            '<a class="proof" href="https://smolanalytics.com/trust" target="_blank" rel="noopener">✓ proven · matches dashboard</a>';
           if(j.computed_by)h+='<details class="amethod"><summary>how</summary><div style="padding-top:6px">'+esc(j.computed_by)+'</div></details>';
           if(chart)h+='<button class="abtn" id="askpin">pin to board</button>';
           h+='</div>';
@@ -1139,7 +1139,7 @@
           var card=document.createElement('div');card.className='bcard';
           card.innerHTML='<div class="bh"><span class="bq">'+esc(it.name)+'</span><span class="bx" title="unpin">unpin ×</span></div>'+
             '<div class="bbody"></div>'+
-            '<div class="bprov"><a class="proof" href="https://github.com/Arjun0606/smolanalytics/blob/main/internal/api/agreement_test.go" target="_blank" rel="noopener">✓ proven</a>'+
+            '<div class="bprov"><a class="proof" href="https://smolanalytics.com/trust" target="_blank" rel="noopener">✓ proven</a>'+
             '<span class="amethod">computed by /v1/'+esc(it.type==='trend'?'trends':it.type)+'</span></div>';
           card.querySelector('.bx').onclick=function(){
             fetch('/v1/insights/'+it.id,{method:'DELETE'}).then(loadBoard);
