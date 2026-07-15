@@ -89,3 +89,44 @@ func TestStampFirstTouch(t *testing.T) {
 		}
 	}
 }
+
+// TestReferrerFilterHostAware pins that an equality filter on referrer matches by HOST,
+// not exact URL. The cards display a host ("reddit.com") but events store a full landing
+// URL ("https://reddit.com/r/x"); without host-aware matching, clicking the referrer card
+// filtered to zero events, and the dashboard silently disagreed with the ask bar (which
+// already matches host-aware). Covers Eq, Neq, and In.
+func TestReferrerFilterHostAware(t *testing.T) {
+	ev := func(ref string) event.Event {
+		return event.Event{Name: "$pageview", Properties: map[string]any{"referrer": ref}}
+	}
+	evs := []event.Event{
+		ev("https://reddit.com/r/webdev"),
+		ev("https://www.reddit.com/"),
+		ev("http://news.ycombinator.com/item?id=1"),
+		ev("https://twitter.com/x/status/9"),
+	}
+	// Eq by host matches both reddit URLs (with and without www), nothing else.
+	got := Apply(evs, []Filter{{Property: "referrer", Op: Eq, Value: "reddit.com"}})
+	if len(got) != 2 {
+		t.Fatalf("referrer eq reddit.com (host-aware) = %d, want 2", len(got))
+	}
+	// A full-URL filter value still works (both sides host-normalized).
+	got = Apply(evs, []Filter{{Property: "referrer", Op: Eq, Value: "https://reddit.com/anything"}})
+	if len(got) != 2 {
+		t.Fatalf("referrer eq full-url (host-aware) = %d, want 2", len(got))
+	}
+	// Neq is the complement.
+	if got = Apply(evs, []Filter{{Property: "referrer", Op: Neq, Value: "reddit.com"}}); len(got) != 2 {
+		t.Fatalf("referrer neq reddit.com = %d, want 2", len(got))
+	}
+	// In matches host-aware across a list.
+	got = Apply(evs, []Filter{{Property: "referrer", Op: In, Value: []any{"reddit.com", "twitter.com"}}})
+	if len(got) != 3 {
+		t.Fatalf("referrer in [reddit,twitter] = %d, want 3", len(got))
+	}
+	// A non-referrer property stays EXACT (no host normalization leaking out).
+	plain := []event.Event{{Name: "x", Properties: map[string]any{"source": "reddit.com"}}}
+	if got = Apply(plain, []Filter{{Property: "source", Op: Eq, Value: "reddit"}}); len(got) != 0 {
+		t.Fatalf("source eq is exact, got %d matches for 'reddit' vs 'reddit.com'", len(got))
+	}
+}

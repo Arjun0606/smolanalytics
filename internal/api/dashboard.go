@@ -86,6 +86,31 @@ type segRow struct {
 	Count  int
 	Pct    int
 	BarPct int // width relative to the top group
+	// FilterProp/FilterVal drive click-to-filter for rows whose displayed value isn't a
+	// raw property (e.g. a first-touch CHANNEL, which may come from source, referrer host,
+	// or utm). Empty FilterProp = not click-filterable (e.g. "direct" = absence of a
+	// referrer). Other cards leave these empty and use a static data-fp in the template.
+	FilterProp string
+	FilterVal  string
+}
+
+// channelWithFilter is channelOf plus the property+value that click-to-filter should use
+// to isolate that channel. Referrer-host channels filter on referrer (now host-aware in
+// query.match); "direct" (no referrer at all) isn't a single-value filter, so it's left
+// non-clickable rather than filtering to a wrong subset.
+func channelWithFilter(e event.Event) (channel, fprop, fval string) {
+	if s, _ := e.Properties["source"].(string); s != "" {
+		return s, "source", s
+	}
+	if r, _ := e.Properties["referrer"].(string); r != "" {
+		if h := hostOf(r); h != "" {
+			return h, "referrer", h
+		}
+	}
+	if u, _ := e.Properties["utm_source"].(string); u != "" {
+		return u, "utm_source", u
+	}
+	return "direct", "", ""
 }
 
 // segConv is one segment's funnel conversion — the "pro converts 2x free" insight.
@@ -459,7 +484,28 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		}
 		if len(filters) > 0 {
 			if err := query.Validate(filters); err == nil {
-				evs = query.ApplyMode(evs, filters, anyMode)
+				// Acquisition/user attributes (referrer, source, device, country, utm…) scope
+				// by USER — keep every event of a matching user, including conversion events
+				// that don't carry the attribute. Filtering EVENTS by "referrer=reddit" would
+				// drop the signup events (referrer lives only on the landing pageview) and blank
+				// the whole dashboard. Other props filter events directly. anyMode mixing both
+				// classes can't be split without breaking the OR, so fall back to event-level.
+				var userF, evF []query.Filter
+				for _, f := range filters {
+					if userAttr(f.Property) {
+						userF = append(userF, f)
+					} else {
+						evF = append(evF, f)
+					}
+				}
+				if len(userF) > 0 && !(anyMode && len(evF) > 0) {
+					evs = query.ScopeUsers(evs, userF, anyMode)
+					if len(evF) > 0 {
+						evs = query.ApplyMode(evs, evF, false)
+					}
+				} else {
+					evs = query.ApplyMode(evs, filters, anyMode)
+				}
 			}
 		}
 		for i, raw := range fs {
@@ -834,29 +880,65 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Segmentation: the headline event broken down by the detected source property.
-	if srcProp != "" {
-		var headline []event.Event
+	// Segmentation: the headline event by FIRST-TOUCH CHANNEL, not by a raw "source"
+	// property on the conversion event. Conversion events usually carry a uniform
+	// source ("web") or none, so a naive breakdown collapsed to "web 100%" (or, when
+	// source was absent, silently fell back to whatever property was most common —
+	// country/path). channelWithFilter attributes each converter by the channel of
+	// their earliest event (source → referrer host → utm → direct), the same first-touch
+	// model the ask bar and funnel breakdown use.
+	{
+		firstOf := map[string]event.Event{}
+		for _, e := range evs {
+			if cur, ok := firstOf[e.DistinctID]; !ok || e.Timestamp.Before(cur.Timestamp) {
+				firstOf[e.DistinctID] = e
+			}
+		}
+		converters := map[string]bool{}
 		for _, e := range evs {
 			if e.Name == trendEvent {
-				headline = append(headline, e)
+				converters[e.DistinctID] = true
 			}
 		}
-		groups := query.Breakdown(headline, srcProp)
-		top := 0
-		if len(groups) > 0 {
-			top = groups[0].Count
+		type chAgg struct {
+			count       int
+			fprop, fval string
 		}
-		for _, g := range groups {
-			row := segRow{Value: g.Value, Count: g.Count}
-			if len(headline) > 0 {
-				row.Pct = int(math.Round(float64(g.Count) / float64(len(headline)) * 100))
+		tally := map[string]*chAgg{}
+		total := 0
+		for uid := range converters {
+			channel, fp, fv := channelWithFilter(firstOf[uid])
+			if tally[channel] == nil {
+				tally[channel] = &chAgg{fprop: fp, fval: fv}
+			}
+			tally[channel].count++
+			total++
+		}
+		rows := make([]segRow, 0, len(tally))
+		top := 0
+		for ch, a := range tally {
+			if a.count > top {
+				top = a.count
+			}
+			rows = append(rows, segRow{Value: ch, Count: a.count, FilterProp: a.fprop, FilterVal: a.fval})
+		}
+		sort.Slice(rows, func(i, j int) bool {
+			if rows[i].Count != rows[j].Count {
+				return rows[i].Count > rows[j].Count
+			}
+			return rows[i].Value < rows[j].Value
+		})
+		for i := range rows {
+			if total > 0 {
+				rows[i].Pct = int(math.Round(float64(rows[i].Count) / float64(total) * 100))
 			}
 			if top > 0 {
-				row.BarPct = int(math.Round(float64(g.Count) / float64(top) * 100))
+				rows[i].BarPct = int(math.Round(float64(rows[i].Count) / float64(top) * 100))
 			}
-			vm.BySource = append(vm.BySource, row)
 		}
+		vm.BySource = rows
+		vm.HasSource = len(rows) > 0
+		vm.SourceTitle = trendEvent + " by channel"
 	}
 
 	if segProp != "" {

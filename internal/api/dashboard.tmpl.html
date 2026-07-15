@@ -647,7 +647,7 @@
     {{if .HasSource}}
     <div class="pane" id="pane-sources">
       <h3>{{.SourceTitle}}</h3>
-      {{range .BySource}}<div class="seg" data-fp="{{$.SourceProp}}" data-fv="{{.Value}}" title="click to filter every zone to this segment"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}
+      {{range .BySource}}<div class="seg"{{if .FilterProp}} data-fp="{{.FilterProp}}" data-fv="{{.FilterVal}}" title="click to filter every zone to this channel"{{end}}><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}
     </div>
     {{end}}
 

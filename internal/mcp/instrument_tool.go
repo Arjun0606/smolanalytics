@@ -180,10 +180,18 @@ func (s *Server) callInstrument(name string, args json.RawMessage) (bool, string
 				missingN++
 			}
 		}
+		note := "FIRING = proven end to end. WIRED = code is there, just exercise the flow. MISSING = not wired; fix it. Re-run after clicking through the app."
+		// A typo'd or wrong repo_path must not silently masquerade as "no code access" —
+		// otherwise the user thinks they pointed us at their repo and never learns the
+		// path was bad. If they explicitly passed a path we couldn't read as a project,
+		// say so loudly, with the path, so it's fixable.
+		if strings.TrimSpace(p.RepoPath) != "" && !haveCode {
+			note = fmt.Sprintf("⚠ repo_path %q doesn't look like a code project (no package.json/go.mod/src/… found there) — the code-side checks were skipped, so any non-FIRING row reflects a bad path, NOT a missing call-site. Fix the path and re-run. "+note, p.RepoPath)
+		}
 		out := map[string]any{
 			"summary": fmt.Sprintf("%d firing, %d wired-not-yet-fired, %d missing (of %d planned)", firingN, wiredN, missingN, len(plan.Events)),
 			"events":  rows,
-			"note":    "FIRING = proven end to end. WIRED = code is there, just exercise the flow. MISSING = not wired; fix it. Re-run after clicking through the app.",
+			"note":    note,
 		}
 		b, _ := json.MarshalIndent(out, "", "  ")
 		return true, string(b), nil

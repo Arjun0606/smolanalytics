@@ -41,11 +41,23 @@ type Filter struct {
 
 func (f Filter) match(e event.Event) bool {
 	v, ok := e.Properties[f.Property]
+	// referrer is stored as a full landing URL but shown/filtered by host — so an
+	// equality filter must compare HOSTS, exactly like the ask-side segment matcher
+	// (hostEquals) does. Without this, clicking "reddit.com" on the referrers card
+	// filters referrer==reddit.com against "https://reddit.com/r/x" and matches nothing,
+	// and the dashboard silently disagrees with "how's reddit doing" over MCP.
+	isRef := f.Property == "referrer"
+	eq := func(a, b any) bool {
+		if isRef {
+			return hostOfURL(toStr(a)) == hostOfURL(toStr(b))
+		}
+		return toStr(a) == toStr(b)
+	}
 	switch f.Op {
 	case Eq:
-		return ok && toStr(v) == toStr(f.Value)
+		return ok && eq(v, f.Value)
 	case Neq:
-		return !ok || toStr(v) != toStr(f.Value)
+		return !ok || !eq(v, f.Value)
 	case Contains:
 		return ok && strings.Contains(toStr(v), toStr(f.Value))
 	case Gt:
@@ -53,9 +65,9 @@ func (f Filter) match(e event.Event) bool {
 	case Lt:
 		return ok && toNum(v) < toNum(f.Value)
 	case In:
-		return ok && inList(v, f.Value)
+		return ok && inListEq(v, f.Value, eq)
 	case NotIn:
-		return !ok || !inList(v, f.Value)
+		return !ok || !inListEq(v, f.Value, eq)
 	case Set:
 		return ok
 	case NotSet:
@@ -122,6 +134,21 @@ func inList(v any, list any) bool {
 	s := toStr(v)
 	for _, item := range arr {
 		if toStr(item) == s {
+			return true
+		}
+	}
+	return false
+}
+
+// inListEq is inList with a caller-supplied equality (so referrer IN (...) can match
+// host-aware, consistent with the Eq path).
+func inListEq(v any, list any, eq func(a, b any) bool) bool {
+	arr, ok := list.([]any)
+	if !ok {
+		return false
+	}
+	for _, item := range arr {
+		if eq(v, item) {
 			return true
 		}
 	}
