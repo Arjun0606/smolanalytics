@@ -100,16 +100,20 @@ func Generate(evs []event.Event) []Finding {
 			}
 		}
 		if worstDrop > 0 {
-			out = append(out, Finding{
+			dropoff := Finding{
 				Severity: "warn",
 				Title:    fmt.Sprintf("Biggest drop-off: %s → %s", worstFrom, worstTo),
 				Detail: qualify(fmt.Sprintf("only %d%% continue; %d users fall off here. Overall %s→%s conversion is %d%%.",
 					worstPct, worstDrop, fr.Steps[0].Event, fr.Steps[len(fr.Steps)-1].Event, int(fr.OverallConversion*100+0.5)), worstBase),
-			})
-			// 1b) name the segment to blame: if one property value converts far worse
-			// through this exact step, that's the thing to fix — not the average.
+			}
+			// name the segment to blame — the single most actionable thing on the page
+			// ("it's mobile, 1.6× worse"). When we have it, LEAD with it and let the raw
+			// drop-off follow as context, so the verdict opens with the root cause, not the
+			// symptom.
 			if f := segmentBlame(evs, worstFrom, worstTo); f != nil {
-				out = append(out, *f)
+				out = append(out, *f, dropoff)
+			} else {
+				out = append(out, dropoff)
 			}
 		}
 	}

@@ -133,7 +133,11 @@ func weighted(r *rand.Rand, weights ...int) int {
 func Seed(s store.Store) error {
 	r := rand.New(rand.NewSource(42))
 	now := time.Now().UTC()
-	start := now.AddDate(0, 0, -29).Truncate(24 * time.Hour)
+	// 8 weeks of history: enough that the 30-day default view has a full prior-30-day
+	// window to compare against (so every KPI shows a real delta), and enough cohorts for
+	// the retention triangle + lifecycle to read richly.
+	const seedDays = 56
+	start := now.AddDate(0, 0, -(seedDays - 1)).Truncate(24 * time.Hour)
 	sources := []string{"google", "twitter", "hacker news", "direct", "reddit", "chatgpt", "claude", "perplexity"}
 	id := 0
 	emit := func(name, user string, t time.Time, props map[string]any) error {
@@ -147,7 +151,7 @@ func Seed(s store.Store) error {
 		return s.Ingest(event.Event{ID: fmt.Sprintf("e%d", id), Name: name, DistinctID: user, Timestamp: t, Properties: props})
 	}
 
-	for day := 0; day < 30; day++ {
+	for day := 0; day < seedDays; day++ {
 		dayStart := start.AddDate(0, 0, day)
 		// window-shoppers: visitors who browse but never sign up (~40% extra), so
 		// conversion rates read like reality instead of a rigged demo

@@ -210,6 +210,8 @@ type dashVM struct {
 	SearchRows []segRow // query → clicks, bar-scaled
 	// named goals, resolved over the trailing 30 days
 	Goals []goalCard
+	// premium KPI cards (the glance, reshaped) — each a number + delta + a real sparkline
+	KPIs []kpiCard
 	// the depth deck — the PostHog-tier analyses (paths / lifecycle / stickiness) that
 	// used to live only in the ask bar + MCP, surfaced as cards so the dashboard SHOWS
 	// its depth instead of reading like a web-analytics tool. Computed with the exact
@@ -387,6 +389,86 @@ type goalCard struct {
 	TopChannel  string
 }
 
+// kpiCard is one premium headline metric: a number, its delta vs the prior window, and a
+// real sparkline of the trailing daily series. Accent flags the conversion tile.
+type kpiCard struct {
+	Label, Value, Delta, Dir string // Dir: "up" | "down" | ""
+	Accent                   bool
+	Spark                    *sparkVM
+}
+
+// sparkVM holds the precomputed SVG geometry for a sparkline — points are laid out in a
+// 64×26 viewBox (Go does the math; the template just draws), with the last point marked.
+type sparkVM struct {
+	Line, Area string
+	EndX, EndY float64
+	EndClass   string // "good" | "warn" | ""
+}
+
+// buildSpark turns a daily series into sparkline geometry. Fewer than 2 points → no spark.
+func buildSpark(series []int, endClass string) *sparkVM {
+	if len(series) < 2 {
+		return nil
+	}
+	const w, h, pad = 64.0, 26.0, 2.0
+	max := 1
+	for _, v := range series {
+		if v > max {
+			max = v
+		}
+	}
+	n := len(series)
+	pts := make([]string, n)
+	var lx, ly float64
+	for i, v := range series {
+		x := float64(i) / float64(n-1) * w
+		y := h - pad - float64(v)/float64(max)*(h-2*pad)
+		pts[i] = fmt.Sprintf("%.1f,%.1f", x, y)
+		lx, ly = x, y
+	}
+	line := strings.Join(pts, " ")
+	return &sparkVM{Line: line, Area: fmt.Sprintf("%s %.1f,%.1f 0.0,%.1f", line, w, h, h), EndX: lx, EndY: ly, EndClass: endClass}
+}
+
+// dailySeries returns per-day counts over the last `days` calendar days ending today.
+// countUsers=true counts DISTINCT users per day (visitors); false counts matching events.
+func dailySeries(evs []event.Event, match func(event.Event) bool, days int, now time.Time, countUsers bool) []int {
+	if days < 2 {
+		days = 2
+	}
+	if days > 30 {
+		days = 30
+	}
+	today := now.Truncate(24 * time.Hour)
+	from := today.AddDate(0, 0, -(days - 1))
+	out := make([]int, days)
+	var seen []map[string]bool
+	if countUsers {
+		seen = make([]map[string]bool, days)
+		for i := range seen {
+			seen[i] = map[string]bool{}
+		}
+	}
+	for _, e := range evs {
+		if !match(e) || e.Timestamp.Before(from) {
+			continue
+		}
+		idx := int(e.Timestamp.Truncate(24*time.Hour).Sub(from).Hours() / 24)
+		if idx < 0 || idx >= days {
+			continue
+		}
+		if countUsers {
+			if !seen[idx][e.DistinctID] {
+				seen[idx][e.DistinctID] = true
+				out[idx]++
+			}
+		} else {
+			out[idx]++
+		}
+	}
+	return out
+}
+
 // stickyVM is the DAU/WAU/MAU engagement ratio card.
 type stickyVM struct {
 	DAU, WAU, MAU int
@@ -407,6 +489,51 @@ type lifecycleBar struct {
 type pathLevelVM struct {
 	Depth int
 	Steps []segRow
+}
+
+// buildKPIs assembles the headline metric cards from the already-computed numbers, each
+// with a real trailing-daily sparkline. This is the glance, elevated — the first thing a
+// builder sees, and it should feel effortless: the numbers that matter, moving.
+func buildKPIs(vm *dashVM, evs []event.Event, trendEvent string, days int, now time.Time) {
+	dir := func(d string) string {
+		if d == "" {
+			return ""
+		}
+		switch d[0] {
+		case '+':
+			return "up"
+		case '-':
+			return "down"
+		}
+		return ""
+	}
+	endOf := func(d string) string {
+		switch dir(d) {
+		case "up":
+			return "good"
+		case "down":
+			return "warn"
+		}
+		return ""
+	}
+	var cards []kpiCard
+	if vm.HasWeb {
+		d := vm.VisitorsDelta
+		cards = append(cards, kpiCard{
+			Label: fmt.Sprintf("Visitors · %dd", days), Value: comma(vm.Visitors), Delta: d, Dir: dir(d),
+			Spark: buildSpark(dailySeries(evs, func(e event.Event) bool { return e.Name == "$pageview" }, days, now, true), endOf(d)),
+		})
+	}
+	sd := vm.SignupsDelta
+	cards = append(cards, kpiCard{
+		Label: fmt.Sprintf("%s · %dd", vm.StatEventLabel, days), Value: comma(vm.Signups), Delta: sd, Dir: dir(sd),
+		Spark: buildSpark(dailySeries(evs, func(e event.Event) bool { return e.Name == trendEvent }, days, now, false), endOf(sd)),
+	})
+	if vm.ConvLabel != "" {
+		cards = append(cards, kpiCard{Label: vm.ConvLabel, Value: fmt.Sprintf("%d%%", vm.OverallConv), Accent: true})
+	}
+	cards = append(cards, kpiCard{Label: "Users · all time", Value: comma(vm.TotalUsers)})
+	vm.KPIs = cards
 }
 
 // buildDepthCards computes the paths / lifecycle / stickiness deck from the SAME engine
@@ -1235,6 +1362,8 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 			vm.HoursMax = maxH
 		}
 	}
+
+	buildKPIs(&vm, evs, trendEvent, rangeDays, nowT)
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	vm.ComputeMS = int(time.Since(renderStart).Milliseconds())

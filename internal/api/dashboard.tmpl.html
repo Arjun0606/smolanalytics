@@ -57,8 +57,9 @@
   header{border-bottom:1px solid var(--line);background:var(--bg)}
   .bar{display:flex;align-items:center;gap:12px;min-height:48px;flex-wrap:nowrap}
   @media(max-width:880px){.bar{flex-wrap:wrap;padding:6px 0}}
-  .logo{font-family:var(--mono);font-weight:600;letter-spacing:-.02em;font-size:15px;white-space:nowrap}
-  .logo b{color:var(--accent)}
+  .logo{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-weight:600;letter-spacing:-.02em;font-size:15px;white-space:nowrap}
+  .logo b{color:var(--accent);font-weight:600}
+  .logo .lmk{display:inline-grid;place-items:center;width:19px;height:19px;border-radius:5px;background:var(--accent);color:var(--bg);font-weight:700;font-size:13px}
   .siteselect{background:transparent;border:1px solid var(--line);color:var(--mut);font-family:var(--mono);font-size:11px;padding:4px 8px;border-radius:4px;max-width:180px}
   .spacer{flex:1}
   .hlink{color:var(--mut);font-family:var(--mono);font-size:11px;text-decoration:none;white-space:nowrap;flex:none;padding:6px 4px;margin:-6px -4px}
@@ -127,8 +128,26 @@
   .abtn:hover{border-color:var(--accent);color:var(--accent)}
   .abtn.pinned{border-color:var(--accent);color:var(--accent)}
 
-  /* zone 3 — verdict sentences (not a card) */
+  /* zone 3 — the verdict, led by a first-class insight callout: the one thing to fix,
+     stated plainly, with the proof and a way in. This IS the product's job-done-for-you. */
   .verdict{margin:var(--zone) 0 0}
+  .callout{position:relative;display:grid;grid-template-columns:auto 1fr auto;gap:20px;align-items:start;
+    border:1px solid var(--line2);border-radius:var(--r-card);background:var(--s1);padding:17px 20px 17px 22px;overflow:hidden;margin-bottom:12px}
+  .callout::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent)}
+  .callout.warn::before{background:var(--warn)}
+  .callout.warn{background:radial-gradient(130% 150% at 0% 0%,rgba(229,84,75,.07),transparent 52%),var(--s1)}
+  .co-tag{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--accent);font-weight:700;white-space:nowrap;padding-top:3px}
+  .callout.warn .co-tag{color:var(--warn)}
+  .co-ic{width:15px;height:15px;border-radius:50%;border:1.5px solid currentColor;display:grid;place-items:center;font-size:10px;line-height:1;font-weight:700}
+  .co-title{font-size:16.5px;font-weight:600;line-height:1.3;letter-spacing:-.012em;color:var(--fg)}
+  .co-detail{margin-top:6px;color:var(--mut);font-size:13px;line-height:1.5}
+  .co-meta{margin-top:11px;display:flex;gap:8px 14px;flex-wrap:wrap;align-items:center;font-family:var(--mono);font-size:10.5px;color:var(--dis)}
+  .co-meta .co-prov{color:var(--mut);border:1px solid var(--line);border-radius:4px;padding:3px 8px}
+  .co-act{align-self:center}
+  .co-go{display:inline-block;background:var(--accent);color:var(--bg);font-family:var(--mono);font-size:12px;font-weight:700;border-radius:var(--r-ctl);padding:8px 14px;text-decoration:none;white-space:nowrap;cursor:pointer;transition:background var(--t-fast)}
+  .co-go:hover{background:var(--accent-hi)}
+  .verdict-more{margin-top:2px}
+  @media(max-width:720px){.callout{grid-template-columns:1fr;gap:12px}.co-act{justify-self:start}}
   .vline{padding:4px 0;font-size:var(--fs-lead);line-height:var(--lh-lead)}
   .vline .vdot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-right:9px;position:relative;top:-2px;animation:pulse 1.6s infinite}
   .vline.warn .vdot{background:var(--warn);animation:none}
@@ -148,13 +167,18 @@
   .weekbody .vrow .vd{color:var(--mut)}
   .weekbody .vrow.warn .vt{color:var(--warn)}
 
-  /* zone 4 — glance row: numbers separated by hairlines, no card chrome */
-  .glance{display:grid;grid-template-columns:repeat(auto-fit,minmax(126px,1fr));gap:0;margin:var(--zone) 0 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
-  .gtile{padding:12px 16px;border-right:1px solid var(--line)}
-  .gtile:last-child{border-right:none}
-  .gtile .l{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--mut2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .gtile .v{margin-top:4px}
-  .gtile .v.acc{color:var(--accent)}
+  /* zone 4 — KPI cards: number + delta + a real trailing sparkline */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:var(--gap);margin:var(--zone) 0 0}
+  .kpi{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:var(--r-card);background:var(--s1);padding:14px 15px 15px}
+  .kpi:hover{border-color:var(--line2)}
+  .kpi .kk{font-family:var(--mono);font-size:11px;letter-spacing:.02em;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:capitalize}
+  .kpi .kv{font-family:var(--mono);font-size:27px;font-weight:600;letter-spacing:-.02em;margin-top:7px;line-height:1;color:var(--fg)}
+  .kpi .kv.acc{color:var(--accent)}
+  .kpi .kd{font-size:11px;margin-top:8px;color:var(--mut);white-space:nowrap}
+  .kpi .kd.up{color:var(--ok)} .kpi .kd.down{color:var(--warn)}
+  .kpi .kd .kvp{color:var(--dis)}
+  .kpi .spark{position:absolute;right:12px;bottom:13px;width:64px;height:26px;opacity:.85;pointer-events:none}
+  .kpi .spark .spend.good{fill:var(--ok)} .kpi .spark .spend.warn{fill:var(--warn)}
 
   /* zone 5 — the one chart */
   .chartzone{margin:var(--zone) 0 0}
@@ -351,7 +375,8 @@
   /* ═══ THE DECK — always-visible 2-col card grid replaces the 13-tab rail ═══ */
   .deck{display:grid;grid-template-columns:1fr 1fr;gap:var(--gap);margin:var(--zone) 0 0;align-items:start}
   @media(max-width:880px){.deck{grid-template-columns:1fr}}
-  .deck .pane{display:block;background:var(--s1);border:1px solid var(--line);border-radius:var(--r-card);padding:var(--card-pad);min-width:0}
+  .deck .pane{display:block;background:var(--s1);border:1px solid var(--line);border-radius:var(--r-card);padding:var(--card-pad);min-width:0;transition:border-color var(--t-fast)}
+  .deck .pane:hover{border-color:var(--line2)}
   .deck .pane.wide{grid-column:1/-1}
   .deck #pane-retention{overflow-x:auto}
   .deck .pane h3{margin:0 0 12px}
@@ -396,7 +421,7 @@
 </head>
 <body>
 <header><div class="wrap bar">
-  <div class="logo">smol<b>analytics</b></div>
+  <div class="logo"><span class="lmk">s</span>smol<b>analytics</b></div>
   {{if gt (len .Sites) 1}}<select class="siteselect" onchange="location.href=this.value?('/?site='+encodeURIComponent(this.value)):'/'" title="scope every report to one site">
     <option value="">all sites</option>
     {{range .Sites}}<option value="{{.}}" {{if eq . $.Site}}selected{{end}}>{{.}}</option>{{end}}
@@ -474,21 +499,29 @@
   <!-- zone 3: the verdict as sentences. empty verdict = one calm line, never a card -->
   <div class="verdict">
     <div id="verdict">
-      {{range .Verdict}}<div class="vline{{if eq .Severity "warn"}} warn{{end}}"><span class="vdot"></span><span class="vt">{{.Title}}</span><span class="vsep">·</span><span class="vd">{{.Detail}}</span><a class="vwhy" data-q="{{.Title}}">why? →</a></div>
+      {{if .Verdict}}{{$first := index .Verdict 0}}<div class="callout{{if eq $first.Severity "warn"}} warn{{end}}">
+        <div class="co-tag"><span class="co-ic">{{if eq $first.Severity "warn"}}!{{else}}✦{{end}}</span>{{if eq $first.Severity "warn"}}Fix first{{else}}Today&rsquo;s read{{end}}</div>
+        <div class="co-body">
+          <div class="co-title">{{$first.Title}}</div>
+          <div class="co-detail">{{$first.Detail}}</div>
+          <div class="co-meta"><span class="co-prov">computed, not guessed</span><span>a CI test proves this equals the dashboard — it can&rsquo;t be faked</span></div>
+        </div>
+        <div class="co-act"><a class="co-go" data-q="{{$first.Title}}">Show me &rarr;</a></div>
+      </div>
+      {{if gt (len .Verdict) 1}}<div class="verdict-more">{{range slice .Verdict 1}}<div class="vline{{if eq .Severity "warn"}} warn{{end}}"><span class="vdot"></span><span class="vt">{{.Title}}</span><span class="vsep">·</span><span class="vd">{{.Detail}}</span><a class="vwhy" data-q="{{.Title}}">why? &rarr;</a></div>{{end}}</div>{{end}}
       {{else}}<div class="vcalm">nothing unusual right now — traffic and conversion look within normal range.</div>{{end}}
     </div>
     <details class="weekline"><summary>this week →</summary><div class="weekbody" id="brief"><div class="exsummary">…</div></div></details>
   </div>
 
-  <!-- zone 4: the glance row — every number carries its delta vs the prior window -->
-  <div class="glance">
-    {{if .HasWeb}}<div class="gtile"><div class="l">Visitors · {{.RangeDays}}d</div><div class="v">{{comma .Visitors}}</div>{{if .VisitorsDelta}}<div class="d{{if eq (slice .VisitorsDelta 0 1) "+"}} up{{else if eq (slice .VisitorsDelta 0 1) "-"}} down{{end}}">{{.VisitorsDelta}} vs prior {{$.RangeDays}}d</div>{{end}}</div>
-    <div class="gtile"><div class="l">Pageviews · {{.RangeDays}}d</div><div class="v">{{comma .Pageviews}}</div>{{if .PageviewsDelta}}<div class="d{{if eq (slice .PageviewsDelta 0 1) "+"}} up{{else if eq (slice .PageviewsDelta 0 1) "-"}} down{{end}}">{{.PageviewsDelta}} vs prior {{$.RangeDays}}d</div>{{end}}</div>{{end}}
-    <div class="gtile"><div class="l">Users · all time</div><div class="v">{{comma .TotalUsers}}</div></div>
-    <div class="gtile"><div class="l">{{.StatEventLabel}} · {{.RangeDays}}d</div><div class="v">{{comma .Signups}}</div>{{if .SignupsDelta}}<div class="d{{if eq (slice .SignupsDelta 0 1) "+"}} up{{else if eq (slice .SignupsDelta 0 1) "-"}} down{{end}}">{{.SignupsDelta}} vs prior {{$.RangeDays}}d</div>{{end}}</div>
-    <div class="gtile"><div class="l">{{.ConvLabel}}</div><div class="v acc">{{.OverallConv}}%</div></div>
-    {{if .HasEngagement}}<div class="gtile"><div class="l">Engaged · avg</div><div class="v" style="font-size:22px;padding-top:6px">{{.EngagedHuman}}</div></div>{{end}}
-    {{if gt .AIVisitors 0}}<div class="gtile"><div class="l">From AI</div><div class="v acc">{{comma .AIVisitors}}</div></div>{{end}}
+  <!-- zone 4: KPI cards — the numbers that matter, each with its delta and a real sparkline -->
+  <div class="kpis">
+    {{range .KPIs}}<div class="kpi">
+      <div class="kk">{{.Label}}</div>
+      <div class="kv{{if .Accent}} acc{{end}}">{{.Value}}</div>
+      {{if .Delta}}<div class="kd {{.Dir}}">{{if eq .Dir "up"}}&#9650;{{else if eq .Dir "down"}}&#9660;{{end}} {{.Delta}} <span class="kvp">vs prior</span></div>{{else}}<div class="kd"><span class="kvp">&nbsp;</span></div>{{end}}
+      {{with .Spark}}<svg class="spark" viewBox="0 0 64 26" fill="none" preserveAspectRatio="none" aria-hidden="true"><polygon points="{{.Area}}" fill="var(--accent)" opacity=".07"/><polyline points="{{.Line}}" stroke="var(--spark)" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/>{{if .EndClass}}<circle cx="{{.EndX}}" cy="{{.EndY}}" r="2" class="spend {{.EndClass}}"/>{{end}}</svg>{{end}}
+    </div>{{end}}
   </div>
 
   <!-- zone 5: exactly one chart -->
@@ -939,7 +972,7 @@
 
     // chips + verdict "why?" links both feed the ask bar
     document.addEventListener('click',function(e){
-      var c=e.target.closest('.chip[data-q],.vwhy[data-q]');if(!c)return;
+      var c=e.target.closest('.chip[data-q],.vwhy[data-q],.co-go[data-q]');if(!c)return;
       q.value=c.getAttribute('data-q');f.dispatchEvent(new Event('submit',{cancelable:true}));
       q.scrollIntoView({behavior:'smooth',block:'center'});
     });
@@ -1471,12 +1504,20 @@
       fetch('/v1/notable').then(function(r){return r.json()}).then(function(j){
         var fs=(j&&j.findings)||[];
         if(!fs.length){vEl.innerHTML='<div class="vcalm">nothing unusual right now — traffic and conversion look within normal range.</div>';return;}
-        vEl.innerHTML='';
-        fs.forEach(function(fd){
-          var row=document.createElement('div'); row.className='vline'+(fd.severity==='warn'?' warn':'');
-          row.innerHTML='<span class="vdot"></span><span class="vt">'+esc(fd.title)+'</span><span class="vsep">·</span><span class="vd">'+esc(fd.detail)+'</span><a class="vwhy" data-q="'+esc(fd.title)+'">why? →</a>';
-          vEl.appendChild(row);
-        });
+        // build the SAME insight callout the server renders (lead finding as the callout,
+        // the rest as secondary lines), so a client refresh never downgrades the design.
+        var f0=fs[0], warn=(f0.severity==='warn');
+        var html='<div class="callout'+(warn?' warn':'')+'">'+
+          '<div class="co-tag"><span class="co-ic">'+(warn?'!':'✦')+'</span>'+(warn?'Fix first':'Today’s read')+'</div>'+
+          '<div class="co-body"><div class="co-title">'+esc(f0.title)+'</div>'+
+          '<div class="co-detail">'+esc(f0.detail)+'</div>'+
+          '<div class="co-meta"><span class="co-prov">computed, not guessed</span><span>a CI test proves this equals the dashboard — it can’t be faked</span></div></div>'+
+          '<div class="co-act"><a class="co-go" data-q="'+esc(f0.title)+'">Show me →</a></div></div>';
+        if(fs.length>1){html+='<div class="verdict-more">';
+          for(var i=1;i<fs.length;i++){var fd=fs[i];
+            html+='<div class="vline'+(fd.severity==='warn'?' warn':'')+'"><span class="vdot"></span><span class="vt">'+esc(fd.title)+'</span><span class="vsep">·</span><span class="vd">'+esc(fd.detail)+'</span><a class="vwhy" data-q="'+esc(fd.title)+'">why? →</a></div>';}
+          html+='</div>';}
+        vEl.innerHTML=html;
       }).catch(function(){});
     }
 
