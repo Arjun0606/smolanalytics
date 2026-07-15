@@ -24,8 +24,61 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/engagement"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
+	"github.com/Arjun0606/smolanalytics/internal/paths"
 	"github.com/Arjun0606/smolanalytics/internal/retention"
 )
+
+// answerPaths answers "what do users do after signup" from the paths (user-journey)
+// report — the SAME paths.After the MCP paths tool and the dashboard user-journeys card
+// use, so the three surfaces agree. The anchor is the event named after "after", else the
+// conventional conversion, else the highest-volume event.
+func answerPaths(evs []event.Event, q string, vol []string) string {
+	start := ""
+	if i := strings.Index(q, "after "); i >= 0 {
+		rest := strings.ToLower(q[i+6:])
+		for _, name := range vol {
+			if strings.Contains(rest, strings.ToLower(name)) {
+				start = name
+				break
+			}
+		}
+	}
+	if start == "" {
+		start = pickConversion(evs, vol)
+	}
+	if start == "" && len(vol) > 0 {
+		start = vol[0]
+	}
+	if start == "" {
+		return "No events to trace a journey from yet — send some custom events first."
+	}
+	pr := paths.After(evs, start, 3)
+	if pr.Users == 0 {
+		return fmt.Sprintf("No users have a %q event to trace forward from.", start)
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "After %q (%d users), the most common next steps:", start, pr.Users)
+	any := false
+	for _, lvl := range pr.Levels {
+		if len(lvl.Steps) == 0 {
+			continue
+		}
+		any = true
+		parts := make([]string, 0, 3)
+		for i, s := range lvl.Steps {
+			if i >= 3 {
+				break
+			}
+			parts = append(parts, fmt.Sprintf("%s (%d, %d%%)", s.Event, s.Count,
+				int(float64(s.Count)/float64(pr.Users)*100+0.5)))
+		}
+		fmt.Fprintf(&b, "\n  next: %s", strings.Join(parts, " · "))
+	}
+	if !any {
+		return fmt.Sprintf("%d users did %q, but nothing tracked after it yet — add events for the next steps to see the journey.", pr.Users, start)
+	}
+	return b.String()
+}
 
 // askSeg is one extracted segment: a real property/value pair plus the human label
 // used in the answer ("from reddit.com", "on iOS", "from India").

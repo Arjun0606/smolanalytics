@@ -149,6 +149,8 @@ func reportForIntent(intent askIntent) string {
 		report = "the traffic-by-source ranking (referrer breakdown of the web-overview report, direct included)"
 	case intentStickiness:
 		report = "the stickiness report (DAU/MAU over exact distinct users)"
+	case intentPaths:
+		report = "the paths (user-journey) report — the ranked next events after the anchor"
 	case intentLifecycle:
 		report = "the lifecycle report (new vs returning vs dormant, exact distinct users)"
 	case intentHours:
@@ -191,6 +193,7 @@ const (
 	intentSources    askIntent = "sources"
 	intentStickiness askIntent = "stickiness"
 	intentLifecycle  askIntent = "lifecycle"
+	intentPaths      askIntent = "paths"
 	intentHours      askIntent = "hours"
 	intentEntryPages askIntent = "entrypages"
 	intentPeakDay    askIntent = "peakday"
@@ -236,7 +239,10 @@ func classifyAsk(q string) askIntent {
 	case hasAny(q, "when are users most active", "when are people most active", "what hour", "which hour",
 		"busiest hour", "busiest time", "peak hour", "time of day", "hour of the day", "hour of day"):
 		return intentHours
-	case hasAny(q, "stickiness", "how sticky", "dau over mau", "dau/mau", "dau to mau"):
+	case hasAny(q, "what do users do after", "what do people do after", "what happens after",
+		"do next", "do after they", "what do they do next", "user journey", "user journeys", "pathfinder"):
+		return intentPaths
+	case hasAny(q, "stickiness", "sticky", "dau over mau", "dau/mau", "dau to mau"):
 		return intentStickiness
 	case hasAny(q, "churn", "dormant", "went quiet", "stopped coming", "stopped using",
 		"new or returning", "new vs returning", "returning vs new", "returning users", "returning visitors"):
@@ -376,6 +382,11 @@ func answer(q string, evs []event.Event, now time.Time) string {
 	// value" isn't hijacked into a checkout COUNT by the named-event branch below.
 	if intent == intentMeasure {
 		return answerMeasure(scoped, q, volAll, win)
+	}
+	// paths must dispatch before the named-event branch below, or "what do users do after
+	// signup" gets hijacked into a signup COUNT instead of the journey.
+	if intent == intentPaths {
+		return answerPaths(evs, q, volAll)
 	}
 
 	// The comparison and segment layer (ask_scope.go): "this week vs last week",
@@ -519,6 +530,8 @@ func answerScopedIntent(intent askIntent, evs []event.Event, scoped []event.Even
 		return answerSources(evs, win)
 	case intentStickiness:
 		return answerStickiness(evs, now)
+	case intentPaths:
+		return answerPaths(evs, q, volAll)
 	case intentLifecycle:
 		return answerLifecycle(evs, q, win, now)
 	case intentHours:
