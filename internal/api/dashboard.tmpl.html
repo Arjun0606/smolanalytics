@@ -651,6 +651,57 @@
     </div>
     {{end}}
 
+    {{if .HasPaths}}
+    <div class="pane wide" id="pane-paths">
+      <h3>user journeys <span class="sub">· what users do after {{.PathStart}}</span></h3>
+      <div style="display:flex;gap:14px;overflow-x:auto;padding-bottom:2px">
+        {{range .PathLevels}}
+        <div style="min-width:170px;flex:1">
+          <div class="zonelbl" style="margin:0 0 6px">then ({{.Depth}})</div>
+          {{range .Steps}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}
+        </div>
+        {{end}}
+      </div>
+    </div>
+    {{end}}
+
+    {{if .HasLifecycle}}
+    <div class="pane wide" id="pane-lifecycle">
+      <h3>lifecycle <span class="sub">· who's active each day — new vs loyal</span></h3>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;font-family:var(--mono);font-size:10px;color:var(--mut);margin:2px 0 10px">
+        <span><i style="display:inline-block;width:8px;height:8px;background:var(--accent);vertical-align:middle;margin-right:5px"></i>new</span>
+        <span><i style="display:inline-block;width:8px;height:8px;background:var(--ok);vertical-align:middle;margin-right:5px"></i>returning</span>
+        <span><i style="display:inline-block;width:8px;height:8px;background:#5B8DEF;vertical-align:middle;margin-right:5px"></i>resurrected</span>
+        <span style="color:var(--dis)">dormant = churned out that day</span>
+      </div>
+      {{range .Lifecycle}}<div style="display:flex;align-items:center;gap:8px;margin:3px 0">
+        <span style="width:42px;font-family:var(--mono);font-size:10px;color:var(--mut);flex:none">{{.Label}}</span>
+        <div style="flex:1;display:flex;height:13px;border-radius:2px;overflow:hidden;background:var(--s2)">
+          <div title="new {{.New}}" style="width:{{.NewPct}}%;background:var(--accent)"></div>
+          <div title="returning {{.Returning}}" style="width:{{.RetPct}}%;background:var(--ok)"></div>
+          <div title="resurrected {{.Resurrected}}" style="width:{{.ResPct}}%;background:#5B8DEF"></div>
+        </div>
+        <span style="width:78px;font-family:var(--mono);font-size:10px;color:var(--dis);flex:none;text-align:right">-{{.Dormant}} dormant</span>
+      </div>{{end}}
+    </div>
+    {{end}}
+
+    {{with .Stickiness}}
+    <div class="pane" id="pane-stickiness">
+      <h3>stickiness <span class="sub">· do they come back?</span></h3>
+      <div style="display:flex;align-items:baseline;gap:10px;margin:10px 0 2px">
+        <span style="font-size:34px;line-height:1;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums;letter-spacing:-.02em">{{.Ratio}}%</span>
+        <span style="font-family:var(--mono);font-size:11px;color:var(--mut)">DAU/MAU</span>
+      </div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--mut);margin-bottom:12px">{{.Verdict}}</div>
+      <div style="display:flex;gap:20px;font-family:var(--mono);font-size:12px;color:var(--fg);border-top:1px solid var(--line);padding-top:10px">
+        <span>DAU <b style="color:var(--accent)">{{comma .DAU}}</b></span>
+        <span>WAU <b style="color:var(--accent)">{{comma .WAU}}</b></span>
+        <span>MAU <b style="color:var(--accent)">{{comma .MAU}}</b></span>
+      </div>
+    </div>
+    {{end}}
+
     {{if .HasSearch}}
     <div class="pane" id="pane-search">
       <h3>google search queries · 28d clicks</h3>

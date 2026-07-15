@@ -14,10 +14,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/engagement"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
 	"github.com/Arjun0606/smolanalytics/internal/goal"
 	"github.com/Arjun0606/smolanalytics/internal/insight"
+	"github.com/Arjun0606/smolanalytics/internal/paths"
 	"github.com/Arjun0606/smolanalytics/internal/query"
 	"github.com/Arjun0606/smolanalytics/internal/retention"
 	"github.com/Arjun0606/smolanalytics/internal/trends"
@@ -208,6 +210,16 @@ type dashVM struct {
 	SearchRows []segRow // query → clicks, bar-scaled
 	// named goals, resolved over the trailing 30 days
 	Goals []goalCard
+	// the depth deck — the PostHog-tier analyses (paths / lifecycle / stickiness) that
+	// used to live only in the ask bar + MCP, surfaced as cards so the dashboard SHOWS
+	// its depth instead of reading like a web-analytics tool. Computed with the exact
+	// same functions the MCP tools use, so the numbers agree across surfaces.
+	Stickiness   *stickyVM
+	Lifecycle    []lifecycleBar
+	HasLifecycle bool
+	PathStart    string
+	PathLevels   []pathLevelVM
+	HasPaths     bool
 	// store-presence flags: the share affordance and the goals empty-state form
 	// only render when the wrapped store actually exists (no vapor buttons)
 	HasShares     bool
@@ -373,6 +385,108 @@ type goalCard struct {
 	Conversions int
 	Pct         int
 	TopChannel  string
+}
+
+// stickyVM is the DAU/WAU/MAU engagement ratio card.
+type stickyVM struct {
+	DAU, WAU, MAU int
+	Ratio         int    // DAU/MAU %, the stickiness number
+	Verdict       string // one plain-English read of the ratio
+}
+
+// lifecycleBar is one day's new/returning/resurrected/dormant split, pre-scaled to bar
+// widths (percent of the day's largest active count) so the template just draws them.
+type lifecycleBar struct {
+	Label                                string
+	New, Returning, Resurrected, Dormant int
+	NewPct, RetPct, ResPct, DormPct      int
+}
+
+// pathLevelVM is one hop of the user-journey (paths) report: at depth N, the ranked
+// next events users took after the anchor, bar-scaled.
+type pathLevelVM struct {
+	Depth int
+	Steps []segRow
+}
+
+// buildDepthCards computes the paths / lifecycle / stickiness deck from the SAME engine
+// functions the MCP tools call (engagement.*, paths.After), so the dashboard and the ask
+// bar can never disagree. Each card self-hides when the data is too thin to be honest.
+func buildDepthCards(vm *dashVM, evs []event.Event, fsteps []funnel.Step, trendEvent string, now time.Time) {
+	// Stickiness — DAU/WAU/MAU + the DAU/MAU ratio, the one-glance "are they hooked" read.
+	st := engagement.ComputeStickiness(evs, now)
+	if st.MAU > 0 {
+		ratio := int(st.DAUoverMAU*100 + 0.5)
+		verdict := "low — most users don't come back daily"
+		switch {
+		case ratio >= 50:
+			verdict = "excellent — daily-habit territory"
+		case ratio >= 20:
+			verdict = "healthy for most products"
+		case ratio >= 10:
+			verdict = "typical — a weekly, not daily, habit"
+		}
+		vm.Stickiness = &stickyVM{DAU: st.DAU, WAU: st.WAU, MAU: st.MAU, Ratio: ratio, Verdict: verdict}
+	}
+
+	// Lifecycle — new / returning / resurrected / dormant per day, the growth-accounting
+	// view (are new users offsetting churn?). Show the trailing 14 days, bar-scaled.
+	lc := engagement.ComputeLifecycle(evs, 14)
+	for _, d := range lc {
+		// each day's bar is a COMPOSITION of that day's active users (new + returning +
+		// resurrected), so the segments sum to ~100% and you read "how much of today is
+		// new vs loyal" at a glance. Dormant is churn OUT of the day, shown as its own count.
+		active := d.New + d.Returning + d.Resurrected
+		if active == 0 {
+			continue
+		}
+		scale := func(n int) int { return int(float64(n)/float64(active)*100 + 0.5) }
+		vm.Lifecycle = append(vm.Lifecycle, lifecycleBar{
+			Label: d.Date.Format("Jan 2"),
+			New:   d.New, Returning: d.Returning, Resurrected: d.Resurrected, Dormant: d.Dormant,
+			NewPct: scale(d.New), RetPct: scale(d.Returning), ResPct: scale(d.Resurrected), DormPct: 0,
+		})
+	}
+	vm.HasLifecycle = len(vm.Lifecycle) > 0
+
+	// Paths — what users do AFTER the anchor event (first funnel step, else the headline).
+	// This is the user-journey / pathfinder report; a marquee product-analytics feature.
+	start := trendEvent
+	if len(fsteps) > 0 {
+		start = fsteps[0].Event
+	}
+	if start != "" {
+		pr := paths.After(evs, start, 3)
+		if pr.Users > 0 {
+			vm.PathStart = start
+			for _, lvl := range pr.Levels {
+				top := 0
+				for _, s := range lvl.Steps {
+					if s.Count > top {
+						top = s.Count
+					}
+				}
+				rows := make([]segRow, 0, len(lvl.Steps))
+				for i, s := range lvl.Steps {
+					if i >= 5 {
+						break
+					}
+					r := segRow{Value: s.Event, Count: s.Count}
+					if pr.Users > 0 {
+						r.Pct = int(float64(s.Count)/float64(pr.Users)*100 + 0.5)
+					}
+					if top > 0 {
+						r.BarPct = int(float64(s.Count)/float64(top)*100 + 0.5)
+					}
+					rows = append(rows, r)
+				}
+				if len(rows) > 0 {
+					vm.PathLevels = append(vm.PathLevels, pathLevelVM{Depth: lvl.Depth, Steps: rows})
+				}
+			}
+			vm.HasPaths = len(vm.PathLevels) > 0
+		}
+	}
 }
 
 func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
@@ -988,6 +1102,10 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	// off the funnel-entry step (so every segment is "(none)", filtered out) otherwise
 	// renders as an empty box. Gate on content, not mere property existence.
 	vm.HasConvBy = len(vm.ConvBySeg) > 0
+
+	// The depth deck: paths / lifecycle / stickiness — the analyses that make this read
+	// as product analytics, not web analytics. Same compute the MCP tools use.
+	buildDepthCards(&vm, evs, fsteps, trendEvent, nowT)
 
 	vm.ShowProduct = true // default; flipped to tabbed mode below when web data exists
 	if s.goals != nil {
