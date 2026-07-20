@@ -65,7 +65,7 @@ func TestFullUserJourneyE2E(t *testing.T) {
 	for d := 0; d < 30; d++ {
 		// midnight of that calendar day, then a random time-of-day — real events are always
 		// in the past, so skip anything that would land after `now` on the current day.
-		day0 := now.Truncate(24 * time.Hour).AddDate(0, 0, -(29 - d))
+		day0 := now.Truncate(24*time.Hour).AddDate(0, 0, -(29 - d))
 		for i := 0; i < 40; i++ {
 			uid := fmt.Sprintf("u%d_%d", d, i)
 			t0 := day0.Add(time.Duration(rng.intn(23))*time.Hour + time.Duration(rng.intn(60))*time.Minute)
@@ -214,7 +214,7 @@ func TestFullUserJourneyE2E(t *testing.T) {
 	// last 7 days) must agree across /v1 and MCP AND equal a recomputation from the raw log —
 	// and must NOT be the all-time sum. Regression guard for the ComputeMeasure window bug an
 	// adversarial audit surfaced (res.Total was built from an unfiltered slice = all-time).
-	winFrom := now.Truncate(24 * time.Hour).AddDate(0, 0, -6)
+	winFrom := now.Truncate(24*time.Hour).AddDate(0, 0, -6)
 	_, xbM := do("GET", "/v1/export?format=jsonl", "rk_secret", "")
 	var wantWin, wantAll float64
 	for _, line := range strings.Split(xbM, "\n") {

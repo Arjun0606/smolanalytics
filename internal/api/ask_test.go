@@ -98,8 +98,8 @@ func TestAskRouterAndAnswers(t *testing.T) {
 			contains: []string{"Day-1 retention"},
 		},
 		{
-			q:        "what happened this week?",
-			intent:   intentBrief,
+			q:      "what happened this week?",
+			intent: intentBrief,
 			// "active people" (distinct users of any event), not web "visitors" (pageviews) —
 			// the brief pulse must not claim visitors on a site with zero pageviews.
 			contains: []string{"Last 7 days:", "active people"},
@@ -285,7 +285,7 @@ func TestWindowCovenant(t *testing.T) {
 		now := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
 		q := fmt.Sprintf("signups in the last %d days", n)
 		win, _ := parseWindow(q, now)
-		wantFrom := now.Truncate(24 * time.Hour).AddDate(0, 0, -(n - 1))
+		wantFrom := now.Truncate(24*time.Hour).AddDate(0, 0, -(n - 1))
 		if !win.from.Equal(wantFrom) {
 			t.Errorf("ask %q from = %v, want calendar-aligned %v", q, win.from, wantFrom)
 		}
@@ -302,7 +302,7 @@ func TestWindowCovenant(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parseTrendWindow(days=%d): %v", n, err)
 		}
-		realWant := time.Now().UTC().Truncate(24 * time.Hour).AddDate(0, 0, -(n - 1))
+		realWant := time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -(n - 1))
 		if !from.Equal(realWant) {
 			t.Errorf("/v1/trends days=%d from = %v, want calendar-aligned %v", n, from, realWant)
 		}

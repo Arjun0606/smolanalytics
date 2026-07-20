@@ -16,8 +16,8 @@ func evDay(user string, day int) event.Event {
 
 func TestRetention_WeeklyBucket(t *testing.T) {
 	evs := []event.Event{
-		evDay("A", 0), evDay("A", 7),  // week 0 and week 1
-		evDay("B", 0),              // week 0 only
+		evDay("A", 0), evDay("A", 7), // week 0 and week 1
+		evDay("B", 0),                 // week 0 only
 		evDay("C", 0), evDay("C", 14), // week 0 and week 2
 	}
 	r := ComputeBucketed(evs, 3, "open", "week", false)
@@ -35,8 +35,8 @@ func TestRetention_WeeklyBucket(t *testing.T) {
 
 func TestRetention_RollingMode(t *testing.T) {
 	evs := []event.Event{
-		evDay("A", 0), evDay("A", 7),  // last active week 1
-		evDay("B", 0),              // last active week 0
+		evDay("A", 0), evDay("A", 7), // last active week 1
+		evDay("B", 0),                 // last active week 0
 		evDay("C", 0), evDay("C", 14), // last active week 2
 	}
 	r := ComputeBucketed(evs, 3, "open", "week", true)

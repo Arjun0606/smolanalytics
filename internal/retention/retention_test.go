@@ -100,7 +100,7 @@ func TestSerializeCohortsNullsFuture(t *testing.T) {
 // the same "fully elapsed" rule: null any period n>=1 whose window hasn't fully elapsed.
 func TestSerializeCohortsNullsInProgressPeriod(t *testing.T) {
 	now := time.Date(2026, 6, 10, 12, 0, 0, 0, time.UTC)
-	cohortDate := now.Truncate(24 * time.Hour).AddDate(0, 0, -2) // started 2 whole days ago
+	cohortDate := now.Truncate(24*time.Hour).AddDate(0, 0, -2) // started 2 whole days ago
 	r := Result{
 		Bucket:  "day",
 		MaxDays: 4,

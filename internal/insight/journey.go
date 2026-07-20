@@ -233,7 +233,6 @@ func usableBlameProps(evs []event.Event, from string) []string {
 	return append(out, extra...)
 }
 
-
 // stepRate computes how many users who did `from` went on to `to` (7-day window),
 // optionally within a filtered segment.
 type rateResult struct{ entered, converted int }

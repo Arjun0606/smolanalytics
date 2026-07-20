@@ -19,9 +19,9 @@ func TestComputeBreakdown_SegmentsByStep0Property(t *testing.T) {
 	}
 	evs := []event.Event{
 		su("A", "hn"), ev("A", "activate", time.Hour), ev("A", "checkout", 2*time.Hour), // hn, full convert
-		su("B", "hn"), ev("B", "activate", time.Hour),                                    // hn, drops at checkout
+		su("B", "hn"), ev("B", "activate", time.Hour), // hn, drops at checkout
 		su("C", "twitter"), ev("C", "activate", time.Hour), ev("C", "checkout", 2*time.Hour), // twitter, full
-		su("D", "twitter"),                                                                // twitter, drops at activate
+		su("D", "twitter"), // twitter, drops at activate
 	}
 	steps := []Step{{"signup"}, {"activate"}, {"checkout"}}
 	segs := ComputeBreakdown(evs, steps, 0, "source")
