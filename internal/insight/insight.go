@@ -128,6 +128,10 @@ func Generate(evs []event.Event) []Finding {
 		if e.Name != head {
 			continue
 		}
+		if e.Timestamp.After(now) {
+			continue // a future-dated (clock-skewed) event has a NEGATIVE age, which would
+			// fall into "last 7 days" and inflate the headline — guard it like anomalies() does.
+		}
 		switch age := now.Sub(e.Timestamp); {
 		case age < 7*24*time.Hour:
 			last7++

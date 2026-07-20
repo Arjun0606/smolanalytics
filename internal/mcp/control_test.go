@@ -135,8 +135,8 @@ func TestControlSettingsTools(t *testing.T) {
 func TestPromptsDispatch(t *testing.T) {
 	s := controlServer(t)
 	all := []string{
-		"instrument-my-app", "whats-broken-today", "weekly-review",
-		"monthly-report", "search-performance", "content-gaps",
+		"instrument-my-app", "whats-broken-today", "did-my-deploy-break-anything",
+		"weekly-review", "monthly-report", "search-performance", "content-gaps",
 		"funnel-leak", "channel-review", "retention-review",
 		"launch-day", "portfolio-review", "growth-experiments",
 		"money-pages",

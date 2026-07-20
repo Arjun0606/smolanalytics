@@ -14,6 +14,12 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/event"
 )
 
+// maxDayBuckets caps how many daily points an all-time (span-derived) series may emit, so
+// a single mangled ancient timestamp can't blow an unbounded report up to ~700K zero-filled
+// buckets / tens of MB. ~11 years of daily points is far beyond any real analytics horizon;
+// legitimately older data is still counted — only the empty leading buckets are dropped.
+const maxDayBuckets = 4200
+
 // Point is one day's value.
 type Point struct {
 	Date  time.Time `json:"date"`
@@ -90,6 +96,12 @@ func Compute(events []event.Event, eventName string, from, to time.Time, unique 
 	if hi < lo {
 		return r
 	}
+	if hi-lo > maxDayBuckets {
+		// span cap: an unbounded (all-time) span is derived from the earliest event seen,
+		// so ONE mangled ancient timestamp used to emit a zero bucket per day for
+		// centuries (~700K points, ~30MB responses). Keep the most RECENT ~11 years.
+		lo = hi - maxDayBuckets
+	}
 
 	for d := lo; d <= hi; d++ {
 		c := 0
@@ -145,9 +157,18 @@ func ComputeBreakdown(events []event.Event, eventName, property string, from, to
 		}
 		groups[key] = append(groups[key], e)
 	}
+	// When `to` was unbounded, spanTo is the LAST event's exact timestamp. Compute filters
+	// [from, to) half-open, so passing spanTo as-is would DROP that last event from every
+	// series — the breakdown would then sum to total−1 (segments silently undercount the
+	// unbroken trend). Bump the filter bound one tick past the last event so it's included;
+	// the day-span is unaffected (Compute derives its last bucket from to−ε).
+	filterTo := spanTo
+	if to.IsZero() && !spanTo.IsZero() {
+		filterTo = spanTo.Add(time.Nanosecond)
+	}
 	out := make([]Series, 0, len(groups))
 	for val, evs := range groups {
-		r := Compute(evs, eventName, spanFrom, spanTo, unique)
+		r := Compute(evs, eventName, spanFrom, filterTo, unique)
 		out = append(out, Series{Value: val, Points: r.Points, Total: r.Total})
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -178,18 +199,18 @@ const (
 	Max    Measure = "max"
 	Median Measure = "median"
 	P90    Measure = "p90"
+	P95    Measure = "p95"
+	P99    Measure = "p99"
 )
 
 // ParseMeasure maps a string (query param, MCP arg) to a Measure, defaulting to Sum for a
 // bare/unknown value so a caller that asks for a numeric aggregation always gets one.
 func ParseMeasure(s string) (Measure, bool) {
 	switch Measure(s) {
-	case Sum, Avg, Min, Max, Median, P90:
+	case Sum, Avg, Min, Max, Median, P90, P95, P99:
 		return Measure(s), true
 	case "average", "mean":
 		return Avg, true
-	case "p95", "p99":
-		return P90, true // nearest supported high-percentile
 	}
 	return Sum, false
 }
@@ -225,6 +246,17 @@ func ComputeMeasure(events []event.Event, eventName, property string, m Measure,
 		if eventName != "" && e.Name != eventName {
 			continue
 		}
+		ts := e.Timestamp.UTC()
+		// respect the window for the aggregate too. res.Total/res.N are built from `all`,
+		// so without this filter a windowed query (measure=sum&days=1) silently returned the
+		// ALL-TIME aggregate — disagreeing with the ask bar AND with this result's own
+		// per-day points (which were already windowed). [from, to) matches Compute().
+		if !from.IsZero() && ts.Before(from) {
+			continue
+		}
+		if !to.IsZero() && !ts.Before(to) {
+			continue
+		}
 		raw, ok := e.Properties[property]
 		if !ok {
 			continue
@@ -233,7 +265,7 @@ func ComputeMeasure(events []event.Event, eventName, property string, m Measure,
 		if !ok {
 			continue
 		}
-		d := e.Timestamp.UTC().Truncate(24*time.Hour).Unix() / 86400
+		d := ts.Truncate(24*time.Hour).Unix() / 86400
 		perDay[d] = append(perDay[d], f)
 		all = append(all, f)
 	}
@@ -253,10 +285,16 @@ func ComputeMeasure(events []event.Event, eventName, property string, m Measure,
 		lo = from.UTC().Unix() / 86400
 	}
 	if !to.IsZero() {
-		hi = to.UTC().Unix() / 86400
+		// to is an EXCLUSIVE upper bound ([from, to)), so a to at a day boundary (e.g.
+		// midnight) must not spawn a phantom trailing empty day — mirror ComputeInterval's
+		// to.Add(-1ns) so the last bucket is the last day that actually falls inside.
+		hi = to.Add(-time.Nanosecond).UTC().Unix() / 86400
 	}
 	if !have && from.IsZero() {
 		return res
+	}
+	if hi-lo > maxDayBuckets { // span cap — see Compute; keep only the most recent points
+		lo = hi - maxDayBuckets
 	}
 
 	for d := lo; d <= hi; d++ {
@@ -271,6 +309,85 @@ func ComputeMeasure(events []event.Event, eventName, property string, m Measure,
 	res.N = len(all)
 	sort.Slice(res.Points, func(i, j int) bool { return res.Points[i].Date.Before(res.Points[j].Date) })
 	return res
+}
+
+// Finite reports whether every aggregate in the result is a representable JSON number.
+// Summing values near math.MaxFloat64 overflows to +Inf, which JSON cannot encode — callers
+// turn that into an explicit "overflow" error instead of a broken response or a lied number.
+func (r MeasureResult) Finite() bool {
+	if math.IsInf(r.Total, 0) || math.IsNaN(r.Total) {
+		return false
+	}
+	for _, p := range r.Points {
+		if math.IsInf(p.Value, 0) || math.IsNaN(p.Value) {
+			return false
+		}
+	}
+	return true
+}
+
+// FiniteSeries is Finite for a measure-breakdown result.
+func FiniteSeries(s []MeasureSeries) bool {
+	for _, g := range s {
+		if math.IsInf(g.Total, 0) || math.IsNaN(g.Total) {
+			return false
+		}
+	}
+	return true
+}
+
+// MeasureSeries is one breakdown group's aggregate — "revenue by plan" yields one row per
+// plan value, with the same Total/N semantics as MeasureResult.
+type MeasureSeries struct {
+	Value string  `json:"value"`
+	Total float64 `json:"total"`
+	N     int     `json:"n"`
+}
+
+// ComputeMeasureBreakdown aggregates a numeric property per value of a breakdown property —
+// "sum of amount by plan". One row per group value (events missing the breakdown property
+// fall into "(none)"), sorted by Total desc. Both GET /v1/trends and the MCP trends tool
+// serialize this same result, so they can't disagree. The measure+breakdown combination
+// used to be silently DROPPED: the un-broken grand total came back with no series and no
+// error, presenting an unsegmented number as if it were the requested split.
+func ComputeMeasureBreakdown(events []event.Event, eventName, property string, m Measure, breakdown string, from, to time.Time) []MeasureSeries {
+	groups := map[string][]float64{}
+	for _, e := range events {
+		if eventName != "" && e.Name != eventName {
+			continue
+		}
+		ts := e.Timestamp.UTC()
+		if !from.IsZero() && ts.Before(from) {
+			continue
+		}
+		if !to.IsZero() && !ts.Before(to) {
+			continue
+		}
+		raw, ok := e.Properties[property]
+		if !ok {
+			continue
+		}
+		f, ok := numOf(raw)
+		if !ok {
+			continue
+		}
+		key := "(none)"
+		if v, ok := e.Properties[breakdown]; ok {
+			key = valueOf(v)
+		}
+		groups[key] = append(groups[key], f)
+	}
+	out := make([]MeasureSeries, 0, len(groups))
+	for val, vals := range groups {
+		out = append(out, MeasureSeries{Value: val, Total: applyMeasure(m, vals), N: len(vals)})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Total != out[j].Total {
+			return out[i].Total > out[j].Total
+		}
+		return out[i].Value < out[j].Value
+	})
+	return out
 }
 
 // applyMeasure reduces a day's (or the window's) numeric values to a single number. An
@@ -316,10 +433,13 @@ func applyMeasure(m Measure, vals []float64) float64 {
 			return s[n/2]
 		}
 		return (s[n/2-1] + s[n/2]) / 2
-	case P90:
+	case P90, P95, P99:
+		// true nearest-rank percentiles — p95/p99 used to be silently answered with p90,
+		// reporting a wrong tail value as fact for exactly the latency questions that ask them.
+		frac := map[Measure]float64{P90: 0.90, P95: 0.95, P99: 0.99}[m]
 		s := append([]float64(nil), vals...)
 		sort.Float64s(s)
-		rank := int(math.Ceil(0.9*float64(len(s)))) - 1 // nearest-rank
+		rank := int(math.Ceil(frac*float64(len(s)))) - 1 // nearest-rank
 		if rank < 0 {
 			rank = 0
 		}
@@ -542,12 +662,20 @@ func ComputeXAU(events []event.Event, eventName string, from, to time.Time, wind
 	var pairs []ud
 	var loD, hiD int64
 	have := false
+	// the rolling window looks back `windowDays` before each displayed day, so events from
+	// BEFORE `from` are needed to compute the earliest points — extend the collection floor
+	// back by windowDays. Without this, a short query range (days=1) starved the wau/mau
+	// lookback of data and every point silently collapsed to DAU.
+	lookbackFrom := from
+	if !from.IsZero() {
+		lookbackFrom = from.AddDate(0, 0, -(windowDays - 1))
+	}
 	for _, e := range events {
 		if eventName != "" && e.Name != eventName {
 			continue
 		}
 		ts := e.Timestamp.UTC()
-		if !from.IsZero() && ts.Before(from) {
+		if !lookbackFrom.IsZero() && ts.Before(lookbackFrom) {
 			continue
 		}
 		if !to.IsZero() && !ts.Before(to) {
@@ -571,6 +699,9 @@ func ComputeXAU(events []event.Event, eventName string, from, to time.Time, wind
 	}
 	if !have || hiD < loD {
 		return r
+	}
+	if hiD-loD > maxDayBuckets { // span cap — see Compute
+		loD = hiD - maxDayBuckets
 	}
 	byDay := map[int64]map[string]bool{}
 	for _, p := range pairs {

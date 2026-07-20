@@ -161,7 +161,13 @@ func inListEq(v any, list any, eq func(a, b any) bool) bool {
 func Validate(filters []Filter) error {
 	for _, f := range filters {
 		switch f.Op {
-		case Eq, Neq, Contains, Gt, Lt, Set, NotSet, NotContains:
+		case Gt, Lt:
+			// a non-numeric comparand ("gt":"abc") silently coerces to 0 and returns a
+			// real-looking filtered number — reject it instead (the silent-wrong-number trap).
+			if !isNumericValue(f.Value) {
+				return fmt.Errorf("filter op %q on property %q needs a numeric value, got %v", f.Op, f.Property, f.Value)
+			}
+		case Eq, Neq, Contains, Set, NotSet, NotContains:
 		case Regex:
 			if _, err := regexCached(toStr(f.Value)); err != nil {
 				return fmt.Errorf("filter op %q on property %q: invalid regex", f.Op, f.Property)
@@ -259,6 +265,19 @@ func toStr(v any) string {
 	return fmt.Sprintf("%v", v)
 }
 
+// isNumericValue reports whether a gt/lt comparand is a real number (or a numeric string),
+// so a non-numeric one is rejected at validation instead of silently coercing to 0.
+func isNumericValue(v any) bool {
+	switch n := v.(type) {
+	case float64, float32, int, int64, int32:
+		return true
+	case string:
+		_, err := strconv.ParseFloat(strings.TrimSpace(n), 64)
+		return err == nil
+	}
+	return false
+}
+
 func toNum(v any) float64 {
 	switch n := v.(type) {
 	case float64:
@@ -303,6 +322,33 @@ func ScopeUsers(events []event.Event, filters []Filter, anyMode bool) []event.Ev
 // a funnel/report breakdown segment by an acquisition/user attribute (referrer, device,
 // country) even though the conversion events don't carry it — otherwise the breakdown
 // collapses everyone into "(none)". Referrer values are reduced to their host.
+// acquisitionProps are visitor/acquisition attributes that live on the LANDING event (the
+// $pageview), not on later conversion events. Filtering a conversion event by one of these
+// event-level returns 0 (the signup carries no referrer/device), so a report must first-touch
+// stamp them onto the user's whole stream — which is what the dashboard and ask bar already do.
+var acquisitionProps = map[string]bool{
+	"referrer": true, "source": true, "utm_source": true, "utm_medium": true, "utm_campaign": true,
+	"channel": true, "device": true, "os": true, "browser": true, "country": true, "platform": true,
+}
+
+// StampForFilters first-touch-stamps every acquisition/user-attribute property a filter
+// targets, so "signups where device=mobile" (or referrer/utm/country/…) means "signups by
+// users acquired on mobile" — the same number the dashboard and ask bar report — instead of a
+// silent 0 because the signup event never carried the property. Product/event props (plan,
+// amount) are left untouched; they're set at the step itself, so an event-level filter is right.
+// Both GET /v1 and the MCP tools call this before applying filters, so all four surfaces agree.
+func StampForFilters(evs []event.Event, filters []Filter) []event.Event {
+	stamped := evs
+	done := map[string]bool{}
+	for _, f := range filters {
+		if acquisitionProps[f.Property] && !done[f.Property] {
+			stamped = StampFirstTouch(stamped, f.Property)
+			done[f.Property] = true
+		}
+	}
+	return stamped
+}
+
 func StampFirstTouch(events []event.Event, prop string) []event.Event {
 	type ft struct {
 		t   int64

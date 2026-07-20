@@ -16,6 +16,10 @@ var promptList = []map[string]any{
 		"description": "The morning check: anomalies, funnel leaks, and instrumentation health, with what to do about each.",
 	},
 	{
+		"name":        "did-my-deploy-break-anything",
+		"description": "Tie your latest ship to the numbers: record the deploy, then check which metrics moved after it — the regression nobody else can catch from analytics alone.",
+	},
+	{
 		"name":        "weekly-review",
 		"description": "A founder-grade weekly product review: growth, conversion, retention, traffic — with the one thing to fix next week.",
 	},
@@ -74,6 +78,11 @@ var promptText = map[string]string{
 2. instrumentation_health (last 24h) — is tracking itself healthy?
 3. web_overview — anything unusual in traffic or referrers?
 Then give me the read like an analyst: what changed, what's broken (product vs tracking), and the single most useful action today. If everything's fine, say so in one line.`,
+
+	"did-my-deploy-break-anything": `Check whether my latest deploy moved the numbers:
+1. If I just shipped and it's not recorded yet, call record_deploy with a short message of what changed (and the git sha if you know it).
+2. Call deploy_impact on the headline conversion event (e.g. signup or checkout), then again on $pageview and any error-shaped event — days=30, window=3.
+3. Read it back: for each deploy, which metrics moved after it, by how much, and whether it's significant given the volume. Lead with any regression (a metric that DROPPED after a ship) and name the event + the deploy. These numbers are computed from the same reports the dashboard renders, so state them plainly — but say "correlates with", not "caused by": a deploy is a strong suspect, not proof. If nothing significant moved, say so in one line.`,
 
 	"weekly-review": `Do my weekly product review:
 1. trends on the headline events, this week vs last (use breakdown by source or plan where it's telling).

@@ -128,7 +128,10 @@ type segConv struct {
 // old approach filtered EVENTS by the property, which dropped later steps that never carry
 // it (e.g. source set only at signup) and understated every segment's conversion.
 func funnelBySegment(evs []event.Event, property string, steps []funnel.Step) []segConv {
-	if len(steps) == 0 {
+	// a real funnel needs ≥2 distinct steps — a degenerate 1-step "funnel" reports a
+	// meaningless 100% conversion for every segment ("conversion by plan — pro 100%") on a
+	// brand-new instance that has only sent one event type. Suppress it entirely.
+	if len(steps) < 2 {
 		return nil
 	}
 	// StampFirstTouch so a segment property that lives only on the acquisition event
@@ -158,6 +161,7 @@ func toStr(v any) string {
 }
 
 type dashVM struct {
+	HasConversion  bool // a real funnel (≥2 distinct steps) — gates the conversion KPI/pane
 	TotalUsers     int
 	Signups        int
 	OverallConv    int
@@ -529,7 +533,7 @@ func buildKPIs(vm *dashVM, evs []event.Event, trendEvent string, days int, now t
 		Label: fmt.Sprintf("%s · %dd", vm.StatEventLabel, days), Value: comma(vm.Signups), Delta: sd, Dir: dir(sd),
 		Spark: buildSpark(dailySeries(evs, func(e event.Event) bool { return e.Name == trendEvent }, days, now, false), endOf(sd)),
 	})
-	if vm.ConvLabel != "" {
+	if vm.ConvLabel != "" && vm.HasConversion {
 		cards = append(cards, kpiCard{Label: vm.ConvLabel, Value: fmt.Sprintf("%d%%", vm.OverallConv), Accent: true})
 	}
 	cards = append(cards, kpiCard{Label: "Users · all time", Value: comma(vm.TotalUsers)})
@@ -867,6 +871,11 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	// "last N days". The old rolling now−N·24h start pulled in a clipped partial leading
 	// day, rendering a phantom bar and a headline that disagreed with /v1 and MCP.
 	curFrom, curTo := endT.AddDate(0, 0, -rangeDays), rangeAsof
+	if curTo.IsZero() || curTo.After(nowT) {
+		curTo = nowT // presets (and any future-ending custom range) end NOW, never the future —
+		// matches parseTrendWindow + MCP so a clock-skewed future event can't make the
+		// headline stat disagree with /v1 and MCP
+	}
 	priorFrom, priorTo := endT.AddDate(0, 0, -2*rangeDays), endT.AddDate(0, 0, -rangeDays)
 	if rangeAsof.IsZero() && gran == trends.Day { // preset day-range → align to whole days
 		day0 := nowT.Truncate(24 * time.Hour)
@@ -885,6 +894,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	vm := dashVM{
+		HasConversion:  len(fsteps) >= 2,
 		TotalUsers:     distinctUsers(evs),
 		Signups:        sig30,
 		OverallConv:    pct(fr.OverallConversion),
@@ -953,15 +963,20 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	// connect-your-agent artifacts: cursor's deeplink takes base64 of the single-server
 	// config object (NOT the mcpServers map); vs code takes the urlencoded JSON. Both are
 	// complete as rendered — key included — so connecting is one click, never an edit.
+	// MCP auth uses the SECRET READ key: since the two-key split, /mcp rejects the public
+	// write key (it's ingest-only), so baking the write key here made every copy-paste
+	// config 401 on first use. The dashboard is password-gated — the operator seeing
+	// their own read key here is exactly the intended distribution channel for it.
+	mcpKey := s.readKey
 	mcpURL := vm.Base + "/mcp"
 	cfg := fmt.Sprintf(`{"url":%q`, mcpURL)
 	vsCfg := fmt.Sprintf(`{"name":"smolanalytics","type":"http","url":%q`, mcpURL)
 	cmd := "claude mcp add --transport http --scope user smolanalytics " + mcpURL
-	if s.writeKey != "" {
-		hdr := fmt.Sprintf(`,"headers":{"Authorization":"Bearer %s"}`, s.writeKey)
+	if mcpKey != "" {
+		hdr := fmt.Sprintf(`,"headers":{"Authorization":"Bearer %s"}`, mcpKey)
 		cfg += hdr
 		vsCfg += hdr
-		cmd += fmt.Sprintf(` --header "Authorization: Bearer %s"`, s.writeKey)
+		cmd += fmt.Sprintf(` --header "Authorization: Bearer %s"`, mcpKey)
 	}
 	cfg += "}"
 	vsCfg += "}"
@@ -975,9 +990,9 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	// in env and the arg carries no spaces — the documented mcp-remote workaround,
 	// and it works identically on macOS/Linux.
 	hdrArg, hdrEnv := "", ""
-	if s.writeKey != "" {
+	if mcpKey != "" {
 		hdrArg = `, "--header", "Authorization:${SMOL_AUTH}"`
-		hdrEnv = fmt.Sprintf(`, "env": { "SMOL_AUTH": "Bearer %s" }`, s.writeKey)
+		hdrEnv = fmt.Sprintf(`, "env": { "SMOL_AUTH": "Bearer %s" }`, mcpKey)
 	}
 	vm.DesktopConfig = fmt.Sprintf(`{ "mcpServers": { "smolanalytics": { "command": "npx", "args": ["-y", "mcp-remote", %q%s]%s } } }`, mcpURL, hdrArg, hdrEnv)
 	vm.MCPServersJSON = fmt.Sprintf(`{ "mcpServers": { "smolanalytics": %s } }`, cfg)
@@ -985,8 +1000,8 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	// each client's config dialect, exactly: Windsurf wants serverUrl (url fails
 	// silently), Zed wants context_servers, Cline wants an explicit streamableHttp type.
 	hdrJSON := ""
-	if s.writeKey != "" {
-		hdrJSON = fmt.Sprintf(`, "headers": { "Authorization": "Bearer %s" }`, s.writeKey)
+	if mcpKey != "" {
+		hdrJSON = fmt.Sprintf(`, "headers": { "Authorization": "Bearer %s" }`, mcpKey)
 	}
 	vm.WindsurfConfig = fmt.Sprintf(`{ "mcpServers": { "smolanalytics": { "serverUrl": %q%s } } }`, mcpURL, hdrJSON)
 	vm.ZedConfig = fmt.Sprintf(`{ "context_servers": { "smolanalytics": { "url": %q%s } } }`, mcpURL, hdrJSON)
@@ -995,8 +1010,8 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	// wire itself up — the user copies once, pastes into any AI, done. Every path is
 	// complete (url + key baked in); the agent picks its own.
 	authLine := ""
-	if s.writeKey != "" {
-		authLine = "\nAuth header: Authorization: Bearer " + s.writeKey
+	if mcpKey != "" {
+		authLine = "\nAuth header: Authorization: Bearer " + mcpKey
 	}
 	vm.ConnectPrompt = "Connect the smolanalytics MCP server to yourself, then verify it.\n\n" +
 		"Server: " + mcpURL + " (Streamable HTTP)" + authLine + "\n\n" +

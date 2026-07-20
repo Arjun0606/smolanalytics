@@ -160,3 +160,47 @@ func TestGenerateIncludesJourneyAndBlame(t *testing.T) {
 		t.Fatalf("expected a segment-blame finding naming tiktok, got %+v", fs)
 	}
 }
+
+// TestSegmentBlameEntryOnlyCustomProp is the regression guard for an audit finding: for a
+// CUSTOM entry-only property (e.g. ab_variant, present on the landing $pageview but not on
+// the conversion event), segmentBlame filtered by the property — which dropped every
+// conversion event (they never carried it) — and so read EVERY segment at 0% conversion,
+// fabricating a "converts worst, fix this first" verdict even under perfectly uniform
+// conversion. The fix first-touch-stamps any entry-only candidate property, not just a
+// hardcoded acquisition list.
+func TestSegmentBlameEntryOnlyCustomProp(t *testing.T) {
+	base := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	build := func(convA, convB int) []event.Event {
+		var evs []event.Event
+		mk := func(variant string, i int, converts bool) {
+			u := fmt.Sprintf("u_%s_%d", variant, i)
+			// ab_variant is a CUSTOM property on the entry event only.
+			evs = append(evs, event.Event{ID: u + "p", DistinctID: u, Name: "$pageview", Timestamp: base,
+				Properties: map[string]any{"ab_variant": variant, "path": "/"}})
+			if converts {
+				evs = append(evs, event.Event{ID: u + "s", DistinctID: u, Name: "signup", Timestamp: base.Add(time.Minute),
+					Properties: map[string]any{}}) // signup carries NO ab_variant
+			}
+		}
+		for i := 0; i < 100; i++ {
+			mk("A", i, i < convA)
+			mk("B", i, i < convB)
+		}
+		return evs
+	}
+
+	// 1) UNIFORM conversion (30% vs 30%): there is no worst segment — must NOT fabricate one.
+	if f := segmentBlame(build(30, 30), "$pageview", "signup"); f != nil {
+		t.Fatalf("uniform 30%%/30%% A-B split must NOT be blamed, got: %q / %q", f.Title, f.Detail)
+	}
+
+	// 2) REAL leak (variant B converts 3x worse): the custom prop must now be named correctly,
+	// proving the generalized first-touch stamp works for custom props, not just device.
+	f := segmentBlame(build(45, 12), "$pageview", "signup")
+	if f == nil {
+		t.Fatal("a real ab_variant=B underperformance should be blamed, got nil")
+	}
+	if !strings.Contains(f.Title, "ab_variant") || !strings.Contains(f.Title, "B") {
+		t.Fatalf("blame should name ab_variant=B: %q", f.Title)
+	}
+}

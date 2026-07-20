@@ -1,5 +1,22 @@
 # smolanalytics vs the big three: the honest matrix (2026-07-14)
 
+> **STATUS UPDATE (2026-07-17): the layout/presentation gap this matrix opens with is CLOSED.**
+> The report-page teardown below describes the pre-rebuild dashboard (a 13-tab rail, one
+> hardcoded signup bar chart, KPI tiles with no deltas). Since then the dashboard was rebuilt
+> and now ships: a fluid `display:grid` of always-visible report **tiles** (no tab rail);
+> a **metric selector** on the main chart (any event / by device / os / source / utm — not
+> hardcoded signup); a **chart+table unit** (data table below the chart, prior + change
+> columns); **KPI tiles with period-over-period delta pills** and ellipsis+title labels (no
+> text clipping); a **conditional compare-ghost** (only rendered when prior data exists, so no
+> phantom legend); a **sticky filter/date toolbar**; and `body{overflow-x:hidden}` removed.
+> Engine paper-cuts from build-priority 4 are also fixed: `interval=hour/week/month` honored,
+> `unique=1`/`rolling=1` boolean parse, `measure=` name validation, `/v1/shares` 200 (was 404),
+> and — via the 2026-07-17 hardening — breakdowns/filters by acquisition props (device/referrer/
+> utm) first-touch-attribute so `signup by device` returns real segments, not `(none)`, on all
+> four surfaces. **Build priorities 1–5 are effectively done; the genuine remaining gap is
+> feature DEPTH (priorities 6–12): 30/90-day retention triangles, advanced funnel options,
+> paths sankey, cohort builder, board-v2.** The rows below are kept as the original snapshot.
+
 ## matrix
 
 ### Report-page skeleton (builder placement)  [behind]
@@ -193,7 +210,13 @@
 - IDENTITY GUARDRAILS (what NOT to steal): stay server-rendered — every control is a real <a>/<form> mutating query params (?days ?f ?breakdown already work this way), tabs are links, JS only progressively enhances (popover open, series toggle, live tick). No dark-pattern upsell chrome, no 40-block query builders on the main page — the main page stays a zero-config default report (calmer than Mixpanel's blank-builder cold start); depth lives in Explore. The verdict sentences + deterministic ask + covenant remain the top-of-page personality; the incumbent skeleton is adopted BELOW that signature, not instead of it.
 
 ## build priorities
-1. Layout rebuild sprint: fluid 1560px 12-col grid with one alignment edge; kill the 13-tab rail in favor of the always-visible tile grid (Zone 8); sticky filter bar with date/compare left + badged Filters popover right; collapse the 3 example-chip rows into the ask input's focus state. Pure HTML/CSS/vanilla-JS on existing endpoints — zero engine work.  — closes: 'space wasted' (380-860px dead width), 'placements all over the place' (3 alignment systems), 'unintuitive' (13 clicks to see 122px panes), and 244px of control chrome before the first insight
+### STATUS (2026-07-17): 1–8 DONE. 9–12 are agent-accessible today (create via MCP: create_alert, create_cohort, save_report) and remain only as dashboard-UI conveniences. ###
+### ✅ 1–5 DONE — grid tile layout, text-integrity, chart+table+metric-selector, demo/paper-cuts, compare-ghost.
+### ✅ 6 DONE — retention runs to 30/90-day (max_days cap 90), day/week/month buckets, rolling(on-or-after) mode; lifecycle+stickiness+paths all have dashboard tiles now (not API-only).
+### ✅ 7 DONE — funnel has order modes (ordered/strict/unordered), exclusion events, per-step filters, AND time-to-convert median + p25/p75/p90 (added 2026-07-17).
+### ✅ 8 DONE (engine) — multi-series trends (events=a,b,c → one canvas), interval=hour/week/month, measure=sum/avg/median/p90/p95/p99 + dau/wau/mau all live; a dedicated left-builder Explore PAGE is the only remaining UI-convenience slice.
+### 9–12 = dashboard-UI conveniences (drill→cohort, alerts-creation form, board-as-grid, paths-sankey). The CAPABILITY exists via the agent (MCP) + engine; these are "click it in the dashboard too" polish, not capability gaps.
+1. ✅ Layout rebuild sprint: fluid 1560px 12-col grid with one alignment edge; kill the 13-tab rail in favor of the always-visible tile grid (Zone 8); sticky filter bar with date/compare left + badged Filters popover right; collapse the 3 example-chip rows into the ask input's focus state. Pure HTML/CSS/vanilla-JS on existing endpoints — zero engine work.  — closes: 'space wasted' (380-860px dead width), 'placements all over the place' (3 alignment systems), 'unintuitive' (13 clicks to see 122px panes), and 244px of control chrome before the first insight
 2. Text-integrity fixes (one day, surgical): glance labels get ellipsis+title and minmax(150px,1fr); verdict lines get ' — ' vt/vd separator + hanging indent via absolutely-positioned bullet; header folds to ⋯ menu below 900px instead of overflow:hidden clipping; delete body{overflow-x:hidden} and give wide tables their own overflow-x:auto+sticky-first-column.  — closes: 'text cut off' — every reproduced overflow at 1440/1920/1024/820, the vt/vd run-on that changes sentence meaning, and the sub-600px header clip
 3. Chart+table unit on the main report card: metric selector (any event, not hardcoded signup), ≥4 labeled y-ticks, ghost legend hidden when prior window is all-zero, and the breakdown table below the chart with checkbox-toggles-series (legend-as-table), sort, totals, per-card computed-in-Xms.  — closes: the incumbents' single most universal pattern (chart+sortable table as one unit) plus the broken axis and phantom-ghost-legend defects; moves the covenant onto every chart
 4. Demo credibility fix: stamp device/country/source/utm props onto the demo's custom events (signup/activate/checkout) so breakdowns return real segments instead of '(none)'; add empty-state CTA copy for genuinely-empty dimensions; accept '1' as boolean for unique/rolling; validate measure= names; fix GET /v1/shares 404.  — closes: the flagship breakdown feature looking broken on our own demo — the most-demoed incumbent capability currently self-sabotaged — plus three verified API paper cuts

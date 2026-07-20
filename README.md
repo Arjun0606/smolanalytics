@@ -152,6 +152,29 @@ copy-paste block and the full build → instrument → verify loop: [docs/agents
 Already on PostHog? `plan check --source=posthog` runs the same gate against your
 existing PostHog project, no server, no migration ([docs/agents-ci.md](docs/agents-ci.md#already-on-posthog)).
 
+## Which deploy moved the metric?
+Every other analytics tool shows you the graph dropped. It can't tell you **which ship dropped it** — it doesn't have your commits. smolanalytics does.
+
+Record a marker when you ship (one line in CI), and it ties every metric change to the deploy behind it:
+
+```bash
+# in your CI, after deploy — records the current git HEAD as a deploy marker
+smolanalytics deploy      # SMOLANALYTICS_HOST + SMOLANALYTICS_WRITE_KEY set
+# or from anywhere:  curl -XPOST $HOST/v1/deploys -H "Authorization: Bearer $WRITE_KEY" \
+#                      -d '{"sha":"'"$GIT_SHA"'","message":"tighten checkout validation"}'
+```
+
+Then **ask your editor** — the answer is computed from the same reports the dashboard renders, never guessed:
+
+```
+you ▸ did my last deploy move signups?
+ai  ▸ signups −38% in the 3 days after deadbeef "tighten checkout validation"
+      (was 22/day, now 13/day). Significant given the volume — likely a regression.
+      Correlation, not proof, but that ship is the suspect.
+```
+
+It's the `deploy_impact` MCP tool (before/after per deploy, leads with any regression) and `GET /v1/deploys?event=<metric>`. Both compute the same numbers — a CI test asserts the editor's answer equals the dashboard's, so it can't drift. Correlation, not proof: the copy always says so.
+
 ## Send events (2 minutes, zero instrumentation)
 Drop the snippet in and it **autocaptures pageviews + clicks instantly**, so you get real data with no manual event tagging. Add `track()` for the key moments (signup, checkout) when you want funnels.
 
@@ -257,7 +280,7 @@ fly launch --copy-config && fly deploy
 
 **Safe by default:** `serve` binds `127.0.0.1:8080` (local only). To expose it, set `ADDR=0.0.0.0:8080`, and then a dashboard password is **required**: the server refuses to serve real data unauthenticated on a public interface (override with `SMOLANALYTICS_ALLOW_UNAUTHENTICATED=1` only on a trusted network). `demo` is exempt (throwaway data).
 
-Config (all env): `ADDR` (default `127.0.0.1:8080`), `SMOLANALYTICS_DB` (event log path), `SMOLANALYTICS_WRITE_KEY` (require a key on ingestion + MCP), `SMOLANALYTICS_PASSWORD` (dashboard login, required to expose the server), `SMOLANALYTICS_RETAIN_DAYS` (drop events older than N days; default: keep forever), `SMOLANALYTICS_MAX_EVENTS` (keep only the newest N events resident, a memory guardrail so a flood degrades to compaction instead of an OOM). Health at `/healthz`, build at `/version`.
+Config (all env): `ADDR` (default `127.0.0.1:8080`), `SMOLANALYTICS_DB` (event log path), `SMOLANALYTICS_WRITE_KEY` (PUBLIC ingest key — gates `POST /v1/events` only; it ships in your pages' HTML), `SMOLANALYTICS_READ_KEY` (SECRET read key — gates the `GET /v1` reports, `/v1/export`, and MCP; never put it in client code), `SMOLANALYTICS_PASSWORD` (dashboard login, required to expose the server), `SMOLANALYTICS_RETAIN_DAYS` (drop events older than N days; default: keep forever), `SMOLANALYTICS_MAX_EVENTS` (keep only the newest N events resident, a memory guardrail so a flood degrades to compaction instead of an OOM). Health at `/healthz`, build at `/version`.
 
 **The morning brief, self-hosted:** `smolanalytics brief` prints the pulse (visitors + events vs the prior week) and the "what to look at" findings from the same event log the server uses (set `SMOLANALYTICS_DB` to the same path). A running server also serves the same digest as JSON at `GET /v1/brief`, for your own delivery. Cron it and it arrives every morning:
 ```sh
@@ -318,7 +341,7 @@ make race    # tests with the race detector
 - **The brief, delivered:** your "what to fix" digest by email + Slack every morning, without you keeping a server up or wiring cron (self-host equivalent: `smolanalytics brief` + cron).
 - **Scale + retention:** millions of events, longer history, no ops.
 
-Cloud pricing is simple: a **14-day full-product trial** (every feature, no credit card), then from **$9/mo**. Overage never locks your dashboard. Same product, same "ask in your editor," same own-your-data, just managed. **[Start the trial →](https://smolanalytics.com)**
+Cloud pricing is simple: a **14-day full-product trial** (every feature, no credit card), then from **$29/mo**. Overage never locks your dashboard. Same product, same "ask in your editor," same own-your-data, just managed. **[Start the trial →](https://smolanalytics.com)**
 
 ## Contributing
 PRs welcome. Keep it small, correct, and dependency-free. See [CONTRIBUTING.md](CONTRIBUTING.md). Security issues: [SECURITY.md](SECURITY.md).

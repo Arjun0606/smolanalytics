@@ -30,6 +30,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/botua"
 	"github.com/Arjun0606/smolanalytics/internal/cohort"
 	"github.com/Arjun0606/smolanalytics/internal/defined"
+	"github.com/Arjun0606/smolanalytics/internal/deploys"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/exportlink"
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
@@ -52,6 +53,12 @@ import (
 //go:embed sdk.js
 var sdkJS string
 
+//go:embed install.md
+var installMD string
+
+//go:embed llms.txt
+var llmsTxt string
+
 // Version is the build version (overridable at build time via -ldflags).
 var Version = "0.1.0"
 
@@ -68,6 +75,7 @@ type Server struct {
 	aliases      *alias.Map
 	gsc          *gsc.Store
 	goals        *goal.Store
+	deploys      *deploys.Store // deploy markers → "which ship moved the metric"
 	exports      *exportlink.Store
 	defined      *defined.Store // retroactive zero-code events (Heap wedge)
 	writeKey     string         // PUBLIC ingest key (embedded in the SDK): authorizes POST /v1/events ONLY. Never reads.
@@ -253,6 +261,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/events", s.ingest)
 	mux.HandleFunc("OPTIONS /v1/events", s.preflight) // browser SDK CORS preflight
 	mux.HandleFunc("GET /sdk.js", s.serveSDK)
+	mux.HandleFunc("GET /install.md", s.serveInstallMD) // AGENTS.md tells self-hosting agents to fetch this
+	mux.HandleFunc("GET /llms.txt", s.serveLLMs)
+	mux.HandleFunc("GET /docs", s.serveInstallMD) // /docs → the same agent guide
 	mux.HandleFunc("POST /v1/ask", s.ask)
 	mux.HandleFunc("GET /v1/funnel", s.apiFunnel)
 	mux.HandleFunc("GET /v1/trends", s.apiTrends)
@@ -316,6 +327,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /v1/shares/{id}", s.deleteShare)
 	mux.HandleFunc("POST /v1/goals", s.createGoal)
 	mux.HandleFunc("DELETE /v1/goals/{id}", s.deleteGoal)
+	mux.HandleFunc("GET /v1/deploys", s.listDeploys)
+	mux.HandleFunc("POST /v1/deploys", s.createDeploy)
+	mux.HandleFunc("DELETE /v1/deploys/{id}", s.deleteDeploy)
 	mux.HandleFunc("GET /", s.dashboard)
 	return recoverMW(s.authMW(mux))
 }
@@ -352,6 +366,30 @@ func (s *Server) serveSDK(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	_, _ = io.WriteString(w, sdkJS)
+}
+
+// serveInstallMD serves the agent-facing install guide, host/key-templated to THIS instance,
+// so a self-hosting agent following AGENTS.md ("the running binary serves the same guide at
+// <YOUR_HOST>/install.md") actually gets a working, copy-ready guide instead of a 404.
+func (s *Server) serveInstallMD(w http.ResponseWriter, r *http.Request) {
+	host := baseURL(r)
+	wk, rk := s.writeKey, s.readKey
+	if wk == "" {
+		wk = "YOUR_WRITE_KEY"
+	}
+	if rk == "" {
+		rk = "YOUR_READ_KEY"
+	}
+	md := strings.NewReplacer("{{HOST}}", host, "{{WRITE_KEY}}", wk, "{{READ_KEY}}", rk).Replace(installMD)
+	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+	_, _ = io.WriteString(w, md)
+}
+
+// serveLLMs serves the tool reference (llms.txt), host-templated to THIS instance.
+func (s *Server) serveLLMs(w http.ResponseWriter, r *http.Request) {
+	txt := strings.ReplaceAll(llmsTxt, "YOUR_HOST", strings.TrimPrefix(strings.TrimPrefix(baseURL(r), "https://"), "http://"))
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = io.WriteString(w, txt)
 }
 
 // authorized is the READ gate: it authorizes returning data (GET /v1/* reports, the raw
@@ -634,7 +672,17 @@ func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now().UTC()
-	maxFuture := now.Add(time.Hour) // tolerate client clock skew, no more
+	// NO future events, period: any timestamp after now is clamped to now at ingest. A tiny
+	// clock-skew tolerance used to leave near-future events stored future-dated, and different
+	// surfaces then treated them inconsistently (trends/ask capped at now = excluded, but
+	// overview/brief/retention counted them) — a cross-surface disagreement. Clamping here
+	// means NO event is ever future-dated in the store, so every surface agrees by construction.
+	maxFuture := now
+	// sanity floor: no web/product analytics predates 2000 — a year-100 timestamp is a
+	// mangled client date, and since the write key is public, ONE such event used to
+	// stretch every all-time report's day span back two millennia (~700K zero buckets,
+	// a ~30MB response). Clamp to now, the same treatment as the future case.
+	minPast := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 	// parse the request UA once — the browser SDK's fetch carries the visitor's UA, so we
 	// derive browser + OS server-side with zero SDK weight. Unrecognized (backend/library)
 	// UAs return "", so server-to-server events are never stamped with a bogus browser.
@@ -695,6 +743,9 @@ func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 			// a broken client clock must not plant events in the future — they'd skew
 			// every trailing-window report (and lifecycle anchors on the max day seen).
 			batch[i].Timestamp = now
+		} else if batch[i].Timestamp.Before(minPast) {
+			// nor two millennia in the past — see minPast above.
+			batch[i].Timestamp = now
 		}
 	}
 	if err := s.store.Ingest(batch...); err != nil {
@@ -710,6 +761,13 @@ func (s *Server) apiFunnel(w http.ResponseWriter, r *http.Request) {
 	if len(steps) < 2 {
 		writeErr(w, http.StatusBadRequest, "steps must list at least two event names")
 		return
+	}
+	// validate every step event name — a typo'd step used to return a confident 0% funnel
+	// (as if that step really converted nobody), while MCP funnel + trends 400 the same typo.
+	for _, st := range steps {
+		if !s.knownEventOr400(w, st.Event) {
+			return
+		}
 	}
 	window, _ := time.ParseDuration(r.URL.Query().Get("window"))
 	if window <= 0 {
@@ -881,9 +939,20 @@ func decodeBatch(body []byte) (batch []event.Event, overCap bool, err error) {
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
+	// marshal FIRST: encoding straight to the wire after WriteHeader meant a marshal
+	// failure (e.g. a +Inf aggregate from float64 overflow) produced a 200 OK with an
+	// EMPTY body — a success status on a broken response. Marshal to memory, and on
+	// failure return a real JSON error instead.
+	b, err := json.Marshal(v)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"response could not be encoded — a computed value is not representable in JSON (check for numeric overflow in event properties)"}`))
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
+	_, _ = w.Write(append(b, '\n'))
 }
 
 func writeErr(w http.ResponseWriter, status int, msg string) {

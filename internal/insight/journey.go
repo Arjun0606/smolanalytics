@@ -105,10 +105,35 @@ func segmentBlame(evs []event.Event, from, to string) *Finding {
 	// value onto their events, the blame property is never found on the `from` event and
 	// the verdict stays vague ("conversion is 40%") instead of sharp ("it's mobile, at 9%").
 	// This first-touch stamp is what turns the drop-off into a root cause you can act on.
+	// Step 1: first-touch-stamp KNOWN acquisition attributes (device, source, country, …).
+	// These live on the LANDING event, which is often BEFORE the funnel's `from` step — without
+	// stamping they never reach `from`, so the verdict couldn't segment by them at all.
 	stamped := evs
-	for _, p := range blameProps {
-		if firstTouchBlameProp(p) {
+	stampedProp := map[string]bool{}
+	for _, p := range []string{"source", "channel", "device", "country", "browser", "platform", "os", "referrer"} {
+		stamped = query.StampFirstTouch(stamped, p)
+		stampedProp[p] = true
+	}
+	// Step 2: discover every property worth segmenting `from`→`to` by (now including the
+	// stamped acquisition props, plus product/custom props already on the `from` event).
+	props := usableBlameProps(stamped, from)
+	// Step 3: any discovered property NOT natively carried on the conversion (`to`) event must
+	// ALSO be first-touch-stamped — otherwise filtering by it drops every conversion event
+	// (which never had the property) and the segment falsely reads 0%. THIS is the bug that
+	// fabricated a "converts worst — fix this first" verdict for a custom entry-only property
+	// (ab_variant, $current_url) even under perfectly uniform conversion.
+	toProps := map[string]bool{}
+	for _, e := range evs {
+		if e.Name == to {
+			for k := range e.Properties {
+				toProps[k] = true
+			}
+		}
+	}
+	for _, p := range props {
+		if !toProps[p] && !stampedProp[p] {
 			stamped = query.StampFirstTouch(stamped, p)
+			stampedProp[p] = true
 		}
 	}
 	overall := stepRate(stamped, from, to, nil)
@@ -122,7 +147,7 @@ func segmentBlame(evs []event.Event, from, to string) *Finding {
 	// names the real root cause wherever it lives (device / source / plan / country).
 	var worst *Finding
 	worstRate := overall.rate()
-	for _, prop := range usableBlameProps(stamped, from) {
+	for _, prop := range props {
 		values := map[string]bool{}
 		for _, e := range stamped {
 			if e.Name != from {
@@ -208,17 +233,6 @@ func usableBlameProps(evs []event.Event, from string) []string {
 	return append(out, extra...)
 }
 
-// firstTouchBlameProp reports whether a blame property is an acquisition/user attribute
-// that lives on the landing event (so it must be first-touch-stamped onto the whole user
-// stream before segmenting). "plan" is excluded — it's a product attribute set at the
-// step itself, already present where it's needed.
-func firstTouchBlameProp(p string) bool {
-	switch p {
-	case "source", "channel", "device", "country", "browser", "platform", "os", "referrer":
-		return true
-	}
-	return false
-}
 
 // stepRate computes how many users who did `from` went on to `to` (7-day window),
 // optionally within a filtered segment.

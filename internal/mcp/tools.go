@@ -119,10 +119,14 @@ var toolList = []map[string]any{
 	},
 	{
 		"name":        "breakdown",
-		"description": "Segment an event by one of its properties — counts per property value, sorted desc. Use for 'where do signups come from', 'break down checkout by plan', 'top sources'.",
+		"description": "Segment an event by one of its properties — counts per property value, sorted desc, over any window (days=7, hours=6, from/to, or omit for all time). Use for 'where do signups come from', 'break down checkout by plan this week', 'top sources'.",
 		"inputSchema": obj(map[string]any{
 			"event":    map[string]any{"type": "string", "description": "Event to break down, e.g. \"signup\". Empty = all events."},
 			"property": map[string]any{"type": "string", "description": "Property to group by, e.g. \"source\" or \"plan\"."},
+			"days":     map[string]any{"type": "number", "description": "Rolling window in days ending now, e.g. 7 for 'last week'. Omit for all time."},
+			"hours":    map[string]any{"type": "number", "description": "Rolling window in hours ending now, e.g. 6 for 'the last 6 hours'."},
+			"from":     map[string]any{"type": "string", "description": "Absolute window start, RFC3339 or YYYY-MM-DD."},
+			"to":       map[string]any{"type": "string", "description": "Absolute window end (exclusive), RFC3339 or YYYY-MM-DD."},
 			"filters":  filtersSchema,
 		}, []string{"property"}),
 	},
@@ -165,10 +169,14 @@ var toolList = []map[string]any{
 	},
 	{
 		"name":        "paths",
-		"description": "User flows: after a start event, what do users do next (ranked at each step)? Use for 'what do users do after signup', 'where do users go from the pricing page', 'common paths after X'.",
+		"description": "User flows: after a start event, what do users do next (ranked at each step), over any window (days=7, from/to, or omit for all time)? Use for 'what do users do after signup', 'where do users go from the pricing page', 'common paths after X'.",
 		"inputSchema": obj(map[string]any{
 			"start":   map[string]any{"type": "string", "description": "The event to start the flow from, e.g. \"signup\"."},
 			"depth":   map[string]any{"type": "number", "description": "How many steps to follow (default 3)."},
+			"days":    map[string]any{"type": "number", "description": "Rolling window in days ending now. Omit for all time."},
+			"hours":   map[string]any{"type": "number", "description": "Rolling window in hours ending now."},
+			"from":    map[string]any{"type": "string", "description": "Absolute window start, RFC3339 or YYYY-MM-DD."},
+			"to":      map[string]any{"type": "string", "description": "Absolute window end (exclusive), RFC3339 or YYYY-MM-DD."},
 			"filters": filtersSchema,
 		}, []string{"start"}),
 	},

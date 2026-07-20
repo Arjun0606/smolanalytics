@@ -7,6 +7,7 @@
 # runtime data — the event log and all its sidecar files (.insights.json, .settings.json,
 # .audit.jsonl, .cohorts.json, .webhooks.json, .alerts.json, .compact), plus local artifacts
 *.data
+*.data.*
 smolanalytics.data*
 .playwright-mcp/
 .env

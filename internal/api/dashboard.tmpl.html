@@ -562,7 +562,7 @@
     </div>
     </div>
     {{if .ChartTable}}
-    <details class="charttable">
+    <details class="charttable" open>
       <summary>data table · newest first ▾</summary>
       <table class="ctab">
         <thead><tr><th>bucket</th><th class="n">{{.ChartMetric}}</th>{{if gt .GhostTotal 0}}<th class="n">prior</th><th class="n">change</th>{{end}}<th></th></tr></thead>

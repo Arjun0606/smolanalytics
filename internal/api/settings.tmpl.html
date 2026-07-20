@@ -116,7 +116,7 @@
   {{if eq .Section "keys"}}
     <div class="card">
       <h2>API keys</h2>
-      <div class="note">Keys authenticate event ingestion and the MCP endpoint. {{if .EnvKeySet}}An environment key (<code>SMOLANALYTICS_WRITE_KEY</code>) is also active.{{else}}No environment key set — ingestion is open until you create a key here.{{end}}</div>
+      <div class="note">Keys created here are full API keys: they authenticate ingestion, the read reports, and MCP. {{if .EnvKeySet}}The environment write key (<code>SMOLANALYTICS_WRITE_KEY</code>) is also active — it gates <em>ingestion only</em>; reads and MCP need <code>SMOLANALYTICS_READ_KEY</code> or a key from this page.{{else}}No environment key set — ingestion is open until you create a key here.{{end}}</div>
       <div id="keys" style="margin-top:12px">
         {{range .Keys}}<div class="keyrow" data-id="{{.ID}}"><span class="nm">{{.Name}}</span><span class="kv">{{.Key}}</span><span class="x" title="revoke">revoke</span></div>
         {{else}}<div class="note" id="noKeys">no keys yet</div>{{end}}

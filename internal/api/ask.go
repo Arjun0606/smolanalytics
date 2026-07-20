@@ -95,6 +95,24 @@ func computedBy(q string, evs []event.Event, now time.Time) string {
 	if _, _, cok := parseCompare(q, now); cok {
 		return receipt("the period-comparison report (the same metric across two windows)")
 	}
+	// mirror answer()'s pre-intent "break down <event> by <property>" branch — without this
+	// the receipt re-classified the question as unknown and told the user "no matching
+	// event... I showed the weekly pulse instead" directly under a correct breakdown answer.
+	if intent != intentConvBy && intent != intentRetention && intent != intentFunnel &&
+		intent != intentMeasure && intent != intentPaths && intent != intentLifecycle &&
+		intent != intentStickiness && intent != intentEngagement {
+		if prop := breakdownByProp(q, evs); prop != "" {
+			if ev := namedEvent(normalizeEventWords(q), eventsByVolume(evs)); ev != "" {
+				for _, e := range evs {
+					if e.Name == ev {
+						if _, ok := e.Properties[prop]; ok {
+							return receipt(fmt.Sprintf("the property-breakdown report (%q events per %q value)", ev, prop))
+						}
+					}
+				}
+			}
+		}
+	}
 	if intent != intentMeasure && intent != intentConvBy && intent != intentSplit &&
 		!hasAny(q, "trend", "over time", "trajectory") {
 		if segs := extractSegments(q, evs); len(segs) >= 1 {
@@ -378,15 +396,52 @@ func answer(q string, evs []event.Event, now time.Time) string {
 	volAll := eventsByVolume(evs) // event NAMES come from the full schema, metrics from the window
 	scoped := scope(evs, win)
 
+	// "break down <event> by <property>" / "<event> by <property>" over a NAMED event and one
+	// of ITS OWN properties (signups by plan, checkout by tier). Without this, "break down
+	// signup by device" bounced to the web user-agent dimension ("No devices recorded") and
+	// "signups by plan" dropped the dimension and returned the flat aggregate. Guarded so it
+	// never steals conversion/retention/funnel questions that own the "by <dim>" phrasing.
+	if intent != intentConvBy && intent != intentRetention && intent != intentFunnel &&
+		intent != intentMeasure && intent != intentPaths && intent != intentLifecycle &&
+		intent != intentStickiness && intent != intentEngagement {
+		if prop := breakdownByProp(q, evs); prop != "" {
+			if ev := namedEvent(normalizeEventWords(q), volAll); ev != "" {
+				pool := make([]event.Event, 0, len(evs))
+				carries := false
+				for _, e := range evs {
+					if e.Name == ev {
+						pool = append(pool, e)
+						if _, ok := e.Properties[prop]; ok {
+							carries = true
+						}
+					}
+				}
+				if carries {
+					// "how many USERS signed up by plan" wants distinct users; the default
+					// ("break signups down by plan") wants EVENT counts (matching GET /v1/breakdown).
+					if hasAny(q, "how many users", "how many people", "unique user", "distinct user",
+						"unique people", "users signed", "users did", "people did", "by user") {
+						return answerPropBreakdownLabel(pool, prop, "users", win)
+					}
+					return answerPropBreakdownEvents(pool, prop, ev+"s", win)
+				}
+			}
+		}
+	}
+
 	// Numeric aggregation wins before the path/event-name shortcuts, so "average order
 	// value" isn't hijacked into a checkout COUNT by the named-event branch below.
 	if intent == intentMeasure {
-		return answerMeasure(scoped, q, volAll, win)
+		// pass the FULL event set (not the window-scoped one): answerMeasure discovers the
+		// named segment's value from the data, and a value that only occurs OUTSIDE the window
+		// (e.g. "free users" whose events predate "today") must still resolve — the window is
+		// re-applied inside ComputeMeasure. Scoping first would silently drop the segment.
+		return answerMeasure(evs, q, volAll, win)
 	}
 	// paths must dispatch before the named-event branch below, or "what do users do after
 	// signup" gets hijacked into a signup COUNT instead of the journey.
 	if intent == intentPaths {
-		return answerPaths(evs, q, volAll)
+		return answerPaths(evs, q, volAll, win)
 	}
 
 	// The comparison and segment layer (ask_scope.go): "this week vs last week",
@@ -437,7 +492,22 @@ func answer(q string, evs []event.Event, now time.Time) string {
 	if intent != intentConvBy && intent != intentSplit {
 		if len(segs) == 2 {
 			if intent == intentRetention {
-				return answerRetentionVsSeg(evs, win, now, segs[0], segs[1])
+				return answerRetentionVsSeg(evs, win, now, q, segs[0], segs[1])
+			}
+			// "pro vs free CONVERSION RATE" is a RATE comparison, not a raw-count one — comparing
+			// signup counts ("free leads, 30 vs 25") gives the OPPOSITE of the truth when free has
+			// more signups but converts worse. Route same-property conversion questions to the
+			// per-segment funnel so it compares rates, with a sample floor.
+			if segs[0].prop == segs[1].prop && hasAny(q, "conversion", "convert", "rate") {
+				if fs := detectFunnelForConv(evs, volAll, q); len(fs) >= 2 {
+					return answerConvBySteps(scope(evs, win), segs[0].prop, fs, win)
+				}
+			}
+			// two segments on DIFFERENT properties with no comparison word mean an AND filter
+			// ("pro signups on desktop" = plan=pro AND device=desktop), not "X vs Y". Answering
+			// it as a comparison (or dropping one) returns a wrong number as fact.
+			if segs[0].prop != segs[1].prop && !hasAny(q, " vs ", "versus", "compared to", " or ", " against ") {
+				return answerSegAnd(evs, m, segs[0], segs[1], win)
 			}
 			return answerSegVsSeg(evs, m, segs[0], segs[1], win)
 		}
@@ -472,18 +542,36 @@ func answer(q string, evs []event.Event, now time.Time) string {
 	if path := extractPath(q); path != "" {
 		return answerPage(scoped, path, win)
 	}
+	// "how many events did we receive all time" / "total event volume" — the count of ALL
+	// events, not any single event. Without this it fell to namedEvent()'s default and
+	// reported one event's count (e.g. signup=7) as the grand total (2,258).
+	if isTotalEventsAsk(q, volAll) {
+		users := map[string]bool{}
+		for _, e := range scoped {
+			users[e.DistinctID] = true
+		}
+		return fmt.Sprintf("%s events total%s, from %s users, across %d event types.",
+			commaInt(len(scoped)), winSuffix(win), commaInt(len(users)), len(volAll))
+	}
 	if ev := namedEvent(qe, volAll); ev != "" && (countish(q) || len(strings.Fields(q)) <= 3 || win.scoped()) &&
 		intent != intentConvBy &&
+		// retention/stickiness questions name an event ("retention for app_open", "app_open
+		// stickiness") but must go to their OWN report — the count intercept used to hijack
+		// them (with win.scoped()) and return an event VOLUME count stamped "retention report".
+		intent != intentRetention && intent != intentStickiness && intent != intentLifecycle &&
 		!hasAny(q, "by country", "by device", "by browser", "by os", "by source", "by referrer", "break down", "breakdown") &&
-		!(intent == intentFunnel && hasAny(q, "all the way", "made it", "complete", "end up", "go on to",
-			"percent", "% of", "share of", "rate", "dropped between", "drop between",
-			"funnel", "conversion", "convert")) {
+		!(intent == intentFunnel && (hasAny(q, "all the way", "made it", "complete", "end up", "go on to",
+			"percent", "% of", "share of", "rate", "dropped between", "drop between", "funnel") ||
+			// bare "convert"/"conversion" signals a funnel ONLY when it isn't the counted
+			// event's OWN name — "how many convert events" is a count of the event "convert",
+			// not a funnel request (explicit funnel words above still route to the funnel).
+			(hasAny(q, "conversion", "convert") && !strings.Contains(strings.ToLower(ev), "conv")))) {
 		// P2-5: if the event was resolved through a SYNONYM (the asked word isn't the
 		// tracked name), disclose the substitution rather than silently answering it.
 		if syn := synonymNote(q, ev); syn != "" {
-			return syn + " " + answerEvent(scoped, ev, win)
+			return syn + " " + answerEvent(scoped, ev, win, q)
 		}
-		return answerEvent(scoped, ev, win)
+		return answerEvent(scoped, ev, win, q)
 	}
 	// If the user explicitly named an event ("the X event", "X events fire") that we
 	// DON'T have, say so with the nearest real name — never silently fall through to a
@@ -531,7 +619,7 @@ func answerScopedIntent(intent askIntent, evs []event.Event, scoped []event.Even
 	case intentStickiness:
 		return answerStickiness(evs, now)
 	case intentPaths:
-		return answerPaths(evs, q, volAll)
+		return answerPaths(evs, q, volAll, win)
 	case intentLifecycle:
 		return answerLifecycle(evs, q, win, now)
 	case intentHours:
@@ -599,6 +687,57 @@ var eventWordNorm = strings.NewReplacer(
 
 func normalizeEventWords(q string) string { return eventWordNorm.Replace(q) }
 
+// detectFunnelForConv picks the funnel steps for a "X vs Y conversion rate" question: the
+// steps the user named ("signup to checkout conversion by plan") if present, else the
+// auto-detected core funnel — so a rate comparison always has a real 2-step funnel to measure.
+func detectFunnelForConv(evs []event.Event, vol []string, q string) []funnel.Step {
+	if named := namedFunnelSteps(q, vol); len(named) >= 2 {
+		return named
+	}
+	steps, _ := detectFunnel(evs, vol)
+	return steps
+}
+
+// isTotalEventsAsk detects a question about TOTAL event volume across all events ("how many
+// events did we receive", "total event volume") — as opposed to a count of one named event.
+func isTotalEventsAsk(q string, vol []string) bool {
+	if !hasAny(q, "event") {
+		return false
+	}
+	if !hasAny(q, "how many event", "total event", "events all time", "events in total",
+		"events altogether", "event volume", "events do we", "events did we", "events have we",
+		"events received", "events receive", "count of events", "number of events") {
+		return false
+	}
+	// if a specific tracked event name is present, the question is about THAT event, not the total.
+	for _, n := range vol {
+		if strings.Contains(q, strings.ToLower(n)) {
+			return false
+		}
+	}
+	return true
+}
+
+// commaInt formats an int with thousands separators (1200 -> "1,200").
+func commaInt(n int) string {
+	s := strconv.Itoa(n)
+	neg := strings.HasPrefix(s, "-")
+	if neg {
+		s = s[1:]
+	}
+	var b strings.Builder
+	for i, c := range s {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			b.WriteByte(',')
+		}
+		b.WriteRune(c)
+	}
+	if neg {
+		return "-" + b.String()
+	}
+	return b.String()
+}
+
 // isMeasureAsk spots a numeric-aggregation question (revenue, AOV, median, p90) vs a count.
 // Kept to STRONG signals so "how much traffic" stays a web question, not a measure.
 func isMeasureAsk(q string) bool {
@@ -609,6 +748,13 @@ func isMeasureAsk(q string) bool {
 	if hasAny(q, "revenue", "order value", "aov", "arpu", "sum of", "median",
 		"percentile", "p90", "p95", "p99", "average", "avg ", "mean ",
 		"how much money", "how much did", "total spend", "total amount", "total revenue") {
+		return true
+	}
+	// "total <event> amount", "sum of purchase amount", "average cart value" — a value-ish
+	// property word paired with an aggregation word. Without this, "total checkout amount"
+	// missed the measure route and was answered as a count / funnel (the wrong metric).
+	if hasAny(q, "amount", "revenue", "spend", "cart value", "payment", "price paid") &&
+		hasAny(q, "total ", "sum ", "how much", "average", "avg", "median", "add up") {
 		return true
 	}
 	// superlatives count as a measure only when paired with a value-ish word, so "max amount"
@@ -624,7 +770,11 @@ func measureFromQuestion(q string) trends.Measure {
 		return trends.Avg
 	case hasAny(q, "median"):
 		return trends.Median
-	case hasAny(q, "p90", "p95", "p99", "percentile", "90th"):
+	case hasAny(q, "p99"):
+		return trends.P99
+	case hasAny(q, "p95"):
+		return trends.P95
+	case hasAny(q, "p90", "percentile", "90th"):
 		return trends.P90
 	case hasAny(q, "highest", "max", "biggest", "largest", "peak"):
 		return trends.Max
@@ -687,14 +837,46 @@ func answerMeasure(evs []event.Event, q string, volAll []string, win askWindow) 
 		return "I compute numbers only from values you've actually sent, so I won't invent one. You haven't sent any numeric event properties yet — add one (e.g. track(\"checkout\", {amount: 29})) and I'll total or average it exactly."
 	}
 	ev := namedEvent(q, volAll) // "" = across every event carrying the property
-	res := trends.ComputeMeasure(evs, ev, prop, m, win.from, win.to)
-	if res.N == 0 {
-		return fmt.Sprintf("No numeric %q values in that window yet, so there's nothing to compute. Once your events carry it, I'll report it exactly.", prop)
+	// honor any property qualifier ("average order value for pro users") — without filtering
+	// by the named segment the measure was computed UNFILTERED, silently dropping the
+	// qualifier and reporting a number for the wrong population as authoritative fact.
+	pool := evs
+	segLabel := ""
+	for _, s := range extractSegments(q, evs) {
+		if !s.found {
+			return fmt.Sprintf("0 — no events with %s = %s have been sent, so there's no %s to compute for %s.", s.prop, s.label, prop, s.label)
+		}
+		if userAttr(s.prop) {
+			pool = segFilterUsers(pool, s)
+		} else {
+			pool = segFilter(pool, s)
+		}
+		if segLabel == "" {
+			segLabel = s.label
+		} else {
+			segLabel += " + " + s.label
+		}
 	}
-	verb := map[trends.Measure]string{trends.Sum: "Total", trends.Avg: "Average", trends.Min: "Minimum", trends.Max: "Maximum", trends.Median: "Median", trends.P90: "p90"}[m]
+	res := trends.ComputeMeasure(pool, ev, prop, m, win.from, win.to)
+	// float64 overflow: never state "+Inf" as a fact with the CI-parity trailer — say what
+	// happened, honestly, the same way /v1 and MCP now error on this input.
+	if !res.Finite() {
+		return fmt.Sprintf("The %s of %q overflows a float64 — the values are too large to aggregate exactly, so I won't report a made-up number. Check the property's unit (e.g. cents vs dollars, or a corrupted giant value in one event).", m, prop)
+	}
+	if res.N == 0 {
+		seg := ""
+		if segLabel != "" {
+			seg = " for " + segLabel
+		}
+		return fmt.Sprintf("No numeric %q values%s in that window yet, so there's nothing to compute. Once your events carry it, I'll report it exactly.", prop, seg)
+	}
+	verb := map[trends.Measure]string{trends.Sum: "Total", trends.Avg: "Average", trends.Min: "Minimum", trends.Max: "Maximum", trends.Median: "Median", trends.P90: "p90", trends.P95: "p95", trends.P99: "p99"}[m]
 	evPart := ""
 	if ev != "" {
 		evPart = " per " + ev
+	}
+	if segLabel != "" {
+		evPart += " for " + segLabel
 	}
 	scopePart := ""
 	if win.scoped() && win.label != "" {
@@ -758,16 +940,19 @@ func briefDays(q string) int {
 func answerBrief(evs []event.Event, days int, now time.Time) string {
 	b := brief.Build(evs, days, now)
 	var s strings.Builder
-	fmt.Fprintf(&s, "Last %d days: %d visitors · %d events", b.Days, b.Visitors, b.Events)
+	// b.Visitors counts distinct users of ANY event (active people), NOT web visitors
+	// (pageviews) — label it as such so a 0-pageview site can't read "1 visitor this week"
+	// and contradict the pageview-based web report.
+	fmt.Fprintf(&s, "Last %d days: %d active people · %d events", b.Days, b.Visitors, b.Events)
 	if b.PriorEvents == 0 {
 		s.WriteString(" (no prior window to compare).")
 	} else {
-		visitors := "new"
+		people := "new"
 		if b.PriorVisitors > 0 {
-			visitors = fmt.Sprintf("%+d%%", pctChange(b.Visitors, b.PriorVisitors))
+			people = fmt.Sprintf("%+d%%", pctChange(b.Visitors, b.PriorVisitors))
 		}
-		fmt.Fprintf(&s, " (vs prior %d days: visitors %s, events %+d%%).", b.Days,
-			visitors, pctChange(b.Events, b.PriorEvents))
+		fmt.Fprintf(&s, " (vs prior %d days: active people %s, events %+d%%).", b.Days,
+			people, pctChange(b.Events, b.PriorEvents))
 	}
 	if len(b.Findings) == 0 {
 		s.WriteString(" Nothing notable, no big swings, funnel leaks, or retention flags.")
@@ -811,6 +996,7 @@ func windowClause(w askWindow) string {
 
 var lastNDaysRe = regexp.MustCompile(`(?:last|past)\s+(\d+)\s+days?`)
 var lastNHoursRe = regexp.MustCompile(`(?:last|past)\s+(\d+)\s+hours?`)
+var lastNMinutesRe = regexp.MustCompile(`(?:last|past)\s+(\d+)\s+min(?:ute)?s?`)
 
 // parseWindow maps time phrases to real windows (UTC, like every computation
 // here). Recognized: today, yesterday, this/last week (calendar, Monday start),
@@ -849,6 +1035,14 @@ func parseWindow(q string, now time.Time) (win askWindow, unsupported string) {
 		first := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 		return askWindow{from: first.AddDate(0, -1, 0), to: first,
 			label: "last month (" + first.AddDate(0, -1, 0).Format("January 2006") + ", UTC)"}, ""
+	}
+	if m := lastNMinutesRe.FindStringSubmatch(q); m != nil {
+		// minute windows: "last 30 minutes" used to fall through to the empty (all-time)
+		// window and answer the whole dataset under the "cannot be fabricated" stamp.
+		if n, err := strconv.Atoi(m[1]); err == nil && n > 0 && n <= 60*24*366 {
+			return askWindow{from: now.Add(-time.Duration(n) * time.Minute), to: now,
+				label: fmt.Sprintf("the last %d minutes (UTC)", n)}, ""
+		}
 	}
 	if m := lastNHoursRe.FindStringSubmatch(q); m != nil {
 		if n, err := strconv.Atoi(m[1]); err == nil && n > 0 && n <= 24*366 {
@@ -930,6 +1124,18 @@ func scope(evs []event.Event, w askWindow) []event.Event {
 
 func answerFunnel(evs []event.Event, vol []string, win askWindow, q string) string {
 	fsteps, ftitle := detectFunnel(evs, vol)
+	// if the question explicitly NAMES the funnel steps ("what percent of landing users
+	// convert"), honor exactly those in order — never the volume-detected funnel that
+	// prepends the top event (pageview). Prepending a disjoint entry step (landing users who
+	// never did pageview) zeroes the named step and falsely answers "No landing users".
+	if named := namedFunnelSteps(q, vol); len(named) >= 2 {
+		fsteps = named
+		names := make([]string, len(named))
+		for i, s := range named {
+			names[i] = s.Event
+		}
+		ftitle = strings.Join(names, " → ")
+	}
 	fr := funnel.Compute(evs, fsteps, 7*24*time.Hour)
 	if len(fr.Steps) == 0 || fr.Steps[0].Count == 0 {
 		if win.scoped() {
@@ -974,7 +1180,8 @@ func answerFunnel(evs []event.Event, vol []string, win askWindow, q string) stri
 	}
 	timing := ""
 	if fr.Converted > 0 && fr.MedianConvSecs > 0 {
-		timing = fmt.Sprintf(" Median time to convert the full funnel: %s.", humanDuration(fr.MedianConvSecs))
+		timing = fmt.Sprintf(" Time to convert the full funnel: median %s, p90 %s (your slowest tenth take this long — a nudge/reminder targets them).",
+			humanDuration(fr.MedianConvSecs), humanDuration(fr.P90ConvSecs))
 	}
 	return fmt.Sprintf("%d of %d users (%d%%) complete %s%s. The biggest drop-off is at \"%s\", %d users fall off there.%s",
 		fr.Steps[len(fr.Steps)-1].Count, fr.Steps[0].Count, pct(fr.OverallConversion), ftitle, windowClause(win), worst, worstDrop, timing)
@@ -999,15 +1206,18 @@ func humanDuration(secs float64) string {
 	}
 }
 
-func answerRetention(evs []event.Event, _ []string, win askWindow, now time.Time, q string) string {
+func answerRetention(evs []event.Event, vol []string, win askWindow, now time.Time, q string) string {
 
 	// weekly/monthly/rolling asks take the bucketed path; the default daily path below is
 	// kept byte-identical so nothing about the common case changes.
 	if hasAny(q, "weekly", "week", "monthly", "month", "rolling", "unbounded") {
-		return answerRetentionBucketed(evs, nil, win, now, q)
+		return answerRetentionBucketed(evs, vol, win, now, q)
 	}
-	// anchor: ANY event ("" = general activity) — the same default /v1/retention and the
-	// MCP tool use, so the four surfaces can't quote different numbers for one question.
+	// anchor: ANY event ("" = general activity) by default — the same default /v1/retention
+	// and the MCP tool use. But a question that NAMES an event ("retention for open") must
+	// scope to it, matching GET/MCP retention?event=open — the named event used to be
+	// silently ignored, answering a different question than the one asked.
+	anchor := namedEvent(normalizeEventWords(q), vol)
 	// "day 30 retention" widens the horizon to the asked day and answers honestly when
 	// no cohort is old enough to observe it.
 	askDay := retentionPeriodAsked(q)
@@ -1015,7 +1225,7 @@ func answerRetention(evs []event.Event, _ []string, win askWindow, now time.Time
 	if askDay > maxD {
 		maxD = askDay
 	}
-	rr := retention.Compute(evs, maxD, "")
+	rr := retention.Compute(evs, maxD, anchor)
 	if askDay > 7 {
 		dN, sizeN := retention.DayN(rr, askDay, now)
 		if sizeN == 0 {
@@ -1047,7 +1257,7 @@ func answerRetention(evs []event.Event, _ []string, win askWindow, now time.Time
 
 // answerRetentionBucketed handles weekly/monthly/rolling retention asks: same honest
 // denominator (only cohorts old enough to observe period N), reported in the unit asked for.
-func answerRetentionBucketed(evs []event.Event, _ []string, win askWindow, now time.Time, q string) string {
+func answerRetentionBucketed(evs []event.Event, vol []string, win askWindow, now time.Time, q string) string {
 	bucket, unit, p1, p2, maxP := "day", "day", 1, 7, 7
 	if hasAny(q, "weekly", "week") {
 		bucket, unit, p1, p2, maxP = "week", "week", 1, 4, 4
@@ -1056,7 +1266,10 @@ func answerRetentionBucketed(evs []event.Event, _ []string, win askWindow, now t
 		bucket, unit, p1, p2, maxP = "month", "month", 1, 3, 3
 	}
 	rolling := hasAny(q, "rolling", "unbounded")
-	rr := retention.ComputeBucketed(evs, maxP, "", bucket, rolling)
+	// same named-event scoping as the daily path: "weekly retention for open" anchors on
+	// the open event, matching GET/MCP retention?event=open.
+	anchor := namedEvent(normalizeEventWords(q), vol)
+	rr := retention.ComputeBucketed(evs, maxP, anchor, bucket, rolling)
 
 	r1, s1 := retention.PeriodN(rr, p1, now)
 	kind := unit
@@ -1255,7 +1468,14 @@ func rateSuffix(total int, win askWindow, points int) string {
 	if d < 2 {
 		return ""
 	}
-	return fmt.Sprintf(", about %d/day", total/d)
+	// float rate, not truncating integer division: 4 events over 7 days is 0.57/day, which
+	// floored to "about 0/day" reads as "nothing happened" for a non-zero count. Describe a
+	// real-but-sub-1 rate honestly instead of flooring it to a misleading zero.
+	rate := float64(total) / float64(d)
+	if total > 0 && rate < 1 {
+		return ", less than 1/day"
+	}
+	return fmt.Sprintf(", about %d/day", int(rate+0.5))
 }
 
 func windowDays(win askWindow, points int) int {
@@ -1327,19 +1547,27 @@ func answerActive(evs []event.Event, win askWindow, now time.Time) string {
 // answerEvent counts one named event over the window, the resolver for "how many
 // checkout this week?" and the "your events" discovery chips. Mirrors answerSignups
 // but for the exact event the user named rather than the picked default.
-func answerEvent(evs []event.Event, ev string, win askWindow) string {
-	tr := trends.Compute(evs, ev, win.from, win.to, false)
+func answerEvent(evs []event.Event, ev string, win askWindow, q string) string {
+	// "how many UNIQUE/DISTINCT users did X" wants deduped users, not the raw event count —
+	// the engine computes both; answering the count for a users-phrased question overstates it.
+	unique := hasAny(q, "unique user", "distinct user", "unique people", "distinct people",
+		"how many users", "how many people", "users did", "people did", "users who", "people who")
+	tr := trends.Compute(evs, ev, win.from, win.to, unique)
 	days := len(tr.Points)
+	unit := "events"
+	if unique {
+		unit = "distinct users"
+	}
 	if tr.Total == 0 {
 		if win.scoped() {
-			return fmt.Sprintf("No %q events %s. Widen the window, or drop the time phrase for all history.", ev, win.label)
+			return fmt.Sprintf("No %q %s %s. Widen the window, or drop the time phrase for all history.", ev, unit, win.label)
 		}
-		return fmt.Sprintf("No %q events recorded yet.", ev)
+		return fmt.Sprintf("No %q %s recorded yet.", ev, unit)
 	}
 	if win.scoped() {
-		return fmt.Sprintf("%d %q events %s%s.", tr.Total, ev, win.label, rateSuffix(tr.Total, win, days))
+		return fmt.Sprintf("%d %q %s %s%s.", tr.Total, ev, unit, win.label, rateSuffix(tr.Total, win, days))
 	}
-	return fmt.Sprintf("%d %q events %s%s.", tr.Total, ev, allTimeSpan(days), rateSuffix(tr.Total, win, days))
+	return fmt.Sprintf("%d %q %s %s%s.", tr.Total, ev, unit, allTimeSpan(days), rateSuffix(tr.Total, win, days))
 }
 
 // answerPage answers "visitors to /pricing" / "how many pageviews for /pqr" from
@@ -1415,11 +1643,20 @@ func answerWebDim(evs []event.Event, q string, win askWindow) string {
 		v string
 		n int
 	} {
-		counts := map[string]int{}
+		// count VISITORS first-touch (each visitor's earliest pageview, once), IDENTICAL
+		// to web.Compute — counting raw pageviews made the ask split (6/3) disagree with
+		// the dashboard/GET/MCP visitor split (5/2) for the same question.
+		firstPV := map[string]event.Event{}
 		for _, e := range evs {
 			if e.Name != "$pageview" {
 				continue
 			}
+			if f, ok := firstPV[e.DistinctID]; !ok || e.Timestamp.Before(f.Timestamp) {
+				firstPV[e.DistinctID] = e
+			}
+		}
+		counts := map[string]int{}
+		for _, e := range firstPV {
 			if val, _ := e.Properties[prop].(string); val != "" {
 				counts[val]++
 			}
@@ -1486,7 +1723,9 @@ func answerWebDim(evs []event.Event, q string, win askWindow) string {
 	for i, r := range rows {
 		parts[i] = fmt.Sprintf("%s (%d)", r.v, r.n)
 	}
-	return "Top " + label + winSuffix(win) + ": " + strings.Join(parts, ", ") + "."
+	// "by visitors": the numbers are first-touch visitor counts (the dashboard's unit),
+	// not pageviews — say so, so the unit can't be misread.
+	return "Top " + label + " by visitors" + winSuffix(win) + ": " + strings.Join(parts, ", ") + "."
 }
 
 // answerLive answers "who's on the site right now" from the last-5-minute window,
@@ -1521,6 +1760,21 @@ func answerWeb(evs []event.Event, win askWindow) string {
 		}
 	}
 	if views == 0 {
+		// autocapture uses "$pageview", but some products track a CUSTOM event literally
+		// named "pageview"/"page_view". Count that rather than falsely reporting "No
+		// pageviews" while 20 such events sit in the log.
+		for _, name := range []string{"pageview", "page_view"} {
+			cv, cu := 0, map[string]bool{}
+			for _, e := range evs {
+				if e.Name == name {
+					cv++
+					cu[e.DistinctID] = true
+				}
+			}
+			if cv > 0 {
+				return fmt.Sprintf("%d %q events from %d users%s. (These are a custom %q event, not autocaptured $pageview.)", cv, name, len(cu), winSuffix(win), name)
+			}
+		}
 		if win.scoped() {
 			return "No pageviews " + win.label + ". The browser snippet autocaptures $pageview events — widen the window, or drop the time phrase for all history."
 		}

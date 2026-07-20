@@ -100,7 +100,9 @@ func TestAskRouterAndAnswers(t *testing.T) {
 		{
 			q:        "what happened this week?",
 			intent:   intentBrief,
-			contains: []string{"Last 7 days:", "visitors"},
+			// "active people" (distinct users of any event), not web "visitors" (pageviews) —
+			// the brief pulse must not claim visitors on a site with zero pageviews.
+			contains: []string{"Last 7 days:", "active people"},
 		},
 		// --- intent collisions the sim caught ---
 		{
@@ -287,16 +289,25 @@ func TestWindowCovenant(t *testing.T) {
 		if !win.from.Equal(wantFrom) {
 			t.Errorf("ask %q from = %v, want calendar-aligned %v", q, win.from, wantFrom)
 		}
+		// ask's upper bound ends NOW — never the future. This is the other half of the
+		// covenant: if /v1 left `to` unbounded, a clock-skewed future-dated event would land
+		// in the /v1 count but not the ask count (they were byte-different for exactly this).
+		if win.to.IsZero() {
+			t.Errorf("ask %q left `to` unbounded — a future-dated event would break the covenant", q)
+		}
 		// /v1 side: parseTrendWindow uses the real clock, so assert it produces the SAME
-		// formula (midnight today, n-1 days back) against the real now.
+		// formula (midnight today, n-1 days back) against the real now, AND caps `to` at now.
 		req := httptest.NewRequest("GET", fmt.Sprintf("/v1/trends?event=signup&days=%d", n), nil)
-		from, _, err := parseTrendWindow(req)
+		from, to, err := parseTrendWindow(req)
 		if err != nil {
 			t.Fatalf("parseTrendWindow(days=%d): %v", n, err)
 		}
 		realWant := time.Now().UTC().Truncate(24 * time.Hour).AddDate(0, 0, -(n - 1))
 		if !from.Equal(realWant) {
 			t.Errorf("/v1/trends days=%d from = %v, want calendar-aligned %v", n, from, realWant)
+		}
+		if to.IsZero() {
+			t.Errorf("/v1/trends days=%d left `to` unbounded — must cap at now to match the ask bar", n)
 		}
 	}
 }

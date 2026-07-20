@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"sort"
 	"strconv"
@@ -41,7 +42,9 @@ func filterSetFrom(r *http.Request) ([]query.Filter, bool, error) {
 	var fs []query.Filter
 	if raw := r.URL.Query().Get("filters"); raw != "" {
 		if err := json.Unmarshal([]byte(raw), &fs); err != nil {
-			return nil, false, badRequestError{fmt.Sprintf("invalid filters JSON: %v", err)}
+			// never embed err.Error() — the encoding/json message leaks internal Go type
+			// names (e.g. "[]query.Filter") to the caller. Return a fixed, shape-guiding message.
+			return nil, false, badRequestError{`filters must be a JSON array of {"property","op","value"} objects, e.g. [{"property":"plan","op":"eq","value":"pro"}]`}
 		}
 	}
 	// ?f=prop:op:value (or prop:value for eq); multi-value a|b becomes an In list.
@@ -100,7 +103,10 @@ func (s *Server) filtered(r *http.Request) ([]event.Event, error) {
 	if bad, known := query.FirstUnknownProp(all, fs); bad != "" {
 		return nil, badRequestError{fmt.Sprintf("no events carry the property %q, so this filter can only ever match 0 — check the spelling. Properties seen: %s", bad, strings.Join(known, ", "))}
 	}
-	evs := query.ApplyMode(all, fs, anyMode)
+	// first-touch-stamp acquisition-attribute filters (device/referrer/utm/country/…) so
+	// "signups where device=mobile" means "signups by mobile-acquired users" — matching the
+	// dashboard + ask bar — instead of a silent 0 because signup carries no device property.
+	evs := query.ApplyMode(query.StampForFilters(all, fs), fs, anyMode)
 	if cid := r.URL.Query().Get("cohort"); cid != "" && s.cohorts != nil {
 		if d, ok := s.cohorts.Get(cid); ok {
 			evs = cohort.FilterToUsers(evs, cohort.Resolve(all, d))
@@ -122,6 +128,11 @@ func (s *Server) funnelScoped(r *http.Request) ([]event.Event, error) {
 	all, err := s.store.Range(time.Time{}, time.Time{})
 	if err != nil {
 		return nil, err
+	}
+	// same unknown-property guard the other reports use — a typo'd filter property
+	// ("plann") used to return a confident all-zero funnel, while trends/breakdown/MCP 400.
+	if bad, known := query.FirstUnknownProp(all, fs); bad != "" {
+		return nil, badRequestError{fmt.Sprintf("no events carry the property %q, so this filter can only ever match 0 — check the spelling. Properties seen: %s", bad, strings.Join(known, ", "))}
 	}
 	evs := query.ScopeUsers(all, fs, anyMode)
 	if cid := r.URL.Query().Get("cohort"); cid != "" && s.cohorts != nil {
@@ -276,7 +287,7 @@ func (s *Server) apiTrends(w http.ResponseWriter, r *http.Request) {
 		}
 		m, ok := trends.ParseMeasure(meas)
 		if !ok {
-			writeErr(w, http.StatusBadRequest, "unknown measure "+meas+" (want sum, avg, min, max, median or p90)")
+			writeErr(w, http.StatusBadRequest, "unknown measure "+meas+" (want sum, avg, min, max, median, p90, p95 or p99)")
 			return
 		}
 		// a measure over a non-numeric property (measure=avg&property=device) must
@@ -292,7 +303,28 @@ func (s *Server) apiTrends(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadRequest, fmt.Sprintf("property %q is not numeric — measures need a numeric property like amount", property))
 			return
 		}
-		writeJSON(w, http.StatusOK, trends.ComputeMeasure(evs, event, property, m, from, to))
+		// measure + breakdown = the aggregate per group ("revenue by plan"). This combination
+		// used to silently drop the breakdown and return the grand total as if it were the split.
+		if bd := q.Get("breakdown"); bd != "" {
+			series := trends.ComputeMeasureBreakdown(evs, event, property, m, bd, from, to)
+			if !trends.FiniteSeries(series) {
+				writeErr(w, http.StatusUnprocessableEntity, fmt.Sprintf("the %s of %q overflows a float64 (the result is not a finite number) — values this large can't be aggregated exactly; check the property's unit (e.g. cents vs dollars)", m, property))
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{
+				"event": event, "property": property, "measure": string(m), "breakdown": bd,
+				"series": series,
+			})
+			return
+		}
+		res := trends.ComputeMeasure(evs, event, property, m, from, to)
+		// a +Inf/NaN aggregate (float64 overflow on huge values) is not representable in
+		// JSON — an explicit error beats the empty-200 the encoder failure used to produce.
+		if !res.Finite() {
+			writeErr(w, http.StatusUnprocessableEntity, fmt.Sprintf("the %s of %q overflows a float64 (the result is not a finite number) — values this large can't be aggregated exactly; check the property's unit (e.g. cents vs dollars)", m, property))
+			return
+		}
+		writeJSON(w, http.StatusOK, res)
 		return
 	}
 	iv, iverr := trends.ParseInterval(q.Get("interval"))
@@ -336,12 +368,19 @@ func (s *Server) apiTrends(w http.ResponseWriter, r *http.Request) {
 // ignore these entirely, so days=7 and days=90 returned the same series.
 func parseTrendWindow(r *http.Request) (from, to time.Time, err error) {
 	q := r.URL.Query()
+	// "last N hours/days" ends NOW — never the future. Capping the upper bound at now
+	// (not leaving it unbounded) is what makes /v1 and MCP agree with the ask bar, which
+	// already ends its window at now: a clock-skewed, future-dated event would otherwise
+	// land in the /v1/MCP count but not the ask count, silently breaking the covenant.
+	now := time.Now().UTC()
 	if v := q.Get("hours"); v != "" {
 		n, perr := strconv.ParseFloat(v, 64)
-		if perr != nil || n <= 0 || n > 24*366 {
+		// reject NaN/Inf explicitly: ParseFloat("NaN") succeeds, and n<=0 is false for NaN,
+		// so without this a hours=NaN query slipped through to a nonsense window bound.
+		if perr != nil || math.IsNaN(n) || math.IsInf(n, 0) || n <= 0 || n > 24*366 {
 			return from, to, fmt.Errorf("hours must be a positive number (got %q)", v)
 		}
-		return time.Now().UTC().Add(-time.Duration(n * float64(time.Hour))), time.Time{}, nil
+		return now.Add(-time.Duration(n * float64(time.Hour))), now, nil
 	}
 	if v := q.Get("days"); v != "" {
 		n, e := strconv.Atoi(v)
@@ -354,8 +393,8 @@ func parseTrendWindow(r *http.Request) (from, to time.Time, err error) {
 		// align to whole calendar days: "last N days" is N complete day-buckets ending
 		// today, so the first daily bucket is a full day, never a clipped mid-day window
 		// that renders a phantom leading 0 on the chart. from = midnight, (n-1) days back.
-		today := time.Now().UTC().Truncate(24 * time.Hour)
-		return today.AddDate(0, 0, -(n - 1)), time.Time{}, nil
+		today := now.Truncate(24 * time.Hour)
+		return today.AddDate(0, 0, -(n - 1)), now, nil
 	}
 	parse := func(key string) (time.Time, error) {
 		v := q.Get(key)
@@ -375,6 +414,16 @@ func parseTrendWindow(r *http.Request) (from, to time.Time, err error) {
 	}
 	if to, err = parse("to"); err != nil {
 		return time.Time{}, time.Time{}, err
+	}
+	// absolute windows get the SAME now-cap as rolling ones: any explicit window ends at
+	// now, never the future. Without this, from=<today>&to=<tomorrow> counted a clock-skewed
+	// future event that days=1 excluded — the identical question answered 3 vs 2 depending
+	// on how the window was phrased. Only the fully-unbounded query (no params at all =
+	// "all recorded history") keeps future events, matching the raw export.
+	if !from.IsZero() || !to.IsZero() {
+		if to.IsZero() || to.After(now) {
+			to = now
+		}
 	}
 	return from, to, nil
 }
@@ -419,6 +468,30 @@ func (s *Server) apiBreakdown(w http.ResponseWriter, r *http.Request) {
 		}
 		scoped = append(scoped, e)
 	}
+	// honesty guard: if NO scoped event carries this property, it's an unknown/misspelled
+	// name — error with the real property list (like the MCP breakdown tool does) instead of
+	// returning a real-looking all-"(none)" report that reads as "everyone is unsegmented".
+	if len(scoped) > 0 {
+		known := map[string]bool{}
+		hasProp := false
+		for _, e := range scoped {
+			for k := range e.Properties {
+				known[k] = true
+			}
+			if _, ok := e.Properties[property]; ok {
+				hasProp = true
+			}
+		}
+		if !hasProp {
+			list := make([]string, 0, len(known))
+			for k := range known {
+				list = append(list, k)
+			}
+			sort.Strings(list)
+			writeErr(w, http.StatusBadRequest, fmt.Sprintf("no %q events carry a %q property; known properties: %s", eventName, property, strings.Join(list, ", ")))
+			return
+		}
+	}
 	unique := boolParam(r.URL.Query().Get("unique"))
 	groups := query.Breakdown(scoped, property)
 	rows := make([]map[string]any, 0, len(groups))
@@ -460,6 +533,11 @@ func (s *Server) apiRetention(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
+	// validate the anchor event name — a typo'd event used to return a confident empty grid
+	// (as if nobody ever did it), while the MCP retention tool errors on the same typo.
+	if !s.knownEventOr400(w, q.Get("event")) {
+		return
+	}
 	// bucket=week|month groups cohorts into 7-/30-day periods (a weekly product read daily
 	// looks broken); rolling=true is unbounded "active on or after period n" retention.
 	// ERRORS-1: an unknown bucket is a 400 naming the valid set, never silently daily.
@@ -524,6 +602,14 @@ func (s *Server) apiPaths(w http.ResponseWriter, r *http.Request) {
 		writeQueryErr(w, err)
 		return
 	}
+	// honor days/hours/from/to like every other report — a "last 7 days" journey used to
+	// include 20-day-old events, and the ask bar's provenance falsely claimed the window.
+	from, to, werr := parseTrendWindow(r)
+	if werr != nil {
+		writeErr(w, http.StatusBadRequest, werr.Error())
+		return
+	}
+	evs = scopeToWindow(evs, from, to)
 	writeJSON(w, http.StatusOK, paths.After(evs, start, depth))
 }
 

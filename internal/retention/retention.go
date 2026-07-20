@@ -166,15 +166,22 @@ type CohortJSON struct {
 	Returned []*int    `json:"returned"`
 }
 
-// SerializeCohorts nulls out unobservable future periods, one definition for every surface.
+// SerializeCohorts nulls out unobservable periods, one definition for every surface. A period
+// n>=1 is observable ONLY once it has FULLY elapsed — the SAME rule PeriodN uses for the
+// summary denominator (cohort-bucket + n < current-bucket). The current IN-PROGRESS period
+// (cp+n == cur) is not final, so it serializes as null, never a partial count: rendering it as
+// a finished number made the grid contradict the summary (which excluded that cohort). Period
+// 0 is the cohort baseline (its size, known at signup) and is always shown.
 func SerializeCohorts(r Result, now time.Time) []CohortJSON {
 	bs := bucketSeconds(r.Bucket)
+	cur := now.UTC().Unix() / bs
 	out := make([]CohortJSON, 0, len(r.Cohorts))
 	for _, c := range r.Cohorts {
+		cp := c.Date.UTC().Unix() / bs
 		cj := CohortJSON{Date: c.Date, Size: c.Size, Returned: make([]*int, len(c.Returned))}
 		for n := range c.Returned {
-			if c.Date.Unix()+int64(n)*bs > now.Unix() {
-				cj.Returned[n] = nil // future period: not yet observable
+			if n >= 1 && cp+int64(n) >= cur {
+				cj.Returned[n] = nil // future OR in-progress period: not yet fully observable
 				continue
 			}
 			v := c.Returned[n]

@@ -14,8 +14,10 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,6 +25,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/alias"
 	"github.com/Arjun0606/smolanalytics/internal/cohort"
 	"github.com/Arjun0606/smolanalytics/internal/defined"
+	"github.com/Arjun0606/smolanalytics/internal/deploys"
 	"github.com/Arjun0606/smolanalytics/internal/engagement"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/exportlink"
@@ -55,6 +58,7 @@ How to work:
 - Answer like an analyst, not a database. Lead with the number, say what it means, then offer the most useful next cut. If conversion dropped, find the step; if a segment underperforms, name it; if retention is flat, say so plainly.
 - Be concrete and honest. Quote the real figures. If the data is too thin to conclude, say that instead of guessing.
 - For open-ended asks ("how's the product doing?"), proactively pull the 2-3 most telling reports and synthesize a short read.
+- Presentation matters: lead with what's URGENT or moved, quantify it, then offer the single most useful next cut — curate, don't dump a field list. overview returns a one-line "read" and a "next" suggestion; use them as your opening, then go deeper only where it earns attention. A tight, prioritized answer beats an exhaustive one.
 - You can also DO things, not just read: create_alert ("tell me if signups drop below 10/day" → op=lt, window_hours=24), add_webhook (Slack/HTTPS endpoint the alerts and daily digest fire to; Slack URLs get readable text messages) then test_webhook (prove the delivery lands), create_cohort (define a user group once, reuse anywhere), save_report (pin a funnel/trend/breakdown to their dashboard). When the user says "watch this", "alert me", "save that" — reach for these, then confirm what you created by echoing it back.`
 
 type Server struct {
@@ -69,6 +73,7 @@ type Server struct {
 	trackplan *trackplan.Store
 	goals     *goal.Store
 	shares    *share.Store
+	deploys   *deploys.Store
 	gsc       *gsc.Store
 	exports   *exportlink.Store
 	aliases   *alias.Map     // identity stitching for imported $identify events
@@ -253,6 +258,9 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 			Steps       []string            `json:"steps"`
 			WindowHours float64             `json:"window_hours"`
 			Breakdown   string              `json:"breakdown"`
+			Days        float64             `json:"days"`
+			From        string              `json:"from"`
+			To          string              `json:"to"`
 			Filters     FilterSet           `json:"filters"`
 			Order       string              `json:"order"`
 			Exclude     []string            `json:"exclude"`
@@ -270,6 +278,16 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		if err := query.Validate(a.Filters); err != nil {
 			return "", err
 		}
+		if err := guardFilters(evs, a.Filters); err != nil {
+			return "", err
+		}
+		// scope which events enter the funnel by the time range (days/from/to), like
+		// GET /v1/funnel — the tool used to swallow these and always run all-time.
+		fFrom, fTo, fwErr := mcpWindow(a.Days, 0, a.From, a.To)
+		if fwErr != nil {
+			return "", fwErr
+		}
+		evs = scopeWindow(evs, fFrom, fTo)
 		steps := make([]funnel.Step, len(a.Steps))
 		for i, n := range a.Steps {
 			steps[i] = funnel.Step{Event: n}
@@ -309,13 +327,30 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		if a.Days > 90 {
 			a.Days = 90 // same cap as the HTTP API — one question, one answer (agreement_test enforces this)
 		}
+		// validate the bucket like GET /v1/retention — an unrecognized bucket ("weekly",
+		// "Week", "fortnight") used to be silently computed as DAILY, answering a different
+		// granularity than asked. Normalize obvious aliases, reject the rest.
+		switch a.Bucket {
+		case "", "day", "week", "month":
+		case "daily":
+			a.Bucket = "day"
+		case "weekly":
+			a.Bucket = "week"
+		case "monthly":
+			a.Bucket = "month"
+		default:
+			return "", fmt.Errorf("unknown bucket %q (want day, week or month)", a.Bucket)
+		}
 		if err := s.checkEvents(a.Event); err != nil {
 			return "", err
 		}
 		if err := query.Validate(a.Filters); err != nil {
 			return "", err
 		}
-		return jsonText(summarizeRetention(retention.ComputeBucketed(query.Apply(evs, a.Filters), a.Days, a.Event, a.Bucket, a.Rolling)))
+		if err := guardFilters(evs, a.Filters); err != nil {
+			return "", err
+		}
+		return jsonText(summarizeRetention(retention.ComputeBucketed(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters), a.Days, a.Event, a.Bucket, a.Rolling)))
 	case "trends":
 		var a struct {
 			Event     string    `json:"event"`
@@ -339,18 +374,43 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		if err := query.Validate(a.Filters); err != nil {
 			return "", err
 		}
+		if err := guardFilters(evs, a.Filters); err != nil {
+			return "", err
+		}
 		// the time grammar, identical to GET /v1/trends: days/hours are rolling
 		// windows ending now; from/to are absolute; interval buckets the series
 		var from, to time.Time
 		nowW := time.Now().UTC()
+		// validate like GET /v1/trends (parseTrendWindow): days must be a positive integer,
+		// hours a positive number — a negative/NaN/fractional value used to slip through
+		// (days=0.5 computed a FUTURE from bound; days=-1 fell back to the default 7-day total).
+		if math.IsNaN(a.Days) || math.IsInf(a.Days, 0) || a.Days < 0 || a.Days != math.Trunc(a.Days) {
+			return "", fmt.Errorf("days must be a positive integer")
+		}
+		if math.IsNaN(a.Hours) || math.IsInf(a.Hours, 0) || a.Hours < 0 {
+			return "", fmt.Errorf("hours must be a positive number")
+		}
+		// clamp to the SAME bounds GET /v1/trends uses (parseTrendWindow: days<=365,
+		// hours<=24*366). Without this, days=10000000 built ~10M daily buckets in
+		// ComputeInterval — ~1GB allocated in a single call (an OOM/DoS on the shared
+		// engine) — AND overflowed the year past 9999, leaking a raw marshal error, AND
+		// disagreed with the (clamped) GET path for the same question.
+		if a.Days > 365 {
+			a.Days = 365
+		}
+		if a.Hours > 24*366 {
+			a.Hours = 24 * 366
+		}
 		if a.Days > 0 {
 			// calendar-day aligned, IDENTICAL to GET /v1/trends (parseTrendWindow): N
 			// whole day-buckets ending today, so MCP and the dashboard never disagree
 			// (the old rolling calc prepended a phantom empty leading day — a covenant break).
 			from = nowW.Truncate(24*time.Hour).AddDate(0, 0, -(int(a.Days) - 1))
+			to = nowW // "last N days" ends now, never the future — matches parseTrendWindow
 		}
 		if a.Hours > 0 {
 			from = nowW.Add(-time.Duration(a.Hours * float64(time.Hour)))
+			to = nowW // cap at now: a future-dated event must not diverge MCP from /v1/ask
 		}
 		if a.From != "" {
 			if t, err := parseWhen(a.From); err == nil {
@@ -366,11 +426,31 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 				return "", fmt.Errorf("bad to %q (want RFC3339 or YYYY-MM-DD)", a.To)
 			}
 		}
+		// absolute from/to windows get the SAME now-cap as days/hours — IDENTICAL to
+		// parseTrendWindow, so a clock-skewed future event can never make from=<today>
+		// answer differently than days=1 for the same question. Only the fully-unbounded
+		// call (no window args) keeps future events, matching the raw export.
+		if a.From != "" || a.To != "" {
+			if to.IsZero() || to.After(nowW) {
+				to = nowW
+			}
+		}
 		iv, iverr := trends.ParseInterval(a.Interval)
 		if iverr != nil {
 			return "", iverr
 		}
-		ev := query.Apply(evs, a.Filters)
+		ev := query.Apply(query.StampForFilters(evs, a.Filters), a.Filters)
+		// XAU: measure=dau|wau|mau plots rolling distinct-actives per day — mirrors
+		// GET /v1/trends, which accepts these; the MCP tool used to reject them so the
+		// active-users question was unanswerable via MCP.
+		switch a.Measure {
+		case "dau":
+			return jsonText(trends.ComputeXAU(ev, a.Event, from, to, 1))
+		case "wau":
+			return jsonText(trends.ComputeXAU(ev, a.Event, from, to, 7))
+		case "mau":
+			return jsonText(trends.ComputeXAU(ev, a.Event, from, to, 30))
+		}
 		// numeric aggregation over a property (revenue, AOV, p90) — mirrors GET /v1/trends
 		// with measure=; window is all-events here (no from/to arg), same as Compute below.
 		if a.Measure != "" {
@@ -379,9 +459,26 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 			}
 			m, ok := trends.ParseMeasure(a.Measure)
 			if !ok {
-				return "", fmt.Errorf("unknown measure %q (want sum, avg, min, max, median or p90)", a.Measure)
+				return "", fmt.Errorf("unknown measure %q (want sum, avg, min, max, median, p90, p95 or p99)", a.Measure)
 			}
-			return jsonText(trends.ComputeMeasure(ev, a.Event, a.Property, m, from, to))
+			// measure + breakdown = the aggregate per group ("revenue by plan") — the same
+			// ComputeMeasureBreakdown GET /v1/trends serializes, so the two can't disagree.
+			// This combination used to silently drop the breakdown and return the grand total.
+			if a.Breakdown != "" {
+				series := trends.ComputeMeasureBreakdown(ev, a.Event, a.Property, m, a.Breakdown, from, to)
+				if !trends.FiniteSeries(series) {
+					return "", fmt.Errorf("the %s of %q overflows a float64 (the result is not a finite number) — values this large can't be aggregated exactly; check the property's unit (e.g. cents vs dollars)", m, a.Property)
+				}
+				return jsonText(map[string]any{"event": a.Event, "property": a.Property,
+					"measure": string(m), "breakdown": a.Breakdown, "series": series})
+			}
+			res := trends.ComputeMeasure(ev, a.Event, a.Property, m, from, to)
+			// a +Inf/NaN aggregate must be an explicit tool error, never a leaked
+			// "json: unsupported value: +Inf" marshal string.
+			if !res.Finite() {
+				return "", fmt.Errorf("the %s of %q overflows a float64 (the result is not a finite number) — values this large can't be aggregated exactly; check the property's unit (e.g. cents vs dollars)", m, a.Property)
+			}
+			return jsonText(res)
 		}
 		if a.Breakdown != "" {
 			return jsonText(map[string]any{"event": a.Event, "breakdown": a.Breakdown,
@@ -393,6 +490,10 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 			Event    string    `json:"event"`
 			Property string    `json:"property"`
 			Unique   bool      `json:"unique"`
+			Days     float64   `json:"days"`
+			Hours    float64   `json:"hours"`
+			From     string    `json:"from"`
+			To       string    `json:"to"`
 			Filters  FilterSet `json:"filters"`
 		}
 		if err := unmarshalArgs(args, &a); err != nil {
@@ -407,11 +508,29 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		if err := query.Validate(a.Filters); err != nil {
 			return "", err
 		}
+		if err := guardFilters(evs, a.Filters); err != nil {
+			return "", err
+		}
+		// the shared time grammar — the tool used to silently IGNORE days/from/to and
+		// return the all-time split as if it were windowed, disagreeing with
+		// GET /v1/trends?breakdown and the MCP trends tool for the same question.
+		bFrom, bTo, werr := mcpWindow(a.Days, a.Hours, a.From, a.To)
+		if werr != nil {
+			return "", werr
+		}
 		var filtered []event.Event
-		for _, e := range query.Apply(evs, a.Filters) {
-			if a.Event == "" || e.Name == a.Event {
-				filtered = append(filtered, e)
+		for _, e := range query.Apply(query.StampForFilters(evs, a.Filters), a.Filters) {
+			if a.Event != "" && e.Name != a.Event {
+				continue
 			}
+			ts := e.Timestamp.UTC()
+			if !bFrom.IsZero() && ts.Before(bFrom) {
+				continue
+			}
+			if !bTo.IsZero() && !ts.Before(bTo) {
+				continue
+			}
+			filtered = append(filtered, e)
 		}
 		groups := query.Breakdown(filtered, a.Property)
 		// every event fell into "(none)" → the property doesn't exist on these events;
@@ -447,7 +566,10 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		if err := query.Validate(a.Filters); err != nil {
 			return "", err
 		}
-		return jsonText(web.Compute(query.Apply(evs, a.Filters), a.Days, time.Time{}))
+		if err := guardFilters(evs, a.Filters); err != nil {
+			return "", err
+		}
+		return jsonText(web.Compute(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters), a.Days, time.Time{}))
 	case "recent_events":
 		var a struct {
 			Limit int `json:"limit"`
@@ -493,7 +615,10 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		if err := query.Validate(a.Filters); err != nil {
 			return "", err
 		}
-		return jsonText(map[string]any{"days": engagement.ComputeLifecycle(query.Apply(evs, a.Filters), a.Days)})
+		if err := guardFilters(evs, a.Filters); err != nil {
+			return "", err
+		}
+		return jsonText(map[string]any{"days": engagement.ComputeLifecycle(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters), a.Days)})
 	case "stickiness":
 		var a struct {
 			Filters FilterSet `json:"filters"`
@@ -504,13 +629,20 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		if err := query.Validate(a.Filters); err != nil {
 			return "", err
 		}
-		return jsonText(engagement.ComputeStickiness(query.Apply(evs, a.Filters), time.Time{}))
+		if err := guardFilters(evs, a.Filters); err != nil {
+			return "", err
+		}
+		return jsonText(engagement.ComputeStickiness(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters), time.Time{}))
 	case "whats_notable":
 		return jsonText(map[string]any{"findings": insight.Generate(evs)})
 	case "paths":
 		var a struct {
 			Start   string    `json:"start"`
 			Depth   int       `json:"depth"`
+			Days    float64   `json:"days"`
+			Hours   float64   `json:"hours"`
+			From    string    `json:"from"`
+			To      string    `json:"to"`
 			Filters FilterSet `json:"filters"`
 		}
 		if err := unmarshalArgs(args, &a); err != nil {
@@ -525,13 +657,20 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		if err := query.Validate(a.Filters); err != nil {
 			return "", err
 		}
+		if err := guardFilters(evs, a.Filters); err != nil {
+			return "", err
+		}
 		if a.Depth <= 0 {
 			a.Depth = 3
 		}
 		if a.Depth > 10 { // same cap as GET /v1/paths — surfaces must agree
 			a.Depth = 10
 		}
-		return jsonText(paths.After(query.Apply(evs, a.Filters), a.Start, a.Depth))
+		pFrom, pTo, pErr := mcpWindow(a.Days, a.Hours, a.From, a.To)
+		if pErr != nil {
+			return "", pErr
+		}
+		return jsonText(paths.After(scopeWindow(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters), pFrom, pTo), a.Start, a.Depth))
 	case "groups":
 		var a struct {
 			Property string    `json:"property"`
@@ -547,7 +686,10 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		if err := query.Validate(a.Filters); err != nil {
 			return "", err
 		}
-		res := groups.Compute(query.Apply(evs, a.Filters), a.Property, time.Time{}, a.Limit)
+		if err := guardFilters(evs, a.Filters); err != nil {
+			return "", err
+		}
+		res := groups.Compute(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters), a.Property, time.Time{}, a.Limit)
 		// no event carries this property → say so (with what IS available) instead of
 		// returning zeros the model would read as "you have 0 accounts".
 		if res.TotalGroups == 0 && len(evs) > 0 {
@@ -566,6 +708,9 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		}
 		if handled, out, serr := s.callShares(name, args); handled {
 			return out, serr
+		}
+		if handled, out, derr := s.callDeploys(name, args); handled {
+			return out, derr
 		}
 		if handled, out, gserr := s.callGSC(name, args); handled {
 			return out, gserr
@@ -637,24 +782,118 @@ func userProfile(evs []event.Event, id string) map[string]any {
 	}
 }
 
+// toolOverview is the ORIENT tool — the first thing an agent calls. It's a sharp, at-a-glance
+// "state of the product": totals, this-week-vs-last deltas, the headline event's momentum, a
+// one-line read, and the natural next call. Rich by design so the agent leads with meaning,
+// not a bare row of counts. (MCP-only convenience — not part of the /v1 covenant.)
 func (s *Server) toolOverview(evs []event.Event) (string, error) {
+	now := time.Now().UTC()
+	w1, w2 := now.AddDate(0, 0, -7), now.AddDate(0, 0, -14)
 	seen := map[string]bool{}
-	cutoff := time.Now().UTC().AddDate(0, 0, -7)
-	active := map[string]bool{}
+	act1, act2 := map[string]bool{}, map[string]bool{}
+	byName1, byName2 := map[string]int{}, map[string]int{}
+	events7 := 0
 	for _, e := range evs {
 		seen[e.DistinctID] = true
-		if e.Timestamp.After(cutoff) {
-			active[e.DistinctID] = true
+		switch {
+		case e.Timestamp.After(w1):
+			act1[e.DistinctID] = true
+			byName1[e.Name]++
+			events7++
+		case e.Timestamp.After(w2):
+			act2[e.DistinctID] = true
+			byName2[e.Name]++
 		}
 	}
 	names, _ := s.store.Names()
 	sort.Strings(names)
-	return jsonText(map[string]any{
+
+	headline := pickHeadlineEvent(names, byName1)
+	out := map[string]any{
 		"total_users":         len(seen),
-		"active_users_7d":     len(active),
+		"active_users_7d":     len(act1),
+		"active_users_wow":    wowDir(len(act1), len(act2)),
+		"events_7d":           events7,
 		"total_events":        len(evs),
 		"tracked_event_names": names,
-	})
+	}
+	readParts := []string{fmt.Sprintf("%s users", commaInt(len(seen))),
+		fmt.Sprintf("%s active in the last 7d (%s WoW)", commaInt(len(act1)), wowDir(len(act1), len(act2)))}
+	if headline != "" {
+		out["headline_event"] = headline
+		out["headline_7d"] = byName1[headline]
+		out["headline_wow"] = wowDir(byName1[headline], byName2[headline])
+		readParts = append(readParts, fmt.Sprintf("%s %s (%s)", headline, commaInt(byName1[headline]), wowDir(byName1[headline], byName2[headline])))
+	}
+	out["read"] = strings.Join(readParts, " · ")
+	if len(evs) == 0 {
+		out["read"] = "No events yet — install the SDK, or call propose_instrumentation to wire it up."
+		out["next"] = "propose_instrumentation"
+	} else {
+		out["next"] = "Call whats_notable for the single biggest lever, funnel for where users drop off, or retention for whether they come back."
+	}
+	return jsonText(out)
+}
+
+// pickHeadlineEvent chooses the event that best represents product progress: the conventional
+// conversion event if tracked, else the highest-volume non-autocapture event this week.
+func pickHeadlineEvent(names []string, vol map[string]int) string {
+	for _, pref := range []string{"signup", "sign_up", "purchase", "checkout", "subscribe", "activate"} {
+		for _, n := range names {
+			if strings.EqualFold(n, pref) {
+				return n
+			}
+		}
+	}
+	best, bestN := "", 0
+	for _, n := range names {
+		if strings.HasPrefix(n, "$") { // skip autocapture ($pageview, $click, $engagement)
+			continue
+		}
+		if vol[n] > bestN {
+			best, bestN = n, vol[n]
+		}
+	}
+	return best
+}
+
+// wowDir renders a compact week-over-week direction (+13% / -8% / flat / new).
+func wowDir(cur, prev int) string {
+	if prev == 0 {
+		if cur > 0 {
+			return "new"
+		}
+		return "flat"
+	}
+	d := (cur - prev) * 100 / prev
+	switch {
+	case d > 3:
+		return fmt.Sprintf("+%d%%", d)
+	case d < -3:
+		return fmt.Sprintf("%d%%", d)
+	default:
+		return "flat"
+	}
+}
+
+// commaInt formats an int with thousands separators (1200 -> "1,200") for the read line.
+func commaInt(n int) string {
+	s := strconv.Itoa(n)
+	neg := strings.HasPrefix(s, "-")
+	if neg {
+		s = s[1:]
+	}
+	var b strings.Builder
+	for i, c := range s {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			b.WriteByte(',')
+		}
+		b.WriteRune(c)
+	}
+	if neg {
+		return "-" + b.String()
+	}
+	return b.String()
 }
 
 func summarizeRetention(rr retention.Result) map[string]any {
@@ -682,4 +921,87 @@ func parseWhen(v string) (time.Time, error) {
 		return t, nil
 	}
 	return time.Parse("2006-01-02", v)
+}
+
+// guardFilters rejects a filter naming a property that exists on NO event — almost always a
+// typo (plann=pro). GET /v1 already errors here (query_api.go filtered()); without the same
+// guard these tools returned a silent 0 presented as a real answer, so the two surfaces
+// disagreed on the identical filter. Value mismatches on a real property still return an
+// honest 0; only an unknown KEY is an error.
+func guardFilters(evs []event.Event, fs FilterSet) error {
+	if bad, known := query.FirstUnknownProp(evs, fs); bad != "" {
+		return fmt.Errorf("no events carry the property %q, so this filter can only ever match 0 — check the spelling. Properties seen: %s", bad, strings.Join(known, ", "))
+	}
+	return nil
+}
+
+// scopeWindow keeps events in [from, to); a zero bound is unbounded on that side. Shared by
+// the report tools that filter by a resolved mcpWindow (paths, breakdown).
+func scopeWindow(evs []event.Event, from, to time.Time) []event.Event {
+	if from.IsZero() && to.IsZero() {
+		return evs
+	}
+	out := make([]event.Event, 0, len(evs))
+	for _, e := range evs {
+		ts := e.Timestamp.UTC()
+		if !from.IsZero() && ts.Before(from) {
+			continue
+		}
+		if !to.IsZero() && !ts.Before(to) {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
+// mcpWindow resolves the shared days/hours/from/to time grammar IDENTICALLY to the trends
+// tool and GET /v1 (parseTrendWindow): days are calendar-day-aligned whole buckets ending
+// now, hours roll back from now, absolute from/to get the same now-cap as rolling windows
+// (an explicit window never extends into the future), and no args at all = all recorded
+// history (zero/zero). One definition, so no tool can disagree with another on the window.
+func mcpWindow(days, hours float64, fromStr, toStr string) (from, to time.Time, err error) {
+	now := time.Now().UTC()
+	// reject non-finite / negative windows instead of computing a garbage bound off NaN
+	// (now.Add(-NaN) is a nonsense time) or silently flipping a negative into the future.
+	if math.IsNaN(days) || math.IsInf(days, 0) || days < 0 {
+		return from, to, fmt.Errorf("days must be a non-negative number")
+	}
+	if math.IsNaN(hours) || math.IsInf(hours, 0) || hours < 0 {
+		return from, to, fmt.Errorf("hours must be a non-negative number")
+	}
+	if days > 365 {
+		days = 365
+	}
+	if hours > 24*366 {
+		hours = 24 * 366
+	}
+	if days > 0 {
+		from = now.Truncate(24*time.Hour).AddDate(0, 0, -(int(days) - 1))
+		to = now
+	}
+	if hours > 0 {
+		from = now.Add(-time.Duration(hours * float64(time.Hour)))
+		to = now
+	}
+	if fromStr != "" {
+		t, e := parseWhen(fromStr)
+		if e != nil {
+			return from, to, fmt.Errorf("bad from %q (want RFC3339 or YYYY-MM-DD)", fromStr)
+		}
+		from = t.UTC()
+	}
+	if toStr != "" {
+		t, e := parseWhen(toStr)
+		if e != nil {
+			return from, to, fmt.Errorf("bad to %q (want RFC3339 or YYYY-MM-DD)", toStr)
+		}
+		to = t.UTC()
+	}
+	if fromStr != "" || toStr != "" {
+		if to.IsZero() || to.After(now) {
+			to = now
+		}
+	}
+	return from, to, nil
 }

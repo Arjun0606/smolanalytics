@@ -93,3 +93,34 @@ func TestSerializeCohortsNullsFuture(t *testing.T) {
 		}
 	}
 }
+
+// TestSerializeCohortsNullsInProgressPeriod is the regression guard for an audit finding: the
+// cohort grid rendered the CURRENT in-progress period as a finalized count, while the summary
+// denominator (PeriodN) excluded it — the grid contradicted its own summary. The grid must use
+// the same "fully elapsed" rule: null any period n>=1 whose window hasn't fully elapsed.
+func TestSerializeCohortsNullsInProgressPeriod(t *testing.T) {
+	now := time.Date(2026, 6, 10, 12, 0, 0, 0, time.UTC)
+	cohortDate := now.Truncate(24 * time.Hour).AddDate(0, 0, -2) // started 2 whole days ago
+	r := Result{
+		Bucket:  "day",
+		MaxDays: 4,
+		Cohorts: []Cohort{{Date: cohortDate, Size: 100, Returned: []int{100, 40, 25, 0, 0}}},
+	}
+	got := SerializeCohorts(r, now)[0].Returned
+	if got[0] == nil || *got[0] != 100 {
+		t.Errorf("period 0 (baseline) should be 100, got %v", got[0])
+	}
+	if got[1] == nil || *got[1] != 40 {
+		t.Errorf("period 1 (fully elapsed) should be 40, got %v", got[1])
+	}
+	if got[2] != nil {
+		t.Errorf("period 2 (in-progress, cp+2==today) must be null (not a partial count), got %d", *got[2])
+	}
+	// consistency with the summary denominator, both surfaces must agree on what's observable.
+	if _, sz := PeriodN(r, 2, now); sz != 0 {
+		t.Errorf("PeriodN(2) must exclude the in-progress cohort, got size %d", sz)
+	}
+	if _, sz := PeriodN(r, 1, now); sz != 100 {
+		t.Errorf("PeriodN(1) must include the fully-elapsed cohort, got size %d", sz)
+	}
+}

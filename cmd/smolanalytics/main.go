@@ -22,6 +22,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/cohort"
 	"github.com/Arjun0606/smolanalytics/internal/defined"
 	"github.com/Arjun0606/smolanalytics/internal/demo"
+	"github.com/Arjun0606/smolanalytics/internal/deploys"
 	"github.com/Arjun0606/smolanalytics/internal/exportlink"
 	"github.com/Arjun0606/smolanalytics/internal/geo"
 	"github.com/Arjun0606/smolanalytics/internal/goal"
@@ -81,6 +82,8 @@ func main() {
 		instrumentCmd(os.Args[2:])
 	case "brief":
 		briefCmd(os.Args[2:])
+	case "deploy":
+		deployCmd(os.Args[2:])
 	case "plan":
 		planCmd(os.Args[2:])
 	case "scrub":
@@ -121,12 +124,16 @@ func main() {
 		fmt.Println("  smolanalytics gsc     connect Google Search Console (auth / status)")
 		fmt.Println("  smolanalytics brief   print the morning digest: pulse + what to look at")
 		fmt.Println("                        (--json, --webhook=URL for Slack, --days=7 — cron it)")
+		fmt.Println("  smolanalytics deploy  record a deploy marker (git HEAD by default) so you can ask")
+		fmt.Println("                        \"did that ship move the metric?\" — one line in CI")
 		fmt.Println("  smolanalytics plan    tracking plan as a file in your repo — init/push/pull/check;")
 		fmt.Println("                        `plan check` exits 1 when tracking silently broke (CI gate)")
 		fmt.Println()
 		fmt.Println("  ADDR                      listen address (default 127.0.0.1:8080 = local only;")
 		fmt.Println("                            set 0.0.0.0:8080 to expose — then a password is required)")
 		fmt.Println("  SMOLANALYTICS_PASSWORD    dashboard login; required to `serve` on a public interface")
+		fmt.Println("  SMOLANALYTICS_WRITE_KEY   PUBLIC ingest key — gates POST /v1/events only (ships in the SDK snippet)")
+		fmt.Println("  SMOLANALYTICS_READ_KEY    SECRET read key — gates GET /v1 reports, /v1/export, and MCP")
 		fmt.Println("  SMOLANALYTICS_DB          event log path (default ./smolanalytics.data)")
 		fmt.Println("  SMOLANALYTICS_RETAIN_DAYS drop events older than N days (default: keep forever)")
 		fmt.Println("  SMOLANALYTICS_MAX_EVENTS  keep only the newest N events resident (memory guardrail)")
@@ -283,7 +290,7 @@ func serve(st store.Store, closeStore func() error, guardPublic bool) {
 		app.SetDefined(definedStore)
 	}
 	app.SetWriteKey(os.Getenv("SMOLANALYTICS_WRITE_KEY")) // PUBLIC: ingest only (embedded in the SDK)
-	app.SetReadKey(os.Getenv("SMOLANALYTICS_READ_KEY"))  // SECRET: reads + MCP (never ship in client code)
+	app.SetReadKey(os.Getenv("SMOLANALYTICS_READ_KEY"))   // SECRET: reads + MCP (never ship in client code)
 	if os.Getenv("SMOLANALYTICS_GEO") != "off" {
 		// country resolution from the free DB-IP lite db (CC BY 4.0) — downloads on
 		// first boot, loads in the background, never blocks serving. IPs never stored.
@@ -349,6 +356,11 @@ func serve(st store.Store, closeStore func() error, guardPublic bool) {
 		app.SetShares(sh)
 	} else {
 		log.Printf("smolanalytics: share links disabled (%v)", err)
+	}
+	if dp, err := deploys.Open(sp(".deploys.json")); err == nil {
+		app.SetDeploys(dp)
+	} else {
+		log.Printf("smolanalytics: deploys disabled (%v)", err)
 	}
 	if ex, err := exportlink.Open(sp(".exportlinks.json")); err == nil {
 		app.SetExportLinks(ex)
@@ -530,6 +542,9 @@ func runMCP() {
 	}
 	if sh, err := share.Open(dataPath() + ".shares.json"); err == nil {
 		m.SetShares(sh)
+	}
+	if dp, err := deploys.Open(dataPath() + ".deploys.json"); err == nil {
+		m.SetDeploys(dp)
 	}
 	if gs, err := gsc.Open(dataPath() + ".gsc.json"); err == nil {
 		m.SetGSC(gs)

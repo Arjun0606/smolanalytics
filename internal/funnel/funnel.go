@@ -37,6 +37,12 @@ type Result struct {
 	OverallConversion float64      `json:"overall_conversion"`     // last step / first step
 	Converted         int          `json:"converted"`              // users who completed every step
 	MedianConvSecs    float64      `json:"median_conversion_secs"` // median time first->last step for converters (0 if none)
+	// time-to-convert DISTRIBUTION (first→last step, for converters) — the incumbents all show
+	// percentiles, not just the median: p25 = your fast movers, p90 = the long tail you'd chase
+	// with a nudge/reminder. 0 when there are no converters.
+	P25ConvSecs float64 `json:"p25_conversion_secs"`
+	P75ConvSecs float64 `json:"p75_conversion_secs"`
+	P90ConvSecs float64 `json:"p90_conversion_secs"`
 }
 
 // Compute runs the funnel over events. A user counts toward step i only if they
@@ -375,6 +381,18 @@ func finishFromCounts(res *Result, steps []Step, counts []int, convTimes []time.
 		}
 		res.Converted = n
 		res.MedianConvSecs = med.Seconds()
+		// nearest-rank percentiles over the same sorted converter durations
+		pct := func(f float64) float64 {
+			rank := int(f*float64(n)+0.999999) - 1 // ceil(f*n)-1
+			if rank < 0 {
+				rank = 0
+			}
+			if rank >= n {
+				rank = n - 1
+			}
+			return convTimes[rank].Seconds()
+		}
+		res.P25ConvSecs, res.P75ConvSecs, res.P90ConvSecs = pct(0.25), pct(0.75), pct(0.90)
 	}
 	for i := range res.Steps {
 		res.Steps[i].Count = counts[i]

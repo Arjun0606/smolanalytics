@@ -25,6 +25,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
 	"github.com/Arjun0606/smolanalytics/internal/paths"
+	"github.com/Arjun0606/smolanalytics/internal/query"
 	"github.com/Arjun0606/smolanalytics/internal/retention"
 )
 
@@ -32,14 +33,34 @@ import (
 // report — the SAME paths.After the MCP paths tool and the dashboard user-journeys card
 // use, so the three surfaces agree. The anchor is the event named after "after", else the
 // conventional conversion, else the highest-volume event.
-func answerPaths(evs []event.Event, q string, vol []string) string {
+func answerPaths(evs []event.Event, q string, vol []string, win askWindow) string {
+	// honor the asked window — the journey used to run over ALL history while the provenance
+	// line still claimed the requested window ("...in the last 24 hours"), a false-provenance
+	// covenant break. Scope first so the answer and its receipt describe the same events.
+	evs = scope(evs, win)
 	start := ""
 	if i := strings.Index(q, "after "); i >= 0 {
-		rest := strings.ToLower(q[i+6:])
+		// match the anchor as a WHOLE WORD, not a substring — "after purchase" used to
+		// silently anchor on ANY event whose name is a substring of the phrase, so a
+		// nonexistent "purchase" confidently returned some other event's journey.
+		afterToks := askTokens(strings.ToLower(q[i+6:]))
+		tokSet := map[string]bool{}
+		for _, t := range afterToks {
+			tokSet[t] = true
+		}
 		for _, name := range vol {
-			if strings.Contains(rest, strings.ToLower(name)) {
+			ln := strings.ToLower(name)
+			if tokSet[ln] || tokSet[strings.ReplaceAll(ln, "_", "")] {
 				start = name
 				break
+			}
+		}
+		// the user explicitly named an anchor after "after" but it matches no tracked event:
+		// say so with the real list instead of silently tracing a different event's journey.
+		if start == "" && len(afterToks) > 0 {
+			cand := afterToks[0]
+			if len(cand) >= 3 && !segStopwords[cand] {
+				return fmt.Sprintf("No event named %q to trace a journey from — tracked events are: %s.", cand, strings.Join(vol, ", "))
 			}
 		}
 	}
@@ -211,6 +232,19 @@ func extractSegments(q string, evs []event.Event) []askSeg {
 					}
 				}
 			}
+			// referrer aliases fall back to the `source`/`utm_source` PROPERTY when the host
+			// (and, for twitter, its utm/altHost union) isn't in the data: many products track
+			// acquisition as source=twitter, not a t.co referrer. Without this, "signups from
+			// twitter" answered 0 while the source property held 28. Runs AFTER the twitter
+			// union check so a real t.co/utm dataset keeps its referrer-based resolution.
+			if !s.found && a.prop == "referrer" {
+				for _, srcProp := range []string{"source", "utm_source", "channel"} {
+					if rv, ok := realValue(evs, srcProp, a.label); ok {
+						s = askSeg{prop: srcProp, value: rv, label: a.label, found: true}
+						break
+					}
+				}
+			}
 			hits = append(hits, hit{pos, s})
 			break
 		}
@@ -248,6 +282,202 @@ func extractSegments(q string, evs []event.Event) []askSeg {
 	// "traffic from europe" — a country-set, handled as its own pseudo-segment
 	if len(out) == 0 && strings.Contains(q, "europe") {
 		out = append(out, askSeg{prop: "country", value: "__europe__", label: "Europe", found: true})
+	}
+	// generic property=value qualifiers the alias tables miss ("pro signups", "enterprise
+	// plan") — resolved against real, low-cardinality custom property values in the data.
+	// Without this the ask bar SILENTLY DROPS the qualifier and returns the UNFILTERED number.
+	if len(out) < 2 {
+		for _, s := range genericSegments(q, evs, out) {
+			out = append(out, s)
+			if len(out) >= 2 {
+				break
+			}
+		}
+	}
+	// unresolved explicit qualifier: "from X" / "where <prop> is X" naming a value that exists
+	// NOWHERE in the data. Returning the UNFILTERED total for it (stamped "cannot be fabricated")
+	// is the worst kind of wrong answer, so emit a found=false segment — the answer path then
+	// says "0 — no events with X" honestly instead of the whole-dataset number.
+	if len(out) == 0 {
+		if tok := unresolvedQualifier(q, evs); tok != "" {
+			out = append(out, askSeg{prop: "that segment", value: tok, label: tok, found: false})
+		}
+	}
+	return out
+}
+
+// unresolvedQualifier extracts an explicit segment token ("from twitter", "where source is
+// hn") that names a value present on NO event, so the caller can answer an honest 0 instead
+// of the unfiltered total. Returns "" when there's no such dangling qualifier.
+func unresolvedQualifier(q string, evs []event.Event) string {
+	ql := strings.ToLower(q)
+	var tok string
+	if i := strings.Index(ql, " where "); i >= 0 {
+		// "... where source is enterprise" / "... where plan = pro"
+		rest := ql[i+7:]
+		rest = strings.NewReplacer(" is ", " ", " = ", " ", "=", " ").Replace(rest)
+		f := strings.Fields(rest)
+		if len(f) >= 2 {
+			tok = f[len(f)-1]
+		}
+	} else if i := strings.Index(ql, " from "); i >= 0 {
+		f := strings.Fields(ql[i+6:])
+		if len(f) >= 1 {
+			tok = f[0]
+		}
+	}
+	tok = strings.Trim(tok, "?.,!\"'")
+	if len(tok) < 2 || segStopwords[tok] {
+		return ""
+	}
+	// a numeric/date token after "from" is a date range ("from 18 to 19"), not a segment
+	if tok[0] >= '0' && tok[0] <= '9' {
+		return ""
+	}
+	// time/geo/date words after "from" are not segments ("from yesterday", "from june 18",
+	// "from europe", "from india") — never treat these as a dangling segment qualifier.
+	switch tok {
+	case "yesterday", "today", "europe", "last", "the", "this", "our", "all", "now",
+		"january", "february", "march", "april", "may", "june", "july", "august",
+		"september", "october", "november", "december", "monday", "tuesday", "wednesday",
+		"thursday", "friday", "saturday", "sunday", "jan", "feb", "mar", "apr", "jun",
+		"jul", "aug", "sep", "sept", "oct", "nov", "dec":
+		return ""
+	}
+	// does the token exist as ANY string property value, or a referrer host? if so it WAS
+	// resolvable — not a dangling qualifier (don't shadow a real segment).
+	for _, e := range evs {
+		for _, v := range e.Properties {
+			if sv, ok := v.(string); ok {
+				lv := strings.ToLower(sv)
+				if lv == tok || strings.Contains(lv, tok) {
+					return ""
+				}
+			}
+		}
+	}
+	return tok
+}
+
+// breakdownByProp detects a "break down <event> by <prop>" / "<event> by <prop>" / "grouped
+// by <prop>" request and returns the property name IF it is a real property present in the
+// data. Conversion questions ("which browser converts") own the "by <dim>" phrasing and are
+// left to the conversion-by-dimension route, so this returns "" for them.
+func breakdownByProp(q string, evs []event.Event) string {
+	ql := strings.ToLower(q)
+	if hasAny(ql, "convert", "conversion", "converts") {
+		return ""
+	}
+	if !hasAny(ql, " by ", "grouped by", "broken down by", "break down", "breakdown", "group by") {
+		return ""
+	}
+	toks := askTokens(ql)
+	present := func(cand string) bool {
+		for _, e := range evs {
+			if _, ok := e.Properties[cand]; ok {
+				return true
+			}
+		}
+		return false
+	}
+	for i := 0; i+1 < len(toks); i++ {
+		if toks[i] == "by" {
+			if cand := toks[i+1]; present(cand) {
+				return cand
+			}
+		}
+	}
+	return ""
+}
+
+// segStopwords are question-structure words the generic value matcher must never treat as a
+// property value, so "new users today" can't become a bogus segment.
+var segStopwords = map[string]bool{
+	"the": true, "and": true, "for": true, "all": true, "how": true, "many": true, "who": true,
+	"did": true, "are": true, "was": true, "our": true, "per": true, "day": true, "week": true,
+	"month": true, "year": true, "today": true, "now": true, "this": true, "last": true,
+	"past": true, "over": true, "from": true, "with": true, "count": true, "total": true,
+	"number": true, "much": true, "have": true, "get": true, "vs": true, "versus": true,
+	"each": true, "any": true, "more": true, "most": true, "users": true, "user": true,
+	"event": true, "events": true, "people": true, "visitors": true, "signup": true, "signups": true,
+}
+
+// askTokens splits a question into lowercase ASCII word tokens (enough for property values
+// like "pro"/"free"/"enterprise"; avoids a unicode dependency).
+func askTokens(q string) []string {
+	return strings.FieldsFunc(strings.ToLower(q), func(r rune) bool {
+		return !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9')
+	})
+}
+
+// genericSegments resolves qualifiers the alias tables miss: a token like "pro" that is a
+// real value of a low-cardinality custom property (plan=pro). It scans the ACTUAL event
+// property values so the ask bar filters by exactly what the user named instead of silently
+// dropping it and returning the unfiltered total as if it were the answer. Reserved props
+// (referrer/device/os/…) already have dedicated alias handling and are skipped here.
+func genericSegments(q string, evs []event.Event, existing []askSeg) []askSeg {
+	skip := map[string]bool{
+		"referrer": true, "device": true, "browser": true, "os": true, "country": true,
+		"path": true, "utm_source": true, "utm_medium": true, "utm_campaign": true,
+	}
+	for _, s := range existing {
+		skip[s.prop] = true
+	}
+	distinct := map[string]map[string]bool{}
+	for _, e := range evs {
+		for k, v := range e.Properties {
+			if skip[k] {
+				continue
+			}
+			sv, ok := v.(string)
+			if !ok || sv == "" {
+				continue
+			}
+			if distinct[k] == nil {
+				distinct[k] = map[string]bool{}
+			}
+			distinct[k][sv] = true
+		}
+	}
+	valProp := map[string]string{} // lower value -> prop
+	valReal := map[string]string{} // lower value -> real-cased value
+	ambiguous := map[string]bool{}
+	for prop, vals := range distinct {
+		if len(vals) < 1 || len(vals) > 15 {
+			continue // high-cardinality (ids/urls/amounts) is never a segment dimension
+		}
+		for sv := range vals {
+			lv := strings.ToLower(sv)
+			if len(lv) < 3 || segStopwords[lv] {
+				continue // too short/common to match safely
+			}
+			if p, dup := valProp[lv]; dup && p != prop {
+				ambiguous[lv] = true // same token, two props — refuse to guess
+				continue
+			}
+			valProp[lv], valReal[lv] = prop, sv
+		}
+	}
+	// a comparison ("pro vs free", "compare pro and free") wants TWO values of the SAME
+	// property; otherwise one segment per property (so "pro signups on desktop" = plan AND device).
+	comparison := hasAny(strings.ToLower(q), " vs ", " versus ", "compare ", " compared to ", " against ")
+	var out []askSeg
+	for _, tok := range askTokens(q) {
+		if ambiguous[tok] {
+			continue
+		}
+		prop, ok := valProp[tok]
+		if !ok || skip[prop] {
+			continue
+		}
+		out = append(out, askSeg{prop: prop, value: valReal[tok], label: valReal[tok], found: true})
+		// keep the property open for a second value only on a same-property comparison.
+		if !(comparison && len(out) == 1) {
+			skip[prop] = true
+		}
+		if len(out) >= 2 {
+			break
+		}
 	}
 	return out
 }
@@ -535,6 +765,30 @@ func answerSegVsSeg(evs []event.Event, m askMetric, a, b askSeg, win askWindow) 
 	return fmt.Sprintf("%s: %s %d vs %s %d%s — %s.", title(m.label), a.label, na, b.label, nb, winSuffix(win), verdict)
 }
 
+// answerSegAnd counts a metric filtered by TWO segments at once ("pro signups on desktop" =
+// plan=pro AND device=desktop). Different-property segments without a comparison word mean
+// intersection, not "X vs Y"; dropping either would return a materially wrong number as fact.
+func answerSegAnd(evs []event.Event, m askMetric, a, b askSeg, win askWindow) string {
+	for _, s := range []askSeg{a, b} {
+		if !s.found {
+			return fmt.Sprintf("0 — no events with %s = %s have been sent, so there's no %s for %s + %s.",
+				s.prop, s.label, m.label, a.label, b.label)
+		}
+	}
+	pool := evs
+	for _, s := range []askSeg{a, b} {
+		// user attributes (device/referrer/country/…) aren't on every event, so scope by USER;
+		// product/custom props (plan) stay event-scoped. Applying both narrows to the intersection.
+		if m.kind == "event" && userAttr(s.prop) {
+			pool = segFilterUsers(pool, s)
+		} else {
+			pool = segFilter(pool, s)
+		}
+	}
+	n := metricCount(scope(pool, win), m)
+	return fmt.Sprintf("%d %s for %s + %s%s.", n, m.label, a.label, b.label, winSuffix(win))
+}
+
 // ---- new report answers -------------------------------------------------------------
 
 // answerSources ranks where traffic comes from by VISITORS — the report "where is our
@@ -546,20 +800,39 @@ func answerPropBreakdown(evs []event.Event, prop string, win askWindow) string {
 }
 
 func answerPropBreakdownLabel(evs []event.Event, prop, unit string, win askWindow) string {
+	return answerPropBreakdownWith(evs, prop, unit, win, false)
+}
+
+// answerPropBreakdownEvents is the EVENT-count variant: when the unit names events
+// ("signups"), the numbers must be event counts — matching GET /v1/breakdown — not
+// distinct users quietly reported under an event label.
+func answerPropBreakdownEvents(evs []event.Event, prop, unit string, win askWindow) string {
+	return answerPropBreakdownWith(evs, prop, unit, win, true)
+}
+
+func answerPropBreakdownWith(evs []event.Event, prop, unit string, win askWindow, countEvents bool) string {
 	scoped := scope(evs, win)
 	byVal := map[string]map[string]bool{}
+	evCount := map[string]int{}
+	any := false
 	for _, e := range scoped {
-		v, ok := e.Properties[prop]
-		if !ok {
-			continue
+		// events missing the property land in "(none)" — the same bucket GET /v1/breakdown,
+		// MCP, and trends show. Skipping them silently under-reported the split.
+		val := "(none)"
+		if v, ok := e.Properties[prop]; ok {
+			val = fmt.Sprintf("%v", v)
+			if val == "" {
+				val = "(empty)" // an explicit empty-string value, distinct from a missing property
+			}
+			any = true
 		}
-		val := fmt.Sprintf("%v", v)
 		if byVal[val] == nil {
 			byVal[val] = map[string]bool{}
 		}
 		byVal[val][e.DistinctID] = true
+		evCount[val]++
 	}
-	if len(byVal) == 0 {
+	if !any {
 		return fmt.Sprintf("No events carry a %q property%s yet.", prop, windowClause(win))
 	}
 	type row struct {
@@ -568,7 +841,11 @@ func answerPropBreakdownLabel(evs []event.Event, prop, unit string, win askWindo
 	}
 	var rows []row
 	for v, users := range byVal {
-		rows = append(rows, row{v, len(users)})
+		n := len(users)
+		if countEvents {
+			n = evCount[v]
+		}
+		rows = append(rows, row{v, n})
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].n > rows[j].n || (rows[i].n == rows[j].n && rows[i].v < rows[j].v) })
 	var parts []string
@@ -578,7 +855,12 @@ func answerPropBreakdownLabel(evs []event.Event, prop, unit string, win askWindo
 		}
 		parts = append(parts, fmt.Sprintf("%s %d", r.v, r.n))
 	}
-	return fmt.Sprintf("%s breakdown (%s%s): %s.", prop, unit, winSuffix(win), strings.Join(parts, " · "))
+	// never truncate silently: the tail is disclosed, matching the report's honesty rule.
+	more := ""
+	if len(rows) > 8 {
+		more = fmt.Sprintf(" (+%d more values)", len(rows)-8)
+	}
+	return fmt.Sprintf("%s breakdown (%s%s): %s%s.", prop, unit, winSuffix(win), strings.Join(parts, " · "), more)
 }
 
 func answerSources(evs []event.Event, win askWindow) string {
@@ -593,28 +875,47 @@ func answerSources(evs []event.Event, win askWindow) string {
 		}
 		byHost[host][id] = true
 	}
+	// first-touch attribution, IDENTICAL to web.Compute (the dashboard/GET/MCP engine):
+	// each visitor is attributed to the referrer of their EARLIEST pageview in the window,
+	// once. Tallying every pageview's host used to double-count multi-referrer visitors
+	// AND surface "sources" (a later visit's t.co) that no first-touch surface shows.
+	firstPV := map[string]event.Event{}
 	for _, e := range scoped {
 		if e.Name != "$pageview" {
 			continue
 		}
+		if f, ok := firstPV[e.DistinctID]; !ok || e.Timestamp.Before(f.Timestamp) {
+			firstPV[e.DistinctID] = e
+		}
+	}
+	for id, e := range firstPV {
 		host := "direct"
 		if v, ok := e.Properties["referrer"]; ok {
 			if h := hostOf(fmt.Sprintf("%v", v)); h != "" {
 				host = h
 			}
 		}
-		tally(host, e.DistinctID)
+		tally(host, id)
 	}
 	if len(byHost) == 0 {
 		if prop := detectProp(scoped, "source"); prop != "" {
+			// same first-touch rule for events-only datasets: each user's earliest event
+			// carrying the source property attributes them, once.
+			firstSrc := map[string]event.Event{}
 			for _, e := range scoped {
-				src := "direct"
-				if v, ok := e.Properties[prop]; ok {
-					if sv := fmt.Sprintf("%v", v); sv != "" {
-						src = sv
-					}
+				if _, ok := e.Properties[prop]; !ok {
+					continue
 				}
-				tally(src, e.DistinctID)
+				if f, ok := firstSrc[e.DistinctID]; !ok || e.Timestamp.Before(f.Timestamp) {
+					firstSrc[e.DistinctID] = e
+				}
+			}
+			for id, e := range firstSrc {
+				src := "direct"
+				if sv := fmt.Sprintf("%v", e.Properties[prop]); sv != "" {
+					src = sv
+				}
+				tally(src, id)
 			}
 		}
 	}
@@ -917,6 +1218,60 @@ func answerLifecycleWeek(evs []event.Event, q string, now time.Time) string {
 
 // answerConvBy is conversion-by-segment: of the users in each bucket of prop, how many
 // did the conversion event — "which browser converts best", "conversion by country".
+// answerConvBySteps computes a real 2-step (or more) funnel conversion PER segment value
+// ("conversion from signup to checkout by plan"), first-touch-stamping the property so a
+// segment set only on the entry event still attributes. Segments below a sample floor are
+// listed but never headline (n<5 at "100%" is noise, not a winner).
+func answerConvBySteps(evs []event.Event, prop string, steps []funnel.Step, win askWindow) string {
+	segs := funnel.ComputeBreakdown(query.StampFirstTouch(evs, prop), steps, 7*24*time.Hour, prop)
+	type row struct {
+		val   string
+		users int
+		conv  int // overall conversion %
+	}
+	var rows []row
+	for _, s := range segs {
+		if s.Value == "(none)" {
+			continue
+		}
+		users := 0
+		if len(s.Steps) > 0 {
+			users = s.Steps[0].Count
+		}
+		if users == 0 {
+			continue
+		}
+		rows = append(rows, row{s.Value, users, pct(s.OverallConversion)})
+	}
+	if len(rows) == 0 {
+		return fmt.Sprintf("No events carry a %q property%s to segment the %s → %s funnel by.", prop, windowClause(win), steps[0].Event, steps[len(steps)-1].Event)
+	}
+	// eligible (n>=5) segments rank first by rate; tiny ones sort last so they can't headline.
+	const floor = 5
+	sort.Slice(rows, func(i, j int) bool {
+		ei, ej := rows[i].users >= floor, rows[j].users >= floor
+		if ei != ej {
+			return ei // eligible before ineligible
+		}
+		if rows[i].conv != rows[j].conv {
+			return rows[i].conv > rows[j].conv
+		}
+		return rows[i].users > rows[j].users
+	})
+	var parts []string
+	for i, r := range rows {
+		if i == 6 {
+			break
+		}
+		tag := ""
+		if r.users < floor {
+			tag = " (small sample)"
+		}
+		parts = append(parts, fmt.Sprintf("%s %d%% (%d)%s", r.val, r.conv, r.users, tag))
+	}
+	return fmt.Sprintf("%s → %s conversion by %s%s: %s.", steps[0].Event, steps[len(steps)-1].Event, prop, winSuffix(win), strings.Join(parts, " · "))
+}
+
 func answerConvBy(evs []event.Event, prop, convEvent string, win askWindow) string {
 	scoped := scope(evs, win)
 	segUsers := map[string]map[string]bool{}
@@ -954,8 +1309,14 @@ func answerConvBy(evs []event.Event, prop, convEvent string, win askWindow) stri
 		}
 		rows = append(rows, row{val, len(users), did})
 	}
-	// rank by rate, require a floor so a 1-user segment can't headline at 100%
+	// rank by rate BUT keep small samples out of the headline — a 1-of-1 "100%" segment must
+	// not outrank a 40-of-100 one. Eligible (n>=5) segments sort first; tiny ones trail, tagged.
+	const floor = 5
 	sort.Slice(rows, func(i, j int) bool {
+		ei, ej := rows[i].users >= floor, rows[j].users >= floor
+		if ei != ej {
+			return ei
+		}
 		ri := float64(rows[i].did) / float64(rows[i].users)
 		rj := float64(rows[j].did) / float64(rows[j].users)
 		if ri != rj {
@@ -968,7 +1329,11 @@ func answerConvBy(evs []event.Event, prop, convEvent string, win askWindow) stri
 		if i == 6 {
 			break
 		}
-		parts = append(parts, fmt.Sprintf("%s %d%% (%d of %d)", r.val, int(float64(r.did)/float64(r.users)*100+0.5), r.did, r.users))
+		tag := ""
+		if r.users < floor {
+			tag = " (small sample)"
+		}
+		parts = append(parts, fmt.Sprintf("%s %d%% (%d of %d)%s", r.val, int(float64(r.did)/float64(r.users)*100+0.5), r.did, r.users, tag))
 	}
 	return fmt.Sprintf("%q conversion by %s%s: %s.", convEvent, prop, winSuffix(win), strings.Join(parts, " · "))
 }
@@ -1132,16 +1497,29 @@ func answerVisitorShare(evs []event.Event, ev string, win askWindow) string {
 
 // answerRetentionVsSeg compares day-1 retention between two segments ("do users in
 // india come back more than users in the us").
-func answerRetentionVsSeg(evs []event.Event, win askWindow, now time.Time, a, b askSeg) string {
+func answerRetentionVsSeg(evs []event.Event, win askWindow, now time.Time, q string, a, b askSeg) string {
+	// honor the asked period ("day-7 retention mobile vs desktop" must answer DAY-7, not
+	// day-1) — substituting day-1 under the "cannot be fabricated" seal is exactly the
+	// wrong-metric-under-the-seal trust bug.
+	day := retentionPeriodAsked(q)
+	if day < 1 {
+		day = 1
+	}
 	one := func(s askSeg) (int, int) {
 		if !s.found {
 			return 0, 0
 		}
-		rr := retention.Compute(scope(segFilter(evs, s), win), 7, "")
-		return retention.DayN(rr, 1, now)
+		// acquisition/user attributes (device/referrer/…) scope by USER, not event-level —
+		// a mobile-acquired user's signup carries no device, so segFilter would drop them.
+		pool := segFilter(evs, s)
+		if userAttr(s.prop) {
+			pool = segFilterUsers(evs, s)
+		}
+		rr := retention.Compute(scope(pool, win), day, "")
+		return retention.DayN(rr, day, now)
 	}
-	d1a, sa := one(a)
-	d1b, sb := one(b)
+	dNa, sa := one(a)
+	dNb, sb := one(b)
 	pcts := func(d, n int) string {
 		if n == 0 {
 			return "not enough history"
@@ -1150,7 +1528,7 @@ func answerRetentionVsSeg(evs []event.Event, win askWindow, now time.Time, a, b 
 	}
 	verdict := ""
 	if sa > 0 && sb > 0 {
-		ra, rb := float64(d1a)/float64(sa), float64(d1b)/float64(sb)
+		ra, rb := float64(dNa)/float64(sa), float64(dNb)/float64(sb)
 		switch {
 		case ra > rb:
 			verdict = fmt.Sprintf(" — %s retains better", a.label)
@@ -1160,8 +1538,8 @@ func answerRetentionVsSeg(evs []event.Event, win askWindow, now time.Time, a, b 
 			verdict = " — dead even"
 		}
 	}
-	return fmt.Sprintf("Day-1 retention: %s %s vs %s %s%s. (Any activity counts as returning.)",
-		a.label, pcts(d1a, sa), b.label, pcts(d1b, sb), verdict)
+	return fmt.Sprintf("Day-%d retention: %s %s vs %s %s%s. (Any activity counts as returning.)",
+		day, a.label, pcts(dNa, sa), b.label, pcts(dNb, sb), verdict)
 }
 
 // answerConvByQ resolves the dimension + conversion event from the question and runs
@@ -1191,6 +1569,12 @@ func answerConvByQ(evs []event.Event, vol []string, q string, win askWindow) str
 	}
 	if prop == "" {
 		prop = "device"
+	}
+	// "conversion FROM x TO y by <prop>" is a real 2-step funnel per segment — using a single
+	// event (namedEvent's first hit) computes a degenerate single-step rate that is 100% for
+	// every segment. Detect two named steps and run the proper per-segment funnel.
+	if steps := namedFunnelSteps(q, vol); len(steps) >= 2 {
+		return answerConvBySteps(scope(evs, win), prop, steps, win)
 	}
 	conv := namedEvent(q, vol)
 	if conv == "" {
@@ -1268,6 +1652,36 @@ func answerConvByChannel(evs []event.Event, convEvent string, win askWindow) str
 // stepsInQuestion finds funnel step names mentioned in the question, returned as step
 // indices ordered by where they appear in the sentence — so "signup to activation
 // rate" yields [signup, activate] in the asked direction.
+// namedFunnelSteps returns the event names the question explicitly mentions as whole tokens,
+// in the order they appear — so "what percent of landing users convert" yields landing→convert
+// exactly. Returns <2 steps when the user didn't name a funnel, so the caller falls back to
+// the auto-detected funnel.
+func namedFunnelSteps(q string, vol []string) []funnel.Step {
+	toks := askTokens(normalizeEventWords(q))
+	firstPos := map[string]int{}
+	for i, t := range toks {
+		if _, ok := firstPos[t]; !ok {
+			firstPos[t] = i
+		}
+	}
+	type hit struct {
+		pos  int
+		name string
+	}
+	var hits []hit
+	for _, n := range vol {
+		if p, ok := firstPos[strings.ToLower(n)]; ok {
+			hits = append(hits, hit{p, n})
+		}
+	}
+	sort.Slice(hits, func(i, j int) bool { return hits[i].pos < hits[j].pos })
+	steps := make([]funnel.Step, 0, len(hits))
+	for _, h := range hits {
+		steps = append(steps, funnel.Step{Event: h.name})
+	}
+	return steps
+}
+
 func stepsInQuestion(q string, fr funnel.Result) []int {
 	aliases := func(name string) []string {
 		out := []string{name}

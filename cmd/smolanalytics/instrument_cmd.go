@@ -29,6 +29,13 @@ func instrumentCmd(args []string) {
 		fs.PrintDefaults()
 	}
 	_ = fs.Parse(args)
+	// accept a POSITIONAL path too: `smolanalytics instrument ./myapp` is the intuition
+	// every dev has from docker/git/npm. Without this the bare arg was silently dropped and
+	// the tool scanned the current directory, confidently proposing tracking for unrelated
+	// files with no error — the worst possible first-run impression on the highest-intent action.
+	if fs.NArg() > 0 && *dir == "." {
+		*dir = fs.Arg(0)
+	}
 
 	h, k := *host, *key
 	if h == "" {
