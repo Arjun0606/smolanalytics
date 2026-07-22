@@ -8,6 +8,7 @@ package importer
 import (
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -36,12 +37,14 @@ func MapperFor(format string) (func(io.Reader, EmitFn, SkipFn) error, error) {
 		return MapPostHog, nil
 	case "mixpanel":
 		return MapMixpanel, nil
+	case "amplitude":
+		return MapAmplitude, nil
 	case "umami":
 		return MapUmami, nil
 	case "":
-		return nil, fmt.Errorf("--format is required (jsonl, csv, posthog, mixpanel or umami)")
+		return nil, fmt.Errorf("--format is required (jsonl, csv, posthog, mixpanel, amplitude or umami)")
 	default:
-		return nil, fmt.Errorf("unknown format %q (want jsonl, csv, posthog, mixpanel or umami)", format)
+		return nil, fmt.Errorf("unknown format %q (want jsonl, csv, posthog, mixpanel, amplitude or umami)", format)
 	}
 }
 
@@ -230,6 +233,92 @@ func MapMixpanel(r io.Reader, emit EmitFn, skip SkipFn) error {
 		}
 	}
 	return sc.Err()
+}
+
+// MapAmplitude reads Amplitude's Export API output: JSON, one event object per line, shaped
+//
+//	{"event_type":"Signed Up","user_id":"u1","event_time":"2024-01-01 12:00:00.000","$insert_id":"z","event_properties":{...},"user_properties":{...}}
+//
+// Unlike Mixpanel, name/id/time are top-level: event_type→name, user_id (falling back to
+// device_id then amplitude_id)→distinct_id, event_time (a space-separated stamp) →timestamp,
+// $insert_id→event id so re-import is idempotent, and event+user properties merge into props.
+// Amplitude's export is gzipped by default, so a raw .json.gz is auto-decompressed here.
+func MapAmplitude(r io.Reader, emit EmitFn, skip SkipFn) error {
+	r, err := maybeGunzip(r)
+	if err != nil {
+		return err
+	}
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 64<<10), 8<<20) // amplitude rows carry both event + user properties
+	for sc.Scan() {
+		line := bytes.TrimSpace(sc.Bytes())
+		if len(line) == 0 {
+			continue
+		}
+		var row struct {
+			EventType       string         `json:"event_type"`
+			UserID          any            `json:"user_id"`
+			DeviceID        any            `json:"device_id"`
+			AmplitudeID     any            `json:"amplitude_id"`
+			EventTime       string         `json:"event_time"`
+			InsertID        string         `json:"$insert_id"`
+			EventProperties map[string]any `json:"event_properties"`
+			UserProperties  map[string]any `json:"user_properties"`
+		}
+		if err := json.Unmarshal(line, &row); err != nil {
+			skip("invalid JSON line")
+			continue
+		}
+		if row.EventType == "" {
+			skip("missing event name")
+			continue
+		}
+		id := mpStr(row.UserID)
+		if id == "" {
+			id = mpStr(row.DeviceID)
+		}
+		if id == "" {
+			id = mpStr(row.AmplitudeID)
+		}
+		if id == "" {
+			skip("missing user id")
+			continue
+		}
+		e := event.Event{Name: row.EventType, DistinctID: id, ID: row.InsertID}
+		if row.EventTime != "" {
+			t, ok := parseEventTime(row.EventTime)
+			if !ok {
+				skip("unparseable timestamp")
+				continue
+			}
+			e.Timestamp = t
+		}
+		for k, v := range row.UserProperties {
+			setProp(&e, k, v)
+		}
+		for k, v := range row.EventProperties { // event props win over user props on a key clash
+			setProp(&e, k, v)
+		}
+		if err := emit(e); err != nil {
+			return err
+		}
+	}
+	return sc.Err()
+}
+
+// maybeGunzip transparently decompresses when the stream starts with the gzip magic bytes,
+// so an Amplitude .json.gz imports directly (its export is gzipped) while a plain .json still
+// works. The peeked reader is returned so no bytes are lost.
+func maybeGunzip(r io.Reader) (io.Reader, error) {
+	br := bufio.NewReader(r)
+	magic, err := br.Peek(2)
+	if err != nil {
+		return br, nil // empty/short input: nothing to decompress, let the caller read it
+	}
+	if magic[0] == 0x1f && magic[1] == 0x8b {
+		return gzip.NewReader(br)
+	}
+	return br, nil
 }
 
 // mpStr renders a JSON scalar as the string our ids/properties use. JSON numbers decode

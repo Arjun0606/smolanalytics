@@ -106,7 +106,7 @@ func TestImportEventsUnknownFormat(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "x")
 	_ = os.WriteFile(path, []byte("{}"), 0o600)
 	_, text, isErr := callImportTool(t, s, map[string]any{"format": "parquet", "path": path})
-	if !isErr || !strings.Contains(text, "jsonl, csv, posthog, mixpanel or umami") {
+	if !isErr || !strings.Contains(text, "jsonl, csv, posthog, mixpanel, amplitude or umami") {
 		t.Fatalf("want the format menu in the error, got (%v) %q", isErr, text)
 	}
 }

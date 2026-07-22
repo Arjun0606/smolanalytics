@@ -1,6 +1,8 @@
 package importer
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -404,6 +406,88 @@ func TestMapMixpanel(t *testing.T) {
 	}
 }
 
+func TestMapAmplitude(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		wantN     int
+		wantSkips map[string]int
+		check     func(t *testing.T, evs []event.Event)
+	}{
+		{
+			name:  "top-level fields lifted, event+user props merged, space-separated time parsed",
+			input: `{"event_type":"Signed Up","user_id":"u1","event_time":"2024-03-01 10:00:00.000","$insert_id":"ins1","event_properties":{"plan":"pro"},"user_properties":{"country":"US"}}`,
+			wantN: 1,
+			check: func(t *testing.T, evs []event.Event) {
+				e := evs[0]
+				if e.Name != "Signed Up" || e.DistinctID != "u1" || e.ID != "ins1" {
+					t.Errorf("fields not lifted: %+v", e)
+				}
+				if !e.Timestamp.Equal(time.Date(2024, 3, 1, 10, 0, 0, 0, time.UTC)) {
+					t.Errorf("event_time not parsed: %v", e.Timestamp)
+				}
+				if e.Properties["plan"] != "pro" || e.Properties["country"] != "US" {
+					t.Errorf("event/user properties not merged: %v", e.Properties)
+				}
+			},
+		},
+		{
+			name:  "user_id falls back to device_id then amplitude_id; numeric id keeps integer form",
+			input: `{"event_type":"open","device_id":"","amplitude_id":12345,"event_time":"2024-03-01 10:00:00.000"}`,
+			wantN: 1,
+			check: func(t *testing.T, evs []event.Event) {
+				if evs[0].DistinctID != "12345" {
+					t.Errorf("amplitude_id fallback = %q, want 12345", evs[0].DistinctID)
+				}
+			},
+		},
+		{
+			name:      "missing event_type skipped",
+			input:     `{"user_id":"u1"}`,
+			wantSkips: map[string]int{"missing event name": 1},
+		},
+		{
+			name:      "no user id at all is skipped",
+			input:     `{"event_type":"open"}`,
+			wantSkips: map[string]int{"missing user id": 1},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			evs, skips := collectMapped(t, MapAmplitude, tt.input)
+			if len(evs) != tt.wantN {
+				t.Fatalf("mapped %d events, want %d", len(evs), tt.wantN)
+			}
+			checkSkips(t, skips, tt.wantSkips)
+			if tt.check != nil {
+				tt.check(t, evs)
+			}
+		})
+	}
+}
+
+// Amplitude's export is gzipped by default — a raw .json.gz must import without a manual
+// gunzip step, so MapAmplitude auto-detects the gzip magic bytes.
+func TestMapAmplitudeGzip(t *testing.T) {
+	line := `{"event_type":"Signed Up","user_id":"u1","event_time":"2024-03-01 10:00:00.000"}`
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	if _, err := gw.Write([]byte(line)); err != nil {
+		t.Fatal(err)
+	}
+	if err := gw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	var evs []event.Event
+	err := MapAmplitude(&buf, func(e event.Event) error { evs = append(evs, e); return nil }, func(string) {})
+	if err != nil {
+		t.Fatalf("MapAmplitude(gzip): %v", err)
+	}
+	if len(evs) != 1 || evs[0].Name != "Signed Up" || evs[0].DistinctID != "u1" {
+		t.Errorf("gzip stream not decompressed+mapped: %+v", evs)
+	}
+}
+
 func TestParseEventTime(t *testing.T) {
 	tests := []struct {
 		in   string
@@ -548,7 +632,7 @@ func TestIngestSenderBatching(t *testing.T) {
 // an unknown format errors with the fix in the message before anything is read.
 func TestRunUnknownFormat(t *testing.T) {
 	_, err := Run("xml", false, strings.NewReader("x"), NewIngestSender(func([]event.Event) error { return nil }))
-	if err == nil || !strings.Contains(err.Error(), "jsonl, csv, posthog, mixpanel or umami") {
+	if err == nil || !strings.Contains(err.Error(), "jsonl, csv, posthog, mixpanel, amplitude or umami") {
 		t.Fatalf("err = %v, want the format menu", err)
 	}
 }

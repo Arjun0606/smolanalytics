@@ -33,7 +33,7 @@ func importCmd(args []string) {
 	key := fs.String("key", "", "write key (sent as Authorization: Bearer)")
 	dryRun := fs.Bool("dry-run", false, "parse and validate only; print the summary, send nothing")
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: smolanalytics import --format=jsonl|csv|posthog|mixpanel|umami [--host=URL] [--key=KEY] [--dry-run] FILE")
+		fmt.Fprintln(os.Stderr, "usage: smolanalytics import --format=jsonl|csv|posthog|mixpanel|amplitude|umami [--host=URL] [--key=KEY] [--dry-run] FILE")
 		fs.PrintDefaults()
 	}
 	_ = fs.Parse(args)

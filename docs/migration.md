@@ -6,7 +6,7 @@ export as per-event data replays into smolanalytics with the original dates
 intact. The `import` subcommand does the mapping, batching and validation:
 
 ```sh
-smolanalytics import --format=jsonl|csv|posthog|umami \
+smolanalytics import --format=jsonl|csv|posthog|mixpanel|amplitude|umami \
   --host=http://localhost:8080 --key=$WRITE_KEY FILE
 ```
 
@@ -78,6 +78,23 @@ Mapping: `event` becomes the event name, and because Mixpanel keeps the rest ins
 `distinct_id` to the user id, and `$insert_id` to the event id, so re-running the same
 export dedupes instead of duplicating. Everything else in `properties` is preserved.
 Run with `--dry-run` first to preview the first few mapped events.
+
+## From Amplitude (`--format=amplitude`)
+
+Where the export lives: use Amplitude's **Export API** (`GET /api/2/export`, or
+Data → Export in the UI), which produces gzipped JSON — one event object per line
+shaped `{"event_type":"...","user_id":"...","event_time":"2024-01-01 12:00:00.000",`
+`"$insert_id":"...","event_properties":{...},"user_properties":{...}}`.
+
+```sh
+smolanalytics import --format=amplitude --host=https://your-host --key=$KEY export.json.gz
+```
+
+Mapping: `event_type` becomes the event name, `user_id` the user id (falling back to
+`device_id`, then `amplitude_id`), `event_time` the timestamp, and `$insert_id` the event
+id so re-running the same export dedupes instead of duplicating. `event_properties` and
+`user_properties` merge into the event's properties. The `.json.gz` is decompressed
+automatically — no separate `gunzip` step. Run with `--dry-run` first to preview.
 
 ## From Umami (`--format=umami`)
 
