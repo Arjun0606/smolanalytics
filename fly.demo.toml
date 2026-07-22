@@ -16,7 +16,9 @@ primary_region = "iad"
   force_https = true
   auto_stop_machines = "stop"
   auto_start_machines = true
-  min_machines_running = 0
+  # The public demo is the single most-watched surface (the "see it live" CTA + homepage ask
+  # box). Keep one machine always warm so it never cold-starts blank in front of a visitor.
+  min_machines_running = 1
 
   [[http_service.checks]]
     grace_period = "5s"
