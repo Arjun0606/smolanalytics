@@ -195,6 +195,19 @@ func Validate(filters []Filter) error {
 // stays one filter away (env eq development). Living inside Apply means every
 // surface (HTTP API, MCP, dashboard) inherits the same rule — the agreement test
 // depends on that.
+// Matches reports whether a single event satisfies ALL of the filters (AND). Unlike Apply it
+// does NOT apply the default dev-env exclusion — that's a stream-level concern; callers that
+// want it pre-filter the stream with Apply first. Used for per-step conditions in sequenced
+// cohorts, where each step constrains one event by name + its own property filters.
+func Matches(e event.Event, filters []Filter) bool {
+	for _, f := range filters {
+		if !f.match(e) {
+			return false
+		}
+	}
+	return true
+}
+
 func Apply(events []event.Event, filters []Filter) []event.Event {
 	filtersTouchEnv := false
 	for _, f := range filters {
