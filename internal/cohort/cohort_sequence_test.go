@@ -1,6 +1,7 @@
 package cohort
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -92,5 +93,57 @@ func TestResolveSequenceExcludesDevEnv(t *testing.T) {
 	d := Definition{Sequence: &Sequence{Steps: []Step{{Event: "A"}, {Event: "B"}}}}
 	if got := Resolve(evs, d); got["u"] {
 		t.Fatalf("dev-env A should be excluded so A→B fails; got %v", got)
+	}
+}
+
+// A sequence cohort saves (no top-level events needed) and survives a persist/reload intact.
+func TestStoreSaveSequence(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cohorts.json")
+	s, _ := Open(path)
+	seq := &Sequence{
+		Steps:    []Step{{Event: "signup"}, {Event: "activate", Count: 2}},
+		WithinMs: int64(7 * 24 * time.Hour / time.Millisecond),
+		Exclude:  []string{"churned"},
+	}
+	saved, err := s.Save(Definition{Name: "Fast activators", Sequence: seq})
+	if err != nil {
+		t.Fatalf("save sequence cohort: %v", err)
+	}
+	if saved.ID == "" {
+		t.Fatal("save should assign an id")
+	}
+	// reopen from disk and confirm the sequence round-tripped
+	s2, _ := Open(path)
+	got, ok := s2.Get(saved.ID)
+	if !ok || got.Sequence == nil {
+		t.Fatalf("reload lost the sequence: %+v", got)
+	}
+	if len(got.Sequence.Steps) != 2 || got.Sequence.Steps[1].Count != 2 ||
+		got.Sequence.WithinMs != seq.WithinMs || len(got.Sequence.Exclude) != 1 {
+		t.Fatalf("sequence did not round-trip: %+v", got.Sequence)
+	}
+}
+
+func TestStoreSaveValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		d       Definition
+		wantErr bool
+	}{
+		{"valid membership", Definition{Name: "c", Events: []string{"checkout"}}, false},
+		{"valid sequence", Definition{Name: "c", Sequence: &Sequence{Steps: []Step{{Event: "a"}}}}, false},
+		{"no name", Definition{Events: []string{"a"}}, true},
+		{"empty everything", Definition{Name: "c"}, true},
+		{"sequence with no steps", Definition{Name: "c", Sequence: &Sequence{}}, true},
+		{"sequence step with no event", Definition{Name: "c", Sequence: &Sequence{Steps: []Step{{Event: ""}}}}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, _ := Open(filepath.Join(t.TempDir(), "c.json"))
+			_, err := s.Save(tt.d)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Save err = %v, wantErr = %v", err, tt.wantErr)
+			}
+		})
 	}
 }

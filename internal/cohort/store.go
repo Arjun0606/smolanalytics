@@ -63,8 +63,17 @@ func (s *Store) Save(d Definition) (Definition, error) {
 	if d.Name == "" {
 		return Definition{}, fmt.Errorf("name is required")
 	}
-	if len(d.Events) == 0 && len(d.Filters) == 0 {
-		return Definition{}, fmt.Errorf("a cohort needs at least one event or filter")
+	if d.Sequence != nil {
+		if len(d.Sequence.Steps) == 0 {
+			return Definition{}, fmt.Errorf("a sequence cohort needs at least one step")
+		}
+		for _, st := range d.Sequence.Steps {
+			if st.Event == "" {
+				return Definition{}, fmt.Errorf("each sequence step needs an event")
+			}
+		}
+	} else if len(d.Events) == 0 && len(d.Filters) == 0 {
+		return Definition{}, fmt.Errorf("a cohort needs at least one event, filter, or sequence")
 	}
 	if d.Match != "all" {
 		d.Match = "any"
