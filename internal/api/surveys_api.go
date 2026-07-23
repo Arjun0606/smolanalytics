@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/query"
 	"github.com/Arjun0606/smolanalytics/internal/survey"
 )
 
@@ -78,6 +79,10 @@ func (s *Server) surveyResults(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// Production scope: exclude dev-env events by default, IDENTICAL to MCP survey_results
+	// (applyDefaultScope) so the /v1 read and the editor's read never disagree. Pinned by the
+	// agreement test.
+	evs = query.Apply(evs, nil)
 	writeJSON(w, http.StatusOK, survey.Results(evs, id, sv.Type, days))
 }
 

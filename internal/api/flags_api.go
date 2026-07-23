@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/flag"
+	"github.com/Arjun0606/smolanalytics/internal/query"
 )
 
 // Feature flags — boolean + multivariate, with property targeting and percentage rollout,
@@ -118,5 +119,9 @@ func (s *Server) measureFlag(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// Production scope: exclude dev-env events by default, IDENTICAL to MCP flag_impact
+	// (applyDefaultScope). Without this the /v1 read and the editor's read disagree whenever
+	// any event carries env=development — the exact MCP==API break the agreement test guards.
+	evs = query.Apply(evs, nil)
 	writeJSON(w, http.StatusOK, flag.Measure(evs, r.PathValue("key"), goalEvent, days))
 }
