@@ -90,6 +90,8 @@ func isPublic(r *http.Request) bool {
 		return true
 	case p == "/v1/deploys" && r.Method == http.MethodPost: // recording a deploy uses the public write key (like /v1/events); GET/DELETE stay gated
 		return true
+	case p == "/v1/flags/evaluate": // the SDK reads a user's flags with the public write key (like /v1/events); it has its own write-key check
+		return true
 	case strings.HasPrefix(p, "/share/"): // read-only share pages carry their own token auth
 		return true
 	case strings.HasPrefix(p, "/export/"): // one-time export downloads carry their own single-use token

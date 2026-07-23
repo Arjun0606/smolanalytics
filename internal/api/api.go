@@ -33,6 +33,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/deploys"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/exportlink"
+	"github.com/Arjun0606/smolanalytics/internal/flag"
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
 	"github.com/Arjun0606/smolanalytics/internal/geo"
 	"github.com/Arjun0606/smolanalytics/internal/goal"
@@ -76,6 +77,7 @@ type Server struct {
 	gsc          *gsc.Store
 	goals        *goal.Store
 	deploys      *deploys.Store // deploy markers → "which ship moved the metric"
+	flags        *flag.Store    // feature flags → boolean/multivariate, targeted, deterministic
 	exports      *exportlink.Store
 	defined      *defined.Store // retroactive zero-code events (Heap wedge)
 	writeKey     string         // PUBLIC ingest key (embedded in the SDK): authorizes POST /v1/events ONLY. Never reads.
@@ -112,6 +114,9 @@ func (s *Server) SetInsights(st *insights.Store) { s.insights = st; s.mcp.SetIns
 
 // SetCohorts swaps in a persistent cohort store (shared with MCP).
 func (s *Server) SetCohorts(st *cohort.Store) { s.cohorts = st; s.mcp.SetCohorts(st) }
+
+// SetFlags attaches the feature-flag store (shared with MCP + the SDK evaluate endpoint).
+func (s *Server) SetFlags(f *flag.Store) { s.flags = f; s.mcp.SetFlags(f) }
 
 // SetAliases attaches the identity-stitching map (ingest records anon→user on
 // $identify; the MCP import tool does the same for imported history).
@@ -330,6 +335,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/deploys", s.listDeploys)
 	mux.HandleFunc("POST /v1/deploys", s.createDeploy)
 	mux.HandleFunc("DELETE /v1/deploys/{id}", s.deleteDeploy)
+	mux.HandleFunc("GET /v1/flags", s.listFlags)
+	mux.HandleFunc("POST /v1/flags", s.saveFlag)
+	mux.HandleFunc("DELETE /v1/flags/{key}", s.deleteFlag)
+	mux.HandleFunc("GET /v1/flags/evaluate", s.evaluateFlags) // public: write-key + CORS, for the SDK
+	mux.HandleFunc("OPTIONS /v1/flags/evaluate", s.preflight)
 	mux.HandleFunc("GET /", s.dashboard)
 	return recoverMW(s.authMW(mux))
 }
@@ -352,7 +362,7 @@ func recoverMW(next http.Handler) http.Handler {
 func setCORS(w http.ResponseWriter) {
 	h := w.Header()
 	h.Set("Access-Control-Allow-Origin", "*")
-	h.Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	h.Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 	h.Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 	h.Set("Access-Control-Max-Age", "86400")
 }

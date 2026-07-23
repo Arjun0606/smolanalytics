@@ -24,6 +24,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/demo"
 	"github.com/Arjun0606/smolanalytics/internal/deploys"
 	"github.com/Arjun0606/smolanalytics/internal/exportlink"
+	"github.com/Arjun0606/smolanalytics/internal/flag"
 	"github.com/Arjun0606/smolanalytics/internal/geo"
 	"github.com/Arjun0606/smolanalytics/internal/goal"
 	"github.com/Arjun0606/smolanalytics/internal/gsc"
@@ -362,6 +363,11 @@ func serve(st store.Store, closeStore func() error, guardPublic bool) {
 	} else {
 		log.Printf("smolanalytics: deploys disabled (%v)", err)
 	}
+	if fs, err := flag.Open(sp(".flags.json")); err == nil {
+		app.SetFlags(fs)
+	} else {
+		log.Printf("smolanalytics: feature flags disabled (%v)", err)
+	}
 	if ex, err := exportlink.Open(sp(".exportlinks.json")); err == nil {
 		app.SetExportLinks(ex)
 	} else {
@@ -545,6 +551,9 @@ func runMCP() {
 	}
 	if dp, err := deploys.Open(dataPath() + ".deploys.json"); err == nil {
 		m.SetDeploys(dp)
+	}
+	if fs, err := flag.Open(dataPath() + ".flags.json"); err == nil {
+		m.SetFlags(fs)
 	}
 	if gs, err := gsc.Open(dataPath() + ".gsc.json"); err == nil {
 		m.SetGSC(gs)
