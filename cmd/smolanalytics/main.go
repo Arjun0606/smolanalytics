@@ -38,6 +38,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/store/file"
 	"github.com/Arjun0606/smolanalytics/internal/store/memory"
 	"github.com/Arjun0606/smolanalytics/internal/store/segment"
+	"github.com/Arjun0606/smolanalytics/internal/survey"
 	"github.com/Arjun0606/smolanalytics/internal/trackplan"
 	"github.com/Arjun0606/smolanalytics/internal/webhook"
 )
@@ -368,6 +369,11 @@ func serve(st store.Store, closeStore func() error, guardPublic bool) {
 	} else {
 		log.Printf("smolanalytics: feature flags disabled (%v)", err)
 	}
+	if sv, err := survey.Open(sp(".surveys.json")); err == nil {
+		app.SetSurveys(sv)
+	} else {
+		log.Printf("smolanalytics: surveys disabled (%v)", err)
+	}
 	if ex, err := exportlink.Open(sp(".exportlinks.json")); err == nil {
 		app.SetExportLinks(ex)
 	} else {
@@ -554,6 +560,9 @@ func runMCP() {
 	}
 	if fs, err := flag.Open(dataPath() + ".flags.json"); err == nil {
 		m.SetFlags(fs)
+	}
+	if sv, err := survey.Open(dataPath() + ".surveys.json"); err == nil {
+		m.SetSurveys(sv)
 	}
 	if gs, err := gsc.Open(dataPath() + ".gsc.json"); err == nil {
 		m.SetGSC(gs)

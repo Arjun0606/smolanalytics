@@ -23,6 +23,7 @@
   var flagExposed = {}; // per-session dedupe so a measured flag logs at most one exposure
   var flagsLoaded = false;
   var flagListeners = [];
+  var surveyShownThisLoad = false; // at most one survey popover per page load
   var captured = false; // autocapture wired once, even if the snippet loads twice
   var warnedAuth = false; // warn once on a bad key, don't spam the console
   var lifecycleBound = false; // flush-on-unload listeners bound once, even on re-init
@@ -472,6 +473,87 @@
     } catch (e) {}
   }
 
+  // Surveys — fetch the active surveys for this page, show the first eligible one as a small
+  // non-blocking popover, and post the answer as an event. Dependency-free, one at a time,
+  // deduped per browser via localStorage, and sampled deterministically per user.
+  function surveySeen(id) {
+    try { return (localStorage.getItem("smol_surveys") || "").indexOf(id + ",") >= 0; } catch (e) { return false; }
+  }
+  function markSurveySeen(id) {
+    try { var v = localStorage.getItem("smol_surveys") || ""; if (v.indexOf(id + ",") < 0) localStorage.setItem("smol_surveys", v + id + ","); } catch (e) {}
+  }
+  function hashPct(s) { var h = 5381; for (var i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0; return h % 100; }
+  function fetchSurveys() {
+    if (!host || !key || !did || surveyShownThisLoad || typeof document === "undefined") return;
+    try {
+      fetch(host + "/v1/surveys/active?path=" + encodeURIComponent(location.pathname), { headers: { Authorization: "Bearer " + key } })
+        .then(function (r) { return r && r.ok ? r.json() : null; })
+        .then(function (d) {
+          if (!d || !d.surveys) return;
+          for (var i = 0; i < d.surveys.length; i++) {
+            var sv = d.surveys[i];
+            if (surveySeen(sv.id)) continue;
+            if (sv.sample_pct && sv.sample_pct > 0 && sv.sample_pct < 100 && hashPct(sv.id + ":" + did) >= sv.sample_pct) continue;
+            showSurvey(sv);
+            break;
+          }
+        })
+        .catch(function () {});
+    } catch (e) {}
+  }
+  function showSurvey(sv) {
+    if (surveyShownThisLoad) return;
+    surveyShownThisLoad = true;
+    var wrap = document.createElement("div");
+    wrap.setAttribute("style", "position:fixed;bottom:20px;right:20px;z-index:2147483000;max-width:320px;background:#151515;color:#fafafa;border:1px solid #333;border-radius:10px;padding:16px;box-shadow:0 12px 40px rgba(0,0,0,.4);font-family:system-ui,-apple-system,sans-serif;font-size:14px;line-height:1.4");
+    function done() { try { document.body.removeChild(wrap); } catch (e) {} }
+    function answer(val) {
+      enqueue("$survey_response", { survey_id: sv.id, answer: val });
+      markSurveySeen(sv.id);
+      wrap.innerHTML = "";
+      var thanks = document.createElement("div");
+      thanks.textContent = "thanks!";
+      thanks.setAttribute("style", "color:#f5a623;font-weight:600");
+      wrap.appendChild(thanks);
+      setTimeout(done, 1200);
+    }
+    var close = document.createElement("button");
+    close.textContent = "×";
+    close.setAttribute("style", "position:absolute;top:8px;right:10px;background:none;border:none;color:#888;font-size:18px;cursor:pointer;line-height:1");
+    close.onclick = function () { markSurveySeen(sv.id); done(); };
+    wrap.appendChild(close);
+    var q = document.createElement("div");
+    q.textContent = sv.question;
+    q.setAttribute("style", "margin:0 16px 12px 0;font-weight:600");
+    wrap.appendChild(q);
+    var row = document.createElement("div");
+    row.setAttribute("style", "display:flex;flex-wrap:wrap;gap:6px");
+    function btn(label, val) {
+      var b = document.createElement("button");
+      b.textContent = label;
+      b.setAttribute("style", "flex:0 0 auto;min-width:32px;padding:6px 10px;background:#222;color:#fafafa;border:1px solid #3a3a3a;border-radius:6px;cursor:pointer;font-size:13px");
+      b.onmouseover = function () { b.style.borderColor = "#f5a623"; };
+      b.onmouseout = function () { b.style.borderColor = "#3a3a3a"; };
+      b.onclick = function () { answer(val); };
+      return b;
+    }
+    if (sv.type === "nps") { for (var n = 0; n <= 10; n++) row.appendChild(btn(String(n), n)); }
+    else if (sv.type === "rating") { for (var s = 1; s <= 5; s++) row.appendChild(btn(String(s), s)); }
+    else if (sv.type === "choice" && sv.choices) { for (var c = 0; c < sv.choices.length; c++) (function (ch) { row.appendChild(btn(ch, ch)); })(sv.choices[c]); }
+    else {
+      var input = document.createElement("input");
+      input.setAttribute("style", "width:100%;box-sizing:border-box;padding:8px;background:#222;color:#fafafa;border:1px solid #3a3a3a;border-radius:6px;font-size:13px;margin-bottom:8px");
+      input.placeholder = "your answer";
+      input.onkeydown = function (e) { if (e.key === "Enter" && input.value.trim()) answer(input.value.trim().slice(0, 500)); };
+      var send = btn("Send", "");
+      send.onclick = function () { if (input.value.trim()) answer(input.value.trim().slice(0, 500)); };
+      row.appendChild(input);
+      row.appendChild(send);
+    }
+    wrap.appendChild(row);
+    try { document.body.appendChild(wrap); enqueue("$survey_shown", { survey_id: sv.id }); } catch (e) { surveyShownThisLoad = false; }
+  }
+
   var smol = {
     init: function (writeKey, opts) {
       if (optedOut) return; // excluded browser: the SDK is a complete no-op
@@ -487,6 +569,7 @@
       envName = opts.env || (/^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])$/.test(location.hostname) ? "development" : "production");
       distinctId();
       fetchFlags();
+      if (opts.surveys !== false) fetchSurveys(); // set surveys:false to opt out of the widget
       if (opts.autocapture !== false) {
         setupAutocapture(); // pageviews + clicks, zero manual instrumentation
       }

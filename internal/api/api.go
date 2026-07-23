@@ -46,6 +46,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/settings"
 	"github.com/Arjun0606/smolanalytics/internal/share"
 	"github.com/Arjun0606/smolanalytics/internal/store"
+	"github.com/Arjun0606/smolanalytics/internal/survey"
 	"github.com/Arjun0606/smolanalytics/internal/trackplan"
 	"github.com/Arjun0606/smolanalytics/internal/trends"
 	"github.com/Arjun0606/smolanalytics/internal/webhook"
@@ -78,6 +79,7 @@ type Server struct {
 	goals        *goal.Store
 	deploys      *deploys.Store // deploy markers → "which ship moved the metric"
 	flags        *flag.Store    // feature flags → boolean/multivariate, targeted, deterministic
+	surveys      *survey.Store  // in-product micro-surveys (NPS/rating/choice/text)
 	exports      *exportlink.Store
 	defined      *defined.Store // retroactive zero-code events (Heap wedge)
 	writeKey     string         // PUBLIC ingest key (embedded in the SDK): authorizes POST /v1/events ONLY. Never reads.
@@ -117,6 +119,9 @@ func (s *Server) SetCohorts(st *cohort.Store) { s.cohorts = st; s.mcp.SetCohorts
 
 // SetFlags attaches the feature-flag store (shared with MCP + the SDK evaluate endpoint).
 func (s *Server) SetFlags(f *flag.Store) { s.flags = f; s.mcp.SetFlags(f) }
+
+// SetSurveys attaches the survey store (shared with MCP + the SDK active-surveys endpoint).
+func (s *Server) SetSurveys(sv *survey.Store) { s.surveys = sv; s.mcp.SetSurveys(sv) }
 
 // SetAliases attaches the identity-stitching map (ingest records anon→user on
 // $identify; the MCP import tool does the same for imported history).
@@ -342,6 +347,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/flags/{key}/measure", s.measureFlag) // A/B read for a measured flag
 	mux.HandleFunc("GET /v1/flags/evaluate", s.evaluateFlags)    // public: write-key + CORS, for the SDK
 	mux.HandleFunc("OPTIONS /v1/flags/evaluate", s.preflight)
+	mux.HandleFunc("GET /v1/surveys", s.listSurveys)
+	mux.HandleFunc("POST /v1/surveys", s.saveSurvey)
+	mux.HandleFunc("DELETE /v1/surveys/{id}", s.deleteSurvey)
+	mux.HandleFunc("GET /v1/surveys/{id}/results", s.surveyResults)
+	mux.HandleFunc("GET /v1/surveys/active", s.activeSurveys) // public: write-key + CORS, for the SDK widget
+	mux.HandleFunc("OPTIONS /v1/surveys/active", s.preflight)
 	mux.HandleFunc("GET /", s.dashboard)
 	return recoverMW(s.authMW(mux))
 }

@@ -43,6 +43,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/settings"
 	"github.com/Arjun0606/smolanalytics/internal/share"
 	"github.com/Arjun0606/smolanalytics/internal/store"
+	"github.com/Arjun0606/smolanalytics/internal/survey"
 	"github.com/Arjun0606/smolanalytics/internal/trackplan"
 	"github.com/Arjun0606/smolanalytics/internal/trends"
 	"github.com/Arjun0606/smolanalytics/internal/web"
@@ -77,6 +78,7 @@ type Server struct {
 	shares    *share.Store
 	deploys   *deploys.Store
 	flags     *flag.Store
+	surveys   *survey.Store
 	gsc       *gsc.Store
 	exports   *exportlink.Store
 	aliases   *alias.Map     // identity stitching for imported $identify events
@@ -746,6 +748,9 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		}
 		if handled, out, ferr := s.callFlags(name, args); handled {
 			return out, ferr
+		}
+		if handled, out, srverr := s.callSurveys(name, args); handled {
+			return out, srverr
 		}
 		if handled, out, gserr := s.callGSC(name, args); handled {
 			return out, gserr
