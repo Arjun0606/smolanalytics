@@ -54,6 +54,15 @@ func init() {
 				"context":     map[string]any{"type": "object", "description": "user properties the targeting rules match on"},
 			}, []string{"key", "distinct_id"}),
 		},
+		map[string]any{
+			"name":        "flag_impact",
+			"description": "A/B read for a measured flag: for each variant, the conversion rate on a goal event among users exposed to that variant (counted only after their first exposure), the lift vs the control arm, and 95% two-proportion significance. Computed from your events, never guessed. Correlation, not proof.",
+			"inputSchema": obj(map[string]any{
+				"key":   map[string]any{"type": "string", "description": "the flag key (must be a measured flag)"},
+				"event": map[string]any{"type": "string", "description": "the goal/conversion event, e.g. 'purchase'"},
+				"days":  map[string]any{"type": "integer", "description": "window in days, default 30"},
+			}, []string{"key", "event"}),
+		},
 	)
 }
 
@@ -146,6 +155,31 @@ func (s *Server) callFlags(name string, args json.RawMessage) (bool, string, err
 		}
 		variant, on := f.Evaluate(p.DistinctID, p.Context)
 		return true, jsonStr(map[string]any{"key": p.Key, "distinct_id": p.DistinctID, "on": on, "variant": variant}), nil
+
+	case "flag_impact":
+		if s.flags == nil {
+			return true, "", fmt.Errorf(noStore, "flag")
+		}
+		var p struct {
+			Key   string `json:"key"`
+			Event string `json:"event"`
+			Days  int    `json:"days"`
+		}
+		if err := unmarshalArgs(args, &p); err != nil {
+			return true, "", err
+		}
+		if p.Event == "" {
+			return true, "", fmt.Errorf("event (the goal metric) is required")
+		}
+		if p.Days == 0 {
+			p.Days = 30
+		}
+		evs, err := s.all()
+		if err != nil {
+			return true, "", err
+		}
+		evs = applyDefaultScope(evs)
+		return true, jsonStr(flag.Measure(evs, p.Key, p.Event, p.Days)), nil
 	}
 	return false, "", nil
 }

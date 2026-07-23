@@ -338,7 +338,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/flags", s.listFlags)
 	mux.HandleFunc("POST /v1/flags", s.saveFlag)
 	mux.HandleFunc("DELETE /v1/flags/{key}", s.deleteFlag)
-	mux.HandleFunc("GET /v1/flags/evaluate", s.evaluateFlags) // public: write-key + CORS, for the SDK
+	mux.HandleFunc("GET /v1/flags/{key}/measure", s.measureFlag) // A/B read for a measured flag
+	mux.HandleFunc("GET /v1/flags/evaluate", s.evaluateFlags)    // public: write-key + CORS, for the SDK
 	mux.HandleFunc("OPTIONS /v1/flags/evaluate", s.preflight)
 	mux.HandleFunc("GET /", s.dashboard)
 	return recoverMW(s.authMW(mux))

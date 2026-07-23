@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/flag"
 )
@@ -79,10 +81,42 @@ func (s *Server) evaluateFlags(w http.ResponseWriter, r *http.Request) {
 		_ = json.Unmarshal([]byte(c), &ctx) // best-effort; bad context just means no rule matches
 	}
 	out := map[string]string{}
+	measured := []string{}
 	for _, f := range s.flags.List() {
 		if variant, on := f.Evaluate(did, ctx); on {
 			out[f.Key] = variant
+			if f.Measured {
+				measured = append(measured, f.Key)
+			}
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"flags": out})
+	// `measured` tells the SDK which of this user's on-flags to log a $feature_flag_called
+	// exposure for (once per session), so only opted-in flags ever add events.
+	writeJSON(w, http.StatusOK, map[string]any{"flags": out, "measured": measured})
+}
+
+// measureFlag is the A/B read for one flag against a goal event. GET /v1/flags/{key}/measure?event=&days=
+// Read-key authed (a report, like every other GET /v1/*), pinned MCP==API by the agreement test.
+func (s *Server) measureFlag(w http.ResponseWriter, r *http.Request) {
+	if s.flags == nil {
+		writeErr(w, http.StatusServiceUnavailable, "feature flags not configured")
+		return
+	}
+	goalEvent := r.URL.Query().Get("event")
+	if goalEvent == "" {
+		writeErr(w, http.StatusBadRequest, "event (the goal metric) is required")
+		return
+	}
+	days := 30
+	if d := r.URL.Query().Get("days"); d != "" {
+		if n, err := strconv.Atoi(d); err == nil && n > 0 {
+			days = n
+		}
+	}
+	evs, err := s.store.Range(time.Time{}, time.Time{})
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, flag.Measure(evs, r.PathValue("key"), goalEvent, days))
 }

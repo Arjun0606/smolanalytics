@@ -18,6 +18,11 @@
   var anon = false; // cookieless mode: nothing stored on the device, no banner needed
   var envName = "production"; // "development" on localhost, or whatever init({env}) says
   var timer = null;
+  var flagCache = {};
+  var flagMeasured = {}; // keys the server marked "measured" → log an exposure on read
+  var flagExposed = {}; // per-session dedupe so a measured flag logs at most one exposure
+  var flagsLoaded = false;
+  var flagListeners = [];
   var captured = false; // autocapture wired once, even if the snippet loads twice
   var warnedAuth = false; // warn once on a bad key, don't spam the console
   var lifecycleBound = false; // flush-on-unload listeners bound once, even on re-init
@@ -442,6 +447,29 @@
     if (optedOut && window.console) console.info("smolanalytics: this browser is excluded from tracking (sa_optout=1). Visit any page with ?sa_optout=0 to re-enable.");
   } catch (e) {}
 
+  // Feature flags — fetch this user's resolved values once (and again on identify), cache them,
+  // and read them synchronously via flag(key, default). The server does the bucketing; the
+  // browser only ever holds resolved values, so there is no targeting logic to leak or drift.
+  function fetchFlags() {
+    if (!host || !key || !did) return;
+    try {
+      fetch(host + "/v1/flags/evaluate?distinct_id=" + encodeURIComponent(did), {
+        headers: { Authorization: "Bearer " + key },
+      })
+        .then(function (r) { return r && r.ok ? r.json() : null; })
+        .then(function (d) {
+          flagCache = (d && d.flags) || {};
+          flagMeasured = {};
+          if (d && d.measured) for (var mi = 0; mi < d.measured.length; mi++) flagMeasured[d.measured[mi]] = true;
+          flagsLoaded = true;
+          var ls = flagListeners;
+          flagListeners = [];
+          for (var i = 0; i < ls.length; i++) { try { ls[i](flagCache); } catch (e) {} }
+        })
+        .catch(function () {});
+    } catch (e) {}
+  }
+
   var smol = {
     init: function (writeKey, opts) {
       if (optedOut) return; // excluded browser: the SDK is a complete no-op
@@ -456,6 +484,7 @@
       anon = !!opts.anonymous;
       envName = opts.env || (/^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])$/.test(location.hostname) ? "development" : "production");
       distinctId();
+      fetchFlags();
       if (opts.autocapture !== false) {
         setupAutocapture(); // pageviews + clicks, zero manual instrumentation
       }
@@ -499,6 +528,7 @@
       // to this account (guarded server-side against the $anon sentinel)
       if (prev && prev !== id) props.$anon_distinct_id = prev;
       enqueue("$identify", props);
+      if (id && id !== prev) fetchFlags(); // re-evaluate flags for the newly identified user
       return smol;
     },
     reset: function () {
@@ -506,6 +536,28 @@
       did = null;
     },
     flush: flush,
+    // flag(key, default) reads the resolved value for this user (default when off/absent).
+    flag: function (name, def) {
+      var has = Object.prototype.hasOwnProperty.call(flagCache, name);
+      // a measured flag logs one $feature_flag_called exposure per session on first read, so it
+      // can be A/B-analysed; ordinary flags add zero events.
+      if (has && flagMeasured[name] && !flagExposed[name]) {
+        flagExposed[name] = true;
+        enqueue("$feature_flag_called", { $feature_flag: name, $feature_flag_response: flagCache[name] });
+      }
+      return has ? flagCache[name] : (def === undefined ? false : def);
+    },
+    flags: function () {
+      var out = {};
+      for (var k in flagCache) if (Object.prototype.hasOwnProperty.call(flagCache, k)) out[k] = flagCache[k];
+      return out;
+    },
+    // onFlags(cb) runs cb once flags have loaded (or immediately if already loaded).
+    onFlags: function (cb) {
+      if (flagsLoaded) { try { cb(flagCache); } catch (e) {} } else { flagListeners.push(cb); }
+      return smol;
+    },
+    reloadFlags: fetchFlags,
   };
 
   window.smolanalytics = smol;
