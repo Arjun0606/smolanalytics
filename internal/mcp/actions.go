@@ -98,6 +98,33 @@ func init() {
 			},
 		},
 		map[string]any{
+			"name":        "create_sequence_cohort",
+			"description": "Define a SEQUENCED behavioral cohort — users who did events IN ORDER, deeper than create_cohort's membership. Example: 'did signup then activate within 7 days but not churn'. Reusable as a filter on any report (cohort=<name>).",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"name": map[string]any{"type": "string"},
+					"steps": map[string]any{
+						"type":        "array",
+						"description": "The ordered steps that must happen in sequence. Each: {event, optional count (min total occurrences of it), optional filters (property conditions on that event)}.",
+						"items": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"event":   map[string]any{"type": "string"},
+								"count":   map[string]any{"type": "integer", "description": "min total occurrences of this event (default 1)"},
+								"filters": map[string]any{"type": "array", "description": "property conditions on this step's event, [{property, op, value}]"},
+							},
+							"required": []string{"event"},
+						},
+					},
+					"within_days":       map[string]any{"type": "number", "description": "max days between the first and last step (omit = any time)"},
+					"within_first_days": map[string]any{"type": "number", "description": "all steps must fall within this many days of the user's first-ever event (omit = off)"},
+					"exclude":           map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "event names that must NOT occur within the matched span"},
+				},
+				"required": []string{"name", "steps"},
+			},
+		},
+		map[string]any{
 			"name":        "list_cohorts",
 			"description": "List defined cohorts with their current member counts.",
 			"inputSchema": map[string]any{"type": "object", "properties": map[string]any{}},
@@ -287,6 +314,46 @@ func (s *Server) callAction(name string, args json.RawMessage) (bool, string, er
 		evs, _ := s.store.Range(zeroTime(), zeroTime())
 		members := len(cohort.Resolve(evs, d))
 		return true, jsonStr(map[string]any{"created": d, "current_members": members, "note": "reusable on any report via its name"}), nil
+
+	case "create_sequence_cohort":
+		if s.cohorts == nil {
+			return true, "", fmt.Errorf(noStore, "cohort")
+		}
+		var p struct {
+			Name            string        `json:"name"`
+			Steps           []cohort.Step `json:"steps"`
+			WithinDays      float64       `json:"within_days"`
+			WithinFirstDays float64       `json:"within_first_days"`
+			Exclude         []string      `json:"exclude"`
+		}
+		if err := unmarshalArgs(args, &p); err != nil {
+			return true, "", err
+		}
+		if len(p.Steps) == 0 {
+			return true, "", fmt.Errorf("steps must name at least one event, in order")
+		}
+		for _, st := range p.Steps {
+			if st.Event == "" {
+				return true, "", fmt.Errorf("each step needs an event")
+			}
+			if err := s.knownEvent(st.Event); err != nil {
+				return true, "", err
+			}
+		}
+		dayMs := float64(24 * time.Hour / time.Millisecond)
+		seq := &cohort.Sequence{
+			Steps:         p.Steps,
+			WithinMs:      int64(p.WithinDays * dayMs),
+			WithinFirstMs: int64(p.WithinFirstDays * dayMs),
+			Exclude:       p.Exclude,
+		}
+		d, err := s.cohorts.Save(cohort.Definition{Name: p.Name, Sequence: seq})
+		if err != nil {
+			return true, "", err
+		}
+		evs, _ := s.store.Range(zeroTime(), zeroTime())
+		members := len(cohort.Resolve(evs, d))
+		return true, jsonStr(map[string]any{"created": d, "current_members": members, "note": "sequenced cohort, reusable on any report via its name"}), nil
 
 	case "list_cohorts":
 		if s.cohorts == nil {

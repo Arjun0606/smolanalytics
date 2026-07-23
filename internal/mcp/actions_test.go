@@ -98,6 +98,41 @@ func TestActionCohortAndReport(t *testing.T) {
 	}
 }
 
+// create_sequence_cohort defines an ordered behavioral cohort from the editor and resolves it
+// through the same engine as everything else — only the user who did the events IN ORDER counts.
+func TestActionSequenceCohort(t *testing.T) {
+	st := memory.New()
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	seed := func(user, name string, d time.Duration) {
+		if err := st.Ingest(event.Event{ID: user + name, Name: name, DistinctID: user, Timestamp: base.Add(d)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seed("u1", "signup", 0)             // u1: signup then checkout → matches signup→checkout
+	seed("u1", "checkout", time.Hour)   //
+	seed("u2", "checkout", 0)           // u2: checkout then signup (reverse) → must NOT match
+	seed("u2", "signup", time.Hour)     //
+	s := New(st)
+	coh, _ := cohort.Open("")
+	s.SetCohorts(coh)
+
+	out, err := callAct(t, s, "create_sequence_cohort", `{"name":"Activated","steps":[{"event":"signup"},{"event":"checkout"}]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `"current_members":1`) {
+		t.Fatalf("only u1 (signup then checkout, in order) should match: %s", out)
+	}
+
+	if _, err := callAct(t, s, "create_sequence_cohort", `{"name":"x","steps":[]}`); err == nil {
+		t.Fatal("empty steps must be rejected")
+	}
+	// an unknown step event self-corrects, like create_cohort does
+	if _, err := callAct(t, s, "create_sequence_cohort", `{"name":"x","steps":[{"event":"sinup"},{"event":"checkout"}]}`); err == nil || !strings.Contains(err.Error(), "signup") {
+		t.Fatalf("unknown step event should error listing real events, got %v", err)
+	}
+}
+
 func TestActionWebhookSecretShownOnceAndRedacted(t *testing.T) {
 	s := actionServer(t)
 	out, err := callAct(t, s, "add_webhook", `{"name":"slack","url":"https://hooks.example.com/x"}`)
