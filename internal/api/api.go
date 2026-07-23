@@ -283,6 +283,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/stickiness", s.apiStickiness)
 	mux.HandleFunc("GET /v1/paths", s.apiPaths)
 	mux.HandleFunc("GET /v1/heatmap", s.apiHeatmap)
+	mux.HandleFunc("GET /v1/sessions", s.apiSessions)
+	mux.HandleFunc("GET /v1/session", s.apiSession)
 	mux.HandleFunc("GET /v1/groups", s.apiGroups)
 	mux.HandleFunc("GET /v1/web", s.apiWeb)
 	mux.HandleFunc("GET /v1/meta", s.apiMeta)

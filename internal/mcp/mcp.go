@@ -40,6 +40,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/paths"
 	"github.com/Arjun0606/smolanalytics/internal/query"
 	"github.com/Arjun0606/smolanalytics/internal/retention"
+	"github.com/Arjun0606/smolanalytics/internal/session"
 	"github.com/Arjun0606/smolanalytics/internal/settings"
 	"github.com/Arjun0606/smolanalytics/internal/share"
 	"github.com/Arjun0606/smolanalytics/internal/store"
@@ -705,6 +706,39 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 			return "", hErr
 		}
 		return jsonText(heatmap.Compute(scopeWindow(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters), hFrom, hTo), a.Path, a.Viewport, a.Cols, a.RowPx))
+	case "list_sessions":
+		var a struct {
+			Days    float64   `json:"days"`
+			Limit   int       `json:"limit"`
+			Filters FilterSet `json:"filters"`
+		}
+		if err := unmarshalArgs(args, &a); err != nil {
+			return "", err
+		}
+		if err := query.Validate(a.Filters); err != nil {
+			return "", err
+		}
+		days := int(a.Days)
+		if days <= 0 {
+			days = 7
+		}
+		return jsonText(map[string]any{"sessions": session.Sessions(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters), days, a.Limit)})
+	case "session_timeline":
+		var a struct {
+			DistinctID string `json:"distinct_id"`
+			Start      int64  `json:"start"`
+		}
+		if err := unmarshalArgs(args, &a); err != nil {
+			return "", err
+		}
+		if a.DistinctID == "" || a.Start == 0 {
+			return "", fmt.Errorf("session_timeline needs distinct_id and start (from list_sessions)")
+		}
+		d, ok := session.One(evs, a.DistinctID, a.Start)
+		if !ok {
+			return "", fmt.Errorf("session not found")
+		}
+		return jsonText(d)
 	case "groups":
 		var a struct {
 			Property string    `json:"property"`

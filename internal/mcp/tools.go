@@ -196,6 +196,23 @@ var toolList = []map[string]any{
 		}, []string{"path"}),
 	},
 	{
+		"name":        "list_sessions",
+		"description": "Recent user sessions — a visit summary per row (pages, clicks, rage-clicks, duration), reconstructed from events. Use to find sessions worth inspecting, then session_timeline for the play-by-play. Not pixel-perfect DOM replay; a journey rebuilt from your event log.",
+		"inputSchema": obj(map[string]any{
+			"days":    map[string]any{"type": "number", "description": "Window in days (default 7)."},
+			"limit":   map[string]any{"type": "number", "description": "Max sessions to return (default 100)."},
+			"filters": filtersSchema,
+		}, nil),
+	},
+	{
+		"name":        "session_timeline",
+		"description": "One session's play-by-play: the ordered steps (pageviews, clicks with positions, rage-clicks) with timing in ms. Get distinct_id + start from list_sessions.",
+		"inputSchema": obj(map[string]any{
+			"distinct_id": map[string]any{"type": "string"},
+			"start":       map[string]any{"type": "number", "description": "the session's start_unix from list_sessions"},
+		}, []string{"distinct_id", "start"}),
+	},
+	{
 		"name":        "groups",
 		"description": "Account-level (B2B) analytics: roll events up by a group property (company, account_id, team) — total accounts, active accounts (7d/30d), and the most active accounts with their user + event counts. Use for 'which companies are most active', 'how many accounts', 'account engagement'.",
 		"inputSchema": obj(map[string]any{
