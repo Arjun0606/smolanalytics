@@ -402,8 +402,10 @@
             path: location.pathname,
             x: e.clientX,
             y: e.clientY,
+            vw: window.innerWidth, // viewport width → click x normalizes across screen sizes (heatmaps)
             $elements: elemChain(target), // the selector chain, for retroactive event definition
           };
+          if (window.scrollY) props.sy = Math.round(window.scrollY); // scroll offset → document-space Y
           if (target.dataset && target.dataset.saName) props.name = target.dataset.saName;
           enqueue(name, props);
           armDeadClick(target);

@@ -181,6 +181,21 @@ var toolList = []map[string]any{
 		}, []string{"start"}),
 	},
 	{
+		"name":        "heatmap",
+		"description": "Where users click on a given page: a click-density grid plus the top clicked elements, for building a heatmap. Requires a path (get one from web_overview top_pages). Optional viewport=mobile|tablet|desktop, cols, row_px, and the standard days/hours/from/to/filters window. Computed from $click autocapture, never guessed.",
+		"inputSchema": obj(map[string]any{
+			"path":     map[string]any{"type": "string", "description": "The page path, e.g. \"/pricing\"."},
+			"viewport": map[string]any{"type": "string", "description": "mobile|tablet|desktop; omit for all sizes."},
+			"cols":     map[string]any{"type": "number", "description": "Grid columns across the width (default 40)."},
+			"row_px":   map[string]any{"type": "number", "description": "Row height in px down the page (default 20)."},
+			"days":     map[string]any{"type": "number", "description": "Rolling window in days ending now. Omit for all time."},
+			"hours":    map[string]any{"type": "number", "description": "Rolling window in hours ending now."},
+			"from":     map[string]any{"type": "string", "description": "Absolute window start, RFC3339 or YYYY-MM-DD."},
+			"to":       map[string]any{"type": "string", "description": "Absolute window end (exclusive)."},
+			"filters":  filtersSchema,
+		}, []string{"path"}),
+	},
+	{
 		"name":        "groups",
 		"description": "Account-level (B2B) analytics: roll events up by a group property (company, account_id, team) — total accounts, active accounts (7d/30d), and the most active accounts with their user + event counts. Use for 'which companies are most active', 'how many accounts', 'account engagement'.",
 		"inputSchema": obj(map[string]any{

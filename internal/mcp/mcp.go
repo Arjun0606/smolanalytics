@@ -34,6 +34,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/goal"
 	"github.com/Arjun0606/smolanalytics/internal/groups"
 	"github.com/Arjun0606/smolanalytics/internal/gsc"
+	"github.com/Arjun0606/smolanalytics/internal/heatmap"
 	"github.com/Arjun0606/smolanalytics/internal/insight"
 	"github.com/Arjun0606/smolanalytics/internal/insights"
 	"github.com/Arjun0606/smolanalytics/internal/paths"
@@ -673,6 +674,35 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 			return "", pErr
 		}
 		return jsonText(paths.After(scopeWindow(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters), pFrom, pTo), a.Start, a.Depth))
+	case "heatmap":
+		var a struct {
+			Path     string    `json:"path"`
+			Viewport string    `json:"viewport"`
+			Cols     int       `json:"cols"`
+			RowPx    int       `json:"row_px"`
+			Days     float64   `json:"days"`
+			Hours    float64   `json:"hours"`
+			From     string    `json:"from"`
+			To       string    `json:"to"`
+			Filters  FilterSet `json:"filters"`
+		}
+		if err := unmarshalArgs(args, &a); err != nil {
+			return "", err
+		}
+		if a.Path == "" {
+			return "", fmt.Errorf("heatmap needs a path (get one from web_overview top_pages)")
+		}
+		if err := query.Validate(a.Filters); err != nil {
+			return "", err
+		}
+		if err := guardFilters(evs, a.Filters); err != nil {
+			return "", err
+		}
+		hFrom, hTo, hErr := mcpWindow(a.Days, a.Hours, a.From, a.To)
+		if hErr != nil {
+			return "", hErr
+		}
+		return jsonText(heatmap.Compute(scopeWindow(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters), hFrom, hTo), a.Path, a.Viewport, a.Cols, a.RowPx))
 	case "groups":
 		var a struct {
 			Property string    `json:"property"`
