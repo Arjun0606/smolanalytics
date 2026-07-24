@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>smolanalytics — social preview</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; width: 1280px; height: 640px; overflow: hidden; background: #0a0a0a; }
+
+  .card {
+    position: relative;
+    width: 1280px;
+    height: 640px;
+    background: #0a0a0a;
+    font-family: "Inter", -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: #f2f2f0;
+    overflow: hidden;
+  }
+
+  /* faint hairline grid */
+  .grid {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px);
+    background-size: 64px 64px;
+    background-position: -1px -1px;
+    -webkit-mask-image: radial-gradient(120% 100% at 18% 30%, #000 0%, rgba(0,0,0,0.35) 60%, transparent 100%);
+            mask-image: radial-gradient(120% 100% at 18% 30%, #000 0%, rgba(0,0,0,0.35) 60%, transparent 100%);
+  }
+
+  /* quiet amber glow, single focal */
+  .glow {
+    position: absolute;
+    top: -220px;
+    left: -160px;
+    width: 760px;
+    height: 760px;
+    background: radial-gradient(circle at center, rgba(245,166,35,0.16) 0%, rgba(245,166,35,0.05) 34%, transparent 66%);
+    pointer-events: none;
+  }
+
+  /* outer hairline frame */
+  .frame {
+    position: absolute;
+    inset: 28px;
+    border: 1px solid rgba(255,255,255,0.10);
+    pointer-events: none;
+  }
+
+  .content {
+    position: absolute;
+    inset: 28px;
+    padding: 60px 72px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+
+  /* eyebrow */
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+    font-size: 16px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #8e8e8e;
+    align-self: flex-start;
+  }
+  .eyebrow .sq {
+    width: 9px;
+    height: 9px;
+    background: #f5a623;
+    box-shadow: 0 0 14px rgba(245,166,35,0.55);
+  }
+
+  /* headline */
+  .headline {
+    margin: 0;
+    font-size: 84px;
+    line-height: 1.02;
+    font-weight: 800;
+    letter-spacing: -0.028em;
+  }
+  .headline .l1 { display: block; color: #f2f2f0; }
+  .headline .l2 { display: block; color: #f5a623; }
+
+  /* proof chip */
+  .proof {
+    display: inline-flex;
+    align-items: center;
+    gap: 16px;
+    align-self: flex-start;
+    margin-top: 30px;
+    padding: 15px 20px;
+    border: 1px solid rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.02);
+    font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+    font-size: 21px;
+    color: #c9c9c6;
+    letter-spacing: 0.01em;
+  }
+  .proof .eq { color: #f5a623; font-weight: 700; }
+  .proof .muted { color: #8e8e8e; }
+
+  /* footer */
+  .footer {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+  }
+  .wordmark {
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: #f2f2f0;
+  }
+  .wordmark .dot {
+    width: 20px;
+    height: 20px;
+    background: #f5a623;
+    box-shadow: 0 0 18px rgba(245,166,35,0.5);
+  }
+  .meta {
+    text-align: right;
+    font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+    line-height: 1.5;
+  }
+  .meta .a { font-size: 17px; color: #8e8e8e; letter-spacing: 0.04em; }
+  .meta .b { font-size: 16px; color: #6b6b6b; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="grid"></div>
+    <div class="glow"></div>
+    <div class="frame"></div>
+
+    <div class="content">
+      <div class="eyebrow"><span class="sq"></span>deterministic analytics</div>
+
+      <div>
+        <h1 class="headline">
+          <span class="l1">the ai can't make up</span>
+          <span class="l2">a single number.</span>
+        </h1>
+        <div class="proof">
+          <span>MCP answer <span class="eq">==</span> /v1 API <span class="eq">==</span> dashboard</span>
+          <span class="muted">asserted in CI</span>
+        </div>
+      </div>
+
+      <div class="footer">
+        <div class="wordmark"><span class="dot"></span>smolanalytics</div>
+        <div class="meta">
+          <div class="a">open source · one Go binary</div>
+          <div class="b">github.com/Arjun0606/smolanalytics</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
