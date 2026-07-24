@@ -20,6 +20,13 @@ curl -H "Authorization: Bearer $KEY" "$HOST/v1/trends?event=signup"
 curl -H "Authorization: Bearer $KEY" "$HOST/v1/retention?days=7&event=signup"
 curl -H "Authorization: Bearer $KEY" "$HOST/v1/breakdown?event=signup&property=source"
 
+# the product toolkit — same engine, same CI-pinned numbers as the matching MCP tools
+curl -H "Authorization: Bearer $KEY" "$HOST/v1/heatmap?path=/pricing"                  # click density + top elements for a page
+curl -H "Authorization: Bearer $KEY" "$HOST/v1/sessions?days=7"                        # recent sessions (a visit summary per row)
+curl -H "Authorization: Bearer $KEY" "$HOST/v1/session?distinct_id=u1&start=<unix>"    # one session's play-by-play (start from a /v1/sessions row)
+curl -H "Authorization: Bearer $KEY" "$HOST/v1/flags/checkout_v2/measure?event=purchase"  # A/B read for a measured flag (per-variant rate, lift, significance)
+curl -H "Authorization: Bearer $KEY" "$HOST/v1/surveys/<id>/results"                   # survey aggregate (NPS / rating / choice / text)
+
 # the verdict (what to look at) and usage counters
 curl -H "Authorization: Bearer $KEY" "$HOST/v1/notable"
 curl -H "Authorization: Bearer $KEY" "$HOST/v1/usage"
@@ -29,6 +36,10 @@ curl -H "Authorization: Bearer $KEY" "$HOST/v1/brief?days=7"
 
 # full export: CSV or JSONL (JSONL round-trips straight back into /v1/events)
 curl -H "Authorization: Bearer $KEY" "$HOST/v1/export?format=jsonl" -o events.jsonl
+
+# public, WRITE-key + CORS (the browser/mobile SDK calls these; they return only client-safe fields)
+curl -H "Authorization: Bearer $WRITE_KEY" "$HOST/v1/flags/evaluate?distinct_id=u1"    # which flags/variants is this user in?
+curl -H "Authorization: Bearer $WRITE_KEY" "$HOST/v1/surveys/active?path=/pricing"     # which surveys should show on this page?
 ```
 
 Semantics shared by every endpoint:

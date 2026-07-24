@@ -53,7 +53,7 @@ Every analytics tool now has an AI assistant, but it's bolted *inside their app*
 - **Ask in your editor, for free.** It's an MCP server: connect Claude / Cursor / Claude Code and ask in plain English. Your model does the reasoning, so there are no API keys and no metered AI credits. The dashboard has a built-in ask bar too, zero setup.
 - **Answers are computed, never generated.** Every other tool's AI assistant admits it hallucinates. Ours calls exact, deterministic reports (not guessed SQL), so the number it returns is the real computed number or nothing. Your model can still ask the wrong question, but it cannot invent an answer. And this isn't a promise, it's CI: [the agreement test](internal/api/agreement_test.go) asserts the MCP answer and the HTTP API answer are identical for the same question, every build, forever. There is no second query path that can drift.
 - **Google Search Console, built in.** `smolanalytics gsc auth` (BYO OAuth client, two env vars) and your top search queries (clicks, impressions, position, biggest movers) appear on the dashboard, in the `search_console_report` MCP tool, next to what those visitors did after landing.
-- **Real product analytics AND web analytics, one tool.** Funnels, retention, trends, segmentation, lifecycle, stickiness, paths, cohorts, B2B accounts, plus the Plausible-shaped web view (visitors, live-now, top pages, referrers, UTM sources, devices). The usual answer is "run Plausible AND something heavier"; this is both, in one binary.
+- **Real product analytics AND web analytics, one tool.** Funnels, retention, trends, segmentation, lifecycle, stickiness, paths, cohorts, B2B accounts — plus **feature flags, A/B tests, click heatmaps, in-product surveys, and a session inspector** — plus the Plausible-shaped web view (visitors, live-now, top pages, referrers, UTM sources, devices). The usual answer is "run Plausible AND something heavier"; this is all of it, in one binary.
 - **One binary, not a cluster.** No Kafka/ClickHouse/Redis, no 12-hours-debugging-self-host. `docker run` and it's up. Your data never leaves your box and never trains anyone's model.
 - **One instance, all your projects.** The SDK stamps every event with its site's hostname: point every product you run at the same instance, switch sites on the dashboard, filter any report (or any MCP question) by site, and the morning brief breaks down per product. You do not need a server per project.
 - **Beautiful by default.** Server-rendered, instant, opinionated. It looks designed, not assembled.
@@ -135,13 +135,16 @@ ai  ▸ Activation is 62% (657 of 1,051 signups reach "activate").
       Pro converts 2.4× better end-to-end: 45% signup→checkout vs 19% on free.
       The leak is activate→checkout on free (only 31% continue). Want the paths after activate?
 ```
-Your model gets **47 tools + 13 built-in prompts**. The editor runs the *whole thing*, not just queries:
+Your model gets **73 tools + 14 built-in prompts**. The editor runs the *whole thing*, not just queries:
 
 - **Ask:** `whats_notable` (the *what-to-fix* verdict), `overview`, `list_events`, `funnel`, `retention`, `trends`, `breakdown`, `web_overview` (traffic at a glance), `lifecycle`, `stickiness`, `paths`, `groups` (B2B accounts), `recent_events`, `user_activity`, every one filterable by property (`plan=pro`, `source=hn`, …).
+- **The full product toolkit, same surface:** roll out a feature flag (*"ship checkout_v2 to 20% of users"* → `create_flag`) and read the A/B result with real significance (`flag_impact`, two-proportion z-test); run an NPS/rating/choice survey (`create_survey` → `survey_results`); see where people click (`heatmap`); replay a user's journey step by step (`list_sessions` → `session_timeline`); define a behavioral cohort from an ordered sequence (`create_sequence_cohort`). All computed from the same event log you already have, all askable in the editor — no separate product, no second bill.
 - **Do:** *"alert me if signups drop below 10 a day"* → `create_alert`; *"send alerts to Slack"* → `add_webhook`; *"track paying users as a group"* → `create_cohort`; *"pin that funnel to my dashboard"* → `save_report`, plus list/delete for each. Everything created in your editor appears on the dashboard instantly (same stores, one source of truth). A saved report keeps rendering on the dashboard every visit, so recurring metrics never need re-typing.
 - **Run the instance:** rename the project, set the timezone and retention, create/revoke API keys, full settings parity, no browser.
 - **Verify the instrumentation** (built for AI-assisted building): the agent that wires your tracking declares it with `set_tracking_plan`, then `instrumentation_health` checks reality against the plan: which events are flowing, which never arrived, which expected properties are missing. The loop closes: *build → instrument → verify → watch*, all in the editor.
-- **Prompts:** 13 named jobs surfaced natively by MCP clients: `instrument-my-app` (full setup, end to end), `whats-broken-today` (the morning check), `weekly-review` and `monthly-report` (founder-grade recaps), `funnel-leak`, `launch-day`, `money-pages` (the SEO wins already in reach), and the rest. The full library, with what each reads and the shape of the answer: [docs/prompts.md](docs/prompts.md).
+- **Prompts:** 14 named jobs surfaced natively by MCP clients: `instrument-my-app` (full setup, end to end), `whats-broken-today` (the morning check), `weekly-review` and `monthly-report` (founder-grade recaps), `funnel-leak`, `launch-day`, `money-pages` (the SEO wins already in reach), and the rest. The full library, with what each reads and the shape of the answer: [docs/prompts.md](docs/prompts.md).
+
+Every one of those 73 is a deterministic report or an action, never generated SQL — and where it's a report, the [agreement test](internal/api/agreement_test.go) pins the editor's answer equal to the `/v1` API byte-for-byte in CI.
 
 ### Shipping with an agent? Make tracking automatic
 If Claude Code or Cursor writes your features, it can write your instrumentation too:
@@ -226,17 +229,23 @@ requests.post(f"{host}/v1/events", headers={"Authorization": f"Bearer {key}"},
 ```
 The browser SDK adds autocapture + batching on top; everywhere else, it's a 5-line POST. Same engine, same "ask in your editor," same verdict, whatever your product runs on.
 
+**Prefer a real native SDK?** Published packages with an offline-safe persisted queue, batching, retries, sessions, lifecycle events, and cookieless anon id are live for **Swift** (SPM), **Kotlin / Android** (JitPack), **React Native** (`smolanalytics-react-native` on npm), and **Flutter** (`smolanalytics` on pub.dev). The raw POST above stays the zero-dependency fallback for anything else. Details: [docs/mobile.md](docs/mobile.md).
+
 Even easier: paste *this* into Cursor/Claude Code and let it instrument your app.
 > "Add smolanalytics: load `https://YOUR_HOST/sdk.js`, init with my key, and `track()` the key moments (signup, activate, checkout) plus `identify()` on login."
 
 **Framework guides** (copy-paste, two minutes each): [Next.js](docs/nextjs.md) · [React](docs/react.md) · [Vue](docs/vue.md) · [Backend](docs/backend.md) (Node/Python/Go/Ruby/PHP) · [Mobile](docs/mobile.md) (iOS/Android/RN). See [`examples/`](examples/) for a runnable page + curl script.
 
 ## How it compares
-Honest version: we're **not** deeper than the big tools. The bet is a different shape:
+Honest version: the big tools still have more raw surface area (data warehouse,
+pixel-perfect replay, years of integrations). But on the analytics you actually use
+day to day, the toolkit now *matches* them — and on three things they **structurally
+can't** copy, this wins:
 
 | | smolanalytics | Plausible / Fathom | Mixpanel / Amplitude | PostHog |
 |---|:---:|:---:|:---:|:---:|
 | Funnels · retention · paths · cohorts | ✅ | ⚠️ Plausible: paid tier · Fathom: ❌ | ✅ | ✅ |
+| Flags · A/B · surveys · heatmaps · session inspector | ✅ **all one binary** | ❌ | ⚠️ separate / paid add-ons | ✅ |
 | Web analytics (pages · referrers · live) | ✅ | ✅ | ⚠️ | ✅ |
 | Ask in plain English | ✅ **your AI, free** | ❌ | 💲 their AI | 💲 their AI + MCP |
 | The AI's numbers match the dashboard | ✅ **always, same engine** | n/a | ⚠️ | ⚠️ their docs: *"may not match the UI"* |
@@ -251,12 +260,17 @@ filters, caching," with the advice to "verify in the UI" for numbers that matter
 can't differ: the MCP tools call the exact same deterministic reports the dashboard
 renders. There is no second path to disagree with.
 
-## What we'll never add
-The graveyard of analytics tools is "one tool that became nine." Session replay,
-feature flags, A/B testing, surveys, data warehouses: other tools do those well, and
-bundling them is how you end up needing a cluster and a pricing calculator. We stay
-one binary that answers questions about your events, exactly. If you outgrow that,
-you'll know, and your data exports cleanly.
+## The one thing we deliberately don't do
+Feature flags, A/B testing, click heatmaps, in-product surveys, a session inspector,
+behavioral cohorts — **all shipped**, all from the *same one binary* and the same event
+log, no cluster and no pricing calculator. The single deliberate exception is
+**pixel-perfect DOM / video session replay** (the screen-recording kind). That needs a
+heavy recorder and a separate blob store, which would break the single-binary,
+~7-bytes-per-event model that makes this thing self-hostable in 30 seconds. The
+event-based **session inspector** ships instead: it reconstructs a user's journey —
+pages, clicks with positions, rage-clicks, timing — from the events you already capture.
+If you genuinely need screen recording, run a tool built for it alongside smolanalytics;
+everything else the "one tool that became nine" bundles, you already have here.
 
 Also on the never-list: **multi-node, clustering, HA.** Exactly one writer per
 instance is *why* the storage engine needs no consensus protocol: crash recovery is

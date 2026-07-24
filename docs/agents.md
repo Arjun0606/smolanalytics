@@ -106,7 +106,7 @@ Also built in: 14 prompts that run whole routines: `whats-broken-today` for the 
 check, `did-my-deploy-break-anything` to tie a ship to the numbers, `weekly-review` and
 `monthly-report` for founder-grade recaps, `funnel-leak`, `launch-day`, and the rest. The
 full prompt library, with what each one reads and the shape of its answer, is in
-[docs/prompts.md](prompts.md). Your model gets 51 tools total. The full list is in the
+[docs/prompts.md](prompts.md). Your model gets 73 tools total. The full list is in the
 [README](../README.md#ask-it-in-your-editor-the-whole-point).
 
 ## 4. Why an agent can trust the numbers

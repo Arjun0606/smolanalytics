@@ -1,6 +1,6 @@
 # The prompt library
 
-smolanalytics ships 13 built-in prompts: complete analytics workflows, not one-liners.
+smolanalytics ships 14 built-in prompts: complete analytics workflows, not one-liners.
 In Claude Code, Cursor, or any MCP client that supports prompts, they surface natively:
 type `/`, pick one, and the whole routine runs. The model calls the right tools in the
 right order and gives you the read, not a data dump. Because it runs in your editor, the
@@ -57,6 +57,24 @@ One thing changed: signup is down X% vs a typical day (N vs M), started around H
 Tracking is healthy: all K planned events flowing, no missing properties.
 Traffic is normal; referrer mix unchanged.
 Most useful action today: <one line, and whether it's a product fix or a tracking fix>.
+```
+
+### did-my-deploy-break-anything
+
+Right after you ship. Ties the numbers to the deploy behind them, so a regression is caught
+in hours, not at the next weekly review.
+
+Records the current deploy marker, then reads before/after impact on your headline conversion
+event, pageviews, and any error-shaped events (30-day window, 3-day before/after), leading
+with anything that regressed.
+
+`record_deploy · deploy_impact`
+
+```
+deadbeef "tighten checkout validation" — 3 days after:
+  signups −X% (was A/day, now B/day) — significant given the volume; that ship is the suspect.
+  pageviews flat, errors unchanged.
+Correlation, not proof — but check that deploy first.
 ```
 
 ### weekly-review
@@ -256,7 +274,7 @@ Want the goals and saved reports set up now?
 
 ## Roll your own
 
-A prompt is nothing exotic: instructions over the same 47 tools your model already has.
+A prompt is nothing exotic: instructions over the same 73 tools your model already has.
 If a routine keeps coming up ("compare pro vs free every Friday", "check both funnels
 after each deploy"), write it once into your repo's `CLAUDE.md` / `AGENTS.md` /
 `.cursorrules` and it becomes part of how your agent works, no MCP plumbing required.

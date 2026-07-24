@@ -24,14 +24,14 @@ you mean.
   the blob backend. The single source of truth for what cold data exists.
 - **blob backend**: where segments live: a local directory, or S3/R2/Tigris.
 - **tier** ⚠️ overloaded: *storage tier* (hot log vs sealed segments) vs *pricing
-  tier* (Solo/Pro/Scale/Business on the cloud). Say "storage tier" or "plan."
+  tier* (Pro/Scale on the cloud, plus free self-host). Say "storage tier" or "plan."
 - **cohort**: a named, reusable group of users defined by events they did
   (`create_cohort`), usable as a filter on any report.
 - **tracking plan**: the declared intent: which events an app *should* send, with
   expected properties (`set_tracking_plan`); `instrumentation_health` diffs reality
   against it.
-- **MCP tool**: one callable capability exposed to the user's AI (47 of them:
+- **MCP tool**: one callable capability exposed to the user's AI (73 of them:
   reports, actions, instance control). Distinct from a *prompt* (a pre-canned
-  multi-tool workflow the client surfaces, 13 of them).
+  multi-tool workflow the client surfaces, 14 of them).
 - **write key**: the bearer token that authorizes ingestion and MCP access for an
   instance. Not the dashboard password.

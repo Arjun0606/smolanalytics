@@ -20,7 +20,7 @@ docker run -p 8080:8080 -v $PWD/data:/data \
 - [React](react.md)
 - [Vue](vue.md)
 - [Backend](backend.md): Node, Python, Go, Ruby, PHP (server-side events)
-- [Mobile](mobile.md): iOS (Swift), Android (Kotlin), React Native
+- [Mobile](mobile.md): native SDKs for iOS (Swift), Android (Kotlin), React Native, Flutter
 
 Don't see yours? Ingestion is **one HTTP endpoint** (`POST /v1/events`), so anything that
 can make an HTTP request works. See [Backend](backend.md) for the shape, or paste this into
