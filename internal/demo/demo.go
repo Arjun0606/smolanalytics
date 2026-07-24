@@ -10,10 +10,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/deploys"
 	"github.com/Arjun0606/smolanalytics/internal/event"
+	"github.com/Arjun0606/smolanalytics/internal/flag"
 	"github.com/Arjun0606/smolanalytics/internal/gsc"
 	"github.com/Arjun0606/smolanalytics/internal/store"
 	"github.com/Arjun0606/smolanalytics/internal/store/memory"
+	"github.com/Arjun0606/smolanalytics/internal/survey"
 )
 
 // reseedEvery re-anchors the 30-day demo dataset to "today" so a long-running demo
@@ -271,7 +274,109 @@ func Seed(s store.Store) error {
 			}
 		}
 	}
+	seedToolkit(s)
 	return nil
+}
+
+const (
+	demoFlagKey  = "checkout_v2"
+	demoSurveyID = "demo-nps"
+)
+
+// seedToolkit emits the events behind the product-toolkit features (heatmap clicks, flag
+// exposures + conversions, survey shows + responses) so the hosted demo answers "heatmap
+// for /pricing", "which variant is winning", and "what's my NPS" with real numbers instead
+// of an empty state. Called from Seed() so it survives every re-anchor. The flag/survey
+// DEFINITIONS live in their own persistent stores, seeded in serve() (SeedFlagDef /
+// SeedSurveyDef / SeedDeploys), keyed to demoFlagKey / demoSurveyID so they line up.
+func seedToolkit(s store.Store) {
+	now := time.Now().UTC()
+	var evs []event.Event
+	i := 0
+	emit := func(name, user string, at time.Duration, props map[string]any) {
+		t := now.Add(at)
+		if t.After(now) {
+			return
+		}
+		i++
+		evs = append(evs, event.Event{ID: fmt.Sprintf("tk%d", i), Name: name, DistinctID: user, Timestamp: t, Properties: props})
+	}
+
+	// click heatmap: positioned clicks (with viewport) clustered on a few elements
+	spots := []struct {
+		path, text string
+		x, y       int
+	}{
+		{"/pricing", "Start free trial", 640, 300},
+		{"/pricing", "Compare plans", 420, 520},
+		{"/pricing", "Read the docs", 900, 140},
+		{"/", "Get started", 700, 280},
+		{"/", "Live demo", 500, 380},
+	}
+	for d := 0; d < 14; d++ {
+		for _, sp := range spots {
+			for k := 0; k < 2+(d%3); k++ {
+				emit("$click", fmt.Sprintf("clk%d", (d*7+k)%40),
+					-time.Duration(d)*24*time.Hour+time.Duration(k)*time.Minute,
+					map[string]any{"path": sp.path, "text": sp.text, "x": sp.x + k*3, "y": sp.y + k*2, "sy": 0, "vw": 1280})
+			}
+		}
+	}
+
+	// measured flag checkout_v2: exposures + goal conversions, treatment beats control
+	for u := 0; u < 60; u++ {
+		user := fmt.Sprintf("exp%d", u)
+		variant := "control"
+		if u%2 == 1 {
+			variant = "treatment"
+		}
+		at := -time.Duration(18-(u%14)) * 24 * time.Hour
+		emit("$feature_flag_called", user, at, map[string]any{"$feature_flag": demoFlagKey, "$feature_flag_response": variant})
+		if (variant == "control" && u%5 < 2) || (variant == "treatment" && u%5 < 3) {
+			emit("checkout", user, at+2*time.Hour, map[string]any{"amount": 30.0})
+		}
+	}
+
+	// a signup burst just before the most recent deploy (-6d) so "did my last deploy move
+	// signups" reads as a real regression: the 3-day before-window sits high, the after-window
+	// is normal, so ComputeImpact sees a clear drop to attribute to that ship.
+	for d := 9; d >= 7; d-- {
+		for k := 0; k < 30; k++ {
+			emit("signup", fmt.Sprintf("dep%d_%d", d, k), -time.Duration(d)*24*time.Hour+time.Duration(k)*time.Minute, map[string]any{"source": "direct"})
+		}
+	}
+
+	// NPS survey demo-nps: shown + responses skewing promoter
+	scores := []int{10, 9, 10, 8, 9, 10, 7, 9, 10, 6, 9, 8, 10, 9, 7, 10, 9, 8, 10, 3, 9, 10, 8, 9, 10, 5, 9, 10}
+	for u := 0; u < 36; u++ {
+		user := fmt.Sprintf("nps%d", u)
+		at := -time.Duration(12-(u%10)) * 24 * time.Hour
+		emit("$survey_shown", user, at, map[string]any{"survey_id": demoSurveyID})
+		if u < len(scores) {
+			emit("$survey_response", user, at+time.Minute, map[string]any{"survey_id": demoSurveyID, "answer": float64(scores[u])})
+		}
+	}
+
+	_ = s.Ingest(evs...)
+}
+
+// SeedFlagDef seeds the measured flag definition (its exposures come from seedToolkit).
+func SeedFlagDef(fs *flag.Store) {
+	_, _ = fs.Save(flag.Flag{Key: demoFlagKey, Description: "new checkout flow", Enabled: true, Measured: true,
+		Variants: []flag.Variant{{Key: "control", Weight: 50}, {Key: "treatment", Weight: 50}}})
+}
+
+// SeedSurveyDef seeds the NPS survey with a FIXED id so it lines up with the $survey_* events.
+func SeedSurveyDef(sv *survey.Store) {
+	sv.SeedFixed(survey.Survey{ID: demoSurveyID, Name: "Pricing NPS", Type: "nps",
+		Question: "How likely are you to recommend smolanalytics?", Active: true})
+}
+
+// SeedDeploys records deploy markers so deploy_impact has ships to attribute a metric change to.
+func SeedDeploys(dp *deploys.Store) {
+	now := time.Now().UTC()
+	_, _ = dp.Record(deploys.Deploy{SHA: "a1b2c3d4e5", Message: "tighten checkout validation", Source: "ci", At: now.AddDate(0, 0, -6)})
+	_, _ = dp.Record(deploys.Deploy{SHA: "f6a7b8c9d0", Message: "new pricing page", Source: "ci", At: now.AddDate(0, 0, -20)})
 }
 
 // SeedGSC populates the search store so the demo shows the Search card and the

@@ -361,16 +361,25 @@ func serve(st store.Store, closeStore func() error, guardPublic bool) {
 	}
 	if dp, err := deploys.Open(sp(".deploys.json")); err == nil {
 		app.SetDeploys(dp)
+		if demoMode {
+			demo.SeedDeploys(dp)
+		}
 	} else {
 		log.Printf("smolanalytics: deploys disabled (%v)", err)
 	}
 	if fs, err := flag.Open(sp(".flags.json")); err == nil {
 		app.SetFlags(fs)
+		if demoMode {
+			demo.SeedFlagDef(fs)
+		}
 	} else {
 		log.Printf("smolanalytics: feature flags disabled (%v)", err)
 	}
 	if sv, err := survey.Open(sp(".surveys.json")); err == nil {
 		app.SetSurveys(sv)
+		if demoMode {
+			demo.SeedSurveyDef(sv)
+		}
 	} else {
 		log.Printf("smolanalytics: surveys disabled (%v)", err)
 	}

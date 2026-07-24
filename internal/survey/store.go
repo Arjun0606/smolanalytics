@@ -117,6 +117,29 @@ func (s *Store) Save(sv Survey) (Survey, error) {
 	return sv, nil
 }
 
+// SeedFixed inserts a survey verbatim, keeping its given ID (unlike Save, which mints a
+// random one on create). For demo seeding and imports where the ID must be known ahead of
+// time so the $survey_shown / $survey_response events can reference it. No-op on empty ID or
+// a duplicate.
+func (s *Store) SeedFixed(sv Survey) {
+	if sv.ID == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, ex := range s.items {
+		if ex.ID == sv.ID {
+			return
+		}
+	}
+	if sv.Created.IsZero() {
+		sv.Created = now()
+	}
+	sv.Updated = now()
+	s.items = append(s.items, sv)
+	_ = s.persist()
+}
+
 func (s *Store) SetActive(id string, on bool) (Survey, error) {
 	sv, ok := s.Get(id)
 	if !ok {

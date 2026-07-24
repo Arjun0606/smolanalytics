@@ -213,7 +213,7 @@ func TestAskRouterAndAnswers(t *testing.T) {
 		},
 		// an unknown question leads with the verdict, not a dead-end menu
 		{
-			q:        "is my experiment variant b winning?",
+			q:        "what's the general situation lately?",
 			intent:   intentUnknown,
 			contains: []string{"Last 7 days:"},
 		},
@@ -372,5 +372,40 @@ func TestAskNamedEventAndPage(t *testing.T) {
 	// a correctly-named event must still count (not misfire as unknown)
 	if got := answer("how many checkout events?", evs, now); strings.Contains(got, "No event named") {
 		t.Errorf("known event mislabeled as unknown: %q", got)
+	}
+}
+
+// TestAskToolkitRouting pins the plain-English routing for the product toolkit so a
+// heatmap / survey / flag / A-B / session / deploy / cohort question can never regress to a
+// funnel or signup count (the failure that carries a false "proven" stamp), and so the new
+// keywords don't steal the classic reports.
+func TestAskToolkitRouting(t *testing.T) {
+	cases := []struct {
+		q    string
+		want askIntent
+	}{
+		{"show me the heatmap for /pricing", intentHeatmap},
+		{"where do people click on the pricing page", intentHeatmap},
+		{"what is my nps?", intentSurvey},
+		{"how did the survey go?", intentSurvey},
+		{"which variant is winning for checkout_v2?", intentFlagImpact},
+		{"how is the a/b test doing?", intentFlagImpact},
+		{"what feature flags do i have?", intentFlag},
+		{"show me recent sessions", intentSessions},
+		{"replay a user's journey", intentSessionTimeline},
+		{"did my last deploy move signups?", intentDeployImpact},
+		{"which commit moved the metric?", intentDeployImpact},
+		// guard: the classic reports must NOT be stolen by the new keywords
+		{"what's the average session duration?", intentEngagement},
+		{"what should i fix? any red flag?", intentBrief},
+		{"where do users drop off?", intentFunnel},
+		{"how many signups this week?", intentSignups},
+	}
+	for _, c := range cases {
+		t.Run(c.q, func(t *testing.T) {
+			if got := classifyAsk(c.q); got != c.want {
+				t.Fatalf("classifyAsk(%q) = %q, want %q", c.q, got, c.want)
+			}
+		})
 	}
 }

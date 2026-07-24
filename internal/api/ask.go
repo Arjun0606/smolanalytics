@@ -53,7 +53,15 @@ func (s *Server) ask(w http.ResponseWriter, r *http.Request) {
 	// a refusal (unsupported time window) must return NO intent: the UIs chart by
 	// intent, and a chart under "I can't answer that" reads as an answer anyway —
 	// the exact incoherence the proof chip exists to prevent.
-	intent := string(classifyAsk(q))
+	ai := classifyAsk(q)
+	// toolkit intents (heatmaps/surveys/flags/A-B/sessions/deploy/cohorts) need store
+	// access the pure answer() path lacks; dispatch them here with a real, honest receipt
+	// so a plain-English question about a new feature never gets a wrong stamped number.
+	if ans, receipt, okTk := s.answerToolkit(ai, q, evs, now); okTk {
+		writeJSON(w, http.StatusOK, map[string]string{"answer": ans, "computed_by": receipt, "intent": string(ai)})
+		return
+	}
+	intent := string(ai)
 	if _, unsupported := parseWindow(q, now); unsupported != "" {
 		intent = "" // a refused window renders no chart (would sit under "I can't answer")
 	}
@@ -218,7 +226,18 @@ const (
 	intentSplit      askIntent = "split"
 	intentAI         askIntent = "ai"
 	intentConvBy     askIntent = "convby"
-	intentUnknown    askIntent = "unknown"
+	// the product toolkit (v0.9.6+) — routed to answerToolkit(), which reads the same
+	// stores/reports the /v1 endpoints and MCP tools use, so a plain-English question about
+	// these never falls through to a funnel/signup count with a false "proven" stamp.
+	intentHeatmap         askIntent = "heatmap"
+	intentSurvey          askIntent = "survey"
+	intentFlag            askIntent = "flag"
+	intentFlagImpact      askIntent = "flag_impact"
+	intentSessions        askIntent = "sessions"
+	intentSessionTimeline askIntent = "session_timeline"
+	intentDeployImpact    askIntent = "deploy_impact"
+	intentSequence        askIntent = "sequence"
+	intentUnknown         askIntent = "unknown"
 )
 
 // classifyAsk routes a lowercased question to one intent. Order is the whole
@@ -244,6 +263,34 @@ func classifyAsk(q string) askIntent {
 	// checkout count. Resolves to a real number only if the property was actually sent.
 	case isMeasureAsk(q):
 		return intentMeasure
+	// the product toolkit (heatmaps, surveys, flags, A/B, sessions, deploy impact,
+	// sequenced cohorts). These MUST outrank the funnel/signups/segment catch-alls below,
+	// or "show me the heatmap" / "which variant is winning" / "did my deploy move signups"
+	// get answered as a generic funnel or signup count wearing a false "proven" stamp — the
+	// exact failure that burned a live demo. Keywords are specific so they don't steal the
+	// classic reports ("session duration" stays engagement, "red flag" stays the verdict).
+	case hasAny(q, "heatmap", "heat map", "click map", "where do users click", "where do people click",
+		"where are people clicking", "where are users clicking", "rage click", "rage-click", "scroll depth"):
+		return intentHeatmap
+	case hasAny(q, "nps", "net promoter", "survey", "csat", "how did the survey", "poll result", "feedback score"):
+		return intentSurvey
+	case hasAny(q, "which variant", "variant is winning", "winning variant", "a/b test", "ab test", "a-b test",
+		"experiment", "flag impact", "flag_impact", "winning arm", "which arm", "lift from the flag", "is the treatment"):
+		return intentFlagImpact
+	case hasAny(q, "feature flag", "feature flags", "flag rollout", "which flags", "is the flag on", "flags do i", "flags are on"):
+		return intentFlag
+	case hasAny(q, "session replay", "session timeline", "replay a", "replay the", "replay user", "replay that",
+		"user's journey", "users journey", "watch a session", "step through a session", "inspect a session"):
+		return intentSessionTimeline
+	case hasAny(q, "recent session", "recent sessions", "list session", "list sessions", "show me session",
+		"show me sessions", "latest session", "session list", "how many sessions", "sessions today"):
+		return intentSessions
+	case hasAny(q, "deploy", "deployment", "release impact", "since the deploy", "since we shipped",
+		"before and after deploy", "ship impact", "which commit moved", "which deploy moved", "last release move"):
+		return intentDeployImpact
+	case hasAny(q, "cohort", "sequenced cohort", "sequence cohort", "did x then", "then did", "in that order",
+		"cohort of users who did", "who did x then y", "ordered cohort"):
+		return intentSequence
 	// splits and rankings that would otherwise fall into channels or refuse
 	case hasAny(q, "direct vs search", "search vs direct", "paid vs organic", "organic vs paid"):
 		return intentSplit
