@@ -108,10 +108,10 @@ func TestActionSequenceCohort(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	seed("u1", "signup", 0)             // u1: signup then checkout → matches signup→checkout
-	seed("u1", "checkout", time.Hour)   //
-	seed("u2", "checkout", 0)           // u2: checkout then signup (reverse) → must NOT match
-	seed("u2", "signup", time.Hour)     //
+	seed("u1", "signup", 0)           // u1: signup then checkout → matches signup→checkout
+	seed("u1", "checkout", time.Hour) //
+	seed("u2", "checkout", 0)         // u2: checkout then signup (reverse) → must NOT match
+	seed("u2", "signup", time.Hour)   //
 	s := New(st)
 	coh, _ := cohort.Open("")
 	s.SetCohorts(coh)

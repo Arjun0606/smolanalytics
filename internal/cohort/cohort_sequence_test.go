@@ -30,22 +30,22 @@ func TestMatchSequence(t *testing.T) {
 		{"ordered A then B", []event.Event{e("A", 0), e("B", time.Hour)}, Sequence{Steps: []Step{{Event: "A"}, {Event: "B"}}}, true},
 		{"wrong order B then A", []event.Event{e("B", 0), e("A", time.Hour)}, Sequence{Steps: []Step{{Event: "A"}, {Event: "B"}}}, false},
 		{"missing second step", []event.Event{e("A", 0)}, Sequence{Steps: []Step{{Event: "A"}, {Event: "B"}}}, false},
-		{"three-step ordered", []event.Event{e("A", 0), e("B", time.Hour), e("C", 2 * time.Hour)}, Sequence{Steps: []Step{{Event: "A"}, {Event: "B"}, {Event: "C"}}}, true},
+		{"three-step ordered", []event.Event{e("A", 0), e("B", time.Hour), e("C", 2*time.Hour)}, Sequence{Steps: []Step{{Event: "A"}, {Event: "B"}, {Event: "C"}}}, true},
 
 		{"within window ok", []event.Event{e("A", 0), e("B", time.Hour)}, Sequence{Steps: []Step{{Event: "A"}, {Event: "B"}}, WithinMs: day}, true},
-		{"within window too wide", []event.Event{e("A", 0), e("B", 2 * 24 * time.Hour)}, Sequence{Steps: []Step{{Event: "A"}, {Event: "B"}}, WithinMs: day}, false},
+		{"within window too wide", []event.Event{e("A", 0), e("B", 2*24*time.Hour)}, Sequence{Steps: []Step{{Event: "A"}, {Event: "B"}}, WithinMs: day}, false},
 		// the correctness case: earliest A→B is too wide, but a LATER anchor's A→B fits the window.
-		{"later anchor is tighter", []event.Event{e("A", 0), e("B", 2 * 24 * time.Hour), e("A", 2 * 24 * time.Hour), e("B", 2*24*time.Hour + time.Hour)}, Sequence{Steps: []Step{{Event: "A"}, {Event: "B"}}, WithinMs: day}, true},
+		{"later anchor is tighter", []event.Event{e("A", 0), e("B", 2*24*time.Hour), e("A", 2*24*time.Hour), e("B", 2*24*time.Hour+time.Hour)}, Sequence{Steps: []Step{{Event: "A"}, {Event: "B"}}, WithinMs: day}, true},
 
-		{"exclude in span fails", []event.Event{e("A", 0), e("C", time.Hour), e("B", 2 * time.Hour)}, Sequence{Steps: []Step{{Event: "A"}, {Event: "B"}}, Exclude: []string{"C"}}, false},
-		{"exclude after span ok", []event.Event{e("A", 0), e("B", time.Hour), e("C", 2 * time.Hour)}, Sequence{Steps: []Step{{Event: "A"}, {Event: "B"}}, Exclude: []string{"C"}}, true},
-		{"exclude before span ok", []event.Event{e("C", 0), e("A", time.Hour), e("B", 2 * time.Hour)}, Sequence{Steps: []Step{{Event: "A"}, {Event: "B"}}, Exclude: []string{"C"}}, true},
+		{"exclude in span fails", []event.Event{e("A", 0), e("C", time.Hour), e("B", 2*time.Hour)}, Sequence{Steps: []Step{{Event: "A"}, {Event: "B"}}, Exclude: []string{"C"}}, false},
+		{"exclude after span ok", []event.Event{e("A", 0), e("B", time.Hour), e("C", 2*time.Hour)}, Sequence{Steps: []Step{{Event: "A"}, {Event: "B"}}, Exclude: []string{"C"}}, true},
+		{"exclude before span ok", []event.Event{e("C", 0), e("A", time.Hour), e("B", 2*time.Hour)}, Sequence{Steps: []Step{{Event: "A"}, {Event: "B"}}, Exclude: []string{"C"}}, true},
 
-		{"count gate met", []event.Event{e("A", 0), e("B", time.Hour), e("B", 2 * time.Hour), e("B", 3 * time.Hour)}, Sequence{Steps: []Step{{Event: "A"}, {Event: "B", Count: 3}}}, true},
-		{"count gate unmet", []event.Event{e("A", 0), e("B", time.Hour), e("B", 2 * time.Hour)}, Sequence{Steps: []Step{{Event: "A"}, {Event: "B", Count: 3}}}, false},
+		{"count gate met", []event.Event{e("A", 0), e("B", time.Hour), e("B", 2*time.Hour), e("B", 3*time.Hour)}, Sequence{Steps: []Step{{Event: "A"}, {Event: "B", Count: 3}}}, true},
+		{"count gate unmet", []event.Event{e("A", 0), e("B", time.Hour), e("B", 2*time.Hour)}, Sequence{Steps: []Step{{Event: "A"}, {Event: "B", Count: 3}}}, false},
 
-		{"within-first ok", []event.Event{e("signup", 0), e("A", 24 * time.Hour), e("B", 2 * 24 * time.Hour)}, Sequence{Steps: []Step{{Event: "A"}, {Event: "B"}}, WithinFirstMs: 7 * day}, true},
-		{"within-first too late", []event.Event{e("signup", 0), e("A", 8 * 24 * time.Hour), e("B", 9 * 24 * time.Hour)}, Sequence{Steps: []Step{{Event: "A"}, {Event: "B"}}, WithinFirstMs: 7 * day}, false},
+		{"within-first ok", []event.Event{e("signup", 0), e("A", 24*time.Hour), e("B", 2*24*time.Hour)}, Sequence{Steps: []Step{{Event: "A"}, {Event: "B"}}, WithinFirstMs: 7 * day}, true},
+		{"within-first too late", []event.Event{e("signup", 0), e("A", 8*24*time.Hour), e("B", 9*24*time.Hour)}, Sequence{Steps: []Step{{Event: "A"}, {Event: "B"}}, WithinFirstMs: 7 * day}, false},
 
 		{"per-step filter matches pro", []event.Event{ep("A", 0, map[string]any{"plan": "pro"}), e("B", time.Hour)}, Sequence{Steps: []Step{{Event: "A", Filters: proOnly}, {Event: "B"}}}, true},
 		{"per-step filter rejects free", []event.Event{ep("A", 0, map[string]any{"plan": "free"}), e("B", time.Hour)}, Sequence{Steps: []Step{{Event: "A", Filters: proOnly}, {Event: "B"}}}, false},
