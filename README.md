@@ -16,7 +16,9 @@
 
 <br>
 
-![smolanalytics: a "fix first" verdict, the ask bar answering "where do users drop off?" with a live funnel and a proven-matches-dashboard chip, and live KPIs and trends](docs/demo.gif)
+[![smolanalytics: a "fix first" verdict that names the biggest lever, an ask bar with your real events and pages as one-click chips, live KPIs, and a trend chart](docs/dashboard.png)](https://smolanalytics-demo.fly.dev)
+
+<div align="center"><sub>the real product on demo data. <a href="https://smolanalytics-demo.fly.dev"><b>open the live demo →</b></a></sub></div>
 
 <br>
 
