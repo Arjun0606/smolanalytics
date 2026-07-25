@@ -56,7 +56,7 @@ func TestAnomalySpikeDetected(t *testing.T) {
 	if !ok || f.Severity != "info" || !strings.Contains(f.Title, "jumped") {
 		t.Fatalf("expected a spike anomaly (info), got %+v (ok=%v)", f, ok)
 	}
-	if !strings.Contains(f.Detail, "(n=70 — small sample)") { // 70 baseline events: past the floor, under smallSample
+	if !strings.Contains(f.Detail, "(n=70, small sample)") { // 70 baseline events: past the floor, under smallSample
 		t.Fatalf("thin base must carry the qualifier: %q", f.Detail)
 	}
 }

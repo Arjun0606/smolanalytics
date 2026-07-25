@@ -172,13 +172,13 @@ func segmentBlame(evs []event.Event, from, to string) *Finding {
 				mult := ""
 				if r > 0 {
 					if x := overall.rate() / r; x >= 1.5 {
-						mult = fmt.Sprintf(" — %.1f× worse than average", x)
+						mult = fmt.Sprintf(", %.1f× worse than average", x)
 					}
 				}
 				worst = &Finding{
 					Severity: "warn",
 					Title:    fmt.Sprintf("It's %s=%s: converts worst at %s → %s%s", prop, val, from, to, mult),
-					Detail: qualify(fmt.Sprintf("only %d%% of %s=%s users continue vs %d%% overall (%d of %d). Fix this segment first — it's the biggest lever on the funnel.",
+					Detail: qualify(fmt.Sprintf("only %d%% of %s=%s users continue vs %d%% overall (%d of %d). Fix this segment first, it's the biggest lever on the funnel.",
 						int(r*100+0.5), prop, val, int(overall.rate()*100+0.5), seg.converted, seg.entered), seg.entered),
 				}
 			}

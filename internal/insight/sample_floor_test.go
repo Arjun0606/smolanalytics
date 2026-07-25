@@ -55,7 +55,7 @@ func TestWeekOverWeekSampleGuard(t *testing.T) {
 			if !strings.Contains(wow.Title, "up 50%") {
 				t.Fatalf("want a 50%% jump, got %q", wow.Title)
 			}
-			note := fmt.Sprintf("(n=%d — small sample)", tc.prev7)
+			note := fmt.Sprintf("(n=%d, small sample)", tc.prev7)
 			if got := strings.Contains(wow.Detail, note); got != tc.wantQualifier {
 				t.Fatalf("qualifier %q present=%v, want %v: %q", note, got, tc.wantQualifier, wow.Detail)
 			}

@@ -36,7 +36,7 @@ const smallSample = 100
 // still thin enough that the percentage deserves a caveat.
 func qualify(detail string, n int) string {
 	if n < smallSample {
-		return fmt.Sprintf("%s (n=%d — small sample)", detail, n)
+		return fmt.Sprintf("%s (n=%d, small sample)", detail, n)
 	}
 	return detail
 }
@@ -236,7 +236,7 @@ func anomalies(evs []event.Event, names []string, now time.Time) []Finding {
 			best = Finding{
 				Severity: "warn",
 				Title:    fmt.Sprintf("%s dropped %d%% in the last 24h", n, pct),
-				Detail:   fmt.Sprintf("%d in the last 24h vs ~%.0f/day normally — worth a look (tracking down, or a regression?).", s.last24, baseDaily),
+				Detail:   fmt.Sprintf("%d in the last 24h vs ~%.0f/day normally, worth a look (tracking down, or a regression?).", s.last24, baseDaily),
 			}
 		} else {
 			best = Finding{
@@ -264,7 +264,7 @@ func Text(findings []Finding) string {
 		if f.Severity == "warn" {
 			mark = "⚠"
 		}
-		s += fmt.Sprintf("%s %s — %s\n", mark, f.Title, f.Detail)
+		s += fmt.Sprintf("%s %s: %s\n", mark, f.Title, f.Detail)
 	}
 	return s
 }
