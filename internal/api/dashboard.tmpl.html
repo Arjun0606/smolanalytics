@@ -106,8 +106,9 @@
   .ask input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(245,166,35,.14)}
   .ask .k{position:absolute;left:17px;top:50%;transform:translateY(-50%);color:var(--accent);font-family:var(--mono);font-size:15px}
   .ask .hint{position:absolute;right:12px;top:50%;transform:translateY(-50%);display:flex;gap:4px;align-items:center}
-  .askchips{display:flex;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;justify-content:flex-start;align-items:center;gap:8px;padding:12px 0 0}
-  .askchips::-webkit-scrollbar{display:none}
+  /* chips WRAP — a hidden-scrollbar side-scroll reads as content amputated at the edge
+     (no affordance that more exists), the exact "cut off in a box" complaint */
+  .askchips{display:flex;flex-wrap:wrap;justify-content:flex-start;align-items:center;gap:8px;padding:12px 0 0}
   .chiplbl{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut2)}
   .chip{font-family:var(--mono);font-size:11px;color:var(--mut);border:1px solid var(--line);padding:4px 11px;border-radius:99px;cursor:pointer;transition:.15s;background:transparent}
   .chip:hover{color:var(--accent);border-color:var(--accent)}
