@@ -426,26 +426,50 @@ func applyMeasure(m Measure, vals []float64) float64 {
 		}
 		return mx
 	case Median:
-		s := append([]float64(nil), vals...)
-		sort.Float64s(s)
-		n := len(s)
-		if n%2 == 1 {
-			return s[n/2]
-		}
-		return (s[n/2-1] + s[n/2]) / 2
+		return MedianOf(vals)
 	case P90, P95, P99:
 		// true nearest-rank percentiles — p95/p99 used to be silently answered with p90,
 		// reporting a wrong tail value as fact for exactly the latency questions that ask them.
 		frac := map[Measure]float64{P90: 0.90, P95: 0.95, P99: 0.99}[m]
-		s := append([]float64(nil), vals...)
-		sort.Float64s(s)
-		rank := int(math.Ceil(frac*float64(len(s)))) - 1 // nearest-rank
-		if rank < 0 {
-			rank = 0
-		}
-		return s[rank]
+		return Percentile(vals, frac)
 	}
 	return 0
+}
+
+// MedianOf is the engine's ONE median: arithmetic mean of the two central values for even n.
+// Exported for the same reason as Percentile — anything reporting a "median" (the Median measure,
+// agent conversation turns) must share this definition, or the same word means two numbers.
+func MedianOf(vals []float64) float64 {
+	if len(vals) == 0 {
+		return 0
+	}
+	s := append([]float64(nil), vals...)
+	sort.Float64s(s)
+	n := len(s)
+	if n%2 == 1 {
+		return s[n/2]
+	}
+	return (s[n/2-1] + s[n/2]) / 2
+}
+
+// Percentile is the nearest-rank percentile of vals at fraction frac (0..1). Empty input is
+// 0 (no data), matching applyMeasure's empty-slice contract. This is the EXACT computation the
+// p90/p95/p99 measures use, exported so other packages (agent tool-call + conversation health)
+// share ONE percentile definition instead of reimplementing the tail math and drifting from it.
+func Percentile(vals []float64, frac float64) float64 {
+	if len(vals) == 0 {
+		return 0
+	}
+	s := append([]float64(nil), vals...)
+	sort.Float64s(s)
+	rank := int(math.Ceil(frac*float64(len(s)))) - 1 // nearest-rank
+	if rank < 0 {
+		rank = 0
+	}
+	if rank >= len(s) {
+		rank = len(s) - 1
+	}
+	return s[rank]
 }
 
 // NumericProps returns the property names that carry at least one numeric value across the

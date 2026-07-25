@@ -221,6 +221,40 @@ var toolList = []map[string]any{
 			"filters":  filtersSchema,
 		}, []string{"property"}),
 	},
+	{
+		"name":        "agent_tools",
+		"description": "Agent/MCP tool-call health computed from agent_tool_call events: per tool, how many calls, how many errored, the error rate, latency p50/p90/p99 (nearest-rank over latency_ms), and the client split (cursor/claude-code/copilot). Use for 'which tool call is slow', 'what's timing out', 'my agent's tool error rate', 'which tools does my MCP server serve'. Every number is computed, never model-guessed.",
+		"inputSchema": obj(map[string]any{
+			"days":    map[string]any{"type": "number", "description": "Rolling window in days ending now, e.g. 7. Omit for all time."},
+			"hours":   map[string]any{"type": "number", "description": "Rolling window in hours ending now."},
+			"from":    map[string]any{"type": "string", "description": "Absolute window start, RFC3339 or YYYY-MM-DD."},
+			"to":      map[string]any{"type": "string", "description": "Absolute window end (exclusive), RFC3339 or YYYY-MM-DD."},
+			"filters": filtersSchema,
+		}, nil),
+	},
+	{
+		"name":        "agent_errors",
+		"description": "Error taxonomy for failing agent/MCP tool calls: a breakdown of agent_tool_call errors by error_type, optionally scoped to one tool. Use for 'what's my agent failing on', 'break down the errors for the search tool', 'top error types'. An unseen tool returns an honest empty taxonomy, never a fake zero.",
+		"inputSchema": obj(map[string]any{
+			"tool":    map[string]any{"type": "string", "description": "Optional: restrict the taxonomy to one tool's failures."},
+			"days":    map[string]any{"type": "number", "description": "Rolling window in days ending now. Omit for all time."},
+			"hours":   map[string]any{"type": "number", "description": "Rolling window in hours ending now."},
+			"from":    map[string]any{"type": "string", "description": "Absolute window start, RFC3339 or YYYY-MM-DD."},
+			"to":      map[string]any{"type": "string", "description": "Absolute window end (exclusive), RFC3339 or YYYY-MM-DD."},
+			"filters": filtersSchema,
+		}, nil),
+	},
+	{
+		"name":        "agent_conversations",
+		"description": "Conversation health from agent_turn events grouped by conversation_id: number of conversations and turns, median/p90 turns, re-ask rate (consecutive user turns with no assistant between), abandon rate (conversation ends on a user turn), and time-to-first-token p50/p90/p99 over ttft_ms. resolution_rate is null unless your app sends a `resolved` bool on a turn — it is never fabricated. Use for 'how long are my agent conversations', 'where do users re-ask', 'how often do conversations get abandoned', 'my agent's time-to-first-token'.",
+		"inputSchema": obj(map[string]any{
+			"days":    map[string]any{"type": "number", "description": "Rolling window in days ending now. Omit for all time."},
+			"hours":   map[string]any{"type": "number", "description": "Rolling window in hours ending now."},
+			"from":    map[string]any{"type": "string", "description": "Absolute window start, RFC3339 or YYYY-MM-DD."},
+			"to":      map[string]any{"type": "string", "description": "Absolute window end (exclusive), RFC3339 or YYYY-MM-DD."},
+			"filters": filtersSchema,
+		}, nil),
+	},
 }
 
 func obj(props map[string]any, required []string) map[string]any {

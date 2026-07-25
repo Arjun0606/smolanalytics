@@ -54,6 +54,49 @@ func agreementServer(t *testing.T) *httptest.Server {
 			"properties": map[string]any{"path": "/pricing", "referrer": "https://news.ycombinator.com/", "device": "desktop"},
 		})
 	}
+	// agent-observability seed: agent_tool_call (two tools, two clients, some errored with a
+	// type, varied latency) and agent_turn (several conversations with roles, TTFT, a resolved
+	// bool) — so /v1/agent/* has real data to agree with the MCP tools over, not an empty result.
+	toolCall := func(i int, tool, client string, latency float64, errored bool, errType string) {
+		p := map[string]any{"tool": tool, "client": client, "latency_ms": latency,
+			"error": errored, "conversation_id": fmt.Sprintf("c%d", i%5)}
+		if errType != "" {
+			p["error_type"] = errType
+		}
+		batch = append(batch, map[string]any{"name": "agent_tool_call",
+			"distinct_id": fmt.Sprintf("a%d", i), "timestamp": now.Add(-time.Duration(i) * time.Minute).Format(time.RFC3339),
+			"properties": p})
+	}
+	for i := 0; i < 30; i++ {
+		tool := map[bool]string{true: "search", false: "write"}[i%3 != 0]
+		client := map[bool]string{true: "cursor", false: "claude-code"}[i%2 == 0]
+		errored := i%5 == 0
+		errType := ""
+		if errored {
+			errType = map[bool]string{true: "timeout", false: "rate_limit"}[i%2 == 0]
+		}
+		toolCall(i, tool, client, float64(50+(i%7)*25), errored, errType)
+	}
+	turn := func(cid, role string, min int, extra map[string]any) {
+		p := map[string]any{"conversation_id": cid, "role": role}
+		for k, v := range extra {
+			p[k] = v
+		}
+		batch = append(batch, map[string]any{"name": "agent_turn",
+			"distinct_id": cid, "timestamp": now.Add(-time.Duration(min) * time.Minute).Format(time.RFC3339),
+			"properties": p})
+	}
+	// conv t0: user, assistant(ttft, resolved true), user, user  (re-ask + abandon)
+	turn("t0", "user", 40, nil)
+	turn("t0", "assistant", 39, map[string]any{"ttft_ms": float64(120), "resolved": true})
+	turn("t0", "user", 38, nil)
+	turn("t0", "user", 37, nil)
+	// conv t1: user, assistant(ttft, resolved false)  (clean)
+	turn("t1", "user", 30, nil)
+	turn("t1", "assistant", 29, map[string]any{"ttft_ms": float64(340), "resolved": false})
+	// conv t2: user, user  (re-ask + abandon), no resolved on this one
+	turn("t2", "user", 20, nil)
+	turn("t2", "user", 19, map[string]any{"ttft_ms": float64(210)})
 	body, _ := json.Marshal(batch)
 	resp, err := http.Post(srv.URL+"/v1/events", "application/json", strings.NewReader(string(body)))
 	if err != nil || resp.StatusCode != http.StatusAccepted {
@@ -138,6 +181,11 @@ func TestMCPAPIAgreement(t *testing.T) {
 		{"paths capped at 10 both sides", "/v1/paths?start=signup&depth=50", "paths", `{"start":"signup","depth":50}`, false},
 		{"heatmap", "/v1/heatmap?path=/pricing", "heatmap", `{"path":"/pricing"}`, false},
 		{"heatmap desktop bucket + grid", "/v1/heatmap?path=/pricing&viewport=desktop&cols=20&row_px=40", "heatmap", `{"path":"/pricing","viewport":"desktop","cols":20,"row_px":40}`, false},
+		// agent observability: /v1/agent/* must equal the MCP agent tools byte-for-byte.
+		{"agent tools", "/v1/agent/tools", "agent_tools", `{}`, false},
+		{"agent errors", "/v1/agent/errors", "agent_errors", `{}`, false},
+		{"agent errors by tool", "/v1/agent/errors?tool=search", "agent_errors", `{"tool":"search"}`, false},
+		{"agent conversations", "/v1/agent/conversations", "agent_conversations", `{}`, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

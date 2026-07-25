@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/agent"
 	"github.com/Arjun0606/smolanalytics/internal/alert"
 	"github.com/Arjun0606/smolanalytics/internal/alias"
 	"github.com/Arjun0606/smolanalytics/internal/cohort"
@@ -764,6 +765,73 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 			return "", fmt.Errorf("no events carry property %q — properties seen on your events: %s", a.Property, strings.Join(knownProps(evs), ", "))
 		}
 		return jsonText(res)
+	case "agent_tools":
+		var a struct {
+			Days    float64   `json:"days"`
+			Hours   float64   `json:"hours"`
+			From    string    `json:"from"`
+			To      string    `json:"to"`
+			Filters FilterSet `json:"filters"`
+		}
+		if err := unmarshalArgs(args, &a); err != nil {
+			return "", err
+		}
+		if err := query.Validate(a.Filters); err != nil {
+			return "", err
+		}
+		if err := guardFilters(evs, a.Filters); err != nil {
+			return "", err
+		}
+		from, to, werr := mcpWindow(a.Days, a.Hours, a.From, a.To)
+		if werr != nil {
+			return "", werr
+		}
+		return jsonText(agent.ComputeToolHealth(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters), from, to))
+	case "agent_errors":
+		var a struct {
+			Tool    string    `json:"tool"`
+			Days    float64   `json:"days"`
+			Hours   float64   `json:"hours"`
+			From    string    `json:"from"`
+			To      string    `json:"to"`
+			Filters FilterSet `json:"filters"`
+		}
+		if err := unmarshalArgs(args, &a); err != nil {
+			return "", err
+		}
+		if err := query.Validate(a.Filters); err != nil {
+			return "", err
+		}
+		if err := guardFilters(evs, a.Filters); err != nil {
+			return "", err
+		}
+		from, to, werr := mcpWindow(a.Days, a.Hours, a.From, a.To)
+		if werr != nil {
+			return "", werr
+		}
+		return jsonText(agent.ComputeErrorTaxonomy(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters), a.Tool, from, to))
+	case "agent_conversations":
+		var a struct {
+			Days    float64   `json:"days"`
+			Hours   float64   `json:"hours"`
+			From    string    `json:"from"`
+			To      string    `json:"to"`
+			Filters FilterSet `json:"filters"`
+		}
+		if err := unmarshalArgs(args, &a); err != nil {
+			return "", err
+		}
+		if err := query.Validate(a.Filters); err != nil {
+			return "", err
+		}
+		if err := guardFilters(evs, a.Filters); err != nil {
+			return "", err
+		}
+		from, to, werr := mcpWindow(a.Days, a.Hours, a.From, a.To)
+		if werr != nil {
+			return "", werr
+		}
+		return jsonText(agent.ComputeConversations(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters), from, to))
 	default:
 		if handled, out, aerr := s.callAction(name, args); handled {
 			return out, aerr

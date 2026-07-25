@@ -295,6 +295,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/users/{id}", s.userActivity)
 	mux.HandleFunc("GET /v1/who", s.apiWho) // the microscope: the people behind any datapoint
 	mux.HandleFunc("GET /v1/agent-status", s.apiAgentStatus)
+	// agent observability (computed over agent_tool_call / agent_turn events) — distinct
+	// from /v1/agent-status above (that's the MCP-client presence badge).
+	mux.HandleFunc("GET /v1/agent/tools", s.apiAgentTools)
+	mux.HandleFunc("GET /v1/agent/errors", s.apiAgentErrors)
+	mux.HandleFunc("GET /v1/agent/conversations", s.apiAgentConversations)
 	mux.HandleFunc("GET /v1/export", s.export)
 	mux.HandleFunc("GET /v1/insights", s.listInsights)
 	mux.HandleFunc("POST /v1/insights", s.saveInsight)
