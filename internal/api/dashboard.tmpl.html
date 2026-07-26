@@ -418,6 +418,27 @@
   .ask input{height:var(--ask-h);padding:0 84px 0 44px;background:var(--s1);border:1px solid var(--line2);
     border-radius:var(--r-card);font:400 var(--fs-lead)/var(--lh-lead) var(--mono);color:var(--fg)}
 
+  /* ═══ ASKING AND TELLING. the page never opens a browser dialog: a question
+     ("name this") is a row that appears next to the control that asked it; an
+     error is one mono line under the control that caused it. same amber rule as
+     the callout, same control kit metrics, nothing floats over the page. ═══ */
+  .inprompt{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:8px 0 0;padding:10px 12px;
+    background:var(--s2);border:1px solid var(--line2);border-left:2px solid var(--accent);
+    border-radius:var(--r-ctl);animation:rise var(--t-base) var(--ease-out)}
+  .inprompt .ipl{font-family:var(--mono);font-size:var(--fs-lbl);line-height:var(--lh-lbl);text-transform:uppercase;
+    letter-spacing:var(--track-lbl);color:var(--mut2);white-space:nowrap}
+  .inprompt input{flex:1;min-width:170px;background:var(--s1)}
+  .inprompt button{height:var(--ctl-h);padding:0 12px;border:1px solid var(--accent);border-radius:var(--r-ctl);
+    background:var(--accent);color:#0A0A0A;font:600 12px/1 var(--mono);cursor:pointer;
+    transition:background var(--t-fast) var(--ease),border-color var(--t-base) var(--ease),color var(--t-base) var(--ease)}
+  .inprompt button:hover{background:var(--accent-hi)}
+  .inprompt button:active{background:var(--accent-dim)}
+  .inprompt button.ipx{background:transparent;border-color:var(--line2);color:var(--mut);font-weight:500}
+  .inprompt button.ipx:hover{border-color:var(--accent);color:var(--accent)}
+  .inprompt .iphint{flex-basis:100%;font-family:var(--mono);font-size:var(--fs-lbl);line-height:var(--lh-lbl);color:var(--mut2)}
+  .inote{margin:8px 0 0;font-family:var(--mono);font-size:12px;line-height:1.5;color:var(--mut)}
+  .inote.err{color:var(--warn)}
+
 </style>
 </head>
 <body>
@@ -965,6 +986,61 @@
 
     function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
 
+    // ── ask + tell: the two mechanisms that stand in for the browser dialogs ──
+    // one inline prompt row (label + input + confirm/cancel, enter confirms,
+    // escape cancels, focus lands in the input) and one inline note line.
+    // both are single-instance: opening twice replaces the row, it never stacks.
+    function hasCls(el,c){return !!(el&&el.classList&&el.classList.contains(c));}
+    var ipSeq=0,ipOpen=null;
+    function saPromptClose(){
+      var o=ipOpen; ipOpen=null; if(!o)return;
+      if(o.node&&o.node.parentNode)o.node.parentNode.removeChild(o.node);
+      if(o.back&&o.back.focus)o.back.focus();          // hand focus back to the control that asked
+    }
+    // anchor: the row to sit under (or to fill, with opts.inside).
+    // done(value) runs only on a non-empty value. an empty confirm aborts, exactly
+    // like cancelling did when this was a browser dialog.
+    function saPrompt(anchor,opts,done){
+      if(!anchor)return; saPromptClose(); opts=opts||{};
+      var id='ip'+(++ipSeq);
+      var row=document.createElement('div'); row.className='inprompt'; row.setAttribute('role','group');
+      var lab=document.createElement('label'); lab.className='ipl'; lab.htmlFor=id; lab.textContent=opts.label||'name';
+      var inp=document.createElement('input'); inp.type='text'; inp.id=id; inp.autocomplete='off';
+      if(opts.placeholder)inp.placeholder=opts.placeholder;
+      var go=document.createElement('button'); go.type='button'; go.className='ipgo'; go.textContent=opts.confirm||'save';
+      var no=document.createElement('button'); no.type='button'; no.className='ipx'; no.textContent='cancel';
+      row.appendChild(lab); row.appendChild(inp); row.appendChild(go); row.appendChild(no);
+      if(opts.hint){var h=document.createElement('span'); h.className='iphint'; h.textContent=opts.hint; row.appendChild(h);}
+      if(opts.inside){anchor.innerHTML=''; anchor.appendChild(row);}
+      else anchor.parentNode.insertBefore(row,anchor.nextSibling);
+      ipOpen={node:row,back:opts.back||null};
+      function bail(){saPromptClose(); if(opts.oncancel)opts.oncancel();}
+      function take(){
+        var v=inp.value.trim(); saPromptClose();
+        if(!v){if(opts.oncancel)opts.oncancel();return;}
+        done(v);
+      }
+      go.onclick=take; no.onclick=bail;
+      inp.onkeydown=function(e){
+        if(e.key==='Enter'){e.preventDefault();take();}
+        else if(e.key==='Escape'){e.preventDefault();e.stopPropagation();bail();}
+      };
+      inp.focus();
+    }
+    // one line of plain text under `after`. empty msg clears it. reuses its own
+    // node, so repeated failures never pile up.
+    function saNote(after,msg,kind){
+      if(!after||!after.parentNode)return;
+      var ref=after,n=after.nextElementSibling;
+      while(hasCls(n,'inprompt')){ref=n;n=n.nextElementSibling;}
+      var have=hasCls(n,'inote');
+      if(!msg){if(have)n.parentNode.removeChild(n);return;}
+      if(!have){n=document.createElement('div'); ref.parentNode.insertBefore(n,ref.nextSibling);}
+      n.className='inote'+(kind==='err'?' err':'');
+      n.setAttribute('role',kind==='err'?'alert':'status');
+      n.textContent=msg;
+    }
+
     // '/' focuses the ask bar from anywhere; cmd/ctrl-k too; esc blurs
     document.addEventListener('keydown',function(e){
       if((e.key==='/'&&!/input|textarea|select/i.test(e.target.tagName))||((e.metaKey||e.ctrlKey)&&e.key==='k')){e.preventDefault();q.focus();}
@@ -1439,10 +1515,13 @@
       fetch(u).then(function(r){return r.json()}).then(function(j){renderReport(t,j,exOut);}).catch(function(){exOut.innerHTML='<div class="exsummary">error</div>';});
     };
     document.getElementById('exSave').onclick=function(){
-      var name=prompt('Name this pin (shown as the card title):'); if(!name)return;
-      fetch('/v1/insights',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({name:name,type:exType.value,params:paramsFor(exType.value)})})
-        .then(function(r){return r.json()}).then(loadBoard).catch(function(){});
+      var btn=this;
+      saPrompt(btn.parentNode,{label:'pin name',placeholder:'shown as the card title',confirm:'pin',back:btn},function(name){
+        if(!name)return;
+        fetch('/v1/insights',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({name:name,type:exType.value,params:paramsFor(exType.value)})})
+          .then(function(r){return r.json()}).then(loadBoard).catch(function(){});
+      });
     };
 
     // cohort builder
@@ -1491,11 +1570,12 @@
       fetch('/v1/defined').then(function(r){return r.json()}).then(function(j){renderDefined(j.defined_events||[]);}).catch(function(){});
     }
     document.getElementById('deCreate').onclick=function(){
+      var deRow=this.parentNode;
       var name=deName.value.trim(); if(!name)return;
       var value=deValue.value.trim(); if(!value){deValue.focus();return;}
       fetch('/v1/defined',{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({name:name,event:deEvent.value,where:[{field:deField.value,op:deOp.value,value:value}]})})
-        .then(function(r){return r.json()}).then(function(res){ if(res&&res.error){alert(res.error);return;} deName.value='';deValue.value='';refreshDefined(); }).catch(function(){});
+        .then(function(r){return r.json()}).then(function(res){ if(res&&res.error){saNote(deRow,res.error,'err');return;} saNote(deRow,''); deName.value='';deValue.value='';refreshDefined(); }).catch(function(){});
     };
     refreshDefined();
 
@@ -1564,24 +1644,28 @@
     if(shareBtn&&shareRes){
       shareBtn.onclick=function(e){
         e.preventDefault();
-        var name=prompt('Who is this link for? (e.g. "investor update" — used to identify it when revoking)');
-        if(!name)return;
-        shareRes.hidden=false; shareRes.innerHTML='<div class="atext" style="color:var(--mut2)">minting link…</div>';
-        fetch('/v1/shares',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name})})
-          .then(function(r){return r.json()})
-          .then(function(j){
-            if(!j.path){shareRes.innerHTML='<div class="atext">'+esc(j.error||'could not create the link')+'</div>';return;}
-            var url=location.origin+j.path;
-            shareRes.innerHTML='<div class="atext" style="font-size:13px">read-only traffic link for “'+esc(j.name)+'” — shown once, revoke any time in '+
-              '<a href="/settings/shares" style="color:var(--accent)">settings → share links</a>:<br>'+
-              '<span style="font-family:var(--mono);font-size:12px;word-break:break-all">'+esc(url)+'</span> '+
-              '<button class="copy" id="shareCopy" style="margin-left:8px">copy</button></div>';
-            document.getElementById('shareCopy').onclick=function(){
-              var b=this;
-              if(navigator.clipboard){navigator.clipboard.writeText(url).then(function(){b.textContent='copied ✓';setTimeout(function(){b.textContent='copy';},1200);});}
-            };
-          })
-          .catch(function(){shareRes.innerHTML='<div class="atext">could not reach the server — try again</div>';});
+        shareRes.hidden=false;
+        shareRes.scrollIntoView({behavior:'smooth',block:'nearest'});
+        saPrompt(shareRes,{inside:true,label:'link name',placeholder:'who is this link for? e.g. investor update',
+          hint:'used to identify this link when you revoke it',confirm:'create link',back:shareBtn,
+          oncancel:function(){shareRes.innerHTML='';shareRes.hidden=true;}},function(name){
+          shareRes.hidden=false; shareRes.innerHTML='<div class="atext" style="color:var(--mut2)">minting link…</div>';
+          fetch('/v1/shares',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name})})
+            .then(function(r){return r.json()})
+            .then(function(j){
+              if(!j.path){shareRes.innerHTML='<div class="atext">'+esc(j.error||'could not create the link')+'</div>';return;}
+              var url=location.origin+j.path;
+              shareRes.innerHTML='<div class="atext" style="font-size:13px">read-only traffic link for “'+esc(j.name)+'” — shown once, revoke any time in '+
+                '<a href="/settings/shares" style="color:var(--accent)">settings → share links</a>:<br>'+
+                '<span style="font-family:var(--mono);font-size:12px;word-break:break-all">'+esc(url)+'</span> '+
+                '<button class="copy" id="shareCopy" style="margin-left:8px">copy</button></div>';
+              document.getElementById('shareCopy').onclick=function(){
+                var b=this;
+                if(navigator.clipboard){navigator.clipboard.writeText(url).then(function(){b.textContent='copied ✓';setTimeout(function(){b.textContent='copy';},1200);});}
+              };
+            })
+            .catch(function(){shareRes.innerHTML='<div class="atext">could not reach the server — try again</div>';});
+        });
       };
     }
 

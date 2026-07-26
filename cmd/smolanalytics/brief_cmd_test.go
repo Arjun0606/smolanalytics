@@ -150,14 +150,15 @@ func TestFormatBrief(t *testing.T) {
 					{Severity: "warn", Title: "Biggest drop-off: signup → activate", Detail: "only 40% continue."},
 					{Severity: "info", Title: "signup is up 100% week-over-week", Detail: "2 vs 1."},
 				}},
+			// the brief speaks in the product's voice: plain commas, no em dashes.
 			want: []string{
-				"smolanalytics brief — Fri Jul 3, 2026",
+				"smolanalytics brief, Fri Jul 3, 2026",
 				"2 visitors · 3 events",
 				"1 visitor · 2 events",
 				"(visitors +100%, events +50%)",
 				"What to look at:",
-				"⚠ Biggest drop-off: signup → activate — only 40% continue.",
-				"• signup is up 100% week-over-week — 2 vs 1.",
+				"⚠ Biggest drop-off: signup → activate, only 40% continue.",
+				"• signup is up 100% week-over-week, 2 vs 1.",
 			},
 		},
 		{

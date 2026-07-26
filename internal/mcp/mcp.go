@@ -64,6 +64,7 @@ How to work:
 - Be concrete and honest. Quote the real figures. If the data is too thin to conclude, say that instead of guessing.
 - For open-ended asks ("how's the product doing?"), proactively pull the 2-3 most telling reports and synthesize a short read.
 - Presentation matters: lead with what's URGENT or moved, quantify it, then offer the single most useful next cut — curate, don't dump a field list. overview returns a one-line "read" and a "next" suggestion; use them as your opening, then go deeper only where it earns attention. A tight, prioritized answer beats an exhaustive one.
+- Agent observability is computed the same way: agent_tools (tool-call health), agent_errors (error taxonomy), agent_conversations (turns, re-ask, abandon, TTFT). For "what are people actually asking my agent about", YOU do the reading: sample_conversations returns whole conversations, you infer a label per conversation, label_conversation writes your inference back as a new event, then agent_labels counts conversations per label value. Say plainly which part is which — the labels are your inference, the counts over them are computed. Never present a label as a measured fact, and never label a conversation you did not read.
 - You can also DO things, not just read: create_alert ("tell me if signups drop below 10/day" → op=lt, window_hours=24), add_webhook (Slack/HTTPS endpoint the alerts and daily digest fire to; Slack URLs get readable text messages) then test_webhook (prove the delivery lands), create_cohort (define a user group once, reuse anywhere), save_report (pin a funnel/trend/breakdown to their dashboard). When the user says "watch this", "alert me", "save that" — reach for these, then confirm what you created by echoing it back.`
 
 type Server struct {
@@ -832,6 +833,70 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 			return "", werr
 		}
 		return jsonText(agent.ComputeConversations(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters), from, to))
+	case "sample_conversations":
+		// the READ half of the BYO-model labelling loop: hand the user's own model whole
+		// conversations to read. No model runs on our side — we just serve the data.
+		var a struct {
+			Limit   int       `json:"limit"`
+			Days    float64   `json:"days"`
+			Hours   float64   `json:"hours"`
+			From    string    `json:"from"`
+			To      string    `json:"to"`
+			Filters FilterSet `json:"filters"`
+		}
+		if err := unmarshalArgs(args, &a); err != nil {
+			return "", err
+		}
+		if err := query.Validate(a.Filters); err != nil {
+			return "", err
+		}
+		if err := guardFilters(evs, a.Filters); err != nil {
+			return "", err
+		}
+		from, to, werr := mcpWindow(a.Days, a.Hours, a.From, a.To)
+		if werr != nil {
+			return "", werr
+		}
+		return jsonText(agent.SampleConversations(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters), from, to, a.Limit))
+	case "label_conversation":
+		// the WRITE half: append ONE agent_label event. The store is append-only, so a label
+		// never touches an existing event — it joins to the conversation by conversation_id.
+		var a struct {
+			ConversationID string         `json:"conversation_id"`
+			Labels         map[string]any `json:"labels"`
+			LabeledBy      string         `json:"labeled_by"`
+		}
+		if err := unmarshalArgs(args, &a); err != nil {
+			return "", err
+		}
+		return s.labelConversation(evs, strings.TrimSpace(a.ConversationID), a.Labels, strings.TrimSpace(a.LabeledBy))
+	case "agent_labels":
+		var a struct {
+			Label   string    `json:"label"`
+			Days    float64   `json:"days"`
+			Hours   float64   `json:"hours"`
+			From    string    `json:"from"`
+			To      string    `json:"to"`
+			Filters FilterSet `json:"filters"`
+		}
+		if err := unmarshalArgs(args, &a); err != nil {
+			return "", err
+		}
+		// same requirement, same words as GET /v1/agent/labels — one question, one answer.
+		if strings.TrimSpace(a.Label) == "" {
+			return "", fmt.Errorf("%s", errNoLabel)
+		}
+		if err := query.Validate(a.Filters); err != nil {
+			return "", err
+		}
+		if err := guardFilters(evs, a.Filters); err != nil {
+			return "", err
+		}
+		from, to, werr := mcpWindow(a.Days, a.Hours, a.From, a.To)
+		if werr != nil {
+			return "", werr
+		}
+		return jsonText(agent.ComputeLabelBreakdown(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters), strings.TrimSpace(a.Label), from, to))
 	default:
 		if handled, out, aerr := s.callAction(name, args); handled {
 			return out, aerr

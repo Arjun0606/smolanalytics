@@ -255,6 +255,42 @@ var toolList = []map[string]any{
 			"filters": filtersSchema,
 		}, nil),
 	},
+	{
+		"name":        "sample_conversations",
+		"description": "Read a SAMPLE of whole agent conversations (agent_turn events grouped by conversation_id, turns oldest first, most recent conversation first) so YOU can label them. This is the read half of the labelling loop: call this, infer a label per conversation (intent, sentiment, frustration, whatever the user asked about), then call label_conversation once per conversation to write your inference back. Turns carry text only if the app sent a `text` property — a turn without it comes back with role and timing only and has_text false, because we never invent what was said. The sample is capped (default 20 conversations, max 100; long text truncated) and deterministic: same data in, same sample out. `labeled` on each conversation tells you it already has labels, so you can skip it.",
+		"inputSchema": obj(map[string]any{
+			"limit":   map[string]any{"type": "number", "description": "How many conversations to return (default 20, max 100)."},
+			"days":    map[string]any{"type": "number", "description": "Rolling window in days ending now. Omit for all time."},
+			"hours":   map[string]any{"type": "number", "description": "Rolling window in hours ending now."},
+			"from":    map[string]any{"type": "string", "description": "Absolute window start, RFC3339 or YYYY-MM-DD."},
+			"to":      map[string]any{"type": "string", "description": "Absolute window end (exclusive), RFC3339 or YYYY-MM-DD."},
+			"filters": filtersSchema,
+		}, nil),
+	},
+	{
+		"name":        "label_conversation",
+		"description": "Write YOUR inferred labels for one conversation back into the event log — the write half of the labelling loop (read with sample_conversations first). Nothing is ever mutated: this appends ONE new agent_label event carrying the conversation_id, your labels, who labeled it, and a timestamp. Keep labels small and consistent (e.g. {\"intent\":\"billing\",\"sentiment\":\"negative\",\"frustration\":\"high\"}) — reuse the same label names and a tight set of values across conversations or the breakdown fragments. labeled_by is REQUIRED and must be your own model name: these labels are your INFERENCE, not a measured fact, and every report over them names the model that wrote them so nobody reads a guess as a measurement. Then read the result with agent_labels.",
+		"inputSchema": obj(map[string]any{
+			"conversation_id": map[string]any{"type": "string", "description": "The conversation you are labelling (from sample_conversations). It must exist as an agent_turn conversation."},
+			"labels": map[string]any{
+				"type":        "object",
+				"description": "Your inferred labels, e.g. {\"intent\":\"billing\",\"sentiment\":\"negative\"}. Up to 10 keys; values must be plain strings, numbers or booleans (short values make better breakdowns).",
+			},
+			"labeled_by": map[string]any{"type": "string", "description": "Your model name, e.g. \"claude-sonnet-4-5\". Required — the reports show it so an inferred label is never mistaken for a measured one."},
+		}, []string{"conversation_id", "labels", "labeled_by"}),
+	},
+	{
+		"name":        "agent_labels",
+		"description": "Conversation counts per value of one model-written label (intent, sentiment, frustration...), e.g. 'what are people actually asking my agent about'. The VALUES are inferences some model wrote via label_conversation; the COUNTS over them are computed from your event log, like every other number here. The result always carries labeled_by (which model(s) inferred these), plus how many conversations in the window are labeled and unlabeled, so an inference is never mistaken for a measurement. If nothing is labeled yet you get an honest empty result telling you to sample and label first, never a fabricated split.",
+		"inputSchema": obj(map[string]any{
+			"label":   map[string]any{"type": "string", "description": "Which label to break down, e.g. \"intent\" or \"sentiment\" — a key you wrote with label_conversation."},
+			"days":    map[string]any{"type": "number", "description": "Rolling window in days ending now. Omit for all time."},
+			"hours":   map[string]any{"type": "number", "description": "Rolling window in hours ending now."},
+			"from":    map[string]any{"type": "string", "description": "Absolute window start, RFC3339 or YYYY-MM-DD."},
+			"to":      map[string]any{"type": "string", "description": "Absolute window end (exclusive), RFC3339 or YYYY-MM-DD."},
+			"filters": filtersSchema,
+		}, []string{"label"}),
+	},
 }
 
 func obj(props map[string]any, required []string) map[string]any {

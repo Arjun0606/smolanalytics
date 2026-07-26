@@ -86,6 +86,11 @@ func isPublic(r *http.Request) bool {
 		return true
 	case p == "/install.md" || p == "/llms.txt" || p == "/docs": // agent-facing setup docs, public by design
 		return true
+	case p == "/robots.txt": // MUST be reachable without a session: otherwise the catch-all below
+		// redirects it to /login, and a fetcher (ChatGPT opening a pasted share link, a Slack
+		// unfurl, Perplexity) reads that redirect as "this whole host is gated" and gives up on
+		// the share page a human deliberately sent it.
+		return true
 	case p == "/v1/events" || p == "/mcp" || p == "/v1/usage" || p == "/v1/notable" || p == "/v1/brief": // own key auth / programmatic
 		return true
 	case p == "/v1/deploys" && r.Method == http.MethodPost: // recording a deploy uses the public write key (like /v1/events); GET/DELETE stay gated

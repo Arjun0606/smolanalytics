@@ -65,7 +65,7 @@ ai  ▸ Activation is 62% (657 of 1,051 signups reach "activate").
       The leak is activate→checkout on free (only 31% continue). Want the paths after activate?
 ```
 
-Your model gets **76 tools and 14 built-in prompts**, and it runs the whole product, not just queries: ask reports, roll out a flag, read the A/B result, create a cohort, set an alert, verify instrumentation. Anything it creates shows up on the dashboard instantly.
+Your model gets **79 tools and 14 built-in prompts**, and it runs the whole product, not just queries: ask reports, roll out a flag, read the A/B result, create a cohort, set an alert, verify instrumentation. Anything it creates shows up on the dashboard instantly.
 
 | Assistant | command | Assistant | command |
 |---|---|---|---|

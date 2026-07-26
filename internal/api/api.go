@@ -300,6 +300,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/agent/tools", s.apiAgentTools)
 	mux.HandleFunc("GET /v1/agent/errors", s.apiAgentErrors)
 	mux.HandleFunc("GET /v1/agent/conversations", s.apiAgentConversations)
+	// model-written conversation labels: the values are inferred by the USER's own model over
+	// MCP (label_conversation), the counts over them are computed here.
+	mux.HandleFunc("GET /v1/agent/labels", s.apiAgentLabels)
 	mux.HandleFunc("GET /v1/export", s.export)
 	mux.HandleFunc("GET /v1/insights", s.listInsights)
 	mux.HandleFunc("POST /v1/insights", s.saveInsight)
@@ -312,6 +315,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /v1/defined/{name}", s.deleteDefined)
 	mux.HandleFunc("GET /v1/cohorts/{id}/users", s.cohortUsers)
 	mux.HandleFunc("POST /mcp", s.handleMCP)
+	mux.HandleFunc("GET /robots.txt", s.serveRobots)        // must exist, or the auth catch-all 302s it to /login
 	mux.HandleFunc("GET /share/{token}", s.sharePage)       // public read-only web overview (token-gated)
 	mux.HandleFunc("GET /export/{token}", s.exportDownload) // one-time full-export download (token burns on use)
 	// account + settings (the operational staple)
@@ -396,6 +400,19 @@ func (s *Server) serveSDK(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	_, _ = io.WriteString(w, sdkJS)
+}
+
+// serveRobots exists so share links survive being pasted somewhere useful. Without this route
+// the auth catch-all redirects /robots.txt to /login, and a fetcher (ChatGPT opening a share
+// link a human pasted, a Slack unfurl, Perplexity) reads that redirect as "the whole host is
+// gated" and refuses the page. Share pages stay noindex via their own meta tag, so the two
+// signals do different jobs on purpose: fetchable when someone deliberately shares the link,
+// never added to a search index. Everything else on an instance is the operator's private
+// dashboard and stays disallowed.
+func (s *Server) serveRobots(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	_, _ = io.WriteString(w, "User-agent: *\nDisallow: /\nAllow: /share/\nAllow: /docs\nAllow: /llms.txt\nAllow: /install.md\n")
 }
 
 // serveInstallMD serves the agent-facing install guide, host/key-templated to THIS instance,

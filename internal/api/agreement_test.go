@@ -97,6 +97,23 @@ func agreementServer(t *testing.T) *httptest.Server {
 	// conv t2: user, user  (re-ask + abandon), no resolved on this one
 	turn("t2", "user", 20, nil)
 	turn("t2", "user", 19, map[string]any{"ttft_ms": float64(210)})
+	// model-written labels (the BYO-model seam): t0 and t1 labeled by two different models, t2
+	// deliberately left unlabeled so the labeled/unlabeled honesty counts are non-trivial. The
+	// VALUES are inferences; the counts over them must agree across /v1 and MCP like everything
+	// else. t0 is labeled twice so the latest-write-wins rule is exercised on both surfaces.
+	label := func(cid, by string, min int, labels map[string]any) {
+		p := map[string]any{"conversation_id": cid, "labeled_by": by,
+			"labeled_at": now.Add(-time.Duration(min) * time.Minute).Format(time.RFC3339)}
+		for k, v := range labels {
+			p[k] = v
+		}
+		batch = append(batch, map[string]any{"name": "agent_label",
+			"distinct_id": cid, "timestamp": now.Add(-time.Duration(min) * time.Minute).Format(time.RFC3339),
+			"properties": p})
+	}
+	label("t0", "gpt-5", 15, map[string]any{"intent": "onboarding"})
+	label("t0", "claude-sonnet-4-5", 10, map[string]any{"intent": "billing", "sentiment": "negative"})
+	label("t1", "claude-sonnet-4-5", 9, map[string]any{"intent": "billing"})
 	body, _ := json.Marshal(batch)
 	resp, err := http.Post(srv.URL+"/v1/events", "application/json", strings.NewReader(string(body)))
 	if err != nil || resp.StatusCode != http.StatusAccepted {
@@ -186,6 +203,14 @@ func TestMCPAPIAgreement(t *testing.T) {
 		{"agent errors", "/v1/agent/errors", "agent_errors", `{}`, false},
 		{"agent errors by tool", "/v1/agent/errors?tool=search", "agent_errors", `{"tool":"search"}`, false},
 		{"agent conversations", "/v1/agent/conversations", "agent_conversations", `{}`, false},
+		// the BYO-model seam: the LABELS are a model's inference, but the counts over them are
+		// computed — so /v1/agent/labels and the agent_labels tool must return the identical
+		// breakdown, the identical labeled/unlabeled split, and the identical labeled_by list.
+		{"agent labels", "/v1/agent/labels?label=intent", "agent_labels", `{"label":"intent"}`, false},
+		{"agent labels sparse", "/v1/agent/labels?label=sentiment", "agent_labels", `{"label":"sentiment"}`, false},
+		// a label nobody has written must be honestly empty on BOTH surfaces, identically.
+		{"agent labels unlabeled", "/v1/agent/labels?label=frustration", "agent_labels", `{"label":"frustration"}`, false},
+		{"agent labels windowed", "/v1/agent/labels?label=intent&days=7", "agent_labels", `{"label":"intent","days":7}`, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -211,6 +236,100 @@ func TestMCPAPIAgreement(t *testing.T) {
 }
 
 func urlEnc(s string) string { return url.QueryEscape(s) }
+
+// TestAgentLabelsAreNonTriviallyAgreed keeps the labels agreement case honest: two surfaces
+// returning the same EMPTY result would pass agreement while proving nothing. This pins the
+// actual seeded numbers (latest label per conversation wins, unlabeled conversations counted,
+// the labelling model named) so the agreement case above is comparing real data.
+func TestAgentLabelsAreNonTriviallyAgreed(t *testing.T) {
+	srv := agreementServer(t)
+	got := viaAPI(t, srv, "/v1/agent/labels?label=intent")
+	if got["conversations"] != float64(3) || got["labeled"] != float64(2) || got["unlabeled"] != float64(1) {
+		t.Fatalf("expected 3 conversations, 2 labeled, 1 unlabeled: %v", got)
+	}
+	values, _ := got["values"].([]any)
+	if len(values) != 1 {
+		t.Fatalf("t0's later label must replace its earlier one, leaving one value: %v", got["values"])
+	}
+	v0, _ := values[0].(map[string]any)
+	if v0["value"] != "billing" || v0["conversations"] != float64(2) {
+		t.Fatalf("expected billing(2) after latest-write-wins: %v", v0)
+	}
+	by, _ := got["labeled_by"].([]any)
+	if len(by) != 1 || by[0] != "claude-sonnet-4-5" {
+		t.Fatalf("labeled_by must name the model behind the counted labels: %v", got["labeled_by"])
+	}
+	if got["inferred"] != true {
+		t.Fatalf("label values are inferences and must be flagged: %v", got)
+	}
+	// a label nobody wrote is honestly empty, and says how to fix that
+	none := viaAPI(t, srv, "/v1/agent/labels?label=frustration")
+	if none["labeled"] != float64(0) || len(none["values"].([]any)) != 0 {
+		t.Fatalf("unwritten label must be empty, not fabricated: %v", none)
+	}
+	if note, _ := none["note"].(string); !strings.Contains(note, "label_conversation") {
+		t.Fatalf("empty label result must explain how to label: %q", note)
+	}
+}
+
+// A missing label must be a guiding 400 on the HTTP surface, never a breakdown of nothing — AND
+// the MCP tool must refuse with the SAME WORDS. api.errNoLabel and mcp.errNoLabel are declared
+// independently in two packages, so without this the wording can drift and one surface starts
+// teaching the labelling loop differently from the other. Agreement covers the error path too.
+func TestAgentLabelsRequiresLabel(t *testing.T) {
+	srv := agreementServer(t)
+	resp, err := http.Get(srv.URL + "/v1/agent/labels")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for a missing label, got %d", resp.StatusCode)
+	}
+	var apiErr struct {
+		Error string `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&apiErr); err != nil {
+		t.Fatal(err)
+	}
+	if apiErr.Error == "" {
+		t.Fatalf("the 400 must carry the guiding message, not an empty body")
+	}
+	if !strings.Contains(apiErr.Error, "label_conversation") {
+		t.Fatalf("the missing-label error must teach the labelling loop: %q", apiErr.Error)
+	}
+	if mcpErr := mcpErrorText(t, srv, "agent_labels", `{}`); mcpErr != apiErr.Error {
+		t.Fatalf("SURFACES DISAGREE on the missing-label error —\nAPI: %q\nMCP: %q", apiErr.Error, mcpErr)
+	}
+}
+
+// mcpErrorText calls a tool expecting it to REFUSE, and returns the refusal text. The happy-path
+// helper (viaMCP) fatals on an error result, so error-path agreement needs its own reader.
+func mcpErrorText(t *testing.T, srv *httptest.Server, tool, args string) string {
+	t.Helper()
+	req := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":%q,"arguments":%s}}`, tool, args)
+	resp, err := http.Post(srv.URL+"/mcp", "application/json", strings.NewReader(req))
+	if err != nil || resp.StatusCode != 200 {
+		t.Fatalf("mcp %s: %v (%v)", tool, err, resp.StatusCode)
+	}
+	defer resp.Body.Close()
+	var envelope struct {
+		Result struct {
+			Content []struct{ Text string }
+			IsError bool
+		}
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+		t.Fatal(err)
+	}
+	if !envelope.Result.IsError {
+		t.Fatalf("mcp %s should have refused %s, but returned a result", tool, args)
+	}
+	if len(envelope.Result.Content) == 0 {
+		t.Fatalf("mcp %s errored with no message", tool)
+	}
+	return envelope.Result.Content[0].Text
+}
 
 // featureAgreementServer seeds the feature-report surfaces (measured flag, survey, sessions) AND
 // deliberately mixes in env=development events. The default production scope must drop those

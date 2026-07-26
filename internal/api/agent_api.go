@@ -8,9 +8,14 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/Arjun0606/smolanalytics/internal/agent"
 )
+
+// errNoLabel is the exact wording the agent_labels MCP tool uses for a missing label (see
+// mcp.errNoLabel), so the same mistake gets the same answer on both surfaces.
+const errNoLabel = "label is required, e.g. intent or sentiment: a label name your model wrote with label_conversation. nothing labeled yet? call sample_conversations, then label_conversation."
 
 // GET /v1/agent/tools — per-tool call/error/latency health, with the client split.
 func (s *Server) apiAgentTools(w http.ResponseWriter, r *http.Request) {
@@ -57,4 +62,28 @@ func (s *Server) apiAgentConversations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, agent.ComputeConversations(evs, from, to))
+}
+
+// GET /v1/agent/labels?label=intent — conversations per value of a model-written label. The
+// VALUES are inferences the user's own model wrote via the label_conversation MCP tool (we never
+// run a model); the COUNTS over them are computed here like every other number. The response
+// carries labeled_by and the labeled/unlabeled split so an inference is never read as a
+// measurement, and an unlabeled instance gets an honest empty result explaining how to label.
+func (s *Server) apiAgentLabels(w http.ResponseWriter, r *http.Request) {
+	evs, err := s.filtered(r)
+	if err != nil {
+		writeQueryErr(w, err)
+		return
+	}
+	label := strings.TrimSpace(r.URL.Query().Get("label"))
+	if label == "" {
+		writeErr(w, http.StatusBadRequest, errNoLabel)
+		return
+	}
+	from, to, werr := parseTrendWindow(r)
+	if werr != nil {
+		writeErr(w, http.StatusBadRequest, werr.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, agent.ComputeLabelBreakdown(evs, label, from, to))
 }
