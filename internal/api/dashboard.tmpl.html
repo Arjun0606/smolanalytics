@@ -27,6 +27,11 @@
     /* space — 4px base */
     --sp1:4px; --sp2:8px; --sp3:12px; --sp4:16px; --sp6:24px; --sp8:32px;
     --zone:24px; --card-pad:16px; --gap:16px; --sec-pad:28px;
+    /* peek heights. A stream pane shows a readable window and scrolls inside itself; it
+       never becomes the page. The px value is the fallback for browsers without dvh, and
+       nothing on the deck is allowed to exceed roughly a third of the viewport. */
+    --peek-tail:280px; --peek-tail:clamp(180px,24dvh,280px);      /* the live feed */
+    --peek-stream:420px; --peek-stream:clamp(240px,34dvh,420px);  /* sessions, event stream */
     /* radii — three, nested smaller than parent */
     --r-ctl:4px; --r-card:8px; --r-pill:999px;
     /* control metrics — four heights replace eleven */
@@ -277,7 +282,9 @@
   table.heat .cell{display:flex;align-items:center;justify-content:center;height:28px}
 
   /* live feed */
-  .pane .live{max-height:400px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--line2) transparent}
+  .pane .live{max-height:var(--peek-tail);overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--line2) transparent}
+  /* the event stream is 200 rows of history rather than a tail, so it earns a taller window */
+  .pane #evTable{max-height:var(--peek-stream)}
   .live .row{display:flex;gap:12px;padding:6px 0;border-bottom:1px solid var(--s2);font-family:var(--mono);font-size:var(--fs-body)}
   .live .ev{color:var(--accent);min-width:130px}
   .live .who{color:var(--mut);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -439,7 +446,7 @@
 
   /* runaway lists get an internal scroll instead of pushing the page down. .live already
      did this at 400px; sessions and the event table were not covered and ran to ~1000px. */
-  .deck>.pane .capped{max-height:420px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--line2) transparent}
+  .deck>.pane .capped{max-height:var(--peek-stream);overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--line2) transparent}
 
   /* ═══ THE DECK INDEX — 22 always-on cards is more than anyone can scan, so every report
      past the first screen was effectively hidden ("where can I find the heatmap?"). It is
