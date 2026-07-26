@@ -136,7 +136,7 @@ func Results(evs []event.Event, surveyID, surveyType string, days int) Result {
 		}
 	}
 	if res.Responses == 0 {
-		res.Note = "no responses yet — activate the survey and let the SDK widget collect answers"
+		res.Note = "no responses yet. activate the survey and let the SDK widget collect answers"
 	}
 	return res
 }

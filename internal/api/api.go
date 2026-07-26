@@ -84,6 +84,7 @@ type Server struct {
 	defined      *defined.Store // retroactive zero-code events (Heap wedge)
 	writeKey     string         // PUBLIC ingest key (embedded in the SDK): authorizes POST /v1/events ONLY. Never reads.
 	readKey      string         // SECRET read/MCP key: authorizes GET /v1/* reports, export, and MCP. Never shipped in client code.
+	cloudURL     string         // where the header's "Cloud ↗" link goes back to. Empty (self-hosted) = smolanalytics.com.
 	geo          *geo.Resolver  // ingest-time IP→country (IP never stored); nil = disabled
 	anomalyMu    sync.Mutex
 	anomalyFired map[string]time.Time // finding title -> last webhook fire (24h dedup)
@@ -255,6 +256,12 @@ func (s *Server) SetWriteKey(k string) { s.writeKey = k }
 // export) and MCP — everything that returns data. It must NEVER be embedded in client code;
 // only the write key is public. This is what stops a scraped write key from reading data.
 func (s *Server) SetReadKey(k string) { s.readKey = k }
+
+// SetCloudURL sets where the dashboard header's "Cloud ↗" link points. The hosted
+// product passes the project's own page so a user who lands on their instance has a way
+// back into their account. Empty (every self-hosted install) keeps the default link to
+// smolanalytics.com, so a self-hoster never sees a cloud-specific or broken link.
+func (s *Server) SetCloudURL(u string) { s.cloudURL = strings.TrimSpace(u) }
 
 // SetGeo enables ingest-time country resolution (the IP is used for one lookup
 // and never stored, only the ISO code lands on the event).

@@ -179,7 +179,7 @@ func Validate(filters []Filter) error {
 				return fmt.Errorf("filter op %q on property %q needs a list value, e.g. \"value\": [\"a\", \"b\"]", f.Op, f.Property)
 			}
 		default:
-			return fmt.Errorf("unknown filter op %q on property %q — valid ops: eq, neq, contains, gt, lt, in, notin, set, notset", f.Op, f.Property)
+			return fmt.Errorf("unknown filter op %q on property %q. valid ops: eq, neq, contains, gt, lt, in, notin, set, notset", f.Op, f.Property)
 		}
 		if f.Property == "" {
 			return fmt.Errorf("filter is missing a property name")

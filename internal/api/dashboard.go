@@ -182,6 +182,10 @@ type dashVM struct {
 	ShowingDev     bool   // true when ?env=development — viewing the hidden dev traffic
 	Base           string // this server's base URL, for ready-to-paste snippets
 	WriteKey       string // this instance's write key — real snippets, not placeholders (key is public-by-design: it ships in tracked pages' HTML)
+	// CloudURL is the header's "Cloud ↗" href. Defaults to smolanalytics.com (right for
+	// every self-hosted install); the hosted product overrides it via SMOLANALYTICS_CLOUD_URL
+	// so the link leads back to the project the user came from, not the marketing home page.
+	CloudURL string
 	// adaptive labels — the default dashboard reflects the user's OWN events
 	FunnelTitle    string
 	ConvLabel      string // "<first> → <last>" of the detected funnel
@@ -559,14 +563,14 @@ func buildDepthCards(vm *dashVM, evs []event.Event, fsteps []funnel.Step, trendE
 	st := engagement.ComputeStickiness(evs, now)
 	if st.MAU > 0 {
 		ratio := int(st.DAUoverMAU*100 + 0.5)
-		verdict := "low — most users don't come back daily"
+		verdict := "low: most users don't come back daily"
 		switch {
 		case ratio >= 50:
-			verdict = "excellent — daily-habit territory"
+			verdict = "excellent: daily-habit territory"
 		case ratio >= 20:
 			verdict = "healthy for most products"
 		case ratio >= 10:
-			verdict = "typical — a weekly, not daily, habit"
+			verdict = "typical: a weekly, not daily, habit"
 		}
 		vm.Stickiness = &stickyVM{DAU: st.DAU, WAU: st.WAU, MAU: st.MAU, Ratio: ratio, Verdict: verdict}
 	}
@@ -934,6 +938,14 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		reportQ.Set("fm", "any")
 	}
 
+	// the "Cloud ↗" destination. Self-hosted instances (no SMOLANALYTICS_CLOUD_URL) keep
+	// linking to smolanalytics.com; the hosted product points it at the project this
+	// instance belongs to, so the dashboard is never a one-way door out of the account.
+	cloudURL := "https://smolanalytics.com"
+	if s.cloudURL != "" {
+		cloudURL = s.cloudURL
+	}
+
 	vm := dashVM{
 		HasConversion:  len(fsteps) >= 2,
 		TotalUsers:     distinctUsers(evs),
@@ -950,6 +962,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		Site:           site,
 		Base:           baseURL(r),
 		WriteKey:       s.writeKey,
+		CloudURL:       cloudURL,
 		FunnelTitle:    ftitle,
 		ConvLabel:      convLabel,
 		StatEventLabel: trendEvent,

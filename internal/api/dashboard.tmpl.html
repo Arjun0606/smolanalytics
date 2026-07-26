@@ -518,12 +518,12 @@
     {{range .Sites}}<option value="{{.}}" {{if eq . $.Site}}selected{{end}}>{{.}}</option>{{end}}
   </select>{{end}}
   <div class="spacer"></div>
-  {{if ge .LastEventSecs 0}}<span class="hlink" id="lastev" data-secs="{{.LastEventSecs}}" title="seconds since the newest ingested event — proof this page is live">·</span>{{end}}
+  {{if ge .LastEventSecs 0}}<span class="hlink" id="lastev" data-secs="{{.LastEventSecs}}" title="seconds since the newest ingested event, proof this page is live">·</span>{{end}}
   {{if .HasData}}<a class="livepill{{if gt .LiveNow 0}} on{{end}}" href="#tab=live" id="livepill"><span class="dot"></span><span id="livecount">{{if gt .LiveNow 0}}{{.LiveNow}} now{{else}}live{{end}}</span></a>{{end}}
-  <span class="agentpill{{if .AgentLive}} on{{end}}" id="agentpill" title="{{if .AgentName}}your agent, seen via real MCP traffic — click for connect options{{else}}connect your coding agent over MCP{{end}}">⌁ <span id="agentlbl">{{if .AgentName}}{{.AgentName}} · {{.AgentAgo}}{{if gt .AgentCalls 0}} · {{.AgentCalls}} calls{{end}}{{else}}agent{{end}}</span></span>
+  <span class="agentpill{{if .AgentLive}} on{{end}}" id="agentpill" title="{{if .AgentName}}your agent, seen via real MCP traffic; click for connect options{{else}}connect your coding agent over MCP{{end}}">⌁ <span id="agentlbl">{{if .AgentName}}{{.AgentName}} · {{.AgentAgo}}{{if gt .AgentCalls 0}} · {{.AgentCalls}} calls{{end}}{{else}}agent{{end}}</span></span>
   <a class="hlink" href="#explore" id="exploreLink" title="run any report on your own events">explore</a>
   {{if .HasShares}}<a class="hlink" href="/settings/shares" id="shareBtn" title="mint a revocable read-only link">share</a>{{end}}
-  <a class="hlink" href="https://smolanalytics.com" target="_blank" style="color:var(--accent)">Cloud ↗</a>
+  <a class="hlink" href="{{.CloudURL}}" target="_blank" style="color:var(--accent)">Cloud ↗</a>
   <a class="hlink" href="/settings">settings</a>
 </div></header>
 
@@ -597,12 +597,12 @@
         <div class="co-body">
           <div class="co-title">{{$first.Title}}</div>
           <div class="co-detail">{{$first.Detail}}</div>
-          <div class="co-meta"><span class="co-prov">computed, not guessed</span><span>a CI test proves this equals the dashboard — it can&rsquo;t be faked</span></div>
+          <div class="co-meta"><span class="co-prov">computed, not guessed</span><span>a CI test proves this equals the dashboard, it can&rsquo;t be faked</span></div>
         </div>
         <div class="co-act"><a class="co-go" data-q="{{$first.Title}}">Show me &rarr;</a></div>
       </div>
       {{if gt (len .Verdict) 1}}<div class="verdict-more">{{range slice .Verdict 1}}<div class="vline{{if eq .Severity "warn"}} warn{{end}}"><span class="vdot"></span><span class="vt">{{.Title}}</span><span class="vsep">·</span><span class="vd">{{.Detail}}</span><a class="vwhy" data-q="{{.Title}}">why? &rarr;</a></div>{{end}}</div>{{end}}
-      {{else}}<div class="vcalm">nothing unusual right now — traffic and conversion look within normal range.</div>{{end}}
+      {{else}}<div class="vcalm">nothing unusual right now: traffic and conversion look within normal range.</div>{{end}}
     </div>
     <details class="weekline"><summary>this week →</summary><div class="weekbody" id="brief"><div class="exsummary">…</div></div></details>
   </div>
@@ -632,7 +632,7 @@
     <div class="kpi">
       <div class="kk">Bounce rate · engaged time</div>
       <div class="kv" style="font-size:15px;color:var(--dis);margin-top:13px">not measured yet</div>
-      <div class="kd"><span class="kvp">no $engagement events — sdk.js sends one as a visitor leaves a page</span></div>
+      <div class="kd"><span class="kvp">no $engagement events yet; sdk.js sends one as a visitor leaves a page</span></div>
     </div>
     {{end}}
   </div>
@@ -735,7 +735,7 @@
       <div class="webcols">
         <div>
           <h3>top pages</h3>
-          {{range .TopPages}}<div class="seg" data-fp="path" data-fv="{{.Value}}" title="click to filter every zone to this page"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
+          {{range .TopPages}}<div class="seg" data-fp="path" data-fv="{{.Value}}" title="click to filter every zone to this page"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">no pageviews in this window. sdk.js sends a $pageview on load and on every route change, so the first visit fills this in. every path is listed as itself, nothing is folded into "(other)".</div>{{end}}
         </div>
         <div>
           <h3>entry pages · where sessions land</h3>
@@ -763,7 +763,14 @@
     </div>
     <div class="pane" id="pane-referrers" style="order:9">
       <h3>referrers</h3>
-      {{range .Referrers}}<div class="seg"{{if and (ne .Value "direct") (ne .Value "(none)")}} data-fp="referrer" data-fv="{{.Value}}" title="click to filter every zone to this referrer"{{end}}><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
+      {{range .Referrers}}<div class="seg"{{if and (ne .Value "direct") (ne .Value "(none)")}} data-fp="referrer" data-fv="{{.Value}}" title="click to filter every zone to this referrer"{{end}}><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">no referrers in this window. a referrer is read from the Referer header the browser sends, so visits typed straight into the address bar count as direct and land here as soon as anyone arrives from a link.</div>{{end}}
+    </div>
+    {{else}}
+    <!-- no $pageview has ever landed: teach the web side rather than dropping four
+         panes off the page and leaving a product-only instance looking half-built. -->
+    <div class="pane wide" id="pane-web-empty" style="order:7">
+      <h3>pages, referrers and the click map</h3>
+      <div class="exsummary">this instance has events but no <b>$pageview</b> yet, so there is nothing to rank by page, referrer or click position. drop <b>&lt;script src="{{.Base}}/sdk.js"&gt;&lt;/script&gt;</b> into your app and top pages, entry pages, referrers and the click map all fill in from the first visit. a backend-only instance that never serves HTML stays product-only on purpose, and that is a fine place to be.</div>
     </div>
     {{end}}
 
@@ -772,6 +779,13 @@
       <h3>countries · geo by <a href="https://db-ip.com" target="_blank" rel="noopener" style="color:var(--mut2)">db-ip.com</a></h3>
       <div class="exsummary" style="margin-bottom:10px">countries stamp at ingest from the moment geo is enabled (the IP is used for one lookup and never stored, so no backfill). your own visits count too: open your site once with ?sa_optout=1 to exclude this browser, ?sa_optout=0 to undo</div>
       {{range .Countries}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}
+    </div>
+    {{else}}
+    <!-- geo off, or every IP unresolved. a proud "Unknown 100%" bar would be worse than
+         nothing, so the pane says what to turn on instead of ranking a single Unknown. -->
+    <div class="pane" id="pane-geo" style="order:11">
+      <h3>countries</h3>
+      <div class="exsummary">no country resolved yet. geo is on unless you set <b>SMOLANALYTICS_GEO=off</b>: the free <a href="https://db-ip.com" target="_blank" rel="noopener" style="color:var(--mut2)">db-ip.com</a> table downloads on first boot and loads in the background, then every <em>new</em> event is stamped at ingest. the IP is used for that one lookup and never stored, so nothing already on disk is backfilled. an IPv6-only visitor stays unplaced rather than being guessed into a country, and so does anything the table cannot resolve.</div>
     </div>
     {{end}}
 
@@ -805,6 +819,13 @@
         </div>
       </div>
     </div>
+    {{else}}
+    <!-- no tagged link has landed yet. the pane stays and teaches the tag, because a
+         missing campaigns card reads as "we don't do campaigns" rather than "none yet". -->
+    <div class="pane wide" id="pane-campaigns" style="order:13">
+      <h3>utm source · medium · campaign</h3>
+      <div class="exsummary">no tagged links in this window. add <b>?utm_source=…&amp;utm_medium=…&amp;utm_campaign=…</b> to a link you post and sdk.js reads the three tags straight off the URL and sends them on every event fired while they are in the address bar, and it also keeps the first utm_source of the visit as <b>initial_utm_source</b>. untagged visits stay in <b>referrers</b> above rather than being invented into a campaign here.</div>
+    </div>
     {{end}}
 
     <div class="pane wide" id="pane-funnel" style="order:1">
@@ -818,6 +839,8 @@
       {{range .Funnel}}
         {{if not .First}}<div class="fdrop">↓ {{.PctPrev}}% continue · {{.Dropped}} dropped</div>{{end}}
         <div class="fstep"><div class="fbarwrap" data-whostep="{{.Event}}" title="click: the people who reached this step"><div class="fbar" style="width:{{.PctTop}}%"></div><div class="fmeta"><span class="fname">{{.Event}}</span><span class="fnums"><span class="c">{{.Count}}</span><span class="p">{{.PctTop}}%</span></span></div></div></div>
+      {{else}}
+        <div class="exsummary">no funnel yet. a funnel is two or more named events in the order you expect people to do them, so track at least a second one and this builds itself: signup, activate, checkout are picked up automatically when they exist, and any other pair is one question away in the ask bar above ("funnel from X to Y"). the steps count users who reached each one along this path, never raw event totals.</div>
       {{end}}
     </div>
 
@@ -849,11 +872,18 @@
         {{end}}
       </div>
     </div>
+    {{else}}
+    <!-- no starting event with enough users after it. teach what the report needs
+         rather than dropping the journeys card off the deck entirely. -->
+    <div class="pane wide" id="pane-paths" style="order:3">
+      <h3>user journeys</h3>
+      <div class="exsummary">nothing to branch from yet. this walks three steps forward from a starting event and needs users who did something <em>after</em> it, so a single event type or a single visit has nowhere to go. track one more moment (a $pageview counts) and the tree fills in, or ask "what do users do after signup" in the bar above to point it at any event you like.</div>
+    </div>
     {{end}}
 
     {{if .HasLifecycle}}
     <div class="pane wide" id="pane-lifecycle" style="order:4">
-      <h3>lifecycle <span class="sub">· who's active each day — new vs loyal</span></h3>
+      <h3>lifecycle <span class="sub">· who's active each day: new vs loyal</span></h3>
       <div style="display:flex;gap:14px;flex-wrap:wrap;font-family:var(--mono);font-size:10px;color:var(--mut);margin:2px 0 10px">
         <span><i style="display:inline-block;width:8px;height:8px;background:var(--accent);vertical-align:middle;margin-right:5px"></i>new</span>
         <span><i style="display:inline-block;width:8px;height:8px;background:var(--ok);vertical-align:middle;margin-right:5px"></i>returning</span>
@@ -895,7 +925,6 @@
     </div>
     {{end}}
 
-    {{if .HasWeb}}
     <div class="pane" id="pane-goals" style="order:15">
       <h3>goals</h3>
       {{if .Goals}}
@@ -908,10 +937,11 @@
         <input id="gValue" autocomplete="off" placeholder="event name (signup) or path glob (/thanks*)">
         <button id="gCreate">Create goal</button>
       </div>
-      <div class="exsummary" id="gNote">no goals yet — name what counts as success. a value starting with / matches a page path; anything else is an event name.</div>
+      <div class="exsummary" id="gNote">no goals yet. name what counts as success. a value starting with / matches a page path; anything else is an event name.</div>
+      {{else}}
+      <div class="exsummary">goals are not enabled on this instance, so there is nothing to name or count. they persist to a <b>.goals.json</b> beside your event data; when the engine cannot open that file it starts without them and logs the reason. fix the path or the permissions on that file, restart, and the create-a-goal row appears here.</div>
       {{end}}
     </div>
-    {{end}}
 
     <div class="pane wide" id="pane-retention" style="order:6">
       <h3>returning users
@@ -938,7 +968,7 @@
         </tbody>
       </table>
       {{else}}
-      <div class="exsummary">retention needs a few days of history — once your first visitors have a chance to come back, their cohorts fill in here.</div>
+      <div class="exsummary">retention needs a few days of history. once your first visitors have a chance to come back, their cohorts fill in here.</div>
       {{end}}
     </div>
 
@@ -1047,7 +1077,7 @@
         <select id="coMatch"><option value="any">did any</option><option value="all">did all</option></select>
         <button id="coCreate">Create</button>
       </div>
-      <div id="coList" class="saved"><div class="exsummary">no cohorts yet</div></div>
+      <div id="coList" class="saved"><div class="exsummary">no cohorts yet. a cohort is a named set of people defined by what they did (say, everyone who fired checkout). save one and it appears as a chip in explore above, scoping any report to just those people.</div></div>
     </div>
     <div class="ptool">
       <h3>defined events · name a business event from captured clicks, retroactive, no code</h3>
@@ -1061,7 +1091,7 @@
         <input id="deValue" autocomplete="off" placeholder="value (e.g. Buy now)">
         <button id="deCreate">Create</button>
       </div>
-      <div id="deList" class="saved"><div class="exsummary">no defined events yet</div></div>
+      <div id="deList" class="saved"><div class="exsummary">no defined events yet. a defined event names a pattern already in your autocaptured stream (a $click whose text contains "Buy now", say) so you can chart, funnel and filter it without shipping a single line of new tracking code.</div></div>
     </div>
     </div>
   </details>
@@ -1076,11 +1106,11 @@
         <pre class="code" id="cuni" style="flex:1;margin:0;white-space:pre-wrap;font-size:11px;line-height:1.6;max-height:150px;overflow-y:auto">{{.ConnectPrompt}}</pre>
         <button class="copy" data-c="cuni">copy</button>
       </div>
-      <div class="cnote" style="padding:0 0 10px">copy once, paste into whatever you use — Claude Code, Cursor, Windsurf, Zed, Cline. the agent wires itself up (url + key included) and proves the connection by reading your visitor count. Claude Desktop can't edit its own config, so paste its JSON from below by hand. or pick your client manually:</div>
+      <div class="cnote" style="padding:0 0 10px">copy once, paste into whatever you use: Claude Code, Cursor, Windsurf, Zed, Cline. the agent wires itself up (url + key included) and proves the connection by reading your visitor count. Claude Desktop can't edit its own config, so paste its JSON from below by hand. or pick your client manually:</div>
       <div class="crow">
         <span class="cn">Cursor</span>
         <a class="cbtn primary" href="{{.CursorLink}}">⚡ add to Cursor</a>
-        <span class="exsummary">one click — server, url and key preconfigured</span>
+        <span class="exsummary">one click; server, url and key preconfigured</span>
       </div>
       <div class="crow">
         <span class="cn">Claude Code</span>
@@ -1096,13 +1126,13 @@
         <span class="ccode" id="c3">{{.DesktopConfig}}</span>
         <button class="copy" data-c="c3">copy</button>
       </div>
-      <div class="cnote" style="padding:0 0 8px">desktop's connector UI only takes an OAuth URL, so don't paste anything there. instead: Settings → Developer → Edit Config, paste the JSON above into claude_desktop_config.json, restart Claude Desktop. the tools appear under smolanalytics. (the key rides in env because windows mangles spaces in args — works everywhere.)</div>
+      <div class="cnote" style="padding:0 0 8px">desktop's connector UI only takes an OAuth URL, so don't paste anything there. instead: Settings → Developer → Edit Config, paste the JSON above into claude_desktop_config.json, restart Claude Desktop. the tools appear under smolanalytics. (the key rides in env because windows mangles spaces in args, so it works everywhere.)</div>
       <div class="crow">
         <span class="cn">Windsurf</span>
         <span class="ccode" id="c5">{{.WindsurfConfig}}</span>
         <button class="copy" data-c="c5">copy</button>
       </div>
-      <div class="cnote" style="padding:0 0 8px">into ~/.codeium/windsurf/mcp_config.json — windsurf wants serverUrl, not url</div>
+      <div class="cnote" style="padding:0 0 8px">into ~/.codeium/windsurf/mcp_config.json (windsurf wants serverUrl, not url)</div>
       <div class="crow">
         <span class="cn">Cline</span>
         <span class="ccode" id="c6">{{.ClineConfig}}</span>
@@ -1121,7 +1151,7 @@
       </div>
       <div class="cnote">
         then ask from your editor: <em>"what changed on my site this week?"</em> · <em>"why did {{.StatEventLabel}} drop?"</em> · <em>"which referrer converts best?"</em><br>
-        your own model reads your data through the smolanalytics report tools — we never run a model, so it's free and unmetered.
+        your own model reads your data through the smolanalytics report tools. we never run a model, so it's free and unmetered.
         every answer is a deterministic report, and a <a href="https://smolanalytics.com/trust" target="_blank" rel="noopener" style="color:var(--accent)">CI test ↗</a> proves the editor, this dashboard, and the ask bar always return the same number.
         self-hosting? <em>smolanalytics connect</em> wires Claude Desktop / Cursor in one command.
       </div>
@@ -1143,17 +1173,17 @@
     </div>
     <div class="obcard">
       <div class="obh">…or let your agent do the whole thing</div>
-      <div class="obsub">paste into Cursor / Claude Code — it reads your codebase and wires the right events in the right places</div>
+      <div class="obsub">paste into Cursor / Claude Code. it reads your codebase and wires the right events in the right places</div>
       <pre class="code" id="c2">Add smolanalytics product analytics to this app. Load the script {{.Base}}/sdk.js and call smolanalytics.init("{{if .WriteKey}}{{.WriteKey}}{{else}}YOUR_WRITE_KEY{{end}}", {{"{"}} host: "{{.Base}}" {{"}"}}). Then call smolanalytics.track(event, props) at the key moments: "signup" on account creation, "activate" at the core aha moment, "checkout" on payment, and smolanalytics.identify(userId) on login. Put the calls in the right places in the codebase.</pre>
       <button class="copy" data-c="c2">copy</button>
-      <div class="obstatus" id="obstatus">○ waiting for your first event — this page flips live the moment it arrives</div>
+      <div class="obstatus" id="obstatus">○ waiting for your first event. this page flips live the moment it arrives</div>
     </div>
   </div>
   {{end}}
 
   <!-- zone 9: the covenant -->
   <div class="foot">
-    every row, every event — no sampling, no thresholding, no "(other)" ·
+    every row, every event, no sampling, no thresholding, no "(other)" ·
     ask == dashboard == MCP, <a href="https://smolanalytics.com/trust" target="_blank" rel="noopener">proven in CI ↗</a><br>
     updated {{.Updated}} · page computed in {{.ComputeMS}}ms · <a href="https://smolanalytics.com" target="_blank">smolanalytics</a>
   </div>
@@ -1411,11 +1441,11 @@
                 body:JSON.stringify({name:question,type:chart.t,params:chart.p})})
                 .then(function(r){return r.json()})
                 .then(function(){pinBtn.textContent='pinned ✓';pinBtn.className='abtn pinned';loadBoard();})
-                .catch(function(){pinBtn.disabled=false;pinBtn.textContent='pin failed — retry';});
+                .catch(function(){pinBtn.disabled=false;pinBtn.textContent='pin failed, retry';});
             };
           }
         })
-        .catch(function(){res.innerHTML='<div class="atext">something went wrong — try again</div>';});
+        .catch(function(){res.innerHTML='<div class="atext">something went wrong, try again</div>';});
     });
 
     // ---- the board: saved reports rendered as live cards titled by your questions
@@ -1475,7 +1505,12 @@
     function pollLive(){
       if(!live)return;
       fetch('/v1/events/recent?limit=15').then(function(r){return r.json()}).then(function(evs){
-        if(!evs||!evs.length){return;}
+        // an empty feed is a real state, not a reason to leave the placeholder sitting
+        // there forever: say what would put a row here.
+        if(!evs||!evs.length){
+          live.innerHTML='<div class="livemuted">no events yet. this polls /v1/events/recent every 4 seconds, so the first call from sdk.js or from your server appears here within seconds of you making it.</div>';
+          return;
+        }
         var newest=new Date(evs[0].timestamp).getTime();
         if(newest>lastTs)lastTs=newest;
         live.innerHTML=evs.map(function(e){
@@ -1483,7 +1518,9 @@
             '<span class="who">'+esc(e.distinct_id)+'</span>'+
             '<span class="ago">'+ago(e.timestamp)+'</span></div>';
         }).join('');
-      }).catch(function(){});
+      }).catch(function(){
+        live.innerHTML='<div class="livemuted">the live feed could not reach /v1/events/recent. it keeps retrying every 4 seconds, and the numbers above are still the ones the server computed for this window.</div>';
+      });
     }
     pollLive(); setInterval(pollLive, 4000);
 
@@ -1585,7 +1622,7 @@
       if(!evTable)return;
       var q=(evFilter&&evFilter.value||'').toLowerCase();
       var rows=evRows.filter(function(e){return !q||JSON.stringify(e).toLowerCase().indexOf(q)>=0;});
-      if(!rows.length){evTable.innerHTML='<div class="livemuted">'+(evRows.length?'nothing matches that filter':'no events yet')+'</div>';return;}
+      if(!rows.length){evTable.innerHTML='<div class="livemuted">'+(evRows.length?'nothing matches that filter, try a shorter string':'no events yet. this lists the latest 200 raw events, so the first track() call from sdk.js or from your server shows up here')+'</div>';return;}
       evTable.innerHTML=rows.slice(0,200).map(function(e){
         var p=e.properties||{};
         var detail=[p.path,p.country,p.device,p.browser,p.source].filter(Boolean).join(' · ');
@@ -1625,7 +1662,7 @@
         }).join('');
         panel.innerHTML='<div class="jh"><span class="jid">'+esc(id)+'</span><span class="jclose">close ×</span></div>'+
           '<div class="jmeta">'+meta+'</div>'+rows+
-          '<div class="jmeta" style="margin-top:12px">computed by /v1/users/{id} — every row, no sampling</div>';
+          '<div class="jmeta" style="margin-top:12px">computed by /v1/users/{id}, every row, no sampling</div>';
         panel.querySelector('.jclose').onclick=close;
       }).catch(function(){panel.querySelector('.jmeta').textContent='could not load';});
     }
@@ -1743,7 +1780,7 @@
         coMatch=document.getElementById('coMatch'),coCreate=document.getElementById('coCreate'),
         coList=document.getElementById('coList');
     function renderCohorts(items){
-      if(!items.length){coList.innerHTML='<div class="exsummary">no cohorts yet</div>';return;}
+      if(!items.length){coList.innerHTML='<div class="exsummary">no cohorts yet. a cohort is a named set of people defined by what they did (say, everyone who fired checkout). save one and it appears as a chip in explore above, scoping any report to just those people.</div>';return;}
       coList.innerHTML='';
       items.forEach(function(c){
         var chip=document.createElement('div'); chip.className='chip';
@@ -1770,7 +1807,7 @@
         deField=document.getElementById('deField'),deOp=document.getElementById('deOp'),
         deValue=document.getElementById('deValue'),deList=document.getElementById('deList');
     function renderDefined(items){
-      if(!items.length){deList.innerHTML='<div class="exsummary">no defined events yet</div>';return;}
+      if(!items.length){deList.innerHTML='<div class="exsummary">no defined events yet. a defined event names a pattern already in your autocaptured stream (a $click whose text contains "Buy now", say) so you can chart, funnel and filter it without shipping a single line of new tracking code.</div>';return;}
       deList.innerHTML='';
       items.forEach(function(d){
         var w=(d.where||[]).map(function(c){return c.field+' '+c.op+' "'+c.value+'"';}).join(' and ');
@@ -1899,7 +1936,7 @@
     function agLoadLabels(){
       if(!agLabelsEl)return;
       var name=(agLabelIn&&agLabelIn.value||'').trim();
-      if(!name){agLabelsEl.innerHTML='<div class="agmeta">name a label to break down, e.g. intent — whatever label your model wrote with label_conversation.</div>';return;}
+      if(!name){agLabelsEl.innerHTML='<div class="agmeta">name a label to break down, e.g. intent, whatever label your model wrote with label_conversation.</div>';return;}
       fetch(agURL('/v1/agent/labels','&label='+encodeURIComponent(name))).then(function(r){return r.json()}).then(function(j){
         if(j.error){agErr(agLabelsEl,j);return;}
         var vals=j.values||[],by=j.labeled_by||[];
@@ -1968,7 +2005,7 @@
           if(j.error){sesOut.innerHTML='<div class="inote err">'+esc(j.error)+'</div>';return;}
           var ss=j.sessions||[];
           if(!ss.length){
-            sesOut.innerHTML='<div class="agmeta">no sessions in the last '+esc(SA_DAYS)+' days. a session is one visitor\'s events split on a 30-minute gap, so any tracked pageview or event starts one — drop sdk.js in your app and the first visit lands here.</div>';
+            sesOut.innerHTML='<div class="agmeta">no sessions in the last '+esc(SA_DAYS)+' days. a session is one visitor\'s events split on a 30-minute gap, so any tracked pageview or event starts one. drop sdk.js in your app and the first visit lands here.</div>';
             return;
           }
           var h='<div class="agrow"><span class="agprov">computed · every session, no sampling</span>'+
@@ -1982,7 +2019,7 @@
               '<td>'+esc(s.distinct_id)+'</td><td class="n">'+s.pages+'</td><td class="n">'+s.events+'</td>'+
               '<td class="n">'+sesDur(s.duration_sec)+'</td><td class="mut">'+route+'</td>'+
               '<td class="mut">'+ago(s.start)+' ago</td>'+
-              '<td class="n">'+(s.rage_clicks?'<span class="rage">rage '+s.rage_clicks+'</span>':'<span class="mut">—</span>')+'</td></tr>';
+              '<td class="n">'+(s.rage_clicks?'<span class="rage">rage '+s.rage_clicks+'</span>':'<span class="mut">none</span>')+'</td></tr>';
           });
           sesOut.innerHTML=h+'</tbody></table>'+
             '<div class="agmeta" style="margin-top:8px">rage is the <b>$rageclick</b> autocapture: three clicks inside 30px within a second. duration is last event minus first, so a one-event visit reads 0s.</div>';
@@ -2015,7 +2052,7 @@
             return '<div class="jrow"'+st+'><span class="jt">+'+at+'</span><span class="je">'+esc(s.name)+'</span><span class="jp">'+esc(d)+'</span></div>';
           }).join('');
           panel.innerHTML=head+'<div class="jmeta">'+meta+'</div>'+rows+
-            '<div class="jmeta" style="margin-top:12px">computed by /v1/session — the ordered events this visit captured. it is an event journey, not a screen recording, so there is no video or DOM here, only what was tracked.</div>';
+            '<div class="jmeta" style="margin-top:12px">computed by /v1/session, the ordered events this visit captured. it is an event journey, not a screen recording, so there is no video or DOM here, only what was tracked.</div>';
           panel.querySelector('.jclose').onclick=close;
         }).catch(function(){panel.querySelector('.jmeta').textContent='could not load this session';});
     }
@@ -2086,7 +2123,7 @@
             });
             h+='</tbody></table>';
           }else{
-            h+='<div class="agmeta" style="margin-top:10px">these clicks carry no text, id or href to name an element by, so there is nothing to rank — the map above is still exact.</div>';
+            h+='<div class="agmeta" style="margin-top:10px">these clicks carry no text, id or href to name an element by, so there is nothing to rank. the map above is still exact.</div>';
           }
           hmOut.innerHTML=h;
         }).catch(function(){hmOut.innerHTML='<div class="inote err">could not load the click map</div>';});
@@ -2104,7 +2141,7 @@
     // filters entirely (they answer in production scope), so each panel states the
     // window it actually answered over instead of letting the toolbar imply one.
     function shipPct(v){ // a percentage the server already computed, printed as one
-      if(v==null)return '—';
+      if(v==null)return 'n/a';
       return (Math.abs(v)<10?Math.round(v*10)/10:Math.round(v))+'%';
     }
     // a marker's url is whatever was POSTed, so only ever render an http(s) one as a link
@@ -2144,12 +2181,12 @@
     // a deploy's delta_pct is a RATIO (0.34 = +34%); a flag report's is already a
     // percentage. two endpoints, two units, never one formatter.
     function dpDelta(d){
-      if(d.delta_pct==null)return '<span class="mut">—</span>';
+      if(d.delta_pct==null)return '<span class="mut">n/a</span>';
       var p=d.delta_pct*100,s=(p>0?'+':'')+(Math.abs(p)<10?Math.round(p*10)/10:Math.round(p))+'%';
       var cls=d.direction==='regression'?'down':d.direction==='improvement'?'up':'mut';
       return '<span class="'+cls+'">'+s+'</span>';
     }
-    function dpMean(v){return v==null?'<span class="mut">—</span>':(Math.round(v*10)/10);}
+    function dpMean(v){return v==null?'<span class="mut">n/a</span>':(Math.round(v*10)/10);}
     // what the engine will and will not stand behind for this row, in words
     function dpRead(d){
       if(d.delta_pct==null){
@@ -2183,7 +2220,7 @@
             '<div class="agmeta">a ship that lines up with a move <b>correlates</b> with it, and that is all this is. a campaign, a weekend or another change the same day moves the same number, so nothing here says a deploy caused anything. a move is only called clear when both windows are fully populated and the change is at least 25%.</div>';
           if(j.headline){
             var hl=j.headline;
-            h+='<div class="agmeta" style="margin-top:8px">most recent clear move: <b>'+esc(hl.message||hl.short_sha||'a deploy')+'</b> — '+
+            h+='<div class="agmeta" style="margin-top:8px">most recent clear move: <b>'+esc(hl.message||hl.short_sha||'a deploy')+'</b>: '+
               esc(j.event)+' averaged '+dpMean(hl.before)+'/day before and '+dpMean(hl.after)+'/day after ('+dpDelta(hl)+
               '). it correlates with this ship; it does not prove it.</div>';
           }
@@ -2264,7 +2301,7 @@
         .then(function(r){
           if(!r.ok){saNote(flOut,(r.j&&r.j.error)||'could not save the flag','err');return;}
           saNote(flOut,'');if(after)after();
-        }).catch(function(){saNote(flOut,'could not reach the server — try again','err');});
+        }).catch(function(){saNote(flOut,'could not reach the server, try again','err');});
     }
     function flToggleEnabled(key,pill){
       var f=flFind(key);if(!f)return;
@@ -2276,15 +2313,15 @@
         function(){var n=flCopy(f);n.enabled=on;flPost(n,flLoad);});
     }
     function flDelete(key,x){
-      saConfirm(flOut,x,'remove the flag '+key+'? your app keeps working — flag("'+key+
-        '", default) just returns its default from the next fetch on — but the definition does not come back.','remove',
+      saConfirm(flOut,x,'remove the flag '+key+'? your app keeps working, flag("'+key+
+        '", default) just returns its default from the next fetch on, but the definition does not come back.','remove',
         function(){
           fetch('/v1/flags/'+encodeURIComponent(key),{method:'DELETE'}).then(function(r){return r.json();})
             .then(function(j){
               if(j&&j.error){saNote(flOut,j.error,'err');return;}
               if(j&&j.deleted===false){saNote(flOut,j.note||'nothing was removed','err');flLoad();return;}
               saNote(flOut,'');flLoad();
-            }).catch(function(){saNote(flOut,'could not reach the server — try again','err');});
+            }).catch(function(){saNote(flOut,'could not reach the server, try again','err');});
         });
     }
     // the A/B read. It needs a goal event, and it answers over whole days in production
@@ -2292,7 +2329,7 @@
     function flMeasureBody(td,key){
       var f=flFind(key);
       if(f&&!f.measured){
-        td.innerHTML='<div class="agmeta"><b>'+esc(key)+'</b> is not measured, so the SDK logs no <b>$feature_flag_called</b> exposures for it and there is no arm to compare. mark it measured and the read fills in as visitors evaluate it — that adds exactly one event per visitor per session.</div>'+
+        td.innerHTML='<div class="agmeta"><b>'+esc(key)+'</b> is not measured, so the SDK logs no <b>$feature_flag_called</b> exposures for it and there is no arm to compare. mark it measured and the read fills in as visitors evaluate it, which adds exactly one event per visitor per session.</div>'+
           '<div style="margin-top:10px"><span class="chip" id="flMeasureOn" role="button" tabindex="0">mark it measured</span></div>';
         var b=td.querySelector('#flMeasureOn');
         b.onclick=function(){
@@ -2327,7 +2364,7 @@
                 :v.small_sample?'fewer than 30 exposed, too few to call'
                 :v.significant?'significant at 95% against '+j.control
                 :'not significant at 95% against '+j.control;
-              var lift=ctrl?'<span class="mut">—</span>'
+              var lift=ctrl?'<span class="mut">n/a</span>'
                 :'<span class="'+(v.delta_pct>0?'up':v.delta_pct<0?'down':'mut')+'">'+
                   (v.delta_pct>0?'+':'')+shipPct(v.delta_pct)+'</span>';
               h+='<tr><td>'+esc(v.key||'(blank)')+'</td><td class="n">'+v.exposed+'</td>'+
@@ -2339,7 +2376,7 @@
             var conv=0;vs.forEach(function(v){conv+=v.converted;});
             out.innerHTML=h+'</tbody></table>'+
               (conv?'':'<div class="agmeta" style="margin-top:8px">no exposed visitor did <b>'+esc(j.goal)+
-                '</b> in this window, so every arm reads 0%. if that looks wrong it is usually the event name — pick another from the list.</div>')+
+                '</b> in this window, so every arm reads 0%. if that looks wrong it is usually the event name, so pick another from the list.</div>')+
               (j.note?'<div class="agmeta" style="margin-top:8px">'+esc(j.note)+'</div>':'')+
               '<div class="agmeta">a difference between arms is a measured difference on <b>'+esc(j.goal)+
               '</b>, not a proven cause. this read windows by whole days in production scope, so the toolbar\'s date range and filters do not apply to it.</div>';
@@ -2372,7 +2409,7 @@
       flCreate.onclick=function(){
         var row=this.parentNode,ki=document.getElementById('flKey'),di=document.getElementById('flDesc');
         var key=(ki.value||'').trim();
-        if(!key){saNote(row,'a flag needs a key — that is the string your code passes to flag()','err');ki.focus();return;}
+        if(!key){saNote(row,'a flag needs a key, the string your code passes to flag()','err');ki.focus();return;}
         var f={key:key,description:(di.value||'').trim(),enabled:false};
         if(document.getElementById('flKind').value==='ab'){
           f.measured=true;f.variants=[{key:'control',weight:50},{key:'treatment',weight:50}];
@@ -2381,9 +2418,9 @@
           .then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j};});})
           .then(function(r){
             if(!r.ok){saNote(row,(r.j&&r.j.error)||'could not create the flag','err');return;}
-            saNote(row,'created "'+key+'", off — turn it on when you want visitors to get it');
+            saNote(row,'created "'+key+'", off. turn it on when you want visitors to get it');
             ki.value='';di.value='';flLoad();
-          }).catch(function(){saNote(row,'could not reach the server — try again','err');});
+          }).catch(function(){saNote(row,'could not reach the server, try again','err');});
       };
     }
 
@@ -2401,7 +2438,7 @@
         if(shipOff(svOut,r,'surveys are not enabled on this instance, so there is nothing to list. they persist to a .surveys.json beside your event data; when the engine cannot open that file it starts without them and logs the reason.'))return;
         svList=r.j.surveys||[];
         if(!svList.length){
-          svOut.innerHTML='<div class="agmeta">no surveys yet. create one from your editor with the <b>create_survey</b> tool, or POST /v1/surveys — a survey is one question (nps, rating, choice or text) plus where it should show. sdk.js renders it as a small popover and sends the answer as an ordinary event, so results are a query over your own event log like every other number here.</div>';
+          svOut.innerHTML='<div class="agmeta">no surveys yet. create one from your editor with the <b>create_survey</b> tool, or POST /v1/surveys. a survey is one question (nps, rating, choice or text) plus where it should show. sdk.js renders it as a small popover and sends the answer as an ordinary event, so results are a query over your own event log like every other number here.</div>';
           return;
         }
         var act=0;svList.forEach(function(s){if(s.active)act++;});
@@ -2436,7 +2473,7 @@
             .then(function(r){
               if(!r.ok){saNote(svOut,(r.j&&r.j.error)||'could not save the survey','err');return;}
               saNote(svOut,'');svLoad();
-            }).catch(function(){saNote(svOut,'could not reach the server — try again','err');});
+            }).catch(function(){saNote(svOut,'could not reach the server, try again','err');});
         });
     }
     function svResults(td,id){
@@ -2496,7 +2533,7 @@
     if(vEl){
       fetch('/v1/notable').then(function(r){return r.json()}).then(function(j){
         var fs=(j&&j.findings)||[];
-        if(!fs.length){vEl.innerHTML='<div class="vcalm">nothing unusual right now — traffic and conversion look within normal range.</div>';return;}
+        if(!fs.length){vEl.innerHTML='<div class="vcalm">nothing unusual right now: traffic and conversion look within normal range.</div>';return;}
         // build the SAME insight callout the server renders (lead finding as the callout,
         // the rest as secondary lines), so a client refresh never downgrades the design.
         var f0=fs[0], warn=(f0.severity==='warn');
@@ -2504,7 +2541,7 @@
           '<div class="co-tag"><span class="co-ic">'+(warn?'!':'✦')+'</span>'+(warn?'Fix first':'Today’s read')+'</div>'+
           '<div class="co-body"><div class="co-title">'+esc(f0.title)+'</div>'+
           '<div class="co-detail">'+esc(f0.detail)+'</div>'+
-          '<div class="co-meta"><span class="co-prov">computed, not guessed</span><span>a CI test proves this equals the dashboard — it can’t be faked</span></div></div>'+
+          '<div class="co-meta"><span class="co-prov">computed, not guessed</span><span>a CI test proves this equals the dashboard, it can’t be faked</span></div></div>'+
           '<div class="co-act"><a class="co-go" data-q="'+esc(f0.title)+'">Show me →</a></div></div>';
         if(fs.length>1){html+='<div class="verdict-more">';
           for(var i=1;i<fs.length;i++){var fd=fs[i];
@@ -2523,7 +2560,7 @@
         var h='';
         var cmp=j.prior_events===0?'no prior data to compare'
           :'visitors '+pc(j.visitors,j.prior_visitors)+', events '+pc(j.events,j.prior_events)+' vs the prior '+j.days+' days';
-        h+='<div class="vrow"><span class="vt">Last '+j.days+' days</span><span class="vd">'+j.visitors+' visitors · '+j.events+' events — '+cmp+'</span></div>';
+        h+='<div class="vrow"><span class="vt">Last '+j.days+' days</span><span class="vd">'+j.visitors+' visitors · '+j.events+' events, '+cmp+'</span></div>';
         (j.sites||[]).forEach(function(s){
           h+='<div class="vrow"><span class="vt">'+esc(s.site)+'</span><span class="vd">'+s.visitors+' visitors · '+s.events+' events ('+pc(s.events,s.prior_events)+')</span></div>';
         });
@@ -2539,14 +2576,14 @@
     if(gCreate){
       gCreate.onclick=function(){
         var name=document.getElementById('gName').value.trim(),val=document.getElementById('gValue').value.trim(),note=document.getElementById('gNote');
-        if(!name||!val){note.textContent='both fields are required — a name, and the event or /path that counts as this goal';return;}
+        if(!name||!val){note.textContent='both fields are required: a name, and the event or /path that counts as this goal';return;}
         fetch('/v1/goals',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,value:val})})
           .then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j};});})
           .then(function(r){
             if(!r.ok){note.textContent=r.j.error||'could not create the goal';return;}
             location.reload(); // the card is server-rendered — reload shows it resolved
           })
-          .catch(function(){note.textContent='could not reach the server — try again';});
+          .catch(function(){note.textContent='could not reach the server, try again';});
       };
     }
     {{end}}
@@ -2567,7 +2604,7 @@
             .then(function(j){
               if(!j.path){shareRes.innerHTML='<div class="atext">'+esc(j.error||'could not create the link')+'</div>';return;}
               var url=location.origin+j.path;
-              shareRes.innerHTML='<div class="atext" style="font-size:13px">read-only traffic link for “'+esc(j.name)+'” — shown once, revoke any time in '+
+              shareRes.innerHTML='<div class="atext" style="font-size:13px">read-only traffic link for “'+esc(j.name)+'”. shown once, revoke any time in '+
                 '<a href="/settings/shares" style="color:var(--accent)">settings → share links</a>:<br>'+
                 '<span style="font-family:var(--mono);font-size:12px;word-break:break-all">'+esc(url)+'</span> '+
                 '<button class="copy" id="shareCopy" style="margin-left:8px">copy</button></div>';
@@ -2576,7 +2613,7 @@
                 if(navigator.clipboard){navigator.clipboard.writeText(url).then(function(){b.textContent='copied ✓';setTimeout(function(){b.textContent='copy';},1200);});}
               };
             })
-            .catch(function(){shareRes.innerHTML='<div class="atext">could not reach the server — try again</div>';});
+            .catch(function(){shareRes.innerHTML='<div class="atext">could not reach the server, try again</div>';});
         });
       };
     }

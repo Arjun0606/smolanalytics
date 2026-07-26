@@ -131,7 +131,7 @@ func Measure(evs []event.Event, flagKey, goal string, days int) Report {
 	}
 	switch {
 	case len(rep.Variants) == 0:
-		rep.Note = "no exposures yet — mark the flag measured and let the SDK log $feature_flag_called, then check back"
+		rep.Note = "no exposures yet. mark the flag measured and let the SDK log $feature_flag_called, then check back"
 	case len(rep.Variants) == 1:
 		rep.Note = "only one variant has exposures so far; there is nothing to compare it against yet"
 	default:

@@ -129,7 +129,7 @@ func Compute(evs []event.Event, path, viewport string, cols, rowPx int) Result {
 		res.TopTargets = res.TopTargets[:topTargetN]
 	}
 	if res.Clicks == 0 {
-		res.Note = "no positioned clicks for this page + viewport yet — heatmaps need $click events carrying a captured viewport width (SDK v0.9.8+)"
+		res.Note = "no positioned clicks for this page + viewport yet. heatmaps need $click events carrying a captured viewport width (SDK v0.9.8+)"
 	}
 	return res
 }

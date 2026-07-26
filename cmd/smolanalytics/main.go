@@ -293,6 +293,9 @@ func serve(st store.Store, closeStore func() error, guardPublic bool) {
 	}
 	app.SetWriteKey(os.Getenv("SMOLANALYTICS_WRITE_KEY")) // PUBLIC: ingest only (embedded in the SDK)
 	app.SetReadKey(os.Getenv("SMOLANALYTICS_READ_KEY"))   // SECRET: reads + MCP (never ship in client code)
+	// optional: where the dashboard's "Cloud ↗" link goes back to. The hosted product sets
+	// it to this project's page; unset (self-hosted) keeps the default smolanalytics.com.
+	app.SetCloudURL(os.Getenv("SMOLANALYTICS_CLOUD_URL"))
 	if os.Getenv("SMOLANALYTICS_GEO") != "off" {
 		// country resolution from the free DB-IP lite db (CC BY 4.0) — downloads on
 		// first boot, loads in the background, never blocks serving. IPs never stored.
