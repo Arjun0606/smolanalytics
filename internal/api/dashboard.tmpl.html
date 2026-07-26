@@ -382,6 +382,24 @@
   .deck #pane-retention{overflow-x:auto}
   .deck .pane h3{margin:0 0 12px}
   .deck .pane h3 .sub{text-transform:none;letter-spacing:0;color:var(--dis);font-weight:400;margin-left:8px}
+  .deck .pane{scroll-margin-top:58px} /* clears the sticky index below, or a jump lands under it */
+
+  /* ═══ THE DECK INDEX — 21 always-on cards is more than anyone can scan, so every report
+     past the first screen was effectively hidden ("where can I find the heatmap?"). This
+     is built FROM the panes actually rendered (see saBuildDeckIndex), never a hardcoded
+     list, so it cannot drift out of sync the way a written-down list would. ═══ */
+  .deckjump{position:sticky;top:0;z-index:30;display:flex;flex-wrap:wrap;gap:6px;align-items:center;
+    padding:9px 0;margin:var(--zone) 0 0;background:var(--bg);border-bottom:1px solid var(--line)}
+  .deckjump:empty{display:none}
+  .deckjump a{font:400 11px/1 var(--mono);color:var(--mut);text-decoration:none;padding:5px 9px;
+    border:1px solid var(--line);border-radius:999px;white-space:nowrap;
+    transition:color var(--t-fast) var(--ease),border-color var(--t-fast) var(--ease)}
+  .deckjump a:hover{color:var(--accent);border-color:var(--line3)}
+  .deckjump .jlbl{font:400 10px/1 var(--mono);color:var(--dis);text-transform:uppercase;letter-spacing:.08em;margin-right:2px}
+  /* a jumped-to card flashes its border once, so you can see WHICH of the 21 you landed on */
+  @keyframes panehit{0%,100%{border-color:var(--line)}18%,72%{border-color:var(--accent)}}
+  .deck .pane.hit{animation:panehit 1.5s var(--ease)}
+  @media(prefers-reduced-motion:reduce){.deck .pane.hit{animation:none;border-color:var(--accent)}}
 
   /* ═══ THE CONTROL KIT — one select, one input, one button pair, one chip, one tab.
      Appended last so it wins the cascade over every legacy per-component rule. ═══ */
@@ -708,7 +726,10 @@
     <div class="boardgrid" id="boardgrid"></div>
   </div>
 
-  <!-- zone 8: the deck — every report always on the table, nothing hiding behind a tab -->
+  <!-- zone 8: the deck — every report always on the table, nothing hiding behind a tab.
+       "Always on the table" only helps if you can FIND it, so the deck is preceded by an
+       index of its own cards, filled in by saBuildDeckIndex from what actually rendered. -->
+  <nav class="deckjump" id="deckjump" aria-label="jump to a report"></nav>
   <div class="deck">
 
     <!-- agent observability: tool health + conversation health, computed from your own
@@ -748,7 +769,11 @@
          a top-pages row raises. the grid the server bucketed into is the grid we
          paint — cols and row_px come back on the response, never re-derived here. -->
     <div class="pane wide" id="pane-heatmap" style="order:8">
-      <h3>click map
+      <!-- titled "heatmap" because that is what the feature is called everywhere else the
+           user meets it (/v1/heatmap, the MCP tool, the docs, the ask bar). It read "click
+           map" here, so anyone hunting the page for "heatmap" found nothing and concluded
+           we had not built it. The plain-English name stays in the explainer. -->
+      <h3>heatmap
         <select id="hmPath" class="zonesel" style="margin-left:8px" title="which page to map">
           {{range .TopPages}}<option value="{{.Value}}">{{.Value}}</option>{{end}}
         </select>
@@ -758,7 +783,7 @@
           <option value="tablet">tablet</option>
           <option value="mobile">mobile</option>
         </select>
-        <span class="sub">· where autocaptured clicks land, same window and filters as every zone above · computed by /v1/heatmap</span></h3>
+        <span class="sub">· the click map: where autocaptured clicks land, same window and filters as every zone above · computed by /v1/heatmap</span></h3>
       <div id="hmOut"><div class="exsummary">…</div></div>
     </div>
     <div class="pane" id="pane-referrers" style="order:9">
@@ -769,7 +794,7 @@
     <!-- no $pageview has ever landed: teach the web side rather than dropping four
          panes off the page and leaving a product-only instance looking half-built. -->
     <div class="pane wide" id="pane-web-empty" style="order:7">
-      <h3>pages, referrers and the click map</h3>
+      <h3>pages, referrers and the heatmap</h3>
       <div class="exsummary">this instance has events but no <b>$pageview</b> yet, so there is nothing to rank by page, referrer or click position. drop <b>&lt;script src="{{.Base}}/sdk.js"&gt;&lt;/script&gt;</b> into your app and top pages, entry pages, referrers and the click map all fill in from the first visit. a backend-only instance that never serves HTML stays product-only on purpose, and that is a fine place to be.</div>
     </div>
     {{end}}
@@ -1404,6 +1429,66 @@
       el.innerHTML='<div class="exsummary">…</div>';
       fetch(u).then(function(r){return r.json()}).then(function(j){renderReport(t,j,el);}).catch(function(){el.innerHTML='<div class="exsummary">error</div>';});
     }
+    // ---- the deck index + jump. Built from the panes the template actually rendered, so
+    // it lists exactly what is on the page: no card can be missing from it, and it can
+    // never advertise one that did not render. Panes carry style="order:N" for visual
+    // order, so the index sorts by that and matches what you scroll past.
+    function saJumpToPane(id){
+      var el=document.getElementById(id);
+      if(!el)return false;
+      el.scrollIntoView({behavior:'smooth',block:'start'});
+      el.classList.remove('hit'); void el.offsetWidth; el.classList.add('hit'); // restart the flash
+      return true;
+    }
+    function saBuildDeckIndex(){
+      var deck=document.querySelector('.deck'), nav=document.getElementById('deckjump');
+      if(!deck||!nav)return;
+      var seen={}, items=[];
+      Array.prototype.forEach.call(deck.querySelectorAll('.pane'),function(p){
+        // pane-web-empty is the teaching placeholder shown INSTEAD of the web cards; it is
+        // not a report, so it never earns an index entry.
+        if(!p.id||seen[p.id]||p.id==='pane-web-empty'||p.hidden)return;
+        seen[p.id]=1;
+        var h=p.querySelector('h3');
+        // h3 is "<title> <span class=sub>· explainer</span>" — take only the title node.
+        var label=h&&h.firstChild?String(h.firstChild.textContent||'').trim():'';
+        // "·" introduces a qualifier everywhere in this UI ("countries · geo by db-ip.com",
+        // "google search queries · 28d clicks"), so the name is the part before it. Without
+        // this the chips read like sentence fragments.
+        if(label.indexOf('·')>-1)label=label.split('·')[0].trim();
+        label=label.replace(/[\s,·-]+$/,'');
+        if(!label)label=p.id.replace(/^pane-/,'').replace(/-/g,' ');
+        items.push({id:p.id,label:label,order:parseInt(p.style.order||'99',10)||99});
+      });
+      if(!items.length)return;
+      items.sort(function(a,b){return a.order-b.order});
+      var html='<span class="jlbl">jump to</span>';
+      items.forEach(function(it){
+        html+='<a href="#'+it.id+'" data-pane="'+it.id+'">'+esc(it.label)+'</a>';
+      });
+      nav.innerHTML=html;
+      nav.addEventListener('click',function(e){
+        var a=e.target.closest&&e.target.closest('a[data-pane]');
+        if(!a)return;
+        e.preventDefault(); // handle it ourselves so the card flashes and clears the sticky bar
+        saJumpToPane(a.getAttribute('data-pane'));
+      });
+    }
+    saBuildDeckIndex();
+
+    // the engine's ask intent → the deck card holding the full interactive view of it.
+    // The ask answers used to end "open the Heatmap tab", but the tab rail was replaced by
+    // the always-visible deck, so that sentence pointed at UI that does not exist. The
+    // answer now carries a button that actually scrolls you to the card.
+    var SA_PANE_FOR={
+      heatmap:'pane-heatmap', survey:'pane-surveys', flag:'pane-flags', flag_impact:'pane-flags',
+      sessions:'pane-sessions', session_timeline:'pane-sessions', deploy_impact:'pane-deploys',
+      agent_tools:'pane-agent', agent_conversations:'pane-agent', funnel:'pane-funnel',
+      retention:'pane-retention', channels:'pane-sources', sources:'pane-sources',
+      toppages:'pane-pages', entrypages:'pane-pages', web:'pane-pages', webdim:'pane-devices',
+      geo:'pane-geo', paths:'pane-paths', lifecycle:'pane-lifecycle', stickiness:'pane-stickiness',
+      live:'pane-live', convby:'pane-conversion', ai:'pane-sources'
+    };
     // the engine's ask intent → the chart that should render under the answer
     function chartFor(intent){
       if(intent==='funnel'&&SA_FUNNEL.length>1)return {t:'funnel',p:{steps:SA_FUNNEL.join(',')}};
@@ -1430,8 +1515,15 @@
             '<a class="proof" href="https://smolanalytics.com/trust" target="_blank" rel="noopener">✓ proven · matches dashboard</a>';
           if(j.computed_by)h+='<details class="amethod"><summary>how</summary><div style="padding-top:6px">'+esc(j.computed_by)+'</div></details>';
           if(chart)h+='<button class="abtn" id="askpin">pin to board</button>';
+          // only offer the jump when that card really is on this page
+          var paneId=SA_PANE_FOR[j.intent||''];
+          if(paneId&&document.getElementById(paneId))h+='<button class="abtn" id="askjump">show me →</button>';
           h+='</div>';
           res.innerHTML=h;
+          if(paneId){
+            var jb=document.getElementById('askjump');
+            if(jb)jb.onclick=function(){saJumpToPane(paneId);};
+          }
           if(chart){
             runInto(chart.t,chart.p,document.getElementById('achart'));
             var pinBtn=document.getElementById('askpin');

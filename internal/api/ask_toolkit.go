@@ -38,8 +38,8 @@ func (s *Server) answerToolkit(intent askIntent, q string, evs []event.Event, no
 		path := tkPath(q, evs)
 		res := heatmap.Compute(evs, path, "", 0, 0)
 		if res.Clicks == 0 {
-			return fmt.Sprintf("No positioned click data on %s yet. Once the SDK autocaptures $click events there (viewport included), the heatmap fills in. Open the Heatmap tab to pick a page.", path),
-				tkReceipt("the click-heatmap report over "+path, "Heatmap"), true
+			return fmt.Sprintf("No positioned click data on %s yet. Once the SDK autocaptures $click events there (viewport included), the heatmap fills in. Pick a page on the heatmap card below.", path),
+				tkReceipt("the click-heatmap report over "+path, "heatmap"), true
 		}
 		n := len(res.TopTargets)
 		if n > 3 {
@@ -49,27 +49,27 @@ func (s *Server) answerToolkit(intent askIntent, q string, evs []event.Event, no
 		for _, t := range res.TopTargets[:n] {
 			parts = append(parts, fmt.Sprintf("%s (%d)", t.Label, t.N))
 		}
-		return fmt.Sprintf("On %s: %d positioned clicks. Most-clicked: %s. Open the Heatmap tab for the density grid.", path, res.Clicks, strings.Join(parts, ", ")),
-			tkReceipt("the click-heatmap report over "+path, "Heatmap"), true
+		return fmt.Sprintf("On %s: %d positioned clicks. Most-clicked: %s. The heatmap card below has the density grid.", path, res.Clicks, strings.Join(parts, ", ")),
+			tkReceipt("the click-heatmap report over "+path, "heatmap"), true
 
 	case intentSurvey:
 		if s.surveys == nil {
-			return "Surveys aren't configured on this instance.", tkReceipt("the survey-results report", "Surveys"), true
+			return "Surveys aren't configured on this instance.", tkReceipt("the survey-results report", "surveys"), true
 		}
 		sv, found := tkPickSurvey(s.surveys.List())
 		if !found {
-			return "No surveys running yet. Create one on the Surveys tab (NPS, rating, choice, or text) and responses land here.", tkReceipt("the survey-results report", "Surveys"), true
+			return "No surveys running yet. Create one on the surveys card below (NPS, rating, choice, or text) and responses land here.", tkReceipt("the survey-results report", "surveys"), true
 		}
 		res := survey.Results(evs, sv.ID, sv.Type, 30)
-		return tkSurveyAnswer(sv, res), tkReceipt(fmt.Sprintf("the survey-results report for %q", sv.Name), "Surveys"), true
+		return tkSurveyAnswer(sv, res), tkReceipt(fmt.Sprintf("the survey-results report for %q", sv.Name), "surveys"), true
 
 	case intentFlag:
 		if s.flags == nil {
-			return "Feature flags aren't configured on this instance.", tkReceipt("the feature-flag store", "Flags"), true
+			return "Feature flags aren't configured on this instance.", tkReceipt("the feature-flag store", "feature flags"), true
 		}
 		fs := s.flags.List()
 		if len(fs) == 0 {
-			return "No feature flags yet. Create one on the Flags tab or from your editor (create_flag): boolean or multivariate, with targeting and percentage rollout.", tkReceipt("the feature-flag store", "Flags"), true
+			return "No feature flags yet. Create one on the feature flags card below or from your editor (create_flag): boolean or multivariate, with targeting and percentage rollout.", tkReceipt("the feature-flag store", "feature flags"), true
 		}
 		parts := make([]string, 0, len(fs))
 		for _, f := range fs {
@@ -83,28 +83,28 @@ func (s *Server) answerToolkit(intent askIntent, q string, evs []event.Event, no
 			}
 			parts = append(parts, fmt.Sprintf("%s (%s%s)", f.Key, state, m))
 		}
-		return fmt.Sprintf("%d feature flag%s: %s. Manage them on the Flags tab.", len(fs), tkPlural(len(fs)), strings.Join(parts, ", ")),
-			tkReceipt("the feature-flag store", "Flags"), true
+		return fmt.Sprintf("%d feature flag%s: %s. Manage them on the feature flags card below.", len(fs), tkPlural(len(fs)), strings.Join(parts, ", ")),
+			tkReceipt("the feature-flag store", "feature flags"), true
 
 	case intentFlagImpact:
 		if s.flags == nil {
-			return "Feature flags aren't configured on this instance.", tkReceipt("the A/B flag-impact report", "Experiments"), true
+			return "Feature flags aren't configured on this instance.", tkReceipt("the A/B flag-impact report", "feature flags"), true
 		}
 		fl, found := tkPickMeasuredFlag(s.flags.List())
 		if !found {
-			return "No measured flags yet. Mark a flag measured so the SDK logs exposures, pick a goal event, and the A/B read shows per-variant conversion, lift, and 95% significance here.", tkReceipt("the A/B flag-impact report", "Experiments"), true
+			return "No measured flags yet. Mark a flag measured so the SDK logs exposures, pick a goal event, and the A/B read shows per-variant conversion, lift, and 95% significance here.", tkReceipt("the A/B flag-impact report", "feature flags"), true
 		}
 		goal := tkEvent(q, evs)
 		if goal == "" {
-			return fmt.Sprintf("Flag %q is measured, but I couldn't tell which goal event to score it on. Ask e.g. \"how is %s doing on checkout?\".", fl.Key, fl.Key), tkReceipt("the A/B flag-impact report", "Experiments"), true
+			return fmt.Sprintf("Flag %q is measured, but I couldn't tell which goal event to score it on. Ask e.g. \"how is %s doing on checkout?\".", fl.Key, fl.Key), tkReceipt("the A/B flag-impact report", "feature flags"), true
 		}
 		rep := flag.Measure(evs, fl.Key, goal, 30)
-		return tkFlagImpactAnswer(fl.Key, goal, rep), tkReceipt(fmt.Sprintf("the A/B flag-impact report for %q on %q", fl.Key, goal), "Experiments"), true
+		return tkFlagImpactAnswer(fl.Key, goal, rep), tkReceipt(fmt.Sprintf("the A/B flag-impact report for %q on %q", fl.Key, goal), "feature flags"), true
 
 	case intentSessions, intentSessionTimeline:
 		ss := session.Sessions(evs, 7, 100)
 		if len(ss) == 0 {
-			return "No sessions in the last 7 days yet.", tkReceipt("the session inspector", "Sessions"), true
+			return "No sessions in the last 7 days yet.", tkReceipt("the session inspector", "sessions"), true
 		}
 		top := ss[0] // representative: a real journey (has duration + pages), not a one-click bounce
 		for _, sn := range ss {
@@ -112,31 +112,31 @@ func (s *Server) answerToolkit(intent askIntent, q string, evs []event.Event, no
 				top = sn
 			}
 		}
-		return fmt.Sprintf("%d session%s in the last 7 days. Most recent: %s visited %d page%s%s over %s. Open the Sessions tab to replay any one step by step (pages, clicks with positions, rage-clicks, timing).",
+		return fmt.Sprintf("%d session%s in the last 7 days. Most recent: %s visited %d page%s%s over %s. The sessions card below replays any one step by step (pages, clicks with positions, rage-clicks, timing).",
 				len(ss), tkPlural(len(ss)), tkShortID(top.DistinctID), top.Pages, tkPlural(top.Pages), tkRage(top.RageClicks), tkDur(top.DurationSec)),
-			tkReceipt("the session inspector", "Sessions"), true
+			tkReceipt("the session inspector", "sessions"), true
 
 	case intentDeployImpact:
 		if s.deploys == nil {
-			return "Deploy tracking isn't configured on this instance.", tkReceipt("the deploy-impact report", "Deploys"), true
+			return "Deploy tracking isn't configured on this instance.", tkReceipt("the deploy-impact report", "deploys"), true
 		}
 		deps := s.deploys.List()
 		if len(deps) == 0 {
-			return "No deploy markers recorded yet. Add one line in CI after each ship (`smolanalytics deploy`), then I can tie a metric change to the commit behind it.", tkReceipt("the deploy-impact report", "Deploys"), true
+			return "No deploy markers recorded yet. Add one line in CI after each ship (`smolanalytics deploy`), then I can tie a metric change to the commit behind it.", tkReceipt("the deploy-impact report", "deploys"), true
 		}
 		metric := tkEvent(q, evs)
 		rep := deploys.Report(evs, deps, metric, 30, 3)
-		return tkDeployAnswer(metric, rep), tkReceipt(fmt.Sprintf("the deploy-impact report on %q", metric), "Deploys"), true
+		return tkDeployAnswer(metric, rep), tkReceipt(fmt.Sprintf("the deploy-impact report on %q", metric), "deploys"), true
 
 	case intentSequence:
-		return "Behavioral cohorts (did X then Y, in order) are defined on the Cohorts tab or from your editor with create_sequence_cohort. Tell me the steps, e.g. \"signup then checkout\", and I'll set one up there.",
-			tkReceipt("the sequenced-cohort builder", "Cohorts"), true
+		return "Behavioral cohorts (did X then Y, in order) are defined under \"explore · cohorts · defined events\" below, or from your editor with create_sequence_cohort. Tell me the steps, e.g. \"signup then checkout\", and I'll set one up there.",
+			tkReceipt("the sequenced-cohort builder", "explore · cohorts · defined events"), true
 
 	case intentAgentTools:
 		th := agent.ComputeToolHealth(evs, now.AddDate(0, 0, -30), now)
 		if len(th.Tools) == 0 {
 			return "No agent tool-call data yet. Send agent_tool_call events (tool, latency_ms, error, client) and this fills in with calls, error rate, and latency p50/p90/p99 per tool.",
-				tkReceipt("the agent tool-health report", "Agent"), true
+				tkReceipt("the agent tool-health report", "agent observability"), true
 		}
 		slow := th.Tools[0]
 		for _, t := range th.Tools {
@@ -144,15 +144,15 @@ func (s *Server) answerToolkit(intent askIntent, q string, evs []event.Event, no
 				slow = t
 			}
 		}
-		return fmt.Sprintf("Across %d tools and %d calls (last 30d): the slowest is %s at p99 %s, with a %.0f%% error rate. Overall %d of %d calls errored. Open the Agent tab for per-tool latency and the error taxonomy.",
+		return fmt.Sprintf("Across %d tools and %d calls (last 30d): the slowest is %s at p99 %s, with a %.0f%% error rate. Overall %d of %d calls errored. The agent observability card below has per-tool latency and the error taxonomy.",
 				len(th.Tools), th.Calls, slow.Tool, tkMs(slow.LatencyP99), slow.ErrorRate*100, th.Errors, th.Calls),
-			tkReceipt("the agent tool-health report", "Agent"), true
+			tkReceipt("the agent tool-health report", "agent observability"), true
 
 	case intentAgentConversations:
 		c := agent.ComputeConversations(evs, now.AddDate(0, 0, -30), now)
 		if c.Conversations == 0 {
 			return "No agent conversation data yet. Send agent_turn events (conversation_id, role, ttft_ms) and this fills in with turns, re-ask rate, abandon rate, time-to-first-token, and resolution rate.",
-				tkReceipt("the agent conversation-health report", "Agent"), true
+				tkReceipt("the agent conversation-health report", "agent observability"), true
 		}
 		ans := fmt.Sprintf("%d conversations, median %.0f turns (p90 %.0f). Re-ask rate %.0f%%, abandon rate %.0f%%, time-to-first-token p50 %s.",
 			c.Conversations, c.MedianTurns, c.P90Turns, c.ReAskRate*100, c.AbandonRate*100, tkMs(c.TTFTP50))
@@ -161,14 +161,23 @@ func (s *Server) answerToolkit(intent askIntent, q string, evs []event.Event, no
 		} else {
 			ans += " (Resolution rate needs a resolved bool on your turns, so it stays blank until you send it.)"
 		}
-		return ans + " Open the Agent tab for the full conversation-health view.",
-			tkReceipt("the agent conversation-health report", "Agent"), true
+		return ans + " The agent observability card below has the full conversation-health view.",
+			tkReceipt("the agent conversation-health report", "agent observability"), true
 	}
 	return "", "", false
 }
 
-func tkReceipt(report, tab string) string {
-	return "Computed by " + report + ", the same deterministic report the dashboard and your editor (over MCP) run, not generated by a model. Open the " + tab + " tab for the full interactive view."
+// tkReceipt states what computed the answer and points at where to open it. The pointer
+// must name a place that EXISTS: these receipts used to end "open the <X> tab" for a tab
+// rail that had been replaced by the always-visible deck, and two of the names ("Experiments",
+// "Cohorts") were never UI at all. card must therefore be a real deck-card title, or the
+// exact label of the disclosure that holds the report.
+func tkReceipt(report, card string) string {
+	where := "The " + card + " card below has the full interactive view."
+	if strings.Contains(card, "·") { // a disclosure label, not a card title
+		where = "Open \"" + card + "\" below for the full interactive view."
+	}
+	return "Computed by " + report + ", the same deterministic report the dashboard and your editor (over MCP) run, not generated by a model. " + where
 }
 
 var tkPathRe = regexp.MustCompile(`/[a-z0-9][a-z0-9\-_/]*`)
@@ -289,9 +298,9 @@ func tkSurveyAnswer(sv survey.Survey, res survey.Result) string {
 		if len(res.Breakdown) > 0 {
 			top = fmt.Sprintf(" Top answer: %s (%d).", res.Breakdown[0].Label, res.Breakdown[0].N)
 		}
-		return fmt.Sprintf("%q has %d responses.%s Open the Surveys tab for the breakdown.", sv.Name, res.Responses, top)
+		return fmt.Sprintf("%q has %d responses.%s The surveys card below has the breakdown.", sv.Name, res.Responses, top)
 	default:
-		return fmt.Sprintf("%q has %d text response%s (%d shown). Open the Surveys tab to read them.", sv.Name, res.Responses, tkPlural(res.Responses), res.Shown)
+		return fmt.Sprintf("%q has %d text response%s (%d shown). The surveys card below reads them in full.", sv.Name, res.Responses, tkPlural(res.Responses), res.Shown)
 	}
 }
 
@@ -319,7 +328,7 @@ func tkFlagImpactAnswer(key, goal string, rep flag.Report) string {
 func tkDeployAnswer(metric string, rep map[string]any) string {
 	hl, _ := rep["headline"].(*deploys.Impact)
 	if hl == nil {
-		return fmt.Sprintf("No deploy has significantly moved %s in the last 30 days (it needs a full window on both sides and a move of at least 25%% to call it). Open the Deploys tab for the per-ship breakdown.", metric)
+		return fmt.Sprintf("No deploy has significantly moved %s in the last 30 days (it needs a full window on both sides and a move of at least 25%% to call it). The deploys card below has the per-ship breakdown.", metric)
 	}
 	verb := "moved"
 	switch hl.Direction {
@@ -336,7 +345,7 @@ func tkDeployAnswer(metric string, rep map[string]any) string {
 	if label == "" {
 		label = hl.ShortSHA
 	}
-	return fmt.Sprintf("%s %s %+.0f%% after %s %q. Correlation, not proof, but that ship is the suspect. Open the Deploys tab for the full before/after.",
+	return fmt.Sprintf("%s %s %+.0f%% after %s %q. Correlation, not proof, but that ship is the suspect. The deploys card below has the full before/after.",
 		metric, verb, delta, hl.ShortSHA, label)
 }
 
