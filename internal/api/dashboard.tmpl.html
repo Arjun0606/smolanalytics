@@ -439,6 +439,35 @@
   .inote{margin:8px 0 0;font-family:var(--mono);font-size:12px;line-height:1.5;color:var(--mut)}
   .inote.err{color:var(--warn)}
 
+  /* ═══ AGENT OBSERVABILITY. two kinds of number share this card and they must never
+     read as one: what the engine COMPUTED from your events (solid hairline, amber
+     punctuation, the same table/stat idioms as every other zone) and what a MODEL
+     INFERRED (dashed hairline, no amber anywhere, and the labelling model named on
+     the row). the dashed/solid split is the whole visual argument. ═══ */
+  .deck #pane-agent{overflow-x:auto}
+  .agprov{display:inline-flex;align-items:center;gap:5px;border:1px solid rgba(245,166,35,.5);color:var(--accent);
+    font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:99px}
+  .aginf{display:inline-flex;align-items:center;gap:5px;border:1px dashed var(--line3);color:var(--mut2);
+    font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:99px}
+  .agmeta{font-family:var(--mono);font-size:11px;line-height:1.7;color:var(--mut2)}
+  .agmeta b{color:var(--mut);font-weight:600}
+  .agrow{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0 0 10px}
+  .sk.agnull .skv{color:var(--dis)}
+  table.ctab tr.agtool{cursor:pointer}
+  table.ctab tr.agtool:hover td{background:var(--s2)}
+  table.ctab tr.agtool td:first-child{color:var(--fg)}
+  .agcaret{display:inline-block;color:var(--mut2);font-size:9px;transition:transform var(--t-fast) var(--ease)}
+  table.ctab tr.agtool.on .agcaret{transform:rotate(90deg)}
+  table.ctab tr.agerr td{background:var(--well);padding:9px 10px}
+  /* the inferred half: dashed on every edge, so it is legible as a different kind of thing
+     from across the room, and the sentence next to it says the same in words */
+  .aginfbox{border:1px dashed var(--line2);border-left:2px dashed var(--mut2);border-radius:var(--r-ctl);padding:12px 14px}
+  .agval{position:relative;height:var(--row-h);margin-bottom:4px;border-radius:var(--r-ctl);overflow:hidden}
+  .agval .agvalbar{position:absolute;inset:0 auto 0 0;background:var(--s2);border-right:1px dashed var(--line3)}
+  .agval .agvalmeta{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 12px}
+  .agval .agvalname{font-size:13px}
+  .agval .agvalnum{font-family:var(--mono);font-size:var(--fs-body);color:var(--mut)}
+
 </style>
 </head>
 <body>
@@ -476,6 +505,8 @@
       <span class="chip" data-q="are my users sticky?">are users sticky?</span>
       <span class="chip" data-q="how is retention?">how is retention?</span>
       <span class="chip" data-q="what happened this week?">what happened this week?</span>
+      <span class="chip" data-q="which tool is slowest?">which tool is slowest?</span>
+      <span class="chip" data-q="how is conversation health?">conversation health?</span>
     </div>
     {{if .ProductEvents}}<div class="askchips"><span class="chiplbl">your events</span>{{range .ProductEvents}}<span class="chip" data-q="how many {{.}} this week?">{{.}}</span>{{end}}</div>{{end}}
     {{if .TopPages}}<div class="askchips"><span class="chiplbl">your pages</span>{{range .TopPages}}<span class="chip" data-q="visitors to {{.Value}}">{{.Value}}</span>{{end}}</div>{{end}}
@@ -619,6 +650,25 @@
 
   <!-- zone 8: the deck — every report always on the table, nothing hiding behind a tab -->
   <div class="deck">
+
+    <!-- agent observability: tool health + conversation health, computed from your own
+         agent_tool_call / agent_turn events, plus the label breakdown whose VALUES your
+         own model wrote (we never run one). Renders on every instance: with no agent
+         events it teaches what to send rather than showing a blank panel. It leads the
+         deck once those events exist, and sits at the end of it until they do. -->
+    <div class="pane wide" id="pane-agent" style="order:{{if .HasAgentEvents}}0{{else}}17{{end}}">
+      <h3>agent observability <span class="sub">· your agent's tool calls and conversations, same window and filters as every zone above · computed by /v1/agent</span></h3>
+      <div id="agConv"><div class="exsummary">…</div></div>
+
+      <h3 style="margin-top:18px">tool health <span class="sub">· one row per tool, click a row for its error taxonomy · computed by /v1/agent/tools</span></h3>
+      <div id="agTools"><div class="exsummary">…</div></div>
+
+      <h3 style="margin-top:18px">conversation labels
+        <input id="agLabel" list="agLabelNames" value="intent" autocomplete="off" aria-label="label name" title="the label name your model wrote with label_conversation" style="margin-left:8px;max-width:150px">
+        <datalist id="agLabelNames"><option value="intent"></option><option value="sentiment"></option><option value="frustration"></option><option value="topic"></option></datalist>
+        <span class="sub">· the values are your model's inference, the counts over them are computed · /v1/agent/labels</span></h3>
+      <div id="agLabels"><div class="exsummary">…</div></div>
+    </div>
 
     {{if .HasWeb}}
     <div class="pane wide" id="pane-pages" style="order:7">
@@ -1578,6 +1628,150 @@
         .then(function(r){return r.json()}).then(function(res){ if(res&&res.error){saNote(deRow,res.error,'err');return;} saNote(deRow,''); deName.value='';deValue.value='';refreshDefined(); }).catch(function(){});
     };
     refreshDefined();
+
+    // ---- agent observability: two computed panels (tool health, conversation health)
+    // and one inferred panel (labels your own model wrote), which is why the third looks
+    // nothing like the first two. Every fetch carries SA_SCOPE — this page's window and
+    // filters, rendered server-side — so a panel can never quietly answer over a wider
+    // range than the toolbar says. Nothing here runs a model.
+    var SA_SCOPE="{{.ReportQS}}";
+    var agConvEl=document.getElementById('agConv'),agToolsEl=document.getElementById('agTools'),
+        agLabelsEl=document.getElementById('agLabels'),agLabelIn=document.getElementById('agLabel');
+    function agURL(path,extra){return path+'?'+SA_SCOPE+(extra||'');}
+    function agMs(v){if(v==null)return '—';return v<1000?Math.round(v)+'ms':(v/1000).toFixed(v<10000?1:0)+'s';}
+    function agPct(v){var p=(v||0)*100;return (p>0&&p<10?p.toFixed(1):Math.round(p))+'%';}
+    function agNum(v){return Math.round((v||0)*10)/10;}
+    function agCode(s){return '<pre class="code" style="font-size:11px;margin:8px 0 0;white-space:pre-wrap">'+esc(s)+'</pre>';}
+    function agErr(el,j){if(el)el.innerHTML='<div class="inote err">'+esc((j&&j.error)||'could not load this report')+'</div>';}
+    function agTile(v,l,cls){return '<div class="sk'+(cls?' '+cls:'')+'"><div class="skv">'+v+'</div><div class="skl">'+l+'</div></div>';}
+
+    function agLoadConv(){
+      if(!agConvEl)return;
+      fetch(agURL('/v1/agent/conversations')).then(function(r){return r.json()}).then(function(j){
+        if(j.error){agErr(agConvEl,j);return;}
+        if(!j.conversations){
+          agConvEl.innerHTML='<div class="agmeta">no <b>agent_turn</b> events in this window yet. send one per conversation turn and this row fills in with turns, re-ask rate, abandon rate and time to first token:</div>'+
+            agCode('smolanalytics.track("agent_turn", { conversation_id: "c_1042", role: "user" })\nsmolanalytics.track("agent_turn", { conversation_id: "c_1042", role: "assistant", ttft_ms: 240, resolved: true })')+
+            '<div class="agmeta">plain track() calls, no $ prefix. two user turns in a row is a re-ask, a conversation that ends on a user turn is an abandon, and both are counted from the roles you send.</div>';
+          return;
+        }
+        var h='<div class="agrow"><span class="agprov">computed · every conversation, no sampling</span>'+
+          '<span class="agmeta">'+j.conversations+' conversations · '+j.turns+' turns</span></div><div class="stickrow">'+
+          agTile(j.conversations,'conversations')+
+          agTile(agNum(j.median_turns),'median turns · p90 '+agNum(j.p90_turns))+
+          agTile(agPct(j.reask_rate),'re-ask rate')+
+          agTile(agPct(j.abandon_rate),'abandon rate')+
+          agTile(agMs(j.ttft_p50),'ttft p50 · p90 '+agMs(j.ttft_p90)+' · p99 '+agMs(j.ttft_p99));
+        if(j.resolution_rate==null){
+          h+=agTile('—','resolution rate · not sent','agnull')+'</div>'+
+            '<div class="agmeta" style="margin-top:8px">resolution rate stays blank because no turn carries a <b>resolved</b> bool. we never infer whether a conversation was resolved, so send it and the tile fills in: <b>{ conversation_id: "c_1042", role: "assistant", resolved: true }</b></div>';
+        }else{
+          h+=agTile(agPct(j.resolution_rate),'resolution rate')+'</div>'+
+            '<div class="agmeta" style="margin-top:8px">resolution rate is counted from the <b>resolved</b> bool your app sends on a turn, never inferred.</div>';
+        }
+        agConvEl.innerHTML=h;
+      }).catch(function(){agErr(agConvEl,null);});
+    }
+
+    function agLoadTools(){
+      if(!agToolsEl)return;
+      fetch(agURL('/v1/agent/tools')).then(function(r){return r.json()}).then(function(j){
+        if(j.error){agErr(agToolsEl,j);return;}
+        var ts=j.tools||[];
+        if(!ts.length){
+          agToolsEl.innerHTML='<div class="agmeta">no <b>agent_tool_call</b> events in this window yet. send one per tool or MCP dispatch and this table fills in with calls, error rate and latency p50/p90/p99 per tool:</div>'+
+            agCode('smolanalytics.track("agent_tool_call", { tool: "search_web", client: "cursor", latency_ms: 412 })\nsmolanalytics.track("agent_tool_call", { tool: "search_web", client: "cursor", latency_ms: 2400, error: true, error_type: "timeout" })')+
+            '<div class="agmeta">plain track() calls, no $ prefix. error and error_type are what the per-tool taxonomy is built from.</div>';
+          return;
+        }
+        var h='<div class="agrow"><span class="agprov">computed · nearest-rank percentiles</span>'+
+          '<span class="agmeta">'+j.calls+' calls · '+j.errors+' errored ('+agPct(j.calls?j.errors/j.calls:0)+') · '+ts.length+' tool'+(ts.length===1?'':'s')+'</span></div>'+
+          '<table class="ctab"><thead><tr><th>tool</th><th class="n">calls</th><th class="n">error rate</th>'+
+          '<th class="n">p50</th><th class="n">p90</th><th class="n">p99</th><th>top client</th></tr></thead><tbody>';
+        ts.forEach(function(t){
+          var c=(t.clients||[])[0];
+          var top=c?esc(c.client)+' <span class="mut">· '+c.calls+'</span>':'<span class="mut">—</span>';
+          var lat=(!t.latency_p50&&!t.latency_p90&&!t.latency_p99)
+            ? '<td class="n mut" colspan="3">no latency_ms sent</td>'
+            : '<td class="n">'+agMs(t.latency_p50)+'</td><td class="n">'+agMs(t.latency_p90)+'</td><td class="n">'+agMs(t.latency_p99)+'</td>';
+          h+='<tr class="agtool" data-tool="'+esc(t.tool)+'" tabindex="0" role="button" title="show this tool\'s error taxonomy">'+
+            '<td><span class="agcaret">&#9654;</span> '+esc(t.tool)+'</td><td class="n">'+t.calls+'</td>'+
+            '<td class="n'+(t.errors?' down':'')+'">'+agPct(t.error_rate)+'</td>'+lat+'<td>'+top+'</td></tr>';
+        });
+        agToolsEl.innerHTML=h+'</tbody></table>';
+      }).catch(function(){agErr(agToolsEl,null);});
+    }
+
+    // one row expands at a time into its own error taxonomy, computed by /v1/agent/errors
+    function agToggleTool(row){
+      var body=row.parentNode,next=row.nextElementSibling,was=hasCls(next,'agerr');
+      Array.prototype.forEach.call(body.querySelectorAll('tr.agerr'),function(o){o.parentNode.removeChild(o);});
+      Array.prototype.forEach.call(body.querySelectorAll('tr.agtool'),function(o){o.className='agtool';});
+      if(was)return;
+      row.className='agtool on';
+      var tr=document.createElement('tr');tr.className='agerr';
+      var td=document.createElement('td');td.colSpan=7;td.innerHTML='<span class="agmeta">…</span>';
+      tr.appendChild(td);body.insertBefore(tr,row.nextSibling);
+      var tool=row.getAttribute('data-tool');
+      fetch(agURL('/v1/agent/errors','&tool='+encodeURIComponent(tool))).then(function(r){return r.json()}).then(function(j){
+        if(j.error){td.innerHTML='<span class="inote err">'+esc(j.error)+'</span>';return;}
+        if(!j.total){td.innerHTML='<span class="agmeta">no failed calls for <b>'+esc(tool)+'</b> in this window. a call counts as failed only when it carries error: true.</span>';return;}
+        var types=j.types||[];
+        var rows=types.map(function(x){
+          return '<span class="agmeta" style="display:inline-block;margin-right:20px"><b>'+esc(x.error_type||'(none)')+'</b> '+x.count+' · '+agPct(x.count/j.total)+'</span>';
+        }).join('');
+        var untyped=(types.length===1&&types[0].error_type==='(none)')
+          ? '<div class="agmeta">these failures carry no error_type, so they cannot be split further. send error_type on a failed call to break them out.</div>' : '';
+        td.innerHTML='<div class="agmeta">'+j.total+' failed call'+(j.total===1?'':'s')+' for <b>'+esc(tool)+'</b>, by error_type · computed by /v1/agent/errors</div>'+rows+untyped;
+      }).catch(function(){td.innerHTML='<span class="inote err">could not load the error taxonomy</span>';});
+    }
+
+    // the inferred panel. it always states who labelled, how much is labelled, and that a
+    // label is a model's judgement while the count over it is ours — never one without the other.
+    function agLoadLabels(){
+      if(!agLabelsEl)return;
+      var name=(agLabelIn&&agLabelIn.value||'').trim();
+      if(!name){agLabelsEl.innerHTML='<div class="agmeta">name a label to break down, e.g. intent — whatever label your model wrote with label_conversation.</div>';return;}
+      fetch(agURL('/v1/agent/labels','&label='+encodeURIComponent(name))).then(function(r){return r.json()}).then(function(j){
+        if(j.error){agErr(agLabelsEl,j);return;}
+        var vals=j.values||[],by=j.labeled_by||[];
+        var h='<div class="aginfbox"><div class="agrow"><span class="aginf">model-inferred values</span>'+
+          '<span class="agmeta">'+(by.length?'labeled by <b>'+esc(by.join(', '))+'</b>':'no model name recorded on these labels')+'</span></div>'+
+          '<div class="agmeta">the values below are what your own model inferred when it read these conversations. we never run a model. the conversation counts over them are computed from your event log, like every other number on this page.</div>';
+        if(vals.length){
+          var mx=vals[0].conversations||1;
+          h+='<div style="margin-top:10px">'+vals.map(function(v){
+            return '<div class="agval"><div class="agvalbar" style="width:'+Math.round((v.conversations/mx)*100)+'%"></div>'+
+              '<div class="agvalmeta"><span class="agvalname">'+esc(v.value||'(blank)')+'</span>'+
+              '<span class="agvalnum">'+v.conversations+'</span></div></div>';
+          }).join('')+'</div>';
+        }else{
+          h+='<div class="agmeta" style="margin-top:8px">nothing carries the label <b>'+esc(name)+'</b> yet'+
+            (j.conversations?'':', and no conversations landed in this window to label')+
+            '. the loop runs from your editor, not here: <b>sample_conversations</b> hands your model whole conversations to read, <b>label_conversation</b> writes its inference back as one new agent_label event, then <b>agent_labels</b> counts conversations per value. nothing is mutated and no model runs on our side.</div>';
+        }
+        h+='<div class="agmeta" style="margin-top:10px;border-top:1px dashed var(--line2);padding-top:8px"><b>'+j.labeled+
+          '</b> of <b>'+j.conversations+'</b> conversations in this window carry this label · <b>'+j.unlabeled+
+          '</b> unlabeled, counted in no value above</div></div>';
+        agLabelsEl.innerHTML=h;
+      }).catch(function(){agErr(agLabelsEl,null);});
+    }
+
+    if(document.getElementById('pane-agent')){
+      agLoadConv();agLoadTools();agLoadLabels();
+      if(agLabelIn){
+        agLabelIn.addEventListener('change',agLoadLabels);
+        agLabelIn.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();agLoadLabels();}});
+      }
+      agToolsEl.addEventListener('click',function(e){
+        var r=e.target.closest&&e.target.closest('tr.agtool'); if(r)agToggleTool(r);
+      });
+      agToolsEl.addEventListener('keydown',function(e){
+        if(e.key!=='Enter'&&e.key!==' ')return;
+        var r=e.target.closest&&e.target.closest('tr.agtool'); if(!r)return;
+        e.preventDefault();agToggleTool(r);
+      });
+    }
 
     // verdict refresh — matches /v1/notable exactly; empty verdict = the calm line
     var vEl=document.getElementById('verdict');

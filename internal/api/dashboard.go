@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/agent"
 	"github.com/Arjun0606/smolanalytics/internal/engagement"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
@@ -230,6 +231,16 @@ type dashVM struct {
 	// only render when the wrapped store actually exists (no vapor buttons)
 	HasShares     bool
 	HasGoalsStore bool
+
+	// agent observability. HasAgentEvents says whether this instance has ever ingested
+	// agent_tool_call/agent_turn — the section renders either way (its empty state teaches
+	// exactly what to send), this only decides whether it leads the deck or ends it.
+	HasAgentEvents bool
+	// ReportQS is this page's scope as a /v1 querystring: the window the toolbar shows,
+	// every ?f chip, and the site/env selectors as the property filters /v1 understands.
+	// Client-fetched panels ride on it so they answer over the same events the
+	// server-rendered zones do, instead of quietly reporting over all history.
+	ReportQS string
 
 	// connect-your-agent artifacts, computed server-side from this instance's own
 	// URL + key so every snippet is complete and correct as rendered — never a
@@ -893,6 +904,36 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		convLabel = fsteps[0].Event + " → " + fsteps[n-1].Event
 	}
 
+	// the agent-observability section's two inputs. hasAgentEvents comes from the event
+	// NAMES (not the window) so an instance that instrumented its agent keeps the section
+	// up top even on a quiet day; the panel itself still reports honestly per window.
+	hasAgentEvents := false
+	for _, n := range names {
+		if n == agent.EventToolCall || n == agent.EventTurn {
+			hasAgentEvents = true
+			break
+		}
+	}
+	// this page's scope, verbatim, as a /v1 querystring. The window is curFrom/curTo — the
+	// SAME bounds the chart above uses — so a client-fetched panel can never answer over a
+	// different range than the toolbar advertises. Site and env are property filters here
+	// because that is the only scoping grammar /v1 has.
+	reportQ := url.Values{}
+	reportQ.Set("from", curFrom.UTC().Format(time.RFC3339))
+	reportQ.Set("to", curTo.UTC().Format(time.RFC3339))
+	for _, c := range chips {
+		reportQ.Add("f", c.Raw)
+	}
+	if site != "" {
+		reportQ.Add("f", "site:eq:"+site)
+	}
+	if showDev {
+		reportQ.Add("f", "env:eq:development")
+	}
+	if anyMode {
+		reportQ.Set("fm", "any")
+	}
+
 	vm := dashVM{
 		HasConversion:  len(fsteps) >= 2,
 		TotalUsers:     distinctUsers(evs),
@@ -919,6 +960,8 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		SourceTitle:    trendEvent + " by " + srcProp,
 		HasShares:      s.shares != nil,
 		HasGoalsStore:  s.goals != nil,
+		HasAgentEvents: hasAgentEvents,
+		ReportQS:       reportQ.Encode(),
 		RangeDays:      rangeDays,
 		GhostTotal:     trPrior.Total,
 		FunnelOrder:    string(forder),
