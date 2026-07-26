@@ -423,7 +423,11 @@
      with no data is still NAMED, still indexed, still explains how to fill itself. It just
      stops taking a full card's worth of room to say "nothing here yet".
      This is a density rule, never a hiding rule. ═══ */
-  .deck>.pane.quiet{padding:12px var(--card-pad);grid-column:span 4}
+  /* NB: do NOT narrow a quiet card. Squeezing it to a third of the plane was tried and it
+     made things worse, not better: the agent card's empty state carries code samples, and
+     reflowing those into a skinny column took it from 635px to 1272px. Quiet means less
+     padding and no empty shells, never less width. */
+  .deck>.pane.quiet{padding:12px var(--card-pad)}
   .deck>.pane.quiet h3{margin:0 0 6px}
   .deck>.pane.quiet .exsummary,.deck>.pane.quiet .agmeta,.deck>.pane.quiet .inote{margin:0;font-size:11px;line-height:1.5}
   /* the empty visual shells (an empty grid, an empty canvas, an axis with no series) carry
@@ -432,7 +436,6 @@
      controls, and an empty card is exactly when you need them. */
   .deck>.pane.quiet canvas,.deck>.pane.quiet .hmwrap,.deck>.pane.quiet table,
   .deck>.pane.quiet .heat{display:none}
-  @media(max-width:880px){.deck>.pane.quiet{grid-column:1/-1}}
 
   /* runaway lists get an internal scroll instead of pushing the page down. .live already
      did this at 400px; sessions and the event table were not covered and ran to ~1000px. */
