@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/agent"
 	"github.com/Arjun0606/smolanalytics/internal/deploys"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/flag"
@@ -13,6 +14,14 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/session"
 	"github.com/Arjun0606/smolanalytics/internal/survey"
 )
+
+// tkMs formats a millisecond latency for a plain-English answer (1234ms -> "1.2s").
+func tkMs(ms float64) string {
+	if ms >= 1000 {
+		return fmt.Sprintf("%.1fs", ms/1000)
+	}
+	return fmt.Sprintf("%.0fms", ms)
+}
 
 // answerToolkit answers the ask-bar intents that reach the product toolkit shipped in
 // v0.9.6+ (heatmaps, surveys, feature flags, A/B, the session inspector, deploy impact,
@@ -122,6 +131,38 @@ func (s *Server) answerToolkit(intent askIntent, q string, evs []event.Event, no
 	case intentSequence:
 		return "Behavioral cohorts (did X then Y, in order) are defined on the Cohorts tab or from your editor with create_sequence_cohort. Tell me the steps, e.g. \"signup then checkout\", and I'll set one up there.",
 			tkReceipt("the sequenced-cohort builder", "Cohorts"), true
+
+	case intentAgentTools:
+		th := agent.ComputeToolHealth(evs, now.AddDate(0, 0, -30), now)
+		if len(th.Tools) == 0 {
+			return "No agent tool-call data yet. Send agent_tool_call events (tool, latency_ms, error, client) and this fills in with calls, error rate, and latency p50/p90/p99 per tool.",
+				tkReceipt("the agent tool-health report", "Agent"), true
+		}
+		slow := th.Tools[0]
+		for _, t := range th.Tools {
+			if t.LatencyP99 > slow.LatencyP99 {
+				slow = t
+			}
+		}
+		return fmt.Sprintf("Across %d tools and %d calls (last 30d): the slowest is %s at p99 %s, with a %.0f%% error rate. Overall %d of %d calls errored. Open the Agent tab for per-tool latency and the error taxonomy.",
+				len(th.Tools), th.Calls, slow.Tool, tkMs(slow.LatencyP99), slow.ErrorRate*100, th.Errors, th.Calls),
+			tkReceipt("the agent tool-health report", "Agent"), true
+
+	case intentAgentConversations:
+		c := agent.ComputeConversations(evs, now.AddDate(0, 0, -30), now)
+		if c.Conversations == 0 {
+			return "No agent conversation data yet. Send agent_turn events (conversation_id, role, ttft_ms) and this fills in with turns, re-ask rate, abandon rate, time-to-first-token, and resolution rate.",
+				tkReceipt("the agent conversation-health report", "Agent"), true
+		}
+		ans := fmt.Sprintf("%d conversations, median %.0f turns (p90 %.0f). Re-ask rate %.0f%%, abandon rate %.0f%%, time-to-first-token p50 %s.",
+			c.Conversations, c.MedianTurns, c.P90Turns, c.ReAskRate*100, c.AbandonRate*100, tkMs(c.TTFTP50))
+		if c.ResolutionRate != nil {
+			ans += fmt.Sprintf(" Resolution rate %.0f%%.", *c.ResolutionRate*100)
+		} else {
+			ans += " (Resolution rate needs a resolved bool on your turns, so it stays blank until you send it.)"
+		}
+		return ans + " Open the Agent tab for the full conversation-health view.",
+			tkReceipt("the agent conversation-health report", "Agent"), true
 	}
 	return "", "", false
 }

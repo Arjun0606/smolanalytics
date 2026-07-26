@@ -237,7 +237,12 @@ const (
 	intentSessionTimeline askIntent = "session_timeline"
 	intentDeployImpact    askIntent = "deploy_impact"
 	intentSequence        askIntent = "sequence"
-	intentUnknown         askIntent = "unknown"
+	// agent observability (v0.10+) — computed tool-call + conversation health, routed to
+	// answerToolkit() so "which tool is slowest" gets a real number instead of deflecting to
+	// the capabilities menu. Same reports the /v1/agent endpoints and MCP agent tools run.
+	intentAgentTools         askIntent = "agent_tools"
+	intentAgentConversations askIntent = "agent_conversations"
+	intentUnknown            askIntent = "unknown"
 )
 
 // classifyAsk routes a lowercased question to one intent. Order is the whole
@@ -291,6 +296,16 @@ func classifyAsk(q string) askIntent {
 	case hasAny(q, "cohort", "sequenced cohort", "sequence cohort", "did x then", "then did", "in that order",
 		"cohort of users who did", "who did x then y", "ordered cohort"):
 		return intentSequence
+	// agent observability: tool-call health + conversation health. Specific agent phrasings so
+	// they don't steal generic reports ("error rate" alone stays with the funnel/verdict path).
+	case hasAny(q, "slowest tool", "tool call", "tool calls", "tool-call", "tool latency", "which tool", "tool errors",
+		"tool error", "agent tool", "mcp tool", "mcp latency", "tool health", "tool is timing out",
+		"tools are slow", "which tool errors", "tool p99", "tool p90", "error taxonomy"):
+		return intentAgentTools
+	case hasAny(q, "re-ask", "reask", "re ask", "abandon rate", "abandon rate", "conversation health",
+		"turns per conversation", "resolution rate", "did the conversation", "conversations resolve",
+		"time to first token", "ttft", "how many conversations", "agent conversation", "conversations abandon"):
+		return intentAgentConversations
 	// splits and rankings that would otherwise fall into channels or refuse
 	case hasAny(q, "direct vs search", "search vs direct", "paid vs organic", "organic vs paid"):
 		return intentSplit
@@ -714,8 +729,9 @@ func answerScopedIntent(intent askIntent, evs []event.Event, scoped []event.Even
 		// padding an answer, the very fear "plain-English analytics" triggers. So we say
 		// what we don't invent, then offer the closest real report.
 		return "I only answer from deterministic reports over the events you've sent, funnels, channels, " +
-			"retention, signups, active users, top pages, pageviews. I don't invent metrics you haven't " +
-			"tracked (revenue, MRR, churn) unless you send them as events. Here's the closest read I have:\n\n" +
+			"retention, signups, active users, top pages, pageviews, and agent observability (tool-call " +
+			"latency, error taxonomy, conversation re-ask/abandon/resolution). I don't invent metrics you " +
+			"haven't tracked (revenue, MRR, churn) unless you send them as events. Here's the closest read I have:\n\n" +
 			answerBrief(evs, 7, now) + "\n\nAsk about any of those, scoped to today, yesterday, this/last week, " +
 			"this/last month, or last N days, or connect your own Claude/Cursor over MCP to go deeper."
 	}

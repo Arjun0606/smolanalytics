@@ -71,6 +71,24 @@ func TestAskIntentExposed(t *testing.T) {
 	}
 }
 
+// Agent-observability questions must route to the computed agent reports, not deflect to the
+// capabilities menu. The whole point of the launch: the headline feature is askable in the
+// headline interface, so "which tool is slowest" gets a real number.
+func TestAskAgentIntents(t *testing.T) {
+	tools := []string{"which tool is slowest?", "what is my tool-call error rate?", "show me tool latency", "which tool errors most"}
+	for _, q := range tools {
+		if got := string(classifyAsk(q)); got != "agent_tools" {
+			t.Errorf("classifyAsk(%q) = %q, want agent_tools", q, got)
+		}
+	}
+	convs := []string{"what is my re-ask rate?", "how often do conversations abandon?", "what is the resolution rate?", "how many turns per conversation"}
+	for _, q := range convs {
+		if got := string(classifyAsk(q)); got != "agent_conversations" {
+			t.Errorf("classifyAsk(%q) = %q, want agent_conversations", q, got)
+		}
+	}
+}
+
 // Geo questions must land on the geo intent (never signups/channels), natural
 // time phrases must parse, and a refused window must return NO intent so no UI
 // renders a chart under a refusal.
