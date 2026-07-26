@@ -26,7 +26,7 @@
     --track-lbl:.06em; --track-num:-.02em; --track-body:-.01em;
     /* space — 4px base */
     --sp1:4px; --sp2:8px; --sp3:12px; --sp4:16px; --sp6:24px; --sp8:32px;
-    --zone:24px; --card-pad:16px; --gap:16px;
+    --zone:24px; --card-pad:16px; --gap:16px; --sec-pad:28px;
     /* radii — three, nested smaller than parent */
     --r-ctl:4px; --r-card:8px; --r-pill:999px;
     /* control metrics — four heights replace eleven */
@@ -85,7 +85,10 @@
   .fchip .fop:hover{text-decoration:underline}
   .fchip.fmode{border-color:var(--line);color:var(--mut);text-decoration:none}
   .fchip.fmode:hover{color:var(--accent);border-color:var(--accent)}
-  .fbuilder{display:inline-flex;align-items:center;gap:6px}
+  /* wrap, don't push. as a non-wrapping inline-flex this row was ~570px wide and it alone
+     made the whole BODY scroll sideways on a phone — the page reads as a box cut off at the
+     edge. its own controls stay full size; only the row wraps. */
+  .fbuilder{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;max-width:100%}
   .fbuilder input,.fbuilder select{background:var(--s1);border:1px solid var(--line);color:var(--fg);font-family:var(--mono);font-size:11px;padding:4px 8px;border-radius:5px;max-width:170px}
   .gtile .d{font-family:var(--mono);font-size:11px;margin-top:2px;color:var(--mut2)}
   .gtile .d.up{color:var(--ok)} .gtile .d.down{color:var(--warn)}
@@ -184,7 +187,10 @@
   /* zone 5 — the one chart */
   .chartzone{margin:var(--zone) 0 0}
   .chartzone+.chartzone{margin-top:var(--zone)}
-  .zonelbl{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--mut2);margin-bottom:10px;display:flex;align-items:baseline;gap:8px}
+  /* flex-wrap so the chart's own controls (metric, granularity, breakdown) drop to a second
+     line on a phone instead of pushing the BODY wider than the viewport. A zone label that
+     side-scrolls the whole page is the "content cut off at the edge" failure. */
+  .zonelbl{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--mut2);margin-bottom:10px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;max-width:100%}
   .zonelbl .sub{text-transform:none;letter-spacing:0;color:var(--mut2)}
   .zonesel{background:var(--s1);border:1px solid var(--line);color:var(--fg);font-family:var(--mono);font-size:11px;padding:2px 6px;border-radius:4px;margin-right:6px}
   .charttable{margin-top:10px}
@@ -373,29 +379,76 @@
   .foot a:hover{color:var(--accent)}
 
 
-  /* ═══ THE DECK — always-visible 2-col card grid replaces the 13-tab rail ═══ */
-  .deck{display:grid;grid-template-columns:1fr 1fr;gap:var(--gap);margin:var(--zone) 0 0;align-items:start}
-  @media(max-width:880px){.deck{grid-template-columns:1fr}}
+  /* ═══ THE DECK — always-visible card grid replaces the 13-tab rail ═══
+     12 columns instead of 2, purely so cards can differ in width. The mapping is an
+     identity: a plain pane was 1-of-2 and is now span 6 of 12; .wide was 1/-1 and still
+     is. So a pane whose markup is never touched lays out exactly as it did before.
+
+     Material and section change reading volume. They NEVER change findability: every card
+     is still named at identical weight in the index, always, on cold open. */
+  .deck{display:grid;grid-template-columns:repeat(12,1fr);gap:var(--gap);margin:var(--zone) 0 0;align-items:start}
+  .deck>.pane{grid-column:span 6}
+  @media(max-width:880px){.deck{grid-template-columns:1fr}.deck>.pane,.deck>.pane.wide{grid-column:1/-1}}
+
+  /* ═══ SECTIONS — headings, not containers. They are grid siblings of the cards, so every
+     pane stays a DIRECT child of .deck and its inline order:N still drives layout. Nesting
+     cards in section wrappers would kill grid-column and desync the index. ═══ */
+  .deck>.stratum{grid-column:1/-1;display:flex;align-items:baseline;gap:10px;margin:var(--sec-pad) 0 2px;
+    font-weight:400}
+  .deck>.stratum:first-child{margin-top:4px}
+  .deck>.stratum .stitle{font:400 var(--fs-lead,15px)/1.2 var(--mono);color:var(--fg);letter-spacing:.01em}
+  .deck>.stratum .ssub{font:400 11px/1 var(--mono);color:var(--dis);text-transform:uppercase;letter-spacing:.08em}
+  .deck>.stratum .srule{flex:1;height:1px;background:var(--line);position:relative;overflow:hidden}
+  .deck>.stratum .scount{font:400 11px/1 var(--mono);color:var(--dis);white-space:nowrap}
+  /* a jumped-to SECTION runs its rule amber once. Flashing five card borders at once would
+     read as an error state, so sections and cards get different acknowledgements. */
+  @keyframes srun{0%{transform:scaleX(0);opacity:1}55%{transform:scaleX(1);opacity:1}100%{transform:scaleX(1);opacity:0}}
+  .deck>.stratum .srule::after{content:"";position:absolute;inset:0;background:var(--accent);transform:scaleX(0);transform-origin:left;opacity:0}
+  .deck>.stratum.hit .srule::after{animation:srun 700ms var(--ease-out)}
+  @media(prefers-reduced-motion:reduce){.deck>.stratum.hit .srule::after{animation:none;transform:scaleX(1);opacity:.55}}
   .deck .pane{display:block;background:var(--s1);border:1px solid var(--line);border-radius:var(--r-card);padding:var(--card-pad);min-width:0;transition:border-color var(--t-fast)}
   .deck .pane:hover{border-color:var(--line2)}
   .deck .pane.wide{grid-column:1/-1}
   .deck #pane-retention{overflow-x:auto}
   .deck .pane h3{margin:0 0 12px}
   .deck .pane h3 .sub{text-transform:none;letter-spacing:0;color:var(--dis);font-weight:400;margin-left:8px}
-  .deck .pane{scroll-margin-top:58px} /* clears the sticky index below, or a jump lands under it */
+  /* clears the sticky rail, or every jump lands underneath it. --rail-h is MEASURED at
+     runtime, never hardcoded: the rail wraps at narrow widths and a stale constant would
+     silently bury the top of whatever you jumped to. */
+  .deck>.pane,.deck>.stratum{scroll-margin-top:calc(var(--rail-h, 44px) + 14px)}
 
-  /* ═══ THE DECK INDEX — 21 always-on cards is more than anyone can scan, so every report
-     past the first screen was effectively hidden ("where can I find the heatmap?"). This
-     is built FROM the panes actually rendered (see saBuildDeckIndex), never a hardcoded
-     list, so it cannot drift out of sync the way a written-down list would. ═══ */
-  .deckjump{position:sticky;top:0;z-index:30;display:flex;flex-wrap:wrap;gap:6px;align-items:center;
+  /* ═══ THE DECK INDEX — 22 always-on cards is more than anyone can scan, so every report
+     past the first screen was effectively hidden ("where can I find the heatmap?"). It is
+     built FROM the panes actually rendered, never a hardcoded list, so it cannot drift out
+     of sync the way a written-down list would.
+
+     Two layers, because they answer two different questions. The sticky rail answers
+     "where am I in 22 cards" and must cost almost no viewport. The full index answers
+     "where is X" and can scroll away once used. 22 pills wrapped over three sticky rows
+     was itself part of the clutter. ═══ */
+  .deckjump{position:sticky;top:0;z-index:30;display:flex;flex-wrap:wrap;gap:2px 14px;align-items:center;
     padding:9px 0;margin:var(--zone) 0 0;background:var(--bg);border-bottom:1px solid var(--line)}
   .deckjump:empty{display:none}
-  .deckjump a{font:400 11px/1 var(--mono);color:var(--mut);text-decoration:none;padding:5px 9px;
-    border:1px solid var(--line);border-radius:999px;white-space:nowrap;
+  .deckjump .jhere{font:400 11px/1 var(--mono);color:var(--mut2);white-space:nowrap}
+  .deckjump .jhere b{color:var(--fg);font-weight:400}
+  .deckjump a{font:400 11px/1 var(--mono);color:var(--mut2);text-decoration:none;padding:5px 2px;
+    border-bottom:1px solid transparent;white-space:nowrap;
     transition:color var(--t-fast) var(--ease),border-color var(--t-fast) var(--ease)}
-  .deckjump a:hover{color:var(--accent);border-color:var(--line3)}
-  .deckjump .jlbl{font:400 10px/1 var(--mono);color:var(--dis);text-transform:uppercase;letter-spacing:.08em;margin-right:2px}
+  .deckjump a:hover{color:var(--fg);border-bottom-color:var(--line3)}
+  .deckjump a.cur{color:var(--accent);border-bottom-color:var(--accent)}
+  .deckjump .jcount{margin-left:auto;font:400 11px/1 var(--mono);color:var(--dis)}
+
+  /* the complete index: every card by name, grouped, NOT sticky. Borderless mono rather
+     than 22 pills, which competed with the cards themselves. */
+  .deckindex{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;padding:10px 0 2px}
+  .deckindex:empty{display:none}
+  .deckindex .jsec{font:400 10px/1 var(--mono);text-transform:uppercase;letter-spacing:.08em;
+    color:var(--dis);text-decoration:none;padding:4px 2px 4px 10px;border-left:1px solid var(--line)}
+  .deckindex .jsec:first-child{border-left:none;padding-left:2px}
+  .deckindex a.jcard{font:400 11px/1 var(--mono);color:var(--mut2);text-decoration:none;padding:4px 2px;
+    border-bottom:1px solid transparent}
+  .deckindex a.jcard:hover{color:var(--fg);border-bottom-color:var(--accent)}
+  @media(max-width:880px){.deckjump{position:static}.deckindex .jsec{flex-basis:100%;border-left:none;padding-left:2px}}
   /* a jumped-to card flashes its border once, so you can see WHICH of the 21 you landed on */
   @keyframes panehit{0%,100%{border-color:var(--line)}18%,72%{border-color:var(--accent)}}
   .deck .pane.hit{animation:panehit 1.5s var(--ease)}
@@ -729,15 +782,42 @@
   <!-- zone 8: the deck — every report always on the table, nothing hiding behind a tab.
        "Always on the table" only helps if you can FIND it, so the deck is preceded by an
        index of its own cards, filled in by saBuildDeckIndex from what actually rendered. -->
-  <nav class="deckjump" id="deckjump" aria-label="jump to a report"></nav>
+  <nav class="deckjump" id="deckjump" aria-label="jump to a section"></nav>
+  <div class="deckindex" id="deckindex"></div>
   <div class="deck">
+
+    <!-- SECTION HEADINGS. They are grid SIBLINGS of the cards, never wrappers: every pane
+         must stay a direct child of .deck or grid-column and the inline order:N both stop
+         working. Declared here in one block, outside every per-pane conditional, and
+         positioned purely by order. Bands are 100 apart with 10 between cards, so a new
+         report drops in without renumbering anything. -->
+    <!-- MOVES WITH #pane-agent: both carry the same HasAgentEvents conditional, so the
+         heading leads the deck exactly when the card it describes does. Change one and you
+         must change the other, or this header detaches from its only card.
+         (Do not write template actions in these comments: html/template parses actions
+         inside HTML comments, so an unpaired one here is a parse error at EOF.) -->
+    <h2 class="stratum" id="sec-agent" data-stratum="agent" data-short="agent" style="order:{{if .HasAgentEvents}}100{{else}}700{{end}}">
+      <span class="stitle">what your agent did</span><span class="ssub">agent observability</span><span class="srule"></span><span class="scount"></span></h2>
+    <h2 class="stratum" id="sec-convert" data-stratum="convert" data-short="conversion" style="order:200">
+      <span class="stitle">did it convert</span><span class="ssub">conversion</span><span class="srule"></span><span class="scount"></span></h2>
+    <h2 class="stratum" id="sec-acquire" data-stratum="acquire" data-short="acquisition" style="order:300">
+      <span class="stitle">where they came from</span><span class="ssub">acquisition</span><span class="srule"></span><span class="scount"></span></h2>
+    <h2 class="stratum" id="sec-behave" data-stratum="behave" data-short="behaviour" style="order:400">
+      <span class="stitle">what they did here</span><span class="ssub">behaviour</span><span class="srule"></span><span class="scount"></span></h2>
+    <h2 class="stratum" id="sec-return" data-stratum="return" data-short="retention" style="order:500">
+      <span class="stitle">did they come back</span><span class="ssub">retention</span><span class="srule"></span><span class="scount"></span></h2>
+    <h2 class="stratum" id="sec-ship" data-stratum="ship" data-short="shipped" style="order:600">
+      <span class="stitle">what you shipped</span><span class="ssub">deploys, flags, surveys</span><span class="srule"></span><span class="scount"></span></h2>
+    <h2 class="stratum" id="sec-raw" data-stratum="raw" data-short="raw" style="order:800">
+      <span class="stitle">the raw record</span><span class="ssub">every event, unaggregated</span><span class="srule"></span><span class="scount"></span></h2>
+
 
     <!-- agent observability: tool health + conversation health, computed from your own
          agent_tool_call / agent_turn events, plus the label breakdown whose VALUES your
          own model wrote (we never run one). Renders on every instance: with no agent
          events it teaches what to send rather than showing a blank panel. It leads the
          deck once those events exist, and sits at the end of it until they do. -->
-    <div class="pane wide" id="pane-agent" style="order:{{if .HasAgentEvents}}0{{else}}22{{end}}">
+    <div class="pane wide" id="pane-agent" style="order:{{if .HasAgentEvents}}110{{else}}710{{end}}" data-stratum="agent">
       <h3>agent observability <span class="sub">· your agent's tool calls and conversations, same window and filters as every zone above · computed by /v1/agent</span></h3>
       <div id="agConv"><div class="exsummary">…</div></div>
 
@@ -752,7 +832,7 @@
     </div>
 
     {{if .HasWeb}}
-    <div class="pane wide" id="pane-pages" style="order:7">
+    <div class="pane wide" id="pane-pages" style="order:410" data-stratum="behave">
       <div class="webcols">
         <div>
           <h3>top pages</h3>
@@ -768,7 +848,7 @@
          because the question it answers ("what do they do ON this page") is the one
          a top-pages row raises. the grid the server bucketed into is the grid we
          paint — cols and row_px come back on the response, never re-derived here. -->
-    <div class="pane wide" id="pane-heatmap" style="order:8">
+    <div class="pane wide" id="pane-heatmap" style="order:430" data-stratum="behave">
       <!-- titled "heatmap" because that is what the feature is called everywhere else the
            user meets it (/v1/heatmap, the MCP tool, the docs, the ask bar). It read "click
            map" here, so anyone hunting the page for "heatmap" found nothing and concluded
@@ -786,21 +866,21 @@
         <span class="sub">· the click map: where autocaptured clicks land, same window and filters as every zone above · computed by /v1/heatmap</span></h3>
       <div id="hmOut"><div class="exsummary">…</div></div>
     </div>
-    <div class="pane" id="pane-referrers" style="order:9">
+    <div class="pane" id="pane-referrers" style="order:320" data-stratum="acquire">
       <h3>referrers</h3>
       {{range .Referrers}}<div class="seg"{{if and (ne .Value "direct") (ne .Value "(none)")}} data-fp="referrer" data-fv="{{.Value}}" title="click to filter every zone to this referrer"{{end}}><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">no referrers in this window. a referrer is read from the Referer header the browser sends, so visits typed straight into the address bar count as direct and land here as soon as anyone arrives from a link.</div>{{end}}
     </div>
     {{else}}
     <!-- no $pageview has ever landed: teach the web side rather than dropping four
          panes off the page and leaving a product-only instance looking half-built. -->
-    <div class="pane wide" id="pane-web-empty" style="order:7">
+    <div class="pane wide" id="pane-web-empty" style="order:410" data-stratum="behave">
       <h3>pages, referrers and the heatmap</h3>
       <div class="exsummary">this instance has events but no <b>$pageview</b> yet, so there is nothing to rank by page, referrer or click position. drop <b>&lt;script src="{{.Base}}/sdk.js"&gt;&lt;/script&gt;</b> into your app and top pages, entry pages, referrers and the click map all fill in from the first visit. a backend-only instance that never serves HTML stays product-only on purpose, and that is a fine place to be.</div>
     </div>
     {{end}}
 
     {{if .HasGeo}}
-    <div class="pane" id="pane-geo" style="order:11">
+    <div class="pane" id="pane-geo" style="order:340" data-stratum="acquire">
       <h3>countries · geo by <a href="https://db-ip.com" target="_blank" rel="noopener" style="color:var(--mut2)">db-ip.com</a></h3>
       <div class="exsummary" style="margin-bottom:10px">countries stamp at ingest from the moment geo is enabled (the IP is used for one lookup and never stored, so no backfill). your own visits count too: open your site once with ?sa_optout=1 to exclude this browser, ?sa_optout=0 to undo</div>
       {{range .Countries}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}
@@ -808,13 +888,13 @@
     {{else}}
     <!-- geo off, or every IP unresolved. a proud "Unknown 100%" bar would be worse than
          nothing, so the pane says what to turn on instead of ranking a single Unknown. -->
-    <div class="pane" id="pane-geo" style="order:11">
+    <div class="pane" id="pane-geo" style="order:340" data-stratum="acquire">
       <h3>countries</h3>
       <div class="exsummary">no country resolved yet. geo is on unless you set <b>SMOLANALYTICS_GEO=off</b>: the free <a href="https://db-ip.com" target="_blank" rel="noopener" style="color:var(--mut2)">db-ip.com</a> table downloads on first boot and loads in the background, then every <em>new</em> event is stamped at ingest. the IP is used for that one lookup and never stored, so nothing already on disk is backfilled. an IPv6-only visitor stays unplaced rather than being guessed into a country, and so does anything the table cannot resolve.</div>
     </div>
     {{end}}
 
-    <div class="pane wide" id="pane-devices" style="order:12">
+    <div class="pane wide" id="pane-devices" style="order:440" data-stratum="behave">
       <div class="webcols">
         <div>
           <h3>device</h3>
@@ -830,7 +910,7 @@
     </div>
 
     {{if .UTMSources}}
-    <div class="pane wide" id="pane-campaigns" style="order:13">
+    <div class="pane wide" id="pane-campaigns" style="order:330" data-stratum="acquire">
       <div class="webcols">
         <div>
           <h3>utm source</h3>
@@ -847,13 +927,13 @@
     {{else}}
     <!-- no tagged link has landed yet. the pane stays and teaches the tag, because a
          missing campaigns card reads as "we don't do campaigns" rather than "none yet". -->
-    <div class="pane wide" id="pane-campaigns" style="order:13">
+    <div class="pane wide" id="pane-campaigns" style="order:330" data-stratum="acquire">
       <h3>utm source · medium · campaign</h3>
       <div class="exsummary">no tagged links in this window. add <b>?utm_source=…&amp;utm_medium=…&amp;utm_campaign=…</b> to a link you post and sdk.js reads the three tags straight off the URL and sends them on every event fired while they are in the address bar, and it also keeps the first utm_source of the visit as <b>initial_utm_source</b>. untagged visits stay in <b>referrers</b> above rather than being invented into a campaign here.</div>
     </div>
     {{end}}
 
-    <div class="pane wide" id="pane-funnel" style="order:1">
+    <div class="pane wide" id="pane-funnel" style="order:210" data-stratum="convert">
       <h3>{{.FunnelTitle}}
         <select id="funnelOrder" class="zonesel" title="step matching discipline" style="margin-left:8px">
           <option value="ordered" {{if eq .FunnelOrder "ordered"}}selected{{end}}>in order</option>
@@ -870,7 +950,7 @@
     </div>
 
     {{if .HasConvBy}}
-    <div class="pane" id="pane-conversion" style="order:2">
+    <div class="pane" id="pane-conversion" style="order:220" data-stratum="convert">
       <h3>conversion by {{.ConvByTitle}}</h3>
       <div class="segconv">
         {{range .ConvBySeg}}<div class="sc"><div class="sc-h"><span class="sc-name">{{.Value}}</span><span class="sc-conv">{{.Conv}}%</span></div><div class="sc-track"><div class="sc-fill" style="width:{{.Conv}}%"></div></div><div class="sc-sub">{{.Users}} users</div></div>{{end}}
@@ -879,14 +959,14 @@
     {{end}}
 
     {{if .HasSource}}
-    <div class="pane" id="pane-sources" style="order:10">
+    <div class="pane" id="pane-sources" style="order:310" data-stratum="acquire">
       <h3>{{.SourceTitle}}</h3>
       {{range .BySource}}<div class="seg"{{if .FilterProp}} data-fp="{{.FilterProp}}" data-fv="{{.FilterVal}}" title="click to filter every zone to this channel"{{end}}><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}
     </div>
     {{end}}
 
     {{if .HasPaths}}
-    <div class="pane wide" id="pane-paths" style="order:3">
+    <div class="pane wide" id="pane-paths" style="order:420" data-stratum="behave">
       <h3>user journeys <span class="sub">· what users do after {{.PathStart}}</span></h3>
       <div style="display:flex;gap:14px;overflow-x:auto;padding-bottom:2px">
         {{range .PathLevels}}
@@ -900,14 +980,14 @@
     {{else}}
     <!-- no starting event with enough users after it. teach what the report needs
          rather than dropping the journeys card off the deck entirely. -->
-    <div class="pane wide" id="pane-paths" style="order:3">
+    <div class="pane wide" id="pane-paths" style="order:420" data-stratum="behave">
       <h3>user journeys</h3>
       <div class="exsummary">nothing to branch from yet. this walks three steps forward from a starting event and needs users who did something <em>after</em> it, so a single event type or a single visit has nowhere to go. track one more moment (a $pageview counts) and the tree fills in, or ask "what do users do after signup" in the bar above to point it at any event you like.</div>
     </div>
     {{end}}
 
     {{if .HasLifecycle}}
-    <div class="pane wide" id="pane-lifecycle" style="order:4">
+    <div class="pane wide" id="pane-lifecycle" style="order:520" data-stratum="return">
       <h3>lifecycle <span class="sub">· who's active each day: new vs loyal</span></h3>
       <div style="display:flex;gap:14px;flex-wrap:wrap;font-family:var(--mono);font-size:10px;color:var(--mut);margin:2px 0 10px">
         <span><i style="display:inline-block;width:8px;height:8px;background:var(--accent);vertical-align:middle;margin-right:5px"></i>new</span>
@@ -928,7 +1008,7 @@
     {{end}}
 
     {{with .Stickiness}}
-    <div class="pane" id="pane-stickiness" style="order:5">
+    <div class="pane" id="pane-stickiness" style="order:530" data-stratum="return">
       <h3>stickiness <span class="sub">· do they come back?</span></h3>
       <div style="display:flex;align-items:baseline;gap:10px;margin:10px 0 2px">
         <span style="font-size:34px;line-height:1;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums;letter-spacing:-.02em">{{.Ratio}}%</span>
@@ -944,31 +1024,38 @@
     {{end}}
 
     {{if .HasSearch}}
-    <div class="pane" id="pane-search" style="order:14">
+    <div class="pane" id="pane-search" style="order:350" data-stratum="acquire">
       <h3>google search queries · 28d clicks</h3>
       {{range .SearchRows}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
     </div>
     {{end}}
 
-    <div class="pane" id="pane-goals" style="order:15">
+    <div class="pane" id="pane-goals" style="order:230" data-stratum="convert">
       <h3>goals</h3>
       {{if .Goals}}
       <div class="goalrow">
         {{range .Goals}}<div class="goalcard"><div class="gname">{{.Name}}</div><div class="gnum">{{.Conversions}} <span class="gpct">{{.Pct}}%</span></div>{{if .TopChannel}}<div class="gchan">top channel: {{.TopChannel}}</div>{{end}}</div>{{end}}
       </div>
-      {{else if .HasGoalsStore}}
+      {{end}}
+      {{if .HasGoalsStore}}
+      <!-- the create row used to be the ELSE arm of "do any goals exist", so the moment you
+           created your first goal the only way to add a second disappeared from the UI. It
+           now renders whenever the store is available, under whatever goals you already have. -->
       <div class="exrow" style="margin-bottom:0">
         <input id="gName" autocomplete="off" placeholder="goal name (e.g. Signed up)">
         <input id="gValue" autocomplete="off" placeholder="event name (signup) or path glob (/thanks*)">
         <button id="gCreate">Create goal</button>
       </div>
-      <div class="exsummary" id="gNote">no goals yet. name what counts as success. a value starting with / matches a page path; anything else is an event name.</div>
+      <!-- gNote is where the create handler writes validation and server errors, so it must
+           exist in BOTH states. Rendering it only when the list is empty would make a failed
+           create throw on a null and report nothing at all to the user. -->
+      <div class="exsummary" id="gNote">{{if not .Goals}}no goals yet. name what counts as success. a value starting with / matches a page path; anything else is an event name.{{end}}</div>
       {{else}}
       <div class="exsummary">goals are not enabled on this instance, so there is nothing to name or count. they persist to a <b>.goals.json</b> beside your event data; when the engine cannot open that file it starts without them and logs the reason. fix the path or the permissions on that file, restart, and the create-a-goal row appears here.</div>
       {{end}}
     </div>
 
-    <div class="pane wide" id="pane-retention" style="order:6">
+    <div class="pane wide" id="pane-retention" style="order:510" data-stratum="return">
       <h3>returning users
         <select id="retDays" class="zonesel" style="margin-left:8px">
           <option value="7" {{if eq .RetDays 7}}selected{{end}}>7 periods</option>
@@ -1001,7 +1088,7 @@
          and what it did. deploys marks the ships, flags runs the experiment, surveys
          asks the human. all three read endpoints that already existed and were only
          reachable from an editor or the cloud page until now. -->
-    <div class="pane wide" id="pane-deploys" style="order:16">
+    <div class="pane wide" id="pane-deploys" style="order:610" data-stratum="ship">
       <h3>deploys
         <select id="dpMetric" class="zonesel" style="margin-left:8px" title="which metric to line the ships up against">
           {{range .Events}}<option value="{{.}}" {{if eq . $.ChartMetric}}selected{{end}}>{{.}}</option>{{end}}
@@ -1015,7 +1102,7 @@
       <div id="dpOut"><div class="exsummary">…</div></div>
     </div>
 
-    <div class="pane wide" id="pane-flags" style="order:17">
+    <div class="pane wide" id="pane-flags" style="order:620" data-stratum="ship">
       <h3>feature flags
         <span class="sub">· every flag, who it is on for, and the A/B read behind a measured one · computed by /v1/flags</span></h3>
       <div id="flOut"><div class="exsummary">…</div></div>
@@ -1031,7 +1118,7 @@
       <div class="agmeta" id="flNote" style="margin-top:6px">a new flag starts <b>off</b>, so creating one changes nothing for your users until you turn it on. an A/B flag is created measured: the SDK then logs one <b>$feature_flag_called</b> exposure per user per session, which is what the A/B read counts. a boolean flag logs no events at all. read one in your app with <b>smolanalytics.flag("checkout_v2", false)</b>.</div>
     </div>
 
-    <div class="pane wide" id="pane-surveys" style="order:18">
+    <div class="pane wide" id="pane-surveys" style="order:630" data-stratum="ship">
       <h3>surveys
         <span class="sub">· one-question in-product surveys and what came back · computed by /v1/surveys</span></h3>
       <div id="svOut"><div class="exsummary">…</div></div>
@@ -1041,7 +1128,7 @@
          event stream, because all three answer "what did one person actually do". this
          is an event-based journey inspector — the steps are the events that were
          captured, so it never claims to be a screen or DOM recording. -->
-    <div class="pane wide" id="pane-sessions" style="order:19">
+    <div class="pane wide" id="pane-sessions" style="order:450" data-stratum="behave">
       <h3>sessions
         <select id="sesLimit" class="zonesel" style="margin-left:8px" title="how many of the newest sessions to list">
           <option value="25">25 newest</option>
@@ -1052,12 +1139,12 @@
       <div id="sesOut"><div class="exsummary">…</div></div>
     </div>
 
-    <div class="pane" id="pane-live" style="order:20">
+    <div class="pane" id="pane-live" style="order:810" data-stratum="raw">
       <h3>live <span class="sub">· events as they land</span></h3>
       <div id="live" class="live"><div class="livemuted">waiting for events…</div></div>
     </div>
 
-    <div class="pane" id="pane-events" style="order:21">
+    <div class="pane" id="pane-events" style="order:820" data-stratum="raw">
       <h3>event stream <span class="sub">· latest 200 · computed by /v1/events/recent</span></h3>
       <div class="exrow" style="margin-bottom:8px">
         <input id="evFilter" autocomplete="off" placeholder="filter the stream: event name, visitor id, path, any property value…">
@@ -1433,14 +1520,117 @@
     // it lists exactly what is on the page: no card can be missing from it, and it can
     // never advertise one that did not render. Panes carry style="order:N" for visual
     // order, so the index sorts by that and matches what you scroll past.
+    // the global reduced-motion rule zeroes CSS durations but cannot touch imperative
+    // scrolling, so every jump on this page routes through saScrollTo.
+    var SA_RM = !!(window.matchMedia && matchMedia('(prefers-reduced-motion:reduce)').matches);
+    function saScrollTo(el){ el.scrollIntoView({behavior:SA_RM?'auto':'smooth',block:'start'}); }
+    function saFlash(el){ if(!el)return; el.classList.remove('hit'); void el.offsetWidth; el.classList.add('hit'); }
     function saJumpToPane(id){
       var el=document.getElementById(id);
       if(!el)return false;
-      el.scrollIntoView({behavior:'smooth',block:'start'});
-      el.classList.remove('hit'); void el.offsetWidth; el.classList.add('hit'); // restart the flash
+      saScrollTo(el); saFlash(el);
       return true;
     }
-    function saBuildDeckIndex(){
+    function saJumpToSection(id){
+      var el=document.getElementById(id);
+      if(!el)return false;
+      saScrollTo(el); saFlash(el);
+      return true;
+    }
+    // Grouped index. Sections are read from data-stratum on the panes themselves, so a card
+    // can never be filed under a heading it does not sit beneath. Anything unexpected falls
+    // back to the flat builder below rather than to a page with chips missing.
+    function saBuildDeckIndexGrouped(){
+      var deck=document.querySelector('.deck'),
+          nav=document.getElementById('deckjump'),
+          full=document.getElementById('deckindex');
+      if(!deck||!nav||!full)return false;
+      var strata=[];
+      Array.prototype.forEach.call(deck.querySelectorAll('.stratum'),function(h){
+        var o=parseInt(h.style.order,10); if(isNaN(o))o=9999;
+        // two names per section: the long question ("where they came from") reads as prose in
+        // the index and the readout, the short noun ("acquisition") keeps the sticky rail to a
+        // single line. A two-row sticky bar costs more viewport than the grouping buys back.
+        strata.push({id:h.id,key:h.getAttribute('data-stratum')||h.id,
+          title:(h.querySelector('.stitle')||{}).textContent||h.id,
+          short:h.getAttribute('data-short')||((h.querySelector('.ssub')||{}).textContent||'').split(',')[0].trim()||h.id,
+          order:o,el:h,cards:[]});
+      });
+      if(!strata.length)return false;
+      var seen={},total=0;
+      Array.prototype.forEach.call(deck.querySelectorAll('.pane'),function(p){
+        if(!p.id||seen[p.id]||p.hidden)return;
+        seen[p.id]=1;
+        var h=p.querySelector('h3');
+        var label=h&&h.firstChild?String(h.firstChild.textContent||'').trim():'';
+        if(label.indexOf('·')>-1)label=label.split('·')[0].trim();
+        label=label.replace(/[\s,·-]+$/,'');
+        if(!label)label=p.id.replace(/^pane-/,'').replace(/-/g,' ');
+        var ord=parseInt(p.style.order,10); if(isNaN(ord))ord=99;
+        var key=p.getAttribute('data-stratum');
+        var sec=null;
+        for(var i=0;i<strata.length;i++){ if(strata[i].key===key){sec=strata[i];break;} }
+        if(!sec){ // no declared section: file it under the last heading it sorts after
+          for(var j=0;j<strata.length;j++){ if(strata[j].order<ord) sec=strata[j]; }
+        }
+        if(!sec)sec=strata[0];
+        sec.cards.push({id:p.id,label:label,order:ord});
+        total++;
+      });
+      if(!total)return false;
+      strata.sort(function(a,b){return a.order-b.order});
+      strata.forEach(function(s){
+        s.cards.sort(function(a,b){return a.order-b.order});
+        var c=s.el.querySelector('.scount');
+        if(c)c.textContent=s.cards.length?(s.cards.length+' report'+(s.cards.length===1?'':'s')):'';
+        // a heading with no cards on this instance would be a promise of nothing
+        s.el.hidden=!s.cards.length;
+      });
+      var live=strata.filter(function(s){return s.cards.length});
+      // layer A: where am I, plus one hop per section
+      var a='<span class="jhere">▸ <b id="jhere">'+esc(live[0]?live[0].title:'')+'</b></span>';
+      live.forEach(function(s){ a+='<a href="#'+s.id+'" data-sec="'+s.id+'" id="chip-'+s.id+'" title="'+esc(s.title)+'">'+esc(s.short)+'</a>'; });
+      a+='<span class="jcount">'+total+' report'+(total===1?'':'s')+'</span>';
+      nav.innerHTML=a;
+      // layer B: every card by name, grouped, identical weight
+      var b='';
+      live.forEach(function(s){
+        b+='<a class="jsec" href="#'+s.id+'" data-sec="'+s.id+'">'+esc(s.title)+'</a>';
+        s.cards.forEach(function(c){ b+='<a class="jcard" href="#'+c.id+'" data-pane="'+c.id+'">'+esc(c.label)+'</a>'; });
+      });
+      full.innerHTML=b;
+      function onClick(e){
+        var t=e.target.closest&&e.target.closest('a[data-pane],a[data-sec]');
+        if(!t)return;
+        e.preventDefault();
+        var pid=t.getAttribute('data-pane');
+        if(pid)saJumpToPane(pid); else saJumpToSection(t.getAttribute('data-sec'));
+      }
+      nav.addEventListener('click',onClick); full.addEventListener('click',onClick);
+      // the rail's height drives scroll-margin; measure it rather than guessing
+      function measure(){ document.documentElement.style.setProperty('--rail-h',nav.offsetHeight+'px'); }
+      measure(); window.addEventListener('resize',measure);
+      // scroll-spy: turns a menu into a position readout, for free, at no extra height
+      if(window.IntersectionObserver){
+        var here=document.getElementById('jhere');
+        var io=new IntersectionObserver(function(entries){
+          entries.forEach(function(en){
+            if(!en.isIntersecting)return;
+            var id=en.target.id;
+            live.forEach(function(s){
+              var chip=document.getElementById('chip-'+s.id);
+              if(chip)chip.classList.toggle('cur',s.id===id);
+              if(s.id===id&&here)here.textContent=s.title;
+            });
+          });
+        },{rootMargin:'-'+(nav.offsetHeight+8)+'px 0px -55% 0px'});
+        live.forEach(function(s){io.observe(s.el);});
+      }
+      return true;
+    }
+    // kept verbatim as the fallback: if anything about the grouped build throws, the page
+    // degrades to exactly the flat index that shipped before, never to missing chips.
+    function saBuildDeckIndexFlat(){
       var deck=document.querySelector('.deck'), nav=document.getElementById('deckjump');
       if(!deck||!nav)return;
       var seen={}, items=[];
@@ -1467,7 +1657,7 @@
       });
       if(!items.length)return;
       items.sort(function(a,b){return a.order-b.order});
-      var html='<span class="jlbl">jump to</span>';
+      var html='<span class="jhere">jump to</span>';
       items.forEach(function(it){
         html+='<a href="#'+it.id+'" data-pane="'+it.id+'">'+esc(it.label)+'</a>';
       });
@@ -1479,7 +1669,8 @@
         saJumpToPane(a.getAttribute('data-pane'));
       });
     }
-    saBuildDeckIndex();
+    try { if(!saBuildDeckIndexGrouped()) saBuildDeckIndexFlat(); }
+    catch(e){ saBuildDeckIndexFlat(); }
 
     // the engine's ask intent → the deck card holding the full interactive view of it.
     // The ask answers used to end "open the Heatmap tab", but the tab rail was replaced by
