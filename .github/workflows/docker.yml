@@ -32,6 +32,15 @@ jobs:
             type=raw,value=latest
             type=ref,event=tag
             type=sha,format=short
+            # "stable" = what the hosted product provisions NEW tenant instances from. It moves ONLY
+            # on a deliberate v* release tag, never on a main push, so an ordinary commit can never
+            # reach a customer's new instance the way :latest would.
+            # This exists because the cloud used to hardcode a version here and it silently went
+            # stale: new projects were provisioning v0.9.13 while the product shipped v0.12.x, so a
+            # new customer would have got an engine missing agent observability and half the
+            # dashboard. Cutting a release now updates provisioning by itself, with nothing to
+            # remember in the other repo.
+            type=raw,value=stable,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
 
       - uses: docker/build-push-action@v6
         with:
