@@ -75,8 +75,8 @@ func TestShareLinkAccess(t *testing.T) {
 		t.Fatalf("bad token should 404, got %d", w5.Code)
 	}
 	// revoke → the link dies immediately
-	if err := sh.Delete(created.Created.ID); err != nil {
-		t.Fatal(err)
+	if found, err := sh.Delete(created.Created.ID); err != nil || !found {
+		t.Fatalf("revoking a real link: found=%v err=%v", found, err)
 	}
 	if w6 := get(created.Path); w6.Code != http.StatusNotFound {
 		t.Fatalf("revoked link must 404, got %d", w6.Code)

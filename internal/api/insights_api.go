@@ -32,9 +32,10 @@ func (s *Server) saveInsight(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteInsight(w http.ResponseWriter, r *http.Request) {
-	if err := s.insights.Delete(r.PathValue("id")); err != nil {
+	found, err := s.insights.Delete(r.PathValue("id"))
+	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"deleted": r.PathValue("id")})
+	writeRemoval(w, "deleted", "saved report", "id", r.PathValue("id"), found)
 }

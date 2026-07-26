@@ -51,7 +51,7 @@ func init() {
 		},
 		map[string]any{
 			"name":        "delete_goal",
-			"description": "Delete a goal by id (get ids from list_goals).",
+			"description": "Delete a goal by id (get ids from list_goals). Returns deleted:true only if a goal with that id existed; deleted:false means nothing was removed.",
 			"inputSchema": map[string]any{"type": "object", "properties": map[string]any{"id": map[string]any{"type": "string"}}, "required": []string{"id"}},
 		},
 		map[string]any{
@@ -100,7 +100,7 @@ func (s *Server) callGoals(name string, args json.RawMessage) (bool, string, err
 		return true, jsonStr(map[string]any{"goals": s.goals.List()}), nil
 
 	case "delete_goal":
-		return s.deleteByID(args, "goal", func(id string) error { return s.goals.Delete(id) }, s.goals == nil)
+		return s.deleteByID(args, removal{kind: "goal", field: "id", list: "list_goals"}, func(id string) (bool, error) { return s.goals.Delete(id) }, s.goals == nil)
 
 	case "goal_report":
 		if s.goals == nil {

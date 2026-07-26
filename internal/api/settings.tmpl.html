@@ -295,6 +295,46 @@
   function flash(id,t,bad){var m=document.getElementById(id);if(!m)return;m.textContent=t;m.style.color=bad?'var(--warn)':'var(--ok)';if(!bad)setTimeout(function(){m.textContent='';},1800);}
   function on(id,fn){var e=document.getElementById(id);if(e)e.onclick=fn;}
 
+  // ── asking before destroying ──────────────────────────────────────────────
+  // every destructive control opens one inline row instead of a browser dialog.
+  // the row says exactly what goes and that it does not come back. the confirm
+  // button takes focus on open, enter confirms, escape cancels, and focus goes
+  // back to the control that asked when the row closes. single-instance: a
+  // second click replaces the row, it never stacks. cancelling does nothing at
+  // all, exactly like the dialog returning false.
+  var cfSeq=0,cfOpen=null;
+  function saConfirmClose(){
+    var o=cfOpen; cfOpen=null; if(!o)return;
+    if(o.node&&o.node.parentNode)o.node.parentNode.removeChild(o.node);
+    if(o.back&&o.back.focus)o.back.focus();
+  }
+  // anchor: the element the row sits under. trigger: the control that asked, so
+  // focus can go home. question: what is destroyed, stated as irreversible.
+  // done() runs only on confirm.
+  function saConfirm(anchor,trigger,question,verb,done){
+    if(!anchor||!anchor.parentNode)return; saConfirmClose();
+    var qid='cfq'+(++cfSeq);
+    var row=document.createElement('div');row.className='inprompt';row.setAttribute('role','group');row.setAttribute('aria-labelledby',qid);
+    var q=document.createElement('span');q.className='ipq';q.id=qid;q.textContent=question;
+    var go=document.createElement('button');go.type='button';go.className='ipgo';go.textContent=verb||'delete';go.setAttribute('aria-describedby',qid);
+    var no=document.createElement('button');no.type='button';no.className='ipx';no.textContent='cancel';
+    row.appendChild(q);row.appendChild(go);row.appendChild(no);
+    anchor.parentNode.insertBefore(row,anchor.nextSibling);
+    // the row triggers are spans; make them focusable so focus can return
+    if(trigger&&trigger.setAttribute&&!trigger.hasAttribute('tabindex')&&String(trigger.tagName).toUpperCase()!=='BUTTON')trigger.setAttribute('tabindex','-1');
+    cfOpen={node:row,back:trigger||null};
+    function bail(){saConfirmClose();}
+    function take(){saConfirmClose();done();}
+    go.onclick=take;no.onclick=bail;
+    row.addEventListener('keydown',function(e){
+      if(e.key==='Escape'){e.preventDefault();e.stopPropagation();bail();}
+      else if(e.key==='Enter'&&e.target!==no){e.preventDefault();take();}
+    });
+    go.focus();
+  }
+  // the label a row shows for itself, used to name what is about to go
+  function rowName(row){var n=row.querySelector('.nm');var t=n?n.textContent.trim():'';return t;}
+
   on('aSave',function(){
     var nw=document.getElementById('aNew').value, cf=document.getElementById('aConf').value;
     if(nw!==cf){flash('aMsg','passwords do not match',true);return;}
@@ -303,8 +343,10 @@
       .then(function(r){if(r.ok)flash('aMsg','saved ✓');else flash('aMsg',r.j.error||'failed',true);});
   });
   on('aSignoutAll',function(){
-    if(!confirm('Sign out of all sessions? You will be logged out now.'))return;
-    J('/v1/settings/signout-all','POST').then(function(){location.href='/login';});
+    var btn=this;
+    saConfirm(btn,btn,'sign out every device and browser? this session ends too, so you will have to log back in.','sign out everywhere',function(){
+      J('/v1/settings/signout-all','POST').then(function(){location.href='/login';});
+    });
   });
   on('pSave',function(){
     J('/v1/settings','POST',{name:document.getElementById('pName').value,timezone:document.getElementById('pTz').value}).then(function(r){flash('pMsg',r.ok?'saved ✓':(r.j.error||'failed'),!r.ok);});
@@ -313,7 +355,12 @@
     J('/v1/settings/retention','POST',{days:parseInt(document.getElementById('rDays').value,10)||0}).then(function(r){flash('rMsg',r.ok?'saved ✓':(r.j.error||'failed'),!r.ok);});
   });
   var keys=document.getElementById('keys');
-  function bindRevoke(row){row.querySelector('.x').onclick=function(){if(!confirm('Revoke this key? Apps using it stop sending.'))return;J('/v1/settings/keys/'+row.getAttribute('data-id'),'DELETE').then(function(){row.remove();});};}
+  function bindRevoke(row){var x=row.querySelector('.x');x.onclick=function(){
+    var nm=rowName(row);
+    saConfirm(row,x,'revoke the key'+(nm?' "'+nm+'"':'')+'? anything still sending with it starts failing immediately, and the key cannot be restored.','revoke',function(){
+      J('/v1/settings/keys/'+row.getAttribute('data-id'),'DELETE').then(function(){row.remove();});
+    });
+  };}
   if(keys)Array.prototype.forEach.call(keys.querySelectorAll('.keyrow'),bindRevoke);
   on('kCreate',function(){
     var nm=document.getElementById('kName').value.trim()||'default';
@@ -326,13 +373,23 @@
     });
   });
   Array.prototype.forEach.call(document.querySelectorAll('.copy'),function(b){b.onclick=function(){var p=document.getElementById(b.getAttribute('data-c'));if(navigator.clipboard)navigator.clipboard.writeText(p.innerText).then(function(){var o=b.textContent;b.textContent='copied ✓';setTimeout(function(){b.textContent=o;},1200);});};});
-  on('clear',function(){if(!confirm('Delete ALL events permanently? This cannot be undone.'))return;J('/v1/settings/clear','POST').then(function(){flash('clearMsg','cleared ✓');setTimeout(function(){location.reload();},800);});});
+  on('clear',function(){
+    var btn=this,after=document.getElementById('clearMsg')||btn;
+    saConfirm(after,btn,'delete every event stored for this project? pageviews, sessions and custom events all go, and this cannot be undone.','delete everything',function(){
+      J('/v1/settings/clear','POST').then(function(){flash('clearMsg','cleared ✓');setTimeout(function(){location.reload();},800);});
+    });
+  });
 
   // webhooks
   var hooks=document.getElementById('hooks');
   function bindHook(row){
     var del=row.querySelector('.x[title="delete"]'),test=row.querySelector('.test');
-    if(del)del.onclick=function(){if(!confirm('Delete this webhook?'))return;J('/v1/webhooks/'+row.getAttribute('data-id'),'DELETE').then(function(){row.remove();});};
+    if(del)del.onclick=function(){
+      var kv=row.querySelector('.kv'),url=kv?kv.textContent.trim():'';
+      saConfirm(row,del,'delete this webhook? deliveries'+(url?' to '+url:'')+' stop immediately, and it cannot be restored.','delete',function(){
+        J('/v1/webhooks/'+row.getAttribute('data-id'),'DELETE').then(function(){row.remove();});
+      });
+    };
     if(test)test.onclick=function(){test.textContent='…';J('/v1/webhooks/'+row.getAttribute('data-id')+'/test','POST').then(function(r){test.textContent='test';flash('hMsg',r.ok?'delivered ✓':(r.j.error||'failed'),!r.ok);});};
   }
   if(hooks)Array.prototype.forEach.call(hooks.querySelectorAll('.keyrow'),bindHook);
@@ -350,7 +407,12 @@
 
   // alerts
   var alerts=document.getElementById('alerts');
-  function bindAlert(row){var d=row.querySelector('.x[title="delete"]');if(d)d.onclick=function(){if(!confirm('Delete this alert?'))return;J('/v1/alerts/'+row.getAttribute('data-id'),'DELETE').then(function(){row.remove();});};}
+  function bindAlert(row){var d=row.querySelector('.x[title="delete"]');if(d)d.onclick=function(){
+    var nm=rowName(row);
+    saConfirm(row,d,'delete the alert'+(nm?' "'+nm+'"':'')+'? it stops watching and stops notifying right away, and it cannot be restored.','delete',function(){
+      J('/v1/alerts/'+row.getAttribute('data-id'),'DELETE').then(function(){row.remove();});
+    });
+  };}
   if(alerts)Array.prototype.forEach.call(alerts.querySelectorAll('.keyrow'),bindAlert);
   on('alCreate',function(){
     var name=document.getElementById('alName').value.trim(),ev=document.getElementById('alEvent').value.trim();
@@ -366,7 +428,12 @@
 
   // goals
   var goals=document.getElementById('goals');
-  function bindGoal(row){var d=row.querySelector('.x');if(d)d.onclick=function(){if(!confirm('Delete this goal? The dashboard card stops tracking it.'))return;J('/v1/goals/'+row.getAttribute('data-id'),'DELETE').then(function(){row.remove();});};}
+  function bindGoal(row){var d=row.querySelector('.x');if(d)d.onclick=function(){
+    var nm=rowName(row);
+    saConfirm(row,d,'delete the goal'+(nm?' "'+nm+'"':'')+'? the dashboard card stops tracking it, and the goal cannot be restored. your events stay.','delete',function(){
+      J('/v1/goals/'+row.getAttribute('data-id'),'DELETE').then(function(){row.remove();});
+    });
+  };}
   if(goals)Array.prototype.forEach.call(goals.querySelectorAll('.keyrow'),bindGoal);
   on('gCreate',function(){
     var name=document.getElementById('gName').value.trim(),val=document.getElementById('gValue').value.trim();
@@ -382,7 +449,12 @@
 
   // share links — the minted URL renders ONCE (tokens are stored hashed)
   var shares=document.getElementById('shares');
-  function bindShare(row){var d=row.querySelector('.x');if(d)d.onclick=function(){if(!confirm('Revoke this link? Anyone holding it loses access immediately.'))return;J('/v1/shares/'+row.getAttribute('data-id'),'DELETE').then(function(){row.remove();});};}
+  function bindShare(row){var d=row.querySelector('.x');if(d)d.onclick=function(){
+    var nm=rowName(row);
+    saConfirm(row,d,'revoke the share link'+(nm?' for "'+nm+'"':'')+'? anyone holding it loses access immediately, and the same url cannot be brought back.','revoke',function(){
+      J('/v1/shares/'+row.getAttribute('data-id'),'DELETE').then(function(){row.remove();});
+    });
+  };}
   if(shares)Array.prototype.forEach.call(shares.querySelectorAll('.keyrow'),bindShare);
   on('shCreate',function(){
     var name=document.getElementById('shName').value.trim();

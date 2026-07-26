@@ -42,7 +42,7 @@ func init() {
 		},
 		map[string]any{
 			"name":        "delete_flag",
-			"description": "Delete a feature flag by key.",
+			"description": "Delete a feature flag by key. Returns deleted:true only if a flag with that key existed; deleted:false means nothing was removed (check the key with list_flags before telling anyone the flag is gone).",
 			"inputSchema": obj(map[string]any{"key": map[string]any{"type": "string"}}, []string{"key"}),
 		},
 		map[string]any{
@@ -132,10 +132,12 @@ func (s *Server) callFlags(name string, args json.RawMessage) (bool, string, err
 		if p.Key == "" {
 			return true, "", fmt.Errorf("flag key is required")
 		}
-		if err := s.flags.Delete(p.Key); err != nil {
+		found, err := s.flags.Delete(p.Key)
+		if err != nil {
 			return true, "", err
 		}
-		return true, jsonStr(map[string]any{"deleted": p.Key}), nil
+		rm := removal{kind: "flag", field: "key", list: "list_flags"}
+		return true, jsonStr(rm.result(found, p.Key)), nil
 
 	case "evaluate_flag":
 		if s.flags == nil {

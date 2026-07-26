@@ -36,10 +36,45 @@ func init() {
 		},
 		map[string]any{
 			"name":        "delete_defined_event",
-			"description": "Remove a defined event by name. Reports stop resolving it immediately (the underlying autocapture rows are untouched).",
+			"description": "Remove a defined event by name. Reports stop resolving it immediately (the underlying autocapture rows are untouched). Returns deleted:true only if a defined event with that name existed; deleted:false means nothing was removed.",
 			"inputSchema": map[string]any{"type": "object", "properties": map[string]any{"name": map[string]any{"type": "string"}}, "required": []string{"name"}},
 		},
 	)
+}
+
+// conditionShapes heads every `where` decode error: the shape define_event needs,
+// plus a working example, so the model can self-correct on the next call instead of
+// reading encoding/json's raw "cannot unmarshal string into Go struct field" leak.
+const conditionShapes = `where must be an array of condition objects like [{"field":"text","op":"contains","value":"Buy"}]. field is one of text|id|classes|href|path|tag|name, op is one of equals|contains|prefix`
+
+// ConditionSet is []defined.Condition that decodes what an agent naturally writes:
+// the canonical array, or a single condition object minus its array wrapper.
+// Anything else is a self-correcting error naming the shape, never a Go type name.
+type ConditionSet []defined.Condition
+
+func (cs *ConditionSet) UnmarshalJSON(b []byte) error {
+	switch shape := jsonShape(b); shape {
+	case "null":
+		*cs = nil
+		return nil
+	case "an array":
+		var arr []defined.Condition
+		if err := json.Unmarshal(b, &arr); err != nil {
+			return &argError{fmt.Sprintf("%s, and one of the entries isn't that shape", conditionShapes)}
+		}
+		*cs = arr
+		return nil
+	case "an object":
+		// one condition without the array wrapper is the obvious near-miss, so accept it
+		var c defined.Condition
+		if err := json.Unmarshal(b, &c); err != nil || c.Field == "" {
+			return &argError{fmt.Sprintf("%s, got an object that isn't a condition", conditionShapes)}
+		}
+		*cs = ConditionSet{c}
+		return nil
+	default:
+		return &argError{fmt.Sprintf("%s, got %s", conditionShapes, shape)}
+	}
 }
 
 func (s *Server) callDefined(name string, args json.RawMessage) (bool, string, error) {
@@ -49,12 +84,12 @@ func (s *Server) callDefined(name string, args json.RawMessage) (bool, string, e
 			return true, "", fmt.Errorf(noStore, "defined-events")
 		}
 		var p struct {
-			Name        string              `json:"name"`
-			Event       string              `json:"event"`
-			Where       []defined.Condition `json:"where"`
-			Description string              `json:"description"`
+			Name        string       `json:"name"`
+			Event       string       `json:"event"`
+			Where       ConditionSet `json:"where"`
+			Description string       `json:"description"`
 		}
-		if err := json.Unmarshal(args, &p); err != nil {
+		if err := unmarshalArgs(args, &p); err != nil {
 			return true, "", err
 		}
 		d, err := s.defined.Save(defined.Definition{Name: p.Name, Event: p.Event, Where: p.Where, Description: p.Description})
@@ -76,16 +111,18 @@ func (s *Server) callDefined(name string, args json.RawMessage) (bool, string, e
 		var p struct {
 			Name string `json:"name"`
 		}
-		if err := json.Unmarshal(args, &p); err != nil {
+		if err := unmarshalArgs(args, &p); err != nil {
 			return true, "", err
 		}
 		if strings.TrimSpace(p.Name) == "" {
-			return true, "", fmt.Errorf("name is required")
+			return true, "", fmt.Errorf("name is required — list_defined_events to get names")
 		}
-		if err := s.defined.Delete(p.Name); err != nil {
+		found, err := s.defined.Delete(p.Name)
+		if err != nil {
 			return true, "", err
 		}
-		return true, jsonStr(map[string]any{"deleted": p.Name}), nil
+		rm := removal{kind: "defined event", field: "name", list: "list_defined_events"}
+		return true, jsonStr(rm.result(found, p.Name)), nil
 	}
 	return false, "", nil
 }

@@ -53,7 +53,7 @@ func init() {
 		},
 		map[string]any{
 			"name":        "delete_alert",
-			"description": "Delete an alert by id (get ids from list_alerts).",
+			"description": "Delete an alert by id (get ids from list_alerts). Returns deleted:true only if an alert with that id existed; deleted:false means nothing was removed.",
 			"inputSchema": map[string]any{"type": "object", "properties": map[string]any{"id": map[string]any{"type": "string"}}, "required": []string{"id"}},
 		},
 		map[string]any{
@@ -76,7 +76,7 @@ func init() {
 		},
 		map[string]any{
 			"name":        "delete_webhook",
-			"description": "Delete a webhook endpoint by id (get ids from list_webhooks).",
+			"description": "Delete a webhook endpoint by id (get ids from list_webhooks). Returns deleted:true only if a webhook with that id existed; deleted:false means nothing was removed.",
 			"inputSchema": map[string]any{"type": "object", "properties": map[string]any{"id": map[string]any{"type": "string"}}, "required": []string{"id"}},
 		},
 		map[string]any{
@@ -131,7 +131,7 @@ func init() {
 		},
 		map[string]any{
 			"name":        "delete_cohort",
-			"description": "Delete a cohort by id (get ids from list_cohorts).",
+			"description": "Delete a cohort by id (get ids from list_cohorts). Returns deleted:true only if a cohort with that id existed; deleted:false means nothing was removed.",
 			"inputSchema": map[string]any{"type": "object", "properties": map[string]any{"id": map[string]any{"type": "string"}}, "required": []string{"id"}},
 		},
 		map[string]any{
@@ -154,7 +154,7 @@ func init() {
 		},
 		map[string]any{
 			"name":        "delete_saved_report",
-			"description": "Unpin a saved report by id (get ids from list_saved_reports).",
+			"description": "Unpin a saved report by id (get ids from list_saved_reports). Returns deleted:true only if a saved report with that id existed; deleted:false means nothing was removed.",
 			"inputSchema": map[string]any{"type": "object", "properties": map[string]any{"id": map[string]any{"type": "string"}}, "required": []string{"id"}},
 		},
 	)
@@ -205,7 +205,7 @@ func (s *Server) callAction(name string, args json.RawMessage) (bool, string, er
 		return true, jsonStr(map[string]any{"alerts": s.alerts.List()}), nil
 
 	case "delete_alert":
-		return s.deleteByID(args, "alert", func(id string) error { return s.alerts.Delete(id) }, s.alerts == nil)
+		return s.deleteByID(args, removal{kind: "alert", field: "id", list: "list_alerts"}, func(id string) (bool, error) { return s.alerts.Delete(id) }, s.alerts == nil)
 
 	case "add_webhook":
 		if s.webhooks == nil {
@@ -250,7 +250,7 @@ func (s *Server) callAction(name string, args json.RawMessage) (bool, string, er
 		return true, jsonStr(map[string]any{"webhooks": out}), nil
 
 	case "delete_webhook":
-		return s.deleteByID(args, "webhook", func(id string) error { return s.webhooks.Delete(id) }, s.webhooks == nil)
+		return s.deleteByID(args, removal{kind: "webhook", field: "id", list: "list_webhooks"}, func(id string) (bool, error) { return s.webhooks.Delete(id) }, s.webhooks == nil)
 
 	case "test_webhook":
 		if s.webhooks == nil {
@@ -368,7 +368,7 @@ func (s *Server) callAction(name string, args json.RawMessage) (bool, string, er
 		return true, jsonStr(map[string]any{"cohorts": out}), nil
 
 	case "delete_cohort":
-		return s.deleteByID(args, "cohort", func(id string) error { return s.cohorts.Delete(id) }, s.cohorts == nil)
+		return s.deleteByID(args, removal{kind: "cohort", field: "id", list: "list_cohorts"}, func(id string) (bool, error) { return s.cohorts.Delete(id) }, s.cohorts == nil)
 
 	case "save_report":
 		if s.insights == nil {
@@ -400,7 +400,7 @@ func (s *Server) callAction(name string, args json.RawMessage) (bool, string, er
 		return true, jsonStr(map[string]any{"saved_reports": s.insights.List()}), nil
 
 	case "delete_saved_report":
-		return s.deleteByID(args, "saved report", func(id string) error { return s.insights.Delete(id) }, s.insights == nil)
+		return s.deleteByID(args, removal{kind: "saved report", field: "id", list: "list_saved_reports"}, func(id string) (bool, error) { return s.insights.Delete(id) }, s.insights == nil)
 	}
 	return false, "", nil
 }
@@ -414,22 +414,58 @@ func formatOf(e webhook.Endpoint) string {
 	return "json"
 }
 
-// deleteByID is the shared shape of every delete tool: parse id, guard nil store, delete.
-func (s *Server) deleteByID(args json.RawMessage, kind string, del func(string) error, storeNil bool) (bool, string, error) {
+// removal describes one delete/revoke tool so its answer can be honest about what
+// actually happened.
+//
+// Every delete tool used to answer {"deleted": "<whatever you passed>"} whether or
+// not anything existed. An agent that typo'd a key read that as "done, deleted it"
+// and told the user the flag was gone while it stayed live: an assertion the
+// backend never made. Now the payload carries a BOOLEAN — deleted is true only when
+// a row really went away, false plus a note naming the list tool when nothing
+// matched. Not-found stays an RPC success on purpose (deleting the same id twice is
+// a legitimate retry, not an error); it just stops claiming a removal.
+type removal struct {
+	kind  string // what it names, e.g. "flag"
+	field string // the argument the caller passed: "id", "key", "name"
+	list  string // the list tool that shows what does exist
+	store string // the store label for the bare-demo-mode error; defaults to kind
+}
+
+// storeName is the label the "no persistent storage" error uses.
+func (rm removal) storeName() string {
+	if rm.store != "" {
+		return rm.store
+	}
+	return rm.kind
+}
+
+// result renders the honest payload. value is the identifier the caller passed.
+func (rm removal) result(found bool, value string) map[string]any {
+	out := map[string]any{"deleted": found, rm.field: value}
+	if !found {
+		out["note"] = fmt.Sprintf("no %s with that %s, nothing was deleted (%s shows what exists)", rm.kind, rm.field, rm.list)
+	}
+	return out
+}
+
+// deleteByID is the shared shape of every id-keyed delete tool: parse id, guard nil
+// store, delete, then report whether a row actually went away.
+func (s *Server) deleteByID(args json.RawMessage, rm removal, del func(string) (bool, error), storeNil bool) (bool, string, error) {
 	if storeNil {
-		return true, "", fmt.Errorf(noStore, kind)
+		return true, "", fmt.Errorf(noStore, rm.storeName())
 	}
 	var p struct{ ID string }
 	if err := unmarshalArgs(args, &p); err != nil {
 		return true, "", err
 	}
 	if strings.TrimSpace(p.ID) == "" {
-		return true, "", fmt.Errorf("id is required — list first to get ids")
+		return true, "", fmt.Errorf("id is required — %s to get ids", rm.list)
 	}
-	if err := del(p.ID); err != nil {
+	found, err := del(p.ID)
+	if err != nil {
 		return true, "", err
 	}
-	return true, jsonStr(map[string]any{"deleted": p.ID}), nil
+	return true, jsonStr(rm.result(found, p.ID)), nil
 }
 
 // knownEvent guards mutations against typo'd event names the same way reports do —

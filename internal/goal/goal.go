@@ -87,16 +87,20 @@ func (s *Store) Save(d Definition) (Definition, error) {
 	return d, s.persist()
 }
 
-func (s *Store) Delete(id string) error {
+// Delete removes a goal by id. found is true only when a goal actually went away;
+// an id that matches nothing is not an error (deleting twice is a legitimate
+// retry), it just reports found=false so callers never claim a removal that did
+// not occur.
+func (s *Store) Delete(id string) (found bool, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i, d := range s.items {
 		if d.ID == id {
 			s.items = append(s.items[:i], s.items[i+1:]...)
-			return s.persist()
+			return true, s.persist()
 		}
 	}
-	return fmt.Errorf("no goal with id %q", id)
+	return false, nil
 }
 
 func (s *Store) persist() error {

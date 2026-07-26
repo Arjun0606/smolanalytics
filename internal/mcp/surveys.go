@@ -41,7 +41,7 @@ func init() {
 		},
 		map[string]any{
 			"name":        "delete_survey",
-			"description": "Delete a survey by id.",
+			"description": "Delete a survey by id. Returns deleted:true only if a survey with that id existed; deleted:false means nothing was removed.",
 			"inputSchema": obj(map[string]any{"id": map[string]any{"type": "string"}}, []string{"id"}),
 		},
 		map[string]any{
@@ -108,7 +108,7 @@ func (s *Server) callSurveys(name string, args json.RawMessage) (bool, string, e
 		return true, jsonStr(map[string]any{"survey": sv}), nil
 
 	case "delete_survey":
-		return s.deleteByID(args, "survey", func(id string) error { return s.surveys.Delete(id) }, s.surveys == nil)
+		return s.deleteByID(args, removal{kind: "survey", field: "id", list: "list_surveys"}, func(id string) (bool, error) { return s.surveys.Delete(id) }, s.surveys == nil)
 
 	case "survey_results":
 		if s.surveys == nil {

@@ -129,7 +129,10 @@ func (s *Store) Add(name, url, format string) (Endpoint, error) {
 	return e, nil
 }
 
-func (s *Store) Delete(id string) error {
+// Delete removes an endpoint by id. found is true only when an endpoint actually
+// went away, so callers never claim a removal that did not occur. A miss is not
+// an error.
+func (s *Store) Delete(id string) (found bool, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	old := s.items
@@ -137,14 +140,19 @@ func (s *Store) Delete(id string) error {
 	for _, e := range old {
 		if e.ID != id {
 			out = append(out, e)
+		} else {
+			found = true
 		}
+	}
+	if !found {
+		return false, nil
 	}
 	s.items = out
 	if err := s.persist(); err != nil {
 		s.items = old
-		return err
+		return false, err
 	}
-	return nil
+	return true, nil
 }
 
 func (s *Store) persist() error {

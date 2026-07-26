@@ -64,7 +64,18 @@ func TestGoalStoreValidation(t *testing.T) {
 	if err != nil || d.ID == "" {
 		t.Fatalf("valid goal: %v", err)
 	}
-	if err := s.Delete(d.ID); err != nil {
+	found, err := s.Delete(d.ID)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if !found {
+		t.Fatal("deleting a real goal must report found")
+	}
+	// deleting again is not an error, but it must NOT claim it removed anything
+	if found, err := s.Delete(d.ID); err != nil || found {
+		t.Fatalf("second delete: found=%v err=%v, want found=false with no error", found, err)
+	}
+	if found, err := s.Delete("nope123"); err != nil || found {
+		t.Fatalf("deleting an id that never existed: found=%v err=%v, want found=false", found, err)
 	}
 }

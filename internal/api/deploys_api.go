@@ -65,12 +65,15 @@ func (s *Server) deleteDeploy(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusServiceUnavailable, "deploys unavailable")
 		return
 	}
-	if err := s.deploys.Delete(r.PathValue("id")); err != nil {
+	found, err := s.deploys.Delete(r.PathValue("id"))
+	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.rec("deploy.deleted", r.PathValue("id"))
-	writeJSON(w, http.StatusOK, map[string]string{"deleted": r.PathValue("id")})
+	if found { // never audit-log a deletion that didn't happen
+		s.rec("deploy.deleted", r.PathValue("id"))
+	}
+	writeRemoval(w, "deleted", "deploy marker", "id", r.PathValue("id"), found)
 }
 
 // listDeploys returns the markers; with ?event=<name> it also returns each deploy's

@@ -89,8 +89,10 @@ func (s *Store) Save(in Insight) (Insight, error) {
 	return in, nil
 }
 
-// Delete removes an insight by id (no error if it's already gone).
-func (s *Store) Delete(id string) error {
+// Delete removes an insight by id (no error if it's already gone). found is true
+// only when a row actually went away, so callers never claim a removal that did
+// not occur.
+func (s *Store) Delete(id string) (found bool, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	old := s.items
@@ -98,14 +100,19 @@ func (s *Store) Delete(id string) error {
 	for _, it := range old {
 		if it.ID != id {
 			out = append(out, it)
+		} else {
+			found = true
 		}
+	}
+	if !found {
+		return false, nil
 	}
 	s.items = out
 	if err := s.persist(); err != nil {
 		s.items = old // roll back so memory matches disk
-		return err
+		return false, err
 	}
-	return nil
+	return true, nil
 }
 
 // persist writes the whole list via temp-file + rename (atomic). Caller holds lock.

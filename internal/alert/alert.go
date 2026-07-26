@@ -86,7 +86,9 @@ func (s *Store) Add(a Alert) (Alert, error) {
 	return a, nil
 }
 
-func (s *Store) Delete(id string) error {
+// Delete removes an alert by id. found is true only when an alert actually went
+// away, so callers never claim a removal that did not occur. A miss is not an error.
+func (s *Store) Delete(id string) (found bool, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	old := s.items
@@ -94,14 +96,19 @@ func (s *Store) Delete(id string) error {
 	for _, a := range old {
 		if a.ID != id {
 			out = append(out, a)
+		} else {
+			found = true
 		}
+	}
+	if !found {
+		return false, nil
 	}
 	s.items = out
 	if err := s.persist(); err != nil {
 		s.items = old
-		return err
+		return false, err
 	}
-	return nil
+	return true, nil
 }
 
 // SetChecked records an evaluation result (and a fire time, if it fired).

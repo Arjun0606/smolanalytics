@@ -49,12 +49,15 @@ func (s *Server) deleteGoal(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusServiceUnavailable, "goals unavailable")
 		return
 	}
-	if err := s.goals.Delete(r.PathValue("id")); err != nil {
+	found, err := s.goals.Delete(r.PathValue("id"))
+	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.rec("goal.deleted", r.PathValue("id"))
-	writeJSON(w, http.StatusOK, map[string]string{"deleted": r.PathValue("id")})
+	if found { // never audit-log a deletion that didn't happen
+		s.rec("goal.deleted", r.PathValue("id"))
+	}
+	writeRemoval(w, "deleted", "goal", "id", r.PathValue("id"), found)
 }
 
 // listGoals returns the configured goals. API-1: POST-ed resources are GET-listable.

@@ -90,7 +90,9 @@ func (s *Store) Save(d Definition) (Definition, error) {
 	return d, nil
 }
 
-func (s *Store) Delete(id string) error {
+// Delete removes a cohort by id. found is true only when a cohort actually went
+// away, so callers never claim a removal that did not occur. A miss is not an error.
+func (s *Store) Delete(id string) (found bool, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	old := s.items
@@ -98,14 +100,19 @@ func (s *Store) Delete(id string) error {
 	for _, d := range old {
 		if d.ID != id {
 			out = append(out, d)
+		} else {
+			found = true
 		}
+	}
+	if !found {
+		return false, nil
 	}
 	s.items = out
 	if err := s.persist(); err != nil {
 		s.items = old // roll back so memory matches disk
-		return err
+		return false, err
 	}
-	return nil
+	return true, nil
 }
 
 func (s *Store) persist() error {

@@ -38,12 +38,15 @@ func (s *Server) deleteWebhook(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusServiceUnavailable, "webhooks unavailable")
 		return
 	}
-	if err := s.webhooks.Delete(r.PathValue("id")); err != nil {
+	found, err := s.webhooks.Delete(r.PathValue("id"))
+	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.rec("webhook.deleted", r.PathValue("id"))
-	writeJSON(w, http.StatusOK, map[string]string{"deleted": r.PathValue("id")})
+	if found { // never audit-log a deletion that didn't happen
+		s.rec("webhook.deleted", r.PathValue("id"))
+	}
+	writeRemoval(w, "deleted", "webhook", "id", r.PathValue("id"), found)
 }
 
 func (s *Server) testWebhook(w http.ResponseWriter, r *http.Request) {
@@ -88,12 +91,15 @@ func (s *Server) deleteAlert(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusServiceUnavailable, "alerts unavailable")
 		return
 	}
-	if err := s.alerts.Delete(r.PathValue("id")); err != nil {
+	found, err := s.alerts.Delete(r.PathValue("id"))
+	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.rec("alert.deleted", r.PathValue("id"))
-	writeJSON(w, http.StatusOK, map[string]string{"deleted": r.PathValue("id")})
+	if found { // never audit-log a deletion that didn't happen
+		s.rec("alert.deleted", r.PathValue("id"))
+	}
+	writeRemoval(w, "deleted", "alert", "id", r.PathValue("id"), found)
 }
 
 // listAlerts / listWebhooks — API-1: POST-ed resources are GET-listable, matching

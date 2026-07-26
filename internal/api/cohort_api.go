@@ -32,11 +32,12 @@ func (s *Server) saveCohort(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteCohort(w http.ResponseWriter, r *http.Request) {
-	if err := s.cohorts.Delete(r.PathValue("id")); err != nil {
+	found, err := s.cohorts.Delete(r.PathValue("id"))
+	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"deleted": r.PathValue("id")})
+	writeRemoval(w, "deleted", "cohort", "id", r.PathValue("id"), found)
 }
 
 // cohortUsers resolves a cohort to its members. GET /v1/cohorts/{id}/users

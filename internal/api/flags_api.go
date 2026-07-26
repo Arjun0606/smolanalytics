@@ -50,11 +50,12 @@ func (s *Server) deleteFlag(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusServiceUnavailable, "feature flags not configured")
 		return
 	}
-	if err := s.flags.Delete(r.PathValue("key")); err != nil {
+	found, err := s.flags.Delete(r.PathValue("key"))
+	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"deleted": r.PathValue("key")})
+	writeRemoval(w, "deleted", "flag", "key", r.PathValue("key"), found)
 }
 
 // evaluateFlags resolves every enabled flag for one user. GET /v1/flags/evaluate?distinct_id=…

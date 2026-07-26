@@ -28,8 +28,15 @@ func TestSaveListDeletePersist(t *testing.T) {
 		t.Fatalf("reload lost the insight: %+v", s2.List())
 	}
 
-	if err := s2.Delete(in.ID); err != nil {
+	found, err := s2.Delete(in.ID)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if !found {
+		t.Fatal("deleting a real insight must report found")
+	}
+	if found, err := s2.Delete(in.ID); err != nil || found {
+		t.Fatalf("re-deleting: found=%v err=%v, want found=false with no error", found, err)
 	}
 	s3, _ := Open(path)
 	if len(s3.List()) != 0 {

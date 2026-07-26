@@ -177,12 +177,15 @@ func (s *Server) revokeKey(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusServiceUnavailable, "settings unavailable")
 		return
 	}
-	if err := s.settings.RevokeKey(r.PathValue("id")); err != nil {
+	found, err := s.settings.RevokeKey(r.PathValue("id"))
+	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.rec("key.revoked", r.PathValue("id"))
-	writeJSON(w, http.StatusOK, map[string]string{"revoked": r.PathValue("id")})
+	if found { // never audit-log a revocation that didn't happen
+		s.rec("key.revoked", r.PathValue("id"))
+	}
+	writeRemoval(w, "revoked", "api key", "id", r.PathValue("id"), found)
 }
 
 // updateAccount sets/changes the operator login. Changing an existing password

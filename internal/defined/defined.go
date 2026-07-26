@@ -154,17 +154,24 @@ func validField(f string) bool {
 }
 
 // Delete removes a definition by name; reports stop resolving it immediately.
-func (s *Store) Delete(name string) error {
+// found is true only when a definition actually went away, so callers never claim
+// a removal that did not occur. A miss is not an error (retries are fine).
+func (s *Store) Delete(name string) (found bool, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := s.defs[:0]
+	kept := make([]Definition, 0, len(s.defs))
 	for _, d := range s.defs {
 		if d.Name != name {
-			out = append(out, d)
+			kept = append(kept, d)
+		} else {
+			found = true
 		}
 	}
-	s.defs = out
-	return s.persistLocked()
+	if !found {
+		return false, nil
+	}
+	s.defs = kept
+	return true, s.persistLocked()
 }
 
 // List returns a copy of the definitions.

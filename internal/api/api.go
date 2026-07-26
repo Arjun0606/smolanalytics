@@ -1006,6 +1006,20 @@ func writeErr(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }
 
+// writeRemoval answers a DELETE honestly. Every delete endpoint used to echo back
+// {"deleted": "<whatever you passed>"} whether or not a row existed, so a typo'd id
+// read as a confirmed removal. The verb field is now a BOOLEAN: true only when
+// something actually went away, false plus a note when nothing matched. A miss stays
+// 200 on purpose (deleting the same id twice is a legitimate retry), it just stops
+// claiming a removal. verb is "deleted" or "revoked"; field is "id", "key", or "name".
+func writeRemoval(w http.ResponseWriter, verb, kind, field, value string, found bool) {
+	out := map[string]any{verb: found, field: value}
+	if !found {
+		out["note"] = fmt.Sprintf("no %s with that %s, nothing was %s", kind, field, verb)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 // serverError renders a branded HTML 500 for browser-facing routes and logs the
 // real error server-side. The raw internal error is NEVER echoed to the client —
 // especially on public routes (e.g. the unauthenticated share page), where it would

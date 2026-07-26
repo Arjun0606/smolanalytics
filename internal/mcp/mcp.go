@@ -156,8 +156,10 @@ func (s *Server) Dispatch(req request) *response {
 		// a mis-shaped params envelope must be an explicit error, not an empty tool
 		// name that dispatches nowhere.
 		if len(req.Params) > 0 {
+			// never echo encoding/json's error: it names internal Go types. Say the
+			// shape params must have instead.
 			if err := json.Unmarshal(req.Params, &p); err != nil {
-				return fail(-32602, "invalid params: "+err.Error())
+				return fail(-32602, `invalid params: tools/call params must be an object like {"name":"list_events","arguments":{}}, where name is a string and arguments is an object`)
 			}
 		}
 		text, err := s.callTool(p.Name, p.Arguments)

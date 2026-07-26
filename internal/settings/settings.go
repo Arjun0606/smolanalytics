@@ -200,7 +200,10 @@ func (s *Store) AddKey(name string) (APIKey, error) {
 	return k, nil
 }
 
-func (s *Store) RevokeKey(id string) error {
+// RevokeKey removes an ingest key by id. found is true only when a key actually
+// went away, so callers never claim a revocation that did not occur. A miss is not
+// an error (revoking twice is a legitimate retry).
+func (s *Store) RevokeKey(id string) (found bool, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	old := s.d.Keys
@@ -208,14 +211,19 @@ func (s *Store) RevokeKey(id string) error {
 	for _, k := range old {
 		if k.ID != id {
 			out = append(out, k)
+		} else {
+			found = true
 		}
+	}
+	if !found {
+		return false, nil
 	}
 	s.d.Keys = out
 	if err := s.persist(); err != nil {
 		s.d.Keys = old // roll back so a revoked key can't resurrect on restart
-		return err
+		return false, err
 	}
-	return nil
+	return true, nil
 }
 
 func (s *Store) persist() error {

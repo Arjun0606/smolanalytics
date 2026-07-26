@@ -52,12 +52,15 @@ func (s *Server) deleteShare(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusServiceUnavailable, "share links unavailable")
 		return
 	}
-	if err := s.shares.Delete(r.PathValue("id")); err != nil {
+	found, err := s.shares.Delete(r.PathValue("id"))
+	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.rec("share.revoked", r.PathValue("id"))
-	writeJSON(w, http.StatusOK, map[string]string{"revoked": r.PathValue("id")})
+	if found { // never audit-log a revocation that didn't happen
+		s.rec("share.revoked", r.PathValue("id"))
+	}
+	writeRemoval(w, "revoked", "share link", "id", r.PathValue("id"), found)
 }
 
 var shareTmpl = template.Must(template.New("share").Parse(`<!doctype html>

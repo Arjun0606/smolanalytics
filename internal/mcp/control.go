@@ -56,7 +56,7 @@ func init() {
 		},
 		map[string]any{
 			"name":        "revoke_api_key",
-			"description": "Revoke an ingest API key by id (get ids from list_api_keys). Events signed with it stop being accepted immediately.",
+			"description": "Revoke an ingest API key by id (get ids from list_api_keys). Events signed with it stop being accepted immediately. Returns deleted:true only if a key with that id existed; deleted:false means nothing was revoked.",
 			"inputSchema": map[string]any{"type": "object", "properties": map[string]any{"id": map[string]any{"type": "string"}}, "required": []string{"id"}},
 		},
 		map[string]any{
@@ -197,7 +197,7 @@ func (s *Server) callControl(name string, args json.RawMessage) (bool, string, e
 		}), nil
 
 	case "revoke_api_key":
-		return s.deleteByID(args, "settings", func(id string) error { return s.settings.RevokeKey(id) }, s.settings == nil)
+		return s.deleteByID(args, removal{kind: "api key", field: "id", list: "list_api_keys", store: "settings"}, func(id string) (bool, error) { return s.settings.RevokeKey(id) }, s.settings == nil)
 
 	case "delete_user_data":
 		var p struct {

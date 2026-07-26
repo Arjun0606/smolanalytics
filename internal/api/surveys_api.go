@@ -49,11 +49,12 @@ func (s *Server) deleteSurvey(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusServiceUnavailable, "surveys not configured")
 		return
 	}
-	if err := s.surveys.Delete(r.PathValue("id")); err != nil {
+	found, err := s.surveys.Delete(r.PathValue("id"))
+	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"deleted": r.PathValue("id")})
+	writeRemoval(w, "deleted", "survey", "id", r.PathValue("id"), found)
 }
 
 // surveyResults: GET /v1/surveys/{id}/results?days=30 — the aggregate read (pinned MCP==API).

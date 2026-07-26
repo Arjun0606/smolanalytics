@@ -33,7 +33,7 @@ func init() {
 		},
 		map[string]any{
 			"name":        "delete_deploy",
-			"description": "Delete a deploy marker by id (get ids from list_deploys).",
+			"description": "Delete a deploy marker by id (get ids from list_deploys). Returns deleted:true only if a marker with that id existed; deleted:false means nothing was removed.",
 			"inputSchema": obj(map[string]any{"id": map[string]any{"type": "string"}}, []string{"id"}),
 		},
 		map[string]any{
@@ -82,7 +82,7 @@ func (s *Server) callDeploys(name string, args json.RawMessage) (bool, string, e
 		return true, jsonStr(map[string]any{"deploys": s.deploys.List()}), nil
 
 	case "delete_deploy":
-		return s.deleteByID(args, "deploy", func(id string) error { return s.deploys.Delete(id) }, s.deploys == nil)
+		return s.deleteByID(args, removal{kind: "deploy marker", field: "id", list: "list_deploys"}, func(id string) (bool, error) { return s.deploys.Delete(id) }, s.deploys == nil)
 
 	case "deploy_impact":
 		if s.deploys == nil {

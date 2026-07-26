@@ -122,7 +122,10 @@ func (s *Store) SetEnabled(key string, on bool) (Flag, error) {
 	return s.Save(f)
 }
 
-func (s *Store) Delete(key string) error {
+// Delete removes a flag by key. found is true only when a flag actually went away,
+// so callers can report "nothing was deleted" instead of implying a removal that
+// never happened. Deleting a key that isn't there is not an error (retries are fine).
+func (s *Store) Delete(key string) (found bool, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	old := s.items
@@ -130,14 +133,19 @@ func (s *Store) Delete(key string) error {
 	for _, f := range old {
 		if f.Key != key {
 			out = append(out, f)
+		} else {
+			found = true
 		}
+	}
+	if !found {
+		return false, nil // nothing changed, no need to rewrite the file
 	}
 	s.items = out
 	if err := s.persist(); err != nil {
 		s.items = old
-		return err
+		return false, err
 	}
-	return nil
+	return true, nil
 }
 
 func (s *Store) persist() error {

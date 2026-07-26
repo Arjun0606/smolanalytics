@@ -44,9 +44,10 @@ func (s *Server) deleteDefined(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusServiceUnavailable, "defined events aren't enabled")
 		return
 	}
-	if err := s.defined.Delete(r.PathValue("name")); err != nil {
+	found, err := s.defined.Delete(r.PathValue("name"))
+	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"deleted": r.PathValue("name")})
+	writeRemoval(w, "deleted", "defined event", "name", r.PathValue("name"), found)
 }

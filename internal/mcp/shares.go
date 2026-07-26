@@ -26,7 +26,7 @@ func init() {
 		},
 		map[string]any{
 			"name":        "revoke_share_link",
-			"description": "Revoke a share link by id — the URL stops working immediately.",
+			"description": "Revoke a share link by id — the URL stops working immediately. Returns deleted:true only if a link with that id existed; deleted:false means nothing was revoked.",
 			"inputSchema": map[string]any{"type": "object", "properties": map[string]any{"id": map[string]any{"type": "string"}}, "required": []string{"id"}},
 		},
 	)
@@ -62,7 +62,7 @@ func (s *Server) callShares(name string, args json.RawMessage) (bool, string, er
 		}
 		return true, jsonStr(map[string]any{"share_links": out}), nil
 	case "revoke_share_link":
-		return s.deleteByID(args, "share-link", func(id string) error { return s.shares.Delete(id) }, s.shares == nil)
+		return s.deleteByID(args, removal{kind: "share link", field: "id", list: "list_share_links"}, func(id string) (bool, error) { return s.shares.Delete(id) }, s.shares == nil)
 	}
 	return false, "", nil
 }
