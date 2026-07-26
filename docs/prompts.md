@@ -274,7 +274,7 @@ Want the goals and saved reports set up now?
 
 ## Roll your own
 
-A prompt is nothing exotic: instructions over the same 73 tools your model already has.
+A prompt is nothing exotic: instructions over the same 79 tools your model already has.
 If a routine keeps coming up ("compare pro vs free every Friday", "check both funnels
 after each deploy"), write it once into your repo's `CLAUDE.md` / `AGENTS.md` /
 `.cursorrules` and it becomes part of how your agent works, no MCP plumbing required.

@@ -40,7 +40,21 @@ func (s *Server) answerToolkit(intent askIntent, q string, evs []event.Event, no
 		path := tkPath(q, evs)
 		res := heatmap.Compute(evs, path, "", 0, 0)
 		if res.Clicks == 0 {
-			return fmt.Sprintf("No positioned click data on %s yet. Once the SDK autocaptures $click events there (viewport included), the heatmap fills in. Pick a page on the heatmap card below.", path),
+			// The heatmap card only renders when a $pageview exists (HasWeb). A product-only
+			// instance is exactly the case that reaches this branch, so pointing at "the card
+			// below" would send the user hunting for a card that is not on their page.
+			hasWeb := false
+			for _, e := range evs {
+				if e.Name == "$pageview" {
+					hasWeb = true
+					break
+				}
+			}
+			where := "Once the SDK autocaptures $click events there (viewport included), a heatmap card appears on this page."
+			if hasWeb {
+				where = "Once the SDK autocaptures $click events there (viewport included), the heatmap fills in. Pick a page on the heatmap card below."
+			}
+			return fmt.Sprintf("No positioned click data on %s yet. %s", path, where),
 				tkReceipt("the click-heatmap report over "+path, "heatmap"), true
 		}
 		n := len(res.TopTargets)
@@ -60,7 +74,7 @@ func (s *Server) answerToolkit(intent askIntent, q string, evs []event.Event, no
 		}
 		sv, found := tkPickSurvey(s.surveys.List())
 		if !found {
-			return "No surveys running yet. Create one on the surveys card below (NPS, rating, choice, or text) and responses land here.", tkReceipt("the survey-results report", "surveys"), true
+			return "No surveys running yet. Create one from your editor with the create_survey tool, or POST /v1/surveys (NPS, rating, choice or text). Responses land on the surveys card below.", tkReceipt("the survey-results report", "surveys"), true
 		}
 		res := survey.Results(evs, sv.ID, sv.Type, 30)
 		return tkSurveyAnswer(sv, res), tkReceipt(fmt.Sprintf("the survey-results report for %q", sv.Name), "surveys"), true
@@ -195,7 +209,7 @@ func (s *Server) answerToolkit(intent askIntent, q string, evs []event.Event, no
 
 	case intentSearch:
 		if s.gsc == nil || !s.gsc.Connected() {
-			return "Google Search Console isn't connected on this instance, so there are no search queries to report. Connect it in settings and the queries you rank for, their clicks, impressions and average position land on the google search queries card below.",
+			return "Google Search Console isn't connected on this instance, so there are no search queries to report. Connect it from the command line with `smolanalytics gsc auth` (run `smolanalytics gsc` for the setup steps). Once it is connected, the queries you rank for and their clicks show up on a google search queries card on this page.",
 				tkReceipt("the Search Console store", "google search queries"), true
 		}
 		rows, _, site, fetched := s.gsc.Snapshot()
@@ -217,7 +231,7 @@ func (s *Server) answerToolkit(intent askIntent, q string, evs []event.Event, no
 
 	case intentEvents:
 		if len(evs) == 0 {
-			return "No events recorded yet. Once your SDK or API sends the first one it shows up on the event stream card below, newest first.",
+			return "No events recorded yet. Once your SDK or API sends the first one, this page fills in and the event stream card lists them newest first.",
 				tkReceipt("the raw event log", "event stream"), true
 		}
 		counts := map[string]int{}

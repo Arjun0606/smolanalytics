@@ -136,7 +136,7 @@ func init() {
 		},
 		map[string]any{
 			"name":        "save_report",
-			"description": "Pin a report to the dashboard's Saved Reports so the user sees it on every visit. type: funnel|trend|breakdown|retention. params mirror the matching report tool's arguments as strings, e.g. funnel: {\"steps\":\"signup,activate,checkout\"}; trend: {\"event\":\"signup\"}; breakdown: {\"event\":\"signup\",\"property\":\"source\"}.",
+			"description": "Pin a report to the board at the top of the dashboard (labelled \"pinned · your questions\") so the user sees it on every visit. type: funnel|trend|breakdown|retention. params mirror the matching report tool's arguments as strings, e.g. funnel: {\"steps\":\"signup,activate,checkout\"}; trend: {\"event\":\"signup\"}; breakdown: {\"event\":\"signup\",\"property\":\"source\"}.",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -391,7 +391,7 @@ func (s *Server) callAction(name string, args json.RawMessage) (bool, string, er
 		if err != nil {
 			return true, "", err
 		}
-		return true, jsonStr(map[string]any{"saved": in, "note": "now pinned on the dashboard under Saved Reports"}), nil
+		return true, jsonStr(map[string]any{"saved": in, "note": "now pinned on the dashboard board, under \"pinned · your questions\""}), nil
 
 	case "list_saved_reports":
 		if s.insights == nil {

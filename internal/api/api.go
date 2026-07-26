@@ -189,7 +189,7 @@ func (s *Server) evaluateAnomalies() {
 		sent++
 		payload := map[string]any{
 			"type": "anomaly", "title": f.Title, "detail": f.Detail, "fired_at": now,
-			"computed_by": "the verdict engine (notable-change detection), the same computation the dashboard's 'what to look at' renders",
+			"computed_by": "the verdict engine (notable-change detection), the same computation the dashboard's verdict renders",
 		}
 		s.webhooks.DeliverAll(payload, "⚠ "+f.Title+" — "+f.Detail)
 	}

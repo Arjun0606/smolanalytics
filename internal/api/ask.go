@@ -1012,7 +1012,7 @@ func answerAction(q string) string {
 			"(wire a Slack/HTTPS destination under Settings → Webhooks first). In Cursor/Claude Code your " +
 			"agent can do it directly: create_alert (\"tell me if signups drop below 10/day\")."
 	case hasAny(q, "retention", "retain"):
-		return "I can't change settings from here, data retention lives in Settings → Retention. " +
+		return "I can't change settings from here, data retention lives in Settings → Data. " +
 			"In Cursor/Claude Code your agent can: set_retention."
 	case strings.Contains(q, "rename"):
 		return "I can't rename events from here, event names come from your instrumentation. Rename it where " +

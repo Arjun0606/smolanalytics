@@ -31,7 +31,7 @@ Batch = JSON array (up to 10k events). Use a stable distinct_id per user.
 `smolanalytics connect` wires Claude Desktop / Claude Code / Cursor / Windsurf / VS Code / Cline
 automatically. Manual stdio config: command `smolanalytics`, args `["mcp"]`, env
 `SMOLANALYTICS_DB=<path>`. Remote: Streamable HTTP at `POST https://YOUR_HOST/mcp` with
-`Authorization: Bearer <write key>`. 51 tools + 14 prompts. Read (overview, funnel,
+`Authorization: Bearer <write key>`. 79 tools + 14 prompts. Read (overview, funnel,
 retention, trends, breakdown, web_overview, paths, lifecycle, stickiness, whats_notable, …),
 act (create_alert, add_webhook, create_cohort, save_report + list/delete), tie a ship to the
 numbers (record_deploy, then deploy_impact — which deploy moved the metric, before/after,
@@ -52,4 +52,4 @@ The `instrument-my-app` MCP prompt walks this exact loop.
 - Unknown event/property names return corrective errors listing valid names (never silent zeros).
 - One static binary, zero dependencies, MIT. Data stays on your infrastructure.
 - Docs: https://github.com/Arjun0606/smolanalytics (framework guides in /docs).
-- Hosted version: https://smolanalytics.com (14-day full trial, then from $29/mo).
+- Hosted version: https://smolanalytics.com (14-day full trial, then from $49/mo).

@@ -537,9 +537,9 @@
   </select>{{end}}
   <div class="spacer"></div>
   {{if ge .LastEventSecs 0}}<span class="hlink" id="lastev" data-secs="{{.LastEventSecs}}" title="seconds since the newest ingested event, proof this page is live">·</span>{{end}}
-  {{if .HasData}}<a class="livepill{{if gt .LiveNow 0}} on{{end}}" href="#tab=live" id="livepill"><span class="dot"></span><span id="livecount">{{if gt .LiveNow 0}}{{.LiveNow}} now{{else}}live{{end}}</span></a>{{end}}
+  {{if .HasData}}<a class="livepill{{if gt .LiveNow 0}} on{{end}}" href="#pane-live" id="livepill"><span class="dot"></span><span id="livecount">{{if gt .LiveNow 0}}{{.LiveNow}} now{{else}}live{{end}}</span></a>{{end}}
   <span class="agentpill{{if .AgentLive}} on{{end}}" id="agentpill" title="{{if .AgentName}}your agent, seen via real MCP traffic; click for connect options{{else}}connect your coding agent over MCP{{end}}">⌁ <span id="agentlbl">{{if .AgentName}}{{.AgentName}} · {{.AgentAgo}}{{if gt .AgentCalls 0}} · {{.AgentCalls}} calls{{end}}{{else}}agent{{end}}</span></span>
-  <a class="hlink" href="#explore" id="exploreLink" title="run any report on your own events">explore</a>
+  {{if .HasData}}<a class="hlink" href="#explore" id="exploreLink" title="run any report on your own events">explore</a>{{end}}
   {{if .HasShares}}<a class="hlink" href="/settings/shares" id="shareBtn" title="mint a revocable read-only link">share</a>{{end}}
   <a class="hlink" href="{{.CloudURL}}" target="_blank" style="color:var(--accent)">Cloud ↗</a>
   <a class="hlink" href="/settings">settings</a>
@@ -1458,7 +1458,12 @@
         if(label.indexOf('·')>-1)label=label.split('·')[0].trim();
         label=label.replace(/[\s,·-]+$/,'');
         if(!label)label=p.id.replace(/^pane-/,'').replace(/-/g,' ');
-        items.push({id:p.id,label:label,order:parseInt(p.style.order||'99',10)||99});
+        // NB: `parseInt(...)||99` would treat a legitimate order:0 as missing — and the agent
+        // card is exactly order:0 once agent events exist, so it would sort LAST in the index
+        // while rendering FIRST on the page. Guard on isNaN, not falsiness.
+        var ord = parseInt(p.style.order, 10);
+        if (isNaN(ord)) ord = 99;
+        items.push({id:p.id,label:label,order:ord});
       });
       if(!items.length)return;
       items.sort(function(a,b){return a.order-b.order});

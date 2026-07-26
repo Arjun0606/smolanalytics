@@ -129,9 +129,13 @@ func TestAskRouterAndAnswers(t *testing.T) {
 			notContains: []string{"drop-off", `"signup" events`},
 		},
 		{
-			q:           "set retention to 90 days",
-			intent:      intentAction,
-			contains:    []string{"can't change settings", "Settings → Retention", "set_retention"},
+			q:      "set retention to 90 days",
+			intent: intentAction,
+			// "Settings → Data" is the section that exists in the settings nav (Account, Project,
+			// API keys, Install & connect, Data, Goals, Share links, Webhooks, Alerts, Audit log,
+			// About). This test used to pin "Settings → Retention", a destination that was never
+			// in the nav, so it held the wrong copy in place.
+			contains:    []string{"can't change settings", "Settings → Data", "set_retention"},
 			notContains: []string{"Day-1 retention"},
 		},
 		{
