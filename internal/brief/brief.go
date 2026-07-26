@@ -136,7 +136,7 @@ func siteLines(aggs map[string]*siteAgg, totalEvents int) []SiteLine {
 // the same in a terminal, an email body, or a Slack message.
 func Format(b Brief) string {
 	var s strings.Builder
-	fmt.Fprintf(&s, "smolanalytics brief — %s\n\n", b.GeneratedAt.Format("Mon Jan 2, 2006"))
+	fmt.Fprintf(&s, "smolanalytics brief, %s\n\n", b.GeneratedAt.Format("Mon Jan 2, 2006"))
 	lastLbl := fmt.Sprintf("Last %d days:", b.Days)
 	priorLbl := fmt.Sprintf("Prior %d days:", b.Days)
 	fmt.Fprintf(&s, "%-*s %s · %s\n", len(priorLbl), lastLbl, plural(b.Visitors, "visitor"), plural(b.Events, "event"))
@@ -144,14 +144,14 @@ func Format(b Brief) string {
 	formatSites(&s, b.Sites)
 	s.WriteString("\nWhat to look at:\n")
 	if len(b.Findings) == 0 {
-		s.WriteString("  nothing notable — no big swings, funnel leaks, or retention flags.\n")
+		s.WriteString("  nothing notable, no big swings, funnel leaks, or retention flags.\n")
 	}
 	for _, f := range b.Findings {
 		mark := "•"
 		if f.Severity == "warn" {
 			mark = "⚠"
 		}
-		fmt.Fprintf(&s, "  %s %s — %s\n", mark, f.Title, f.Detail)
+		fmt.Fprintf(&s, "  %s %s, %s\n", mark, f.Title, f.Detail)
 	}
 	return s.String()
 }

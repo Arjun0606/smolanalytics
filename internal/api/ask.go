@@ -176,7 +176,7 @@ func reportForIntent(intent askIntent) string {
 	case intentStickiness:
 		report = "the stickiness report (DAU/MAU over exact distinct users)"
 	case intentPaths:
-		report = "the paths (user-journey) report — the ranked next events after the anchor"
+		report = "the paths (user-journey) report, the ranked next events after the anchor"
 	case intentLifecycle:
 		report = "the lifecycle report (new vs returning vs dormant, exact distinct users)"
 	case intentHours:
@@ -429,7 +429,7 @@ func answer(q string, evs []event.Event, now time.Time) string {
 		if hasAny(q, "why are people leav", "why do people leav", "why are users leav",
 			"why are people churn", "why do people churn", "why are we losing", "why do we lose",
 			"why are people droppi", "why do people droppi") {
-			return "I can't tell you WHY people leave — that's a judgment call no metric holds. " +
+			return "I can't tell you WHY people leave, that's a judgment call no metric holds. " +
 				"What I can show is WHERE they drop and whether they come back, which is usually where the answer starts:\n\n" +
 				answerBrief(evs, briefDays(q), now)
 		}
@@ -528,7 +528,7 @@ func answer(q string, evs []event.Event, now time.Time) string {
 	// "how does our conversion compare to industry benchmarks" — we have no benchmark
 	// data and must say so before showing the real funnel
 	if hasAny(q, "benchmark", "industry average", "industry standard") {
-		return "I only compute from your own events — there's no industry-benchmark data here, and I won't invent one. Your funnel, exactly: " +
+		return "I only compute from your own events, there's no industry-benchmark data here, and I won't invent one. Your funnel, exactly: " +
 			answerFunnel(scoped, volAll, win, q)
 	}
 	// "what share of visitors ever sign up" — the event-per-visitor rate
@@ -581,7 +581,7 @@ func answer(q string, evs []event.Event, now time.Time) string {
 				// user-journey reports scope by USER — a reddit visitor's signup event
 				// doesn't carry the referrer property.
 				if !segs[0].found {
-					return fmt.Sprintf("0 — no events with %s = %s have been sent, so there's nothing to report for %s.", segs[0].prop, segs[0].label, segs[0].label)
+					return fmt.Sprintf("0, no events with %s = %s have been sent, so there's nothing to report for %s.", segs[0].prop, segs[0].label, segs[0].label)
 				}
 				if intent == intentFunnel || intent == intentRetention || intent == intentEngagement || intent == intentStickiness || intent == intentLifecycle {
 					evs = segFilterUsers(evs, segs[0])
@@ -897,7 +897,7 @@ func answerMeasure(evs []event.Event, q string, volAll []string, win askWindow) 
 			return "I compute numbers only from values you've actually sent, so I won't invent one. The numeric properties on your events are: " +
 				strings.Join(props, ", ") + ". Ask about one of those, or send a new one (e.g. track(\"checkout\", {amount: 29}))."
 		}
-		return "I compute numbers only from values you've actually sent, so I won't invent one. You haven't sent any numeric event properties yet — add one (e.g. track(\"checkout\", {amount: 29})) and I'll total or average it exactly."
+		return "I compute numbers only from values you've actually sent, so I won't invent one. You haven't sent any numeric event properties yet, add one (e.g. track(\"checkout\", {amount: 29})) and I'll total or average it exactly."
 	}
 	ev := namedEvent(q, volAll) // "" = across every event carrying the property
 	// honor any property qualifier ("average order value for pro users") — without filtering
@@ -907,7 +907,7 @@ func answerMeasure(evs []event.Event, q string, volAll []string, win askWindow) 
 	segLabel := ""
 	for _, s := range extractSegments(q, evs) {
 		if !s.found {
-			return fmt.Sprintf("0 — no events with %s = %s have been sent, so there's no %s to compute for %s.", s.prop, s.label, prop, s.label)
+			return fmt.Sprintf("0, no events with %s = %s have been sent, so there's no %s to compute for %s.", s.prop, s.label, prop, s.label)
 		}
 		if userAttr(s.prop) {
 			pool = segFilterUsers(pool, s)
@@ -924,7 +924,7 @@ func answerMeasure(evs []event.Event, q string, volAll []string, win askWindow) 
 	// float64 overflow: never state "+Inf" as a fact with the CI-parity trailer — say what
 	// happened, honestly, the same way /v1 and MCP now error on this input.
 	if !res.Finite() {
-		return fmt.Sprintf("The %s of %q overflows a float64 — the values are too large to aggregate exactly, so I won't report a made-up number. Check the property's unit (e.g. cents vs dollars, or a corrupted giant value in one event).", m, prop)
+		return fmt.Sprintf("The %s of %q overflows a float64, the values are too large to aggregate exactly, so I won't report a made-up number. Check the property's unit (e.g. cents vs dollars, or a corrupted giant value in one event).", m, prop)
 	}
 	if res.N == 0 {
 		seg := ""
@@ -1232,7 +1232,7 @@ func answerFunnel(evs []event.Event, vol []string, win askWindow, q string) stri
 	if hasAny(q, "all the way", "complete the funnel", "made it through", "finish the funnel",
 		"end up", "full funnel", "whole funnel", "every step") {
 		last := fr.Steps[len(fr.Steps)-1]
-		return fmt.Sprintf("%d users completed the full funnel %s%s — %d%% of the %d who started.",
+		return fmt.Sprintf("%d users completed the full funnel %s%s, %d%% of the %d who started.",
 			last.Count, ftitle, windowClause(win), pct(fr.OverallConversion), fr.Steps[0].Count)
 	}
 	worst, worstDrop := "", -1
@@ -1243,7 +1243,7 @@ func answerFunnel(evs []event.Event, vol []string, win askWindow, q string) stri
 	}
 	timing := ""
 	if fr.Converted > 0 && fr.MedianConvSecs > 0 {
-		timing = fmt.Sprintf(" Time to convert the full funnel: median %s, p90 %s (your slowest tenth take this long — a nudge/reminder targets them).",
+		timing = fmt.Sprintf(" Time to convert the full funnel: median %s, p90 %s (your slowest tenth take this long, a nudge/reminder targets them).",
 			humanDuration(fr.MedianConvSecs), humanDuration(fr.P90ConvSecs))
 	}
 	return fmt.Sprintf("%d of %d users (%d%%) complete %s%s. The biggest drop-off is at \"%s\", %d users fall off there.%s",
@@ -1292,7 +1292,7 @@ func answerRetention(evs []event.Event, vol []string, win askWindow, now time.Ti
 	if askDay > 7 {
 		dN, sizeN := retention.DayN(rr, askDay, now)
 		if sizeN == 0 {
-			return fmt.Sprintf("Not enough history to measure day-%d retention yet — no cohort is %d days old. The oldest data supports day-%d at most.", askDay, askDay, oldestObservableDay(rr, now))
+			return fmt.Sprintf("Not enough history to measure day-%d retention yet, no cohort is %d days old. The oldest data supports day-%d at most.", askDay, askDay, oldestObservableDay(rr, now))
 		}
 		return fmt.Sprintf("Day-%d retention is %d%% (of %d users old enough to measure, any activity counts as returning).",
 			askDay, int(float64(dN)/float64(sizeN)*100+0.5), sizeN)
@@ -1401,7 +1401,7 @@ func answerChannels(evs []event.Event, vol []string, win askWindow) string {
 	}
 	if !anySignal {
 		return "Every visitor here is untagged (no referrer, source, or utm on their first event), so there's " +
-			"nothing to attribute a channel from — they'd all read as \"direct\". Tag inbound links with utm_source, " +
+			"nothing to attribute a channel from, they'd all read as \"direct\". Tag inbound links with utm_source, " +
 			"or make sure the SDK captures the referrer, and ask again."
 	}
 	type row struct {
@@ -1681,7 +1681,7 @@ func answerEngagement(evs []event.Event, win askWindow) string {
 	}
 	if len(perUser) == 0 {
 		if win.scoped() {
-			return "No engagement measured " + win.label + ". Engagement comes from the SDK's $engagement events (visible + focused time) — widen the window, or drop the time phrase for all history."
+			return "No engagement measured " + win.label + ". Engagement comes from the SDK's $engagement events (visible + focused time), widen the window, or drop the time phrase for all history."
 		}
 		return "No engagement data yet. The browser SDK measures it automatically once installed (visible + focused time per visitor)."
 	}
@@ -1698,7 +1698,7 @@ func answerEngagement(evs []event.Event, win askWindow) string {
 	if win.scoped() {
 		scope = win.label
 	}
-	return fmt.Sprintf("%d engaged visitors %s, averaging %s of active time each (visible and focused — background tabs don't count).", len(perUser), scope, human)
+	return fmt.Sprintf("%d engaged visitors %s, averaging %s of active time each (visible and focused, background tabs don't count).", len(perUser), scope, human)
 }
 
 func answerWebDim(evs []event.Event, q string, win askWindow) string {
@@ -1780,7 +1780,7 @@ func answerWebDim(evs []event.Event, q string, win askWindow) string {
 	}
 	rows := pick(prop)
 	if len(rows) == 0 {
-		return "No " + label + " recorded" + winSuffix(win) + " yet — these are parsed from the user agent at ingest, so they appear as visitors arrive."
+		return "No " + label + " recorded" + winSuffix(win) + " yet, these are parsed from the user agent at ingest, so they appear as visitors arrive."
 	}
 	parts := make([]string, len(rows))
 	for i, r := range rows {
@@ -1839,9 +1839,9 @@ func answerWeb(evs []event.Event, win askWindow) string {
 			}
 		}
 		if win.scoped() {
-			return "No pageviews " + win.label + ". The browser snippet autocaptures $pageview events — widen the window, or drop the time phrase for all history."
+			return "No pageviews " + win.label + ". The browser snippet autocaptures $pageview events, widen the window, or drop the time phrase for all history."
 		}
-		return "No pageviews recorded yet. The browser snippet autocaptures $pageview events — check it's installed on your site."
+		return "No pageviews recorded yet. The browser snippet autocaptures $pageview events, check it's installed on your site."
 	}
 	return fmt.Sprintf("%d pageviews from %d visitors%s.", views, len(visitors), winSuffix(win))
 }
@@ -1993,7 +1993,7 @@ func synonymNote(q, ev string) string {
 	if strings.Contains(q, low) || strings.Contains(q, low+"s") {
 		return ""
 	}
-	return fmt.Sprintf("You don't track that exact event, so here's the closest one you do — %q:", ev)
+	return fmt.Sprintf("You don't track that exact event, so here's the closest one you do, %q:", ev)
 }
 
 // countNounRe pulls the noun out of the common count phrasings so an unknown one can
@@ -2061,7 +2061,7 @@ func answerUnknownEvent(name string, vol []string) string {
 		}
 	}
 	if len(real) == 0 {
-		return fmt.Sprintf("No event named %q — in fact no product events are recorded yet. Send some with track(), then ask again.", name)
+		return fmt.Sprintf("No event named %q, in fact no product events are recorded yet. Send some with track(), then ask again.", name)
 	}
 	if near := nearestEvent(name, real); near != "" {
 		return fmt.Sprintf("No event named %q. Did you mean %q? Your tracked events: %s.", name, near, strings.Join(cap8(real), ", "))
@@ -2210,7 +2210,7 @@ func answerGeo(scoped, all []event.Event, win askWindow) string {
 		if len(unknownV) > 0 {
 			// geo ran but resolved nothing to a real country — say so honestly instead
 			// of reporting "ZZ", exactly as the dashboard hides an all-Unknown geo card
-			return fmt.Sprintf("Geo ran but couldn't resolve any visitor's country — %d visitor(s) came from anonymized/proxy IPs that map to no country (shown as Unknown).%s", len(unknownV), note)
+			return fmt.Sprintf("Geo ran but couldn't resolve any visitor's country, %d visitor(s) came from anonymized/proxy IPs that map to no country (shown as Unknown).%s", len(unknownV), note)
 		}
 		if win.scoped() {
 			return "No geo-stamped pageviews " + win.label + "." + note

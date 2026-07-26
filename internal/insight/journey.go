@@ -120,7 +120,7 @@ func segmentBlame(evs []event.Event, from, to string) *Finding {
 	// Step 3: any discovered property NOT natively carried on the conversion (`to`) event must
 	// ALSO be first-touch-stamped — otherwise filtering by it drops every conversion event
 	// (which never had the property) and the segment falsely reads 0%. THIS is the bug that
-	// fabricated a "converts worst — fix this first" verdict for a custom entry-only property
+	// fabricated a "converts worst, fix this first" verdict for a custom entry-only property
 	// (ab_variant, $current_url) even under perfectly uniform conversion.
 	toProps := map[string]bool{}
 	for _, e := range evs {
