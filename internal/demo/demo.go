@@ -451,6 +451,25 @@ func seedAgent(s store.Store) {
 			emit("agent_turn", uid, base+time.Duration(k)*45*time.Second, p)
 		}
 	}
+
+	// A handful of agent_label events so the demo shows the BYO-model layer working rather than
+	// only its teaching empty state. These are exactly what a visitor's own model would write back
+	// through label_conversation, so the panel renders the real shape: values with counts, the
+	// labeled/unlabeled split, and the model that inferred them. Deliberately partial (a minority
+	// of the 70 conversations) because that is the honest steady state, you label a sample, and the
+	// panel is supposed to show how much is still unlabeled.
+	intents := []string{"debugging", "data question", "setup help", "feature request"}
+	sentiments := []string{"positive", "neutral", "frustrated"}
+	for c := 0; c < 22; c++ {
+		emit("agent_label", fmt.Sprintf("au%d", c), -time.Duration(c)*3*time.Hour, map[string]any{
+			"conversation_id": fmt.Sprintf("c%d", c),
+			"intent":          intents[c%len(intents)],
+			"sentiment":       sentiments[c%len(sentiments)],
+			"labeled_by":      "claude-haiku-4-5 (the visitor's own model, over MCP)",
+			"labeled_at":      now.Add(-time.Duration(c) * 3 * time.Hour).Format(time.RFC3339),
+		})
+	}
+
 	_ = s.Ingest(evs...)
 }
 

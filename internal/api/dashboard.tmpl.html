@@ -468,6 +468,46 @@
   .agval .agvalname{font-size:13px}
   .agval .agvalnum{font-family:var(--mono);font-size:var(--fs-body);color:var(--mut)}
 
+  /* ═══ SESSIONS + CLICK MAP. both read behaviour on one page, so they borrow the
+     table and slide-over idioms already above; the only genuinely new shapes are the
+     density canvas (absolutely-placed cells over a scrollable page-height strip) and
+     the rage badge, which is the one place warn red is allowed in a table row. ═══ */
+  .deck #pane-sessions{overflow-x:auto}
+  table.ctab tr.sesrow{cursor:pointer}
+  table.ctab tr.sesrow:hover td{background:var(--s2)}
+  table.ctab tr.sesrow td:first-child{color:var(--fg)}
+  .rage{display:inline-flex;align-items:center;gap:5px;border:1px solid rgba(229,84,75,.5);color:var(--warn);
+    font-family:var(--mono);font-size:10px;letter-spacing:.05em;padding:1px 7px;border-radius:99px;white-space:nowrap}
+  .hmwrap{position:relative;background:var(--well);border:1px solid var(--line);border-radius:var(--r-ctl);
+    overflow:auto;max-height:360px;margin-top:10px}
+  .hmcanvas{position:relative;min-height:40px}
+  .hmcell{position:absolute;background:var(--accent);border-radius:2px}
+  .hmscale{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px;
+    font-family:var(--mono);font-size:var(--fs-lbl);line-height:var(--lh-lbl);color:var(--mut2)}
+  .hmscale i{display:inline-block;width:14px;height:10px;border-radius:2px;background:var(--accent)}
+
+  /* ═══ SHIP AND LEARN — deploys, feature flags, surveys. all three are the same
+     shape (a table whose rows open into the report behind them), so they borrow the
+     agent panel's expandable-row idiom and its caret verbatim rather than inventing
+     a third one. the only new shapes are the state pill (chip metrics + the live
+     dot) and the row's remove affordance, which is the board card's. ═══ */
+  .deck #pane-deploys,.deck #pane-flags,.deck #pane-surveys{overflow-x:auto}
+  table.ctab tr.xrow{cursor:pointer}
+  table.ctab tr.xrow:hover td{background:var(--s2)}
+  table.ctab tr.xrow td:first-child{color:var(--fg)}
+  table.ctab tr.xrow.on .agcaret{transform:rotate(90deg)}
+  table.ctab tr.xbody td{background:var(--well);padding:12px 10px}
+  .stpill{display:inline-flex;align-items:center;height:var(--chip-h);padding:0 10px;border:1px solid var(--line);
+    border-radius:var(--r-pill);background:transparent;color:var(--mut2);font:400 11px/1 var(--mono);cursor:pointer;
+    white-space:nowrap;transition:color var(--t-base) var(--ease),border-color var(--t-base) var(--ease)}
+  .stpill:hover{color:var(--accent);border-color:var(--accent)}
+  .stpill.on{border-color:var(--a45);color:var(--accent)}
+  .stpill.on::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-right:6px}
+  .rowx{color:var(--mut2);font-family:var(--mono);font-size:11px;cursor:pointer}
+  .rowx:hover{color:var(--warn)}
+  /* the confirm row is the prompt row with a sentence where the input was */
+  .inprompt .ipq{flex:1;min-width:190px;font-family:var(--mono);font-size:12px;line-height:1.5;color:var(--fg)}
+
 </style>
 </head>
 <body>
@@ -575,6 +615,26 @@
       {{if .Delta}}<div class="kd {{.Dir}}">{{if eq .Dir "up"}}&#9650;{{else if eq .Dir "down"}}&#9660;{{end}} {{.Delta}} <span class="kvp">vs prior</span></div>{{else}}<div class="kd"><span class="kvp">&nbsp;</span></div>{{end}}
       {{with .Spark}}<svg class="spark" viewBox="0 0 64 26" fill="none" preserveAspectRatio="none" aria-hidden="true"><polygon points="{{.Area}}" fill="var(--accent)" opacity=".07"/><polyline points="{{.Line}}" stroke="var(--spark)" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/>{{if .EndClass}}<circle cx="{{.EndX}}" cy="{{.EndY}}" r="2" class="spend {{.EndClass}}"/>{{end}}</svg>{{end}}
     </div>{{end}}
+    {{if .HasEngagement}}
+    <!-- engagement: only ever rendered when $engagement events exist, because both
+         numbers are undefined without them and a 0% bounce rate would be a lie -->
+    <div class="kpi">
+      <div class="kk">Bounce rate · {{.RangeDays}}d</div>
+      <div class="kv">{{.BouncePct}}%</div>
+      <div class="kd"><span class="kvp">one pageview, under 10s engaged</span></div>
+    </div>
+    <div class="kpi">
+      <div class="kk">Avg engaged time · {{.RangeDays}}d</div>
+      <div class="kv">{{.EngagedHuman}}</div>
+      <div class="kd"><span class="kvp">visible and focused, per visitor</span></div>
+    </div>
+    {{else if .HasWeb}}
+    <div class="kpi">
+      <div class="kk">Bounce rate · engaged time</div>
+      <div class="kv" style="font-size:15px;color:var(--dis);margin-top:13px">not measured yet</div>
+      <div class="kd"><span class="kvp">no $engagement events — sdk.js sends one as a visitor leaves a page</span></div>
+    </div>
+    {{end}}
   </div>
 
   <!-- zone 5: exactly one chart -->
@@ -656,7 +716,7 @@
          own model wrote (we never run one). Renders on every instance: with no agent
          events it teaches what to send rather than showing a blank panel. It leads the
          deck once those events exist, and sits at the end of it until they do. -->
-    <div class="pane wide" id="pane-agent" style="order:{{if .HasAgentEvents}}0{{else}}17{{end}}">
+    <div class="pane wide" id="pane-agent" style="order:{{if .HasAgentEvents}}0{{else}}22{{end}}">
       <h3>agent observability <span class="sub">· your agent's tool calls and conversations, same window and filters as every zone above · computed by /v1/agent</span></h3>
       <div id="agConv"><div class="exsummary">…</div></div>
 
@@ -683,21 +743,39 @@
         </div>
       </div>
     </div>
-    <div class="pane" id="pane-referrers" style="order:8">
+    <!-- click map: where clicks actually land on one page. sits next to top pages
+         because the question it answers ("what do they do ON this page") is the one
+         a top-pages row raises. the grid the server bucketed into is the grid we
+         paint — cols and row_px come back on the response, never re-derived here. -->
+    <div class="pane wide" id="pane-heatmap" style="order:8">
+      <h3>click map
+        <select id="hmPath" class="zonesel" style="margin-left:8px" title="which page to map">
+          {{range .TopPages}}<option value="{{.Value}}">{{.Value}}</option>{{end}}
+        </select>
+        <select id="hmVp" class="zonesel" title="viewport bucket, from the width captured on each click">
+          <option value="all">all widths</option>
+          <option value="desktop">desktop</option>
+          <option value="tablet">tablet</option>
+          <option value="mobile">mobile</option>
+        </select>
+        <span class="sub">· where autocaptured clicks land, same window and filters as every zone above · computed by /v1/heatmap</span></h3>
+      <div id="hmOut"><div class="exsummary">…</div></div>
+    </div>
+    <div class="pane" id="pane-referrers" style="order:9">
       <h3>referrers</h3>
       {{range .Referrers}}<div class="seg"{{if and (ne .Value "direct") (ne .Value "(none)")}} data-fp="referrer" data-fv="{{.Value}}" title="click to filter every zone to this referrer"{{end}}><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
     </div>
     {{end}}
 
     {{if .HasGeo}}
-    <div class="pane" id="pane-geo" style="order:10">
+    <div class="pane" id="pane-geo" style="order:11">
       <h3>countries · geo by <a href="https://db-ip.com" target="_blank" rel="noopener" style="color:var(--mut2)">db-ip.com</a></h3>
       <div class="exsummary" style="margin-bottom:10px">countries stamp at ingest from the moment geo is enabled (the IP is used for one lookup and never stored, so no backfill). your own visits count too: open your site once with ?sa_optout=1 to exclude this browser, ?sa_optout=0 to undo</div>
       {{range .Countries}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}
     </div>
     {{end}}
 
-    <div class="pane wide" id="pane-devices" style="order:11">
+    <div class="pane wide" id="pane-devices" style="order:12">
       <div class="webcols">
         <div>
           <h3>device</h3>
@@ -713,7 +791,7 @@
     </div>
 
     {{if .UTMSources}}
-    <div class="pane wide" id="pane-campaigns" style="order:12">
+    <div class="pane wide" id="pane-campaigns" style="order:13">
       <div class="webcols">
         <div>
           <h3>utm source</h3>
@@ -753,7 +831,7 @@
     {{end}}
 
     {{if .HasSource}}
-    <div class="pane" id="pane-sources" style="order:9">
+    <div class="pane" id="pane-sources" style="order:10">
       <h3>{{.SourceTitle}}</h3>
       {{range .BySource}}<div class="seg"{{if .FilterProp}} data-fp="{{.FilterProp}}" data-fv="{{.FilterVal}}" title="click to filter every zone to this channel"{{end}}><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}
     </div>
@@ -811,14 +889,14 @@
     {{end}}
 
     {{if .HasSearch}}
-    <div class="pane" id="pane-search" style="order:13">
+    <div class="pane" id="pane-search" style="order:14">
       <h3>google search queries · 28d clicks</h3>
       {{range .SearchRows}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
     </div>
     {{end}}
 
     {{if .HasWeb}}
-    <div class="pane" id="pane-goals" style="order:14">
+    <div class="pane" id="pane-goals" style="order:15">
       <h3>goals</h3>
       {{if .Goals}}
       <div class="goalrow">
@@ -864,12 +942,67 @@
       {{end}}
     </div>
 
-    <div class="pane" id="pane-live" style="order:15">
+    <!-- ship and learn: the three panes that close the loop between what you shipped
+         and what it did. deploys marks the ships, flags runs the experiment, surveys
+         asks the human. all three read endpoints that already existed and were only
+         reachable from an editor or the cloud page until now. -->
+    <div class="pane wide" id="pane-deploys" style="order:16">
+      <h3>deploys
+        <select id="dpMetric" class="zonesel" style="margin-left:8px" title="which metric to line the ships up against">
+          {{range .Events}}<option value="{{.}}" {{if eq . $.ChartMetric}}selected{{end}}>{{.}}</option>{{end}}
+        </select>
+        <select id="dpWindow" class="zonesel" title="how many days on each side of a ship are averaged">
+          <option value="3" selected>3 days each side</option>
+          <option value="7">7 days each side</option>
+          <option value="14">14 days each side</option>
+        </select>
+        <span class="sub">· the ships you recorded, and what the metric did on each side of them · correlation, never proof of cause · computed by /v1/deploys</span></h3>
+      <div id="dpOut"><div class="exsummary">…</div></div>
+    </div>
+
+    <div class="pane wide" id="pane-flags" style="order:17">
+      <h3>feature flags
+        <span class="sub">· every flag, who it is on for, and the A/B read behind a measured one · computed by /v1/flags</span></h3>
+      <div id="flOut"><div class="exsummary">…</div></div>
+      <div class="exrow" style="margin:14px 0 0">
+        <input id="flKey" autocomplete="off" placeholder="flag key (e.g. checkout_v2)">
+        <input id="flDesc" autocomplete="off" placeholder="what it does (optional)">
+        <select id="flKind" title="a boolean flag is on or off; an A/B flag splits users into two arms">
+          <option value="bool">boolean · on or off</option>
+          <option value="ab">A/B · control vs treatment, 50/50</option>
+        </select>
+        <button id="flCreate">Create flag</button>
+      </div>
+      <div class="agmeta" id="flNote" style="margin-top:6px">a new flag starts <b>off</b>, so creating one changes nothing for your users until you turn it on. an A/B flag is created measured: the SDK then logs one <b>$feature_flag_called</b> exposure per user per session, which is what the A/B read counts. a boolean flag logs no events at all. read one in your app with <b>smolanalytics.flag("checkout_v2", false)</b>.</div>
+    </div>
+
+    <div class="pane wide" id="pane-surveys" style="order:18">
+      <h3>surveys
+        <span class="sub">· one-question in-product surveys and what came back · computed by /v1/surveys</span></h3>
+      <div id="svOut"><div class="exsummary">…</div></div>
+    </div>
+
+    <!-- sessions: the raw-behaviour end of the deck, right above the live feed and the
+         event stream, because all three answer "what did one person actually do". this
+         is an event-based journey inspector — the steps are the events that were
+         captured, so it never claims to be a screen or DOM recording. -->
+    <div class="pane wide" id="pane-sessions" style="order:19">
+      <h3>sessions
+        <select id="sesLimit" class="zonesel" style="margin-left:8px" title="how many of the newest sessions to list">
+          <option value="25">25 newest</option>
+          <option value="50" selected>50 newest</option>
+          <option value="100">100 newest</option>
+        </select>
+        <span class="sub">· one row per visit, click a row for its step-by-step journey · rebuilt from your event log at query time, not a screen recording · computed by /v1/sessions</span></h3>
+      <div id="sesOut"><div class="exsummary">…</div></div>
+    </div>
+
+    <div class="pane" id="pane-live" style="order:20">
       <h3>live <span class="sub">· events as they land</span></h3>
       <div id="live" class="live"><div class="livemuted">waiting for events…</div></div>
     </div>
 
-    <div class="pane" id="pane-events" style="order:16">
+    <div class="pane" id="pane-events" style="order:21">
       <h3>event stream <span class="sub">· latest 200 · computed by /v1/events/recent</span></h3>
       <div class="exrow" style="margin-bottom:8px">
         <input id="evFilter" autocomplete="off" placeholder="filter the stream: event name, visitor id, path, any property value…">
@@ -1089,6 +1222,37 @@
       n.className='inote'+(kind==='err'?' err':'');
       n.setAttribute('role',kind==='err'?'alert':'status');
       n.textContent=msg;
+    }
+    // the third of the trio, and the same one settings uses: before anything that
+    // changes what real users get (flipping a flag, starting a survey), one inline
+    // row states plainly what is about to change. confirm takes focus on open, enter
+    // confirms, escape cancels, focus goes home when it closes, and cancelling does
+    // nothing at all. single-instance like the other two.
+    var cfSeq=0,cfOpen=null;
+    function saConfirmClose(){
+      var o=cfOpen; cfOpen=null; if(!o)return;
+      if(o.node&&o.node.parentNode)o.node.parentNode.removeChild(o.node);
+      if(o.back&&o.back.focus)o.back.focus();
+    }
+    function saConfirm(anchor,trigger,question,verb,done){
+      if(!anchor||!anchor.parentNode)return; saConfirmClose();
+      var qid='cfq'+(++cfSeq);
+      var row=document.createElement('div');row.className='inprompt';row.setAttribute('role','group');row.setAttribute('aria-labelledby',qid);
+      var qs=document.createElement('span');qs.className='ipq';qs.id=qid;qs.textContent=question;
+      var go=document.createElement('button');go.type='button';go.className='ipgo';go.textContent=verb||'confirm';go.setAttribute('aria-describedby',qid);
+      var no=document.createElement('button');no.type='button';no.className='ipx';no.textContent='cancel';
+      row.appendChild(qs);row.appendChild(go);row.appendChild(no);
+      anchor.parentNode.insertBefore(row,anchor.nextSibling);
+      if(trigger&&trigger.setAttribute&&!trigger.hasAttribute('tabindex')&&String(trigger.tagName).toUpperCase()!=='BUTTON')trigger.setAttribute('tabindex','-1');
+      cfOpen={node:row,back:trigger||null};
+      function bail(){saConfirmClose();}
+      function take(){saConfirmClose();done();}
+      go.onclick=take;no.onclick=bail;
+      row.addEventListener('keydown',function(e){
+        if(e.key==='Escape'){e.preventDefault();e.stopPropagation();bail();}
+        else if(e.key==='Enter'&&e.target!==no){e.preventDefault();take();}
+      });
+      go.focus();
     }
 
     // '/' focuses the ask bar from anywhere; cmd/ctrl-k too; esc blurs
@@ -1635,22 +1799,26 @@
     // filters, rendered server-side — so a panel can never quietly answer over a wider
     // range than the toolbar says. Nothing here runs a model.
     var SA_SCOPE="{{.ReportQS}}";
+    // whether that scope is narrower than "everything": an empty panel then means the
+    // filters excluded the events, NOT that you never sent any, and it has to say so.
+    var SA_SCOPED={{if or .Chips .Site .ShowingDev}}true{{else}}false{{end}};
     var agConvEl=document.getElementById('agConv'),agToolsEl=document.getElementById('agTools'),
         agLabelsEl=document.getElementById('agLabels'),agLabelIn=document.getElementById('agLabel');
     function agURL(path,extra){return path+'?'+SA_SCOPE+(extra||'');}
-    function agMs(v){if(v==null)return '—';return v<1000?Math.round(v)+'ms':(v/1000).toFixed(v<10000?1:0)+'s';}
+    function agMs(v){if(v==null)return 'not sent';return v<1000?Math.round(v)+'ms':(v/1000).toFixed(v<10000?1:0)+'s';}
     function agPct(v){var p=(v||0)*100;return (p>0&&p<10?p.toFixed(1):Math.round(p))+'%';}
     function agNum(v){return Math.round((v||0)*10)/10;}
     function agCode(s){return '<pre class="code" style="font-size:11px;margin:8px 0 0;white-space:pre-wrap">'+esc(s)+'</pre>';}
     function agErr(el,j){if(el)el.innerHTML='<div class="inote err">'+esc((j&&j.error)||'could not load this report')+'</div>';}
     function agTile(v,l,cls){return '<div class="sk'+(cls?' '+cls:'')+'"><div class="skv">'+v+'</div><div class="skl">'+l+'</div></div>';}
+    function agNone(ev){return 'no <b>'+ev+'</b> events '+(SA_SCOPED?'match this window and the filters above. clear the filters to see all of them.':'in this window yet.');}
 
     function agLoadConv(){
       if(!agConvEl)return;
       fetch(agURL('/v1/agent/conversations')).then(function(r){return r.json()}).then(function(j){
         if(j.error){agErr(agConvEl,j);return;}
         if(!j.conversations){
-          agConvEl.innerHTML='<div class="agmeta">no <b>agent_turn</b> events in this window yet. send one per conversation turn and this row fills in with turns, re-ask rate, abandon rate and time to first token:</div>'+
+          agConvEl.innerHTML='<div class="agmeta">'+agNone('agent_turn')+' send one per conversation turn and this row fills in with turns, re-ask rate, abandon rate and time to first token:</div>'+
             agCode('smolanalytics.track("agent_turn", { conversation_id: "c_1042", role: "user" })\nsmolanalytics.track("agent_turn", { conversation_id: "c_1042", role: "assistant", ttft_ms: 240, resolved: true })')+
             '<div class="agmeta">plain track() calls, no $ prefix. two user turns in a row is a re-ask, a conversation that ends on a user turn is an abandon, and both are counted from the roles you send.</div>';
           return;
@@ -1663,7 +1831,7 @@
           agTile(agPct(j.abandon_rate),'abandon rate')+
           agTile(agMs(j.ttft_p50),'ttft p50 · p90 '+agMs(j.ttft_p90)+' · p99 '+agMs(j.ttft_p99));
         if(j.resolution_rate==null){
-          h+=agTile('—','resolution rate · not sent','agnull')+'</div>'+
+          h+=agTile('<span style="font-size:15px">not sent</span>','resolution rate','agnull')+'</div>'+
             '<div class="agmeta" style="margin-top:8px">resolution rate stays blank because no turn carries a <b>resolved</b> bool. we never infer whether a conversation was resolved, so send it and the tile fills in: <b>{ conversation_id: "c_1042", role: "assistant", resolved: true }</b></div>';
         }else{
           h+=agTile(agPct(j.resolution_rate),'resolution rate')+'</div>'+
@@ -1679,7 +1847,7 @@
         if(j.error){agErr(agToolsEl,j);return;}
         var ts=j.tools||[];
         if(!ts.length){
-          agToolsEl.innerHTML='<div class="agmeta">no <b>agent_tool_call</b> events in this window yet. send one per tool or MCP dispatch and this table fills in with calls, error rate and latency p50/p90/p99 per tool:</div>'+
+          agToolsEl.innerHTML='<div class="agmeta">'+agNone('agent_tool_call')+' send one per tool or MCP dispatch and this table fills in with calls, error rate and latency p50/p90/p99 per tool:</div>'+
             agCode('smolanalytics.track("agent_tool_call", { tool: "search_web", client: "cursor", latency_ms: 412 })\nsmolanalytics.track("agent_tool_call", { tool: "search_web", client: "cursor", latency_ms: 2400, error: true, error_type: "timeout" })')+
             '<div class="agmeta">plain track() calls, no $ prefix. error and error_type are what the per-tool taxonomy is built from.</div>';
           return;
@@ -1690,9 +1858,9 @@
           '<th class="n">p50</th><th class="n">p90</th><th class="n">p99</th><th>top client</th></tr></thead><tbody>';
         ts.forEach(function(t){
           var c=(t.clients||[])[0];
-          var top=c?esc(c.client)+' <span class="mut">· '+c.calls+'</span>':'<span class="mut">—</span>';
+          var top=c?esc(c.client)+' <span class="mut">· '+c.calls+'</span>':'<span class="mut">not sent</span>';
           var lat=(!t.latency_p50&&!t.latency_p90&&!t.latency_p99)
-            ? '<td class="n mut" colspan="3">no latency_ms sent</td>'
+            ? '<td class="mut" colspan="3" style="text-align:center">no latency_ms sent</td>'
             : '<td class="n">'+agMs(t.latency_p50)+'</td><td class="n">'+agMs(t.latency_p90)+'</td><td class="n">'+agMs(t.latency_p99)+'</td>';
           h+='<tr class="agtool" data-tool="'+esc(t.tool)+'" tabindex="0" role="button" title="show this tool\'s error taxonomy">'+
             '<td><span class="agcaret">&#9654;</span> '+esc(t.tool)+'</td><td class="n">'+t.calls+'</td>'+
@@ -1735,9 +1903,11 @@
       fetch(agURL('/v1/agent/labels','&label='+encodeURIComponent(name))).then(function(r){return r.json()}).then(function(j){
         if(j.error){agErr(agLabelsEl,j);return;}
         var vals=j.values||[],by=j.labeled_by||[];
+        var who=by.length?'labeled by <b>'+esc(by.join(', '))+'</b>'
+          :(j.labeled?'no model name recorded on these labels':'nothing labeled yet');
         var h='<div class="aginfbox"><div class="agrow"><span class="aginf">model-inferred values</span>'+
-          '<span class="agmeta">'+(by.length?'labeled by <b>'+esc(by.join(', '))+'</b>':'no model name recorded on these labels')+'</span></div>'+
-          '<div class="agmeta">the values below are what your own model inferred when it read these conversations. we never run a model. the conversation counts over them are computed from your event log, like every other number on this page.</div>';
+          '<span class="agmeta">'+who+'</span></div>'+
+          '<div class="agmeta">a label is what your own model inferred when it read the conversation, not something we measured. we never run a model. the conversation counts over those labels are computed from your event log, like every other number on this page.</div>';
         if(vals.length){
           var mx=vals[0].conversations||1;
           h+='<div style="margin-top:10px">'+vals.map(function(v){
@@ -1747,7 +1917,7 @@
           }).join('')+'</div>';
         }else{
           h+='<div class="agmeta" style="margin-top:8px">nothing carries the label <b>'+esc(name)+'</b> yet'+
-            (j.conversations?'':', and no conversations landed in this window to label')+
+            (j.conversations?'':', and no conversations to label '+(SA_SCOPED?'match this window and the filters above':'landed in this window'))+
             '. the loop runs from your editor, not here: <b>sample_conversations</b> hands your model whole conversations to read, <b>label_conversation</b> writes its inference back as one new agent_label event, then <b>agent_labels</b> counts conversations per value. nothing is mutated and no model runs on our side.</div>';
         }
         h+='<div class="agmeta" style="margin-top:10px;border-top:1px dashed var(--line2);padding-top:8px"><b>'+j.labeled+
@@ -1770,6 +1940,554 @@
         if(e.key!=='Enter'&&e.key!==' ')return;
         var r=e.target.closest&&e.target.closest('tr.agtool'); if(!r)return;
         e.preventDefault();agToggleTool(r);
+      });
+    }
+
+    // ---- sessions: one row per visit, and one visit's ordered steps behind it.
+    // /v1/sessions windows by whole DAYS rather than the from/to the rest of the page
+    // uses, so it gets this page's day count plus the filter half of the scope, and the
+    // header states the window it actually answered over instead of implying the
+    // toolbar's. Nothing here is a recording: a step is an event that was captured.
+    var SA_DAYS="{{.RangeDays}}";
+    var SA_FILTERS=SA_SCOPE.split('&').filter(function(p){
+      return p.indexOf('from=')!==0&&p.indexOf('to=')!==0;
+    }).join('&');
+    var sesOut=document.getElementById('sesOut'),sesLimit=document.getElementById('sesLimit');
+    function sesDur(s){
+      s=Math.max(0,s|0);
+      if(s<60)return s+'s';
+      if(s<3600)return Math.floor(s/60)+'m '+(s%60)+'s';
+      return Math.floor(s/3600)+'h '+Math.floor((s%3600)/60)+'m';
+    }
+    function sesLoad(){
+      if(!sesOut)return;
+      var lim=(sesLimit&&sesLimit.value)||'50';
+      sesOut.innerHTML='<div class="exsummary">…</div>';
+      fetch('/v1/sessions?days='+encodeURIComponent(SA_DAYS)+'&limit='+encodeURIComponent(lim)+(SA_FILTERS?'&'+SA_FILTERS:''))
+        .then(function(r){return r.json()}).then(function(j){
+          if(j.error){sesOut.innerHTML='<div class="inote err">'+esc(j.error)+'</div>';return;}
+          var ss=j.sessions||[];
+          if(!ss.length){
+            sesOut.innerHTML='<div class="agmeta">no sessions in the last '+esc(SA_DAYS)+' days. a session is one visitor\'s events split on a 30-minute gap, so any tracked pageview or event starts one — drop sdk.js in your app and the first visit lands here.</div>';
+            return;
+          }
+          var h='<div class="agrow"><span class="agprov">computed · every session, no sampling</span>'+
+            '<span class="agmeta">'+ss.length+' session'+(ss.length===1?'':'s')+' · newest first · last '+esc(SA_DAYS)+' days</span></div>'+
+            '<table class="ctab"><thead><tr><th>visitor</th><th class="n">pages</th><th class="n">events</th>'+
+            '<th class="n">duration</th><th>entry → exit</th><th>started</th><th></th></tr></thead><tbody>';
+          ss.forEach(function(s){
+            var route=esc(s.entry_path||'(no page)');
+            if(s.exit_path&&s.exit_path!==s.entry_path)route+=' → '+esc(s.exit_path);
+            h+='<tr class="sesrow" tabindex="0" role="button" data-did="'+esc(s.distinct_id)+'" data-start="'+s.start_unix+'" title="open this session\'s journey">'+
+              '<td>'+esc(s.distinct_id)+'</td><td class="n">'+s.pages+'</td><td class="n">'+s.events+'</td>'+
+              '<td class="n">'+sesDur(s.duration_sec)+'</td><td class="mut">'+route+'</td>'+
+              '<td class="mut">'+ago(s.start)+' ago</td>'+
+              '<td class="n">'+(s.rage_clicks?'<span class="rage">rage '+s.rage_clicks+'</span>':'<span class="mut">—</span>')+'</td></tr>';
+          });
+          sesOut.innerHTML=h+'</tbody></table>'+
+            '<div class="agmeta" style="margin-top:8px">rage is the <b>$rageclick</b> autocapture: three clicks inside 30px within a second. duration is last event minus first, so a one-event visit reads 0s.</div>';
+        }).catch(function(){sesOut.innerHTML='<div class="inote err">could not load sessions</div>';});
+    }
+
+    // one session's ordered steps, in the same slide-over the visitor journey uses
+    function openSession(did,start){
+      var shade=document.createElement('div');shade.className='jshade';
+      var panel=document.createElement('div');panel.className='journey';
+      var head='<div class="jh"><span class="jid">'+esc(did)+'</span><span class="jclose">close ×</span></div>';
+      panel.innerHTML=head+'<div class="jmeta">loading…</div>';
+      function close(){shade.remove();panel.remove();document.removeEventListener('keydown',onEsc);}
+      function onEsc(e){if(e.key==='Escape')close();}
+      shade.onclick=close;document.addEventListener('keydown',onEsc);
+      document.body.appendChild(shade);document.body.appendChild(panel);
+      panel.querySelector('.jclose').onclick=close;
+      fetch('/v1/session?distinct_id='+encodeURIComponent(did)+'&start='+encodeURIComponent(start))
+        .then(function(r){return r.json()}).then(function(j){
+          if(j.error){panel.querySelector('.jmeta').textContent=j.error;return;}
+          var steps=j.steps||[];
+          var meta=steps.length+' step'+(steps.length===1?'':'s')+' · '+sesDur(j.duration_sec)+' · '+
+            j.pages+' page'+(j.pages===1?'':'s')+' · started '+ago(j.start)+' ago';
+          if(j.rage_clicks)meta+='<br><span style="color:var(--warn)">'+j.rage_clicks+' rage click'+(j.rage_clicks===1?'':'s')+' in this visit</span>';
+          var rows=steps.map(function(s){
+            var t=s.t||0;
+            var at=t<60000?Math.round(t/1000)+'s':Math.floor(t/60000)+'m '+Math.round((t%60000)/1000)+'s';
+            var d=[s.path,s.text,(s.x||s.y)?('x'+(s.x||0)+' y'+(s.y||0)):''].filter(Boolean).join(' · ');
+            var st=s.name==='$rageclick'?' style="color:var(--warn)"':'';
+            return '<div class="jrow"'+st+'><span class="jt">+'+at+'</span><span class="je">'+esc(s.name)+'</span><span class="jp">'+esc(d)+'</span></div>';
+          }).join('');
+          panel.innerHTML=head+'<div class="jmeta">'+meta+'</div>'+rows+
+            '<div class="jmeta" style="margin-top:12px">computed by /v1/session — the ordered events this visit captured. it is an event journey, not a screen recording, so there is no video or DOM here, only what was tracked.</div>';
+          panel.querySelector('.jclose').onclick=close;
+        }).catch(function(){panel.querySelector('.jmeta').textContent='could not load this session';});
+    }
+
+    if(sesOut){
+      sesLoad();
+      if(sesLimit)sesLimit.onchange=sesLoad;
+      sesOut.addEventListener('click',function(e){
+        var r=e.target.closest&&e.target.closest('tr.sesrow'); if(!r)return;
+        openSession(r.getAttribute('data-did'),r.getAttribute('data-start'));
+      });
+      sesOut.addEventListener('keydown',function(e){
+        if(e.key!=='Enter'&&e.key!==' ')return;
+        var r=e.target.closest&&e.target.closest('tr.sesrow'); if(!r)return;
+        e.preventDefault();openSession(r.getAttribute('data-did'),r.getAttribute('data-start'));
+      });
+    }
+
+    // ---- click map: the density grid + ranked targets for one page. The SERVER buckets
+    // clicks into cells (cols across the viewport width, row_px down the document), and
+    // those exact numbers come back on the response — we only paint them, never re-bucket.
+    // Rides the full page scope, so the map answers over the same window as the chart.
+    var HM_COLS=24,HM_ROWPX=100;
+    // one server row (row_px of page height) drawn as N screen px. A short page would
+    // otherwise paint as a 30px sliver and a long one as an unscrollable wall, so the
+    // strip is stretched toward ~240px and clamped. This is presentation only — the
+    // row a cell sits in is the server's, never recomputed.
+    function hmRowH(maxRow){return Math.max(6,Math.min(26,Math.round(240/(maxRow+1))));}
+    var hmOut=document.getElementById('hmOut'),hmPath=document.getElementById('hmPath'),hmVp=document.getElementById('hmVp');
+    function hmLoad(){
+      if(!hmOut||!hmPath)return;
+      var p=hmPath.value; if(!p){hmOut.innerHTML='<div class="agmeta">pick a page to map.</div>';return;}
+      hmOut.innerHTML='<div class="exsummary">…</div>';
+      fetch('/v1/heatmap?'+SA_SCOPE+'&path='+encodeURIComponent(p)+
+            '&viewport='+encodeURIComponent(hmVp?hmVp.value:'all')+'&cols='+HM_COLS+'&row_px='+HM_ROWPX)
+        .then(function(r){return r.json()}).then(function(j){
+          if(j.error){hmOut.innerHTML='<div class="inote err">'+esc(j.error)+'</div>';return;}
+          if(!j.clicks){
+            hmOut.innerHTML='<div class="agmeta">'+esc(j.note||'no positioned clicks for this page and viewport in this window.')+'</div>'+
+              '<div class="agmeta" style="margin-top:8px">nothing to set up: sdk.js autocaptures a positioned click on its own. load it on <b>'+esc(p)+
+              '</b>, click something at this width, and the map fills in. a click captured without a viewport width can\'t be placed on the page, so it is counted nowhere here rather than guessed into a cell.</div>';
+            return;
+          }
+          var cells=j.cells||[],cols=j.cols||HM_COLS,mx=j.max||1,rowH=hmRowH(j.max_row||0);
+          var h='<div class="agrow"><span class="agprov">computed · every positioned click, no sampling</span>'+
+            '<span class="agmeta">'+j.clicks+' click'+(j.clicks===1?'':'s')+' on <b>'+esc(j.path)+'</b> · '+
+            esc(j.viewport)+' widths · busiest cell '+j.max+'</span></div>';
+          h+='<div class="hmwrap"><div class="hmcanvas" style="height:'+((j.max_row+1)*rowH)+'px">';
+          cells.forEach(function(c){
+            h+='<div class="hmcell" title="'+c.n+' click'+(c.n===1?'':'s')+'" style="left:'+
+              (c.col*100/cols).toFixed(3)+'%;width:'+(100/cols).toFixed(3)+'%;top:'+(c.row*rowH)+
+              'px;height:'+rowH+'px;opacity:'+(0.18+0.82*(c.n/mx)).toFixed(2)+'"></div>';
+          });
+          var tall=(j.max_row+1)*rowH>360; // only promise a scroll when there is one
+          h+='</div></div><div class="hmscale"><i style="opacity:.18"></i><i style="opacity:.55"></i><i></i>'+
+            '<span>'+(mx>1?'1 → '+j.max+' clicks per cell':'1 click per cell')+
+            ' · top of the strip is the top of the page, each row is '+j.row_px+
+            'px of page height and each column 1/'+cols+' of the viewport width'+
+            (tall?' · scroll the strip for the rest of the page':'')+'</span></div>';
+          var ts=j.top_targets||[];
+          if(ts.length){
+            var tmx=ts[0].n||1;
+            h+='<h3 style="margin-top:18px">most clicked on this page <span class="sub">· by the text, id or href on the element</span></h3>'+
+              '<table class="ctab"><thead><tr><th>target</th><th class="n">clicks</th><th class="cbar"></th></tr></thead><tbody>';
+            ts.forEach(function(t){
+              h+='<tr><td>'+esc(t.label)+'</td><td class="n">'+t.n+'</td>'+
+                '<td class="cbar"><div style="width:'+Math.round(t.n/tmx*100)+'%"></div></td></tr>';
+            });
+            h+='</tbody></table>';
+          }else{
+            h+='<div class="agmeta" style="margin-top:10px">these clicks carry no text, id or href to name an element by, so there is nothing to rank — the map above is still exact.</div>';
+          }
+          hmOut.innerHTML=h;
+        }).catch(function(){hmOut.innerHTML='<div class="inote err">could not load the click map</div>';});
+    }
+    if(hmOut&&hmPath){
+      hmLoad();
+      hmPath.onchange=hmLoad;
+      if(hmVp)hmVp.onchange=hmLoad;
+    }
+
+    // ---- ship and learn: deploys, feature flags, surveys. Three read surfaces over
+    // endpoints that already existed, so nothing here computes anything: every number
+    // on screen is the one the engine returned. All three window by whole DAYS rather
+    // than the toolbar's from/to, and the flag + survey reads ignore the toolbar's
+    // filters entirely (they answer in production scope), so each panel states the
+    // window it actually answered over instead of letting the toolbar imply one.
+    function shipPct(v){ // a percentage the server already computed, printed as one
+      if(v==null)return '—';
+      return (Math.abs(v)<10?Math.round(v*10)/10:Math.round(v))+'%';
+    }
+    // a marker's url is whatever was POSTed, so only ever render an http(s) one as a link
+    function shipHref(u){u=String(u||'');return (u.indexOf('http://')===0||u.indexOf('https://')===0)?u:'';}
+    function shipGet(url){
+      return fetch(url).then(function(r){
+        return r.json().then(function(j){return {st:r.status,j:j};},
+                             function(){return {st:r.status,j:{error:'the server did not return a report'}};});
+      });
+    }
+    // a store that isn't attached answers 404/503, which is not a failure to report —
+    // it means the capability is off on this instance, and it has to say which.
+    function shipOff(el,r,msg){
+      if(r.st===404||r.st===503){el.innerHTML='<div class="agmeta">'+msg+'</div>';return true;}
+      if(r.j&&r.j.error){el.innerHTML='<div class="inote err">'+esc(r.j.error)+'</div>';return true;}
+      return false;
+    }
+    function shipCaret(){return '<span class="agcaret">&#9654;</span> ';}
+    // one row open at a time inside a ctab — the tool-health table's behaviour, verbatim
+    function shipToggle(row,cols,fill){
+      var body=row.parentNode,next=row.nextElementSibling,was=hasCls(next,'xbody');
+      Array.prototype.forEach.call(body.querySelectorAll('tr.xbody'),function(o){o.parentNode.removeChild(o);});
+      Array.prototype.forEach.call(body.querySelectorAll('tr.xrow'),function(o){o.className='xrow';});
+      if(was)return;
+      row.className='xrow on';
+      var tr=document.createElement('tr');tr.className='xbody';
+      var td=document.createElement('td');td.colSpan=cols;td.innerHTML='<span class="agmeta">…</span>';
+      tr.appendChild(td);body.insertBefore(tr,row.nextSibling);
+      fill(td);
+    }
+    // clicks on a control inside a row must not also open the row
+    function shipHit(e,sel){var t=e.target.closest&&e.target.closest(sel);if(t)e.stopPropagation();return t;}
+
+    // ---- deploys: the ships, and what the metric did on each side of them.
+    var dpOut=document.getElementById('dpOut'),dpMetric=document.getElementById('dpMetric'),
+        dpWindow=document.getElementById('dpWindow');
+    // a deploy's delta_pct is a RATIO (0.34 = +34%); a flag report's is already a
+    // percentage. two endpoints, two units, never one formatter.
+    function dpDelta(d){
+      if(d.delta_pct==null)return '<span class="mut">—</span>';
+      var p=d.delta_pct*100,s=(p>0?'+':'')+(Math.abs(p)<10?Math.round(p*10)/10:Math.round(p))+'%';
+      var cls=d.direction==='regression'?'down':d.direction==='improvement'?'up':'mut';
+      return '<span class="'+cls+'">'+s+'</span>';
+    }
+    function dpMean(v){return v==null?'<span class="mut">—</span>':(Math.round(v*10)/10);}
+    // what the engine will and will not stand behind for this row, in words
+    function dpRead(d){
+      if(d.delta_pct==null){
+        if(d.before==null||d.after==null)return 'no series on one side of this ship to compare';
+        return 'went from nothing to something, so there is no finite % to state';
+      }
+      if(d.significant)return 'clear move · both windows full, at least 25%';
+      if(Math.abs(d.delta_pct)>=0.25)return 'big, but one window is short of full days';
+      return 'inside the 25% band this engine treats as noise';
+    }
+    function dpHowTo(){
+      return '<div class="agmeta" style="margin-top:8px">a marker is a sha and a message with a time. record one in CI with <b>smolanalytics deploy</b> (it defaults to the current git HEAD), from your editor with the <b>record_deploy</b> tool, or with a plain POST using the same write key sdk.js already holds:</div>'+
+        agCode('curl -X POST '+location.origin+'/v1/deploys \\\n  -H "Authorization: Bearer YOUR_WRITE_KEY" \\\n  -d \'{"sha":"a1b2c3d","message":"tighten checkout validation"}\'');
+    }
+    function dpLoad(){
+      if(!dpOut)return;
+      var ev=(dpMetric&&dpMetric.value)||'',w=(dpWindow&&dpWindow.value)||'3';
+      dpOut.innerHTML='<div class="exsummary">…</div>';
+      shipGet('/v1/deploys?event='+encodeURIComponent(ev)+'&days='+encodeURIComponent(SA_DAYS)+
+              '&window='+encodeURIComponent(w)+(SA_FILTERS?'&'+SA_FILTERS:''))
+        .then(function(r){
+          if(shipOff(dpOut,r,'deploy markers are not enabled on this instance, so there is nothing to list. they persist to a .deploys.json beside your event data; when the engine cannot open that file it starts without them and logs the reason.'))return;
+          var j=r.j,ds=j.deploys||[];
+          if(!ds.length){
+            dpOut.innerHTML='<div class="agmeta">no deploy markers recorded yet, so there is nothing to line a metric up against.</div>'+dpHowTo();
+            return;
+          }
+          var h='<div class="agrow"><span class="agprov">computed · the same trends engine the chart above draws</span>'+
+            '<span class="agmeta">'+ds.length+' marker'+(ds.length===1?'':'s')+' · <b>'+esc(j.event)+'</b> · the '+j.window+
+            ' days after each ship against the '+j.window+' before · last '+j.days+' days</span></div>'+
+            '<div class="agmeta">a ship that lines up with a move <b>correlates</b> with it, and that is all this is. a campaign, a weekend or another change the same day moves the same number, so nothing here says a deploy caused anything. a move is only called clear when both windows are fully populated and the change is at least 25%.</div>';
+          if(j.headline){
+            var hl=j.headline;
+            h+='<div class="agmeta" style="margin-top:8px">most recent clear move: <b>'+esc(hl.message||hl.short_sha||'a deploy')+'</b> — '+
+              esc(j.event)+' averaged '+dpMean(hl.before)+'/day before and '+dpMean(hl.after)+'/day after ('+dpDelta(hl)+
+              '). it correlates with this ship; it does not prove it.</div>';
+          }
+          h+='<table class="ctab"><thead><tr><th>deploy</th><th>shipped</th><th class="n">before/day</th>'+
+            '<th class="n">after/day</th><th class="n">change</th><th>read</th></tr></thead><tbody>';
+          ds.forEach(function(d){
+            var name=esc(d.message||d.short_sha||d.id),link=shipHref(d.url);
+            if(link)name='<a href="'+esc(link)+'" target="_blank" rel="noopener" style="color:var(--accent)">'+name+'</a>';
+            var tag=[d.short_sha,d.author,d.source].filter(Boolean).map(esc).join(' · ');
+            h+='<tr><td>'+name+(tag?' <span class="mut">'+tag+'</span>':'')+'</td>'+
+              '<td class="mut">'+ago(d.at)+' ago</td><td class="n">'+dpMean(d.before)+'</td>'+
+              '<td class="n">'+dpMean(d.after)+'</td><td class="n">'+dpDelta(d)+'</td>'+
+              '<td class="mut">'+esc(dpRead(d))+'</td></tr>';
+          });
+          dpOut.innerHTML=h+'</tbody></table>'+
+            '<div class="agmeta" style="margin-top:8px">before and after are mean events per day across the window on each side, read off the same daily series the chart draws. the toolbar\'s filters apply to this report; its date range does not, because this one windows by whole days and says which above.</div>';
+        }).catch(function(){dpOut.innerHTML='<div class="inote err">could not load the deploy report</div>';});
+    }
+    if(dpOut){
+      dpLoad();
+      if(dpMetric)dpMetric.onchange=dpLoad;
+      if(dpWindow)dpWindow.onchange=dpLoad;
+    }
+
+    // ---- feature flags: the definitions, and the A/B read behind a measured one.
+    var flOut=document.getElementById('flOut'),flList=[],flSeq=0;
+    // the goal the read opens on: the last step of the detected funnel, which is the
+    // thing this instance already treats as conversion. type any other event over it.
+    var flGoalDefault=(SA_FUNNEL.length?SA_FUNNEL[SA_FUNNEL.length-1]:SA_EVENT)||'';
+    function flFind(k){for(var i=0;i<flList.length;i++)if(flList[i].key===k)return flList[i];return null;}
+    function flCopy(o){var c={};for(var k in o)if(Object.prototype.hasOwnProperty.call(o,k))c[k]=o[k];return c;}
+    function flWho(f){
+      if(!f.rules||!f.rules.length)return 'everyone it is evaluated for';
+      return f.rules.map(function(r){
+        var w=(r.filters&&r.filters.length)
+          ? r.filters.map(function(x){return x.property+' '+(x.op||'eq')+' '+String(x.value);}).join(' and ')
+          : 'everyone';
+        return (r.rollout_pct||0)+'% of '+w;
+      }).join(' · else ');
+    }
+    function flVariants(f){
+      if(!f.variants||!f.variants.length)return 'boolean · serves "on"';
+      var tot=0;f.variants.forEach(function(v){if(v.weight>0)tot+=v.weight;});
+      return f.variants.map(function(v){
+        return v.key+' '+(tot>0?Math.round(v.weight/tot*100)+'%':v.weight);
+      }).join(' · ');
+    }
+    function flLoad(){
+      if(!flOut)return;
+      shipGet('/v1/flags').then(function(r){
+        if(shipOff(flOut,r,'feature flags are not enabled on this instance, so there is nothing to list. they persist to a .flags.json beside your event data; when the engine cannot open that file it starts without them and logs the reason.'))return;
+        flList=r.j.flags||[];
+        if(!flList.length){
+          flOut.innerHTML='<div class="agmeta">no flags yet. create one below, or from your editor with the <b>create_flag</b> tool. a flag changes nothing until you turn it on, and your app reads it with <b>smolanalytics.flag("checkout_v2", false)</b>.</div>';
+          return;
+        }
+        var on=0;flList.forEach(function(f){if(f.enabled)on++;});
+        var h='<div class="agrow"><span class="agprov">computed · the same deterministic bucketing the SDK is served</span>'+
+          '<span class="agmeta">'+flList.length+' flag'+(flList.length===1?'':'s')+' · '+on+' on</span></div>'+
+          '<table class="ctab"><thead><tr><th>flag</th><th>state</th><th>who gets it</th><th>variants</th>'+
+          '<th>A/B</th><th></th></tr></thead><tbody>';
+        flList.forEach(function(f){
+          h+='<tr class="xrow" tabindex="0" role="button" data-key="'+esc(f.key)+'" title="open the A/B read for this flag">'+
+            '<td>'+shipCaret()+esc(f.key)+(f.description?' <span class="mut">'+esc(f.description)+'</span>':'')+'</td>'+
+            '<td><span class="stpill'+(f.enabled?' on':'')+'" data-toggle="'+esc(f.key)+'" role="button" tabindex="0" '+
+            'title="'+(f.enabled?'turn it off':'turn it on')+'">'+(f.enabled?'on':'off')+'</span></td>'+
+            '<td class="mut">'+esc(flWho(f))+'</td><td class="mut">'+esc(flVariants(f))+'</td>'+
+            '<td class="mut">'+(f.measured?'measured':'not measured')+'</td>'+
+            '<td class="n"><span class="rowx" data-del="'+esc(f.key)+'" role="button" tabindex="0">remove</span></td></tr>';
+        });
+        flOut.innerHTML=h+'</tbody></table>'+
+          '<div class="agmeta" style="margin-top:8px">a visitor always lands in the same bucket for the same flag: the split is a stable hash of the flag key and the visitor id, with no randomness and no stored assignment, so your SDK and this page agree without talking. click a row for its A/B read.</div>';
+      }).catch(function(){flOut.innerHTML='<div class="inote err">could not load feature flags</div>';});
+    }
+    function flPost(f,after){
+      fetch('/v1/flags',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(f)})
+        .then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j};});})
+        .then(function(r){
+          if(!r.ok){saNote(flOut,(r.j&&r.j.error)||'could not save the flag','err');return;}
+          saNote(flOut,'');if(after)after();
+        }).catch(function(){saNote(flOut,'could not reach the server — try again','err');});
+    }
+    function flToggleEnabled(key,pill){
+      var f=flFind(key);if(!f)return;
+      var on=!f.enabled;
+      saConfirm(flOut,pill,
+        on?('turn '+key+' on? every visitor your app evaluates it for starts getting it on their next flag fetch.')
+          :('turn '+key+' off? every visitor falls back to the default your code passes to flag() on their next fetch.'),
+        on?'turn on':'turn off',
+        function(){var n=flCopy(f);n.enabled=on;flPost(n,flLoad);});
+    }
+    function flDelete(key,x){
+      saConfirm(flOut,x,'remove the flag '+key+'? your app keeps working — flag("'+key+
+        '", default) just returns its default from the next fetch on — but the definition does not come back.','remove',
+        function(){
+          fetch('/v1/flags/'+encodeURIComponent(key),{method:'DELETE'}).then(function(r){return r.json();})
+            .then(function(j){
+              if(j&&j.error){saNote(flOut,j.error,'err');return;}
+              if(j&&j.deleted===false){saNote(flOut,j.note||'nothing was removed','err');flLoad();return;}
+              saNote(flOut,'');flLoad();
+            }).catch(function(){saNote(flOut,'could not reach the server — try again','err');});
+        });
+    }
+    // the A/B read. It needs a goal event, and it answers over whole days in production
+    // scope, so it does NOT inherit the toolbar's range or filters and says so.
+    function flMeasureBody(td,key){
+      var f=flFind(key);
+      if(f&&!f.measured){
+        td.innerHTML='<div class="agmeta"><b>'+esc(key)+'</b> is not measured, so the SDK logs no <b>$feature_flag_called</b> exposures for it and there is no arm to compare. mark it measured and the read fills in as visitors evaluate it — that adds exactly one event per visitor per session.</div>'+
+          '<div style="margin-top:10px"><span class="chip" id="flMeasureOn" role="button" tabindex="0">mark it measured</span></div>';
+        var b=td.querySelector('#flMeasureOn');
+        b.onclick=function(){
+          saConfirm(flOut,b,'start logging exposures for '+key+'? the SDK adds one $feature_flag_called event per visitor per session for this flag, and nothing else changes.','mark measured',
+            function(){var n=flCopy(f);n.measured=true;flPost(n,flLoad);});
+        };
+        return;
+      }
+      var gid='flg'+(++flSeq);
+      td.innerHTML='<div class="agrow"><span class="agmeta">goal event</span>'+
+        '<input id="'+gid+'" list="exEvents" autocomplete="off" placeholder="e.g. checkout" value="'+esc(flGoalDefault)+
+        '" style="max-width:190px" aria-label="goal event">'+
+        '<span class="chip" id="'+gid+'go" role="button" tabindex="0">measure</span>'+
+        '<span class="agmeta">conversion = this event at or after a visitor\'s first exposure, over the last '+esc(SA_DAYS)+' days</span></div>'+
+        '<div id="'+gid+'out"></div>';
+      var inp=document.getElementById(gid),go=document.getElementById(gid+'go'),out=document.getElementById(gid+'out');
+      function run(){
+        var goal=(inp.value||'').trim();
+        if(!goal){out.innerHTML='<div class="agmeta">name the event that counts as success and the arms get compared on it.</div>';inp.focus();return;}
+        out.innerHTML='<div class="exsummary">…</div>';
+        shipGet('/v1/flags/'+encodeURIComponent(key)+'/measure?event='+encodeURIComponent(goal)+
+                '&days='+encodeURIComponent(SA_DAYS))
+          .then(function(r){
+            if(r.j&&r.j.error){out.innerHTML='<div class="inote err">'+esc(r.j.error)+'</div>';return;}
+            var j=r.j,vs=j.variants||[];
+            if(!vs.length){out.innerHTML='<div class="agmeta">'+esc(j.note||'no exposures for this flag yet')+'</div>';return;}
+            var h='<table class="ctab"><thead><tr><th>variant</th><th class="n">exposed</th><th class="n">converted</th>'+
+              '<th class="n">rate</th><th class="n">vs control</th><th>read</th></tr></thead><tbody>';
+            vs.forEach(function(v){
+              var ctrl=(v.key===j.control);
+              var read=ctrl?'control arm'
+                :v.small_sample?'fewer than 30 exposed, too few to call'
+                :v.significant?'significant at 95% against '+j.control
+                :'not significant at 95% against '+j.control;
+              var lift=ctrl?'<span class="mut">—</span>'
+                :'<span class="'+(v.delta_pct>0?'up':v.delta_pct<0?'down':'mut')+'">'+
+                  (v.delta_pct>0?'+':'')+shipPct(v.delta_pct)+'</span>';
+              h+='<tr><td>'+esc(v.key||'(blank)')+'</td><td class="n">'+v.exposed+'</td>'+
+                '<td class="n">'+v.converted+'</td><td class="n">'+shipPct(v.rate_pct)+'</td>'+
+                '<td class="n">'+lift+'</td><td class="mut">'+esc(read)+'</td></tr>';
+            });
+            // every arm at zero usually means the goal is misspelled, not that the
+            // experiment failed — say which rather than letting 0% read as a result
+            var conv=0;vs.forEach(function(v){conv+=v.converted;});
+            out.innerHTML=h+'</tbody></table>'+
+              (conv?'':'<div class="agmeta" style="margin-top:8px">no exposed visitor did <b>'+esc(j.goal)+
+                '</b> in this window, so every arm reads 0%. if that looks wrong it is usually the event name — pick another from the list.</div>')+
+              (j.note?'<div class="agmeta" style="margin-top:8px">'+esc(j.note)+'</div>':'')+
+              '<div class="agmeta">a difference between arms is a measured difference on <b>'+esc(j.goal)+
+              '</b>, not a proven cause. this read windows by whole days in production scope, so the toolbar\'s date range and filters do not apply to it.</div>';
+          }).catch(function(){out.innerHTML='<div class="inote err">could not load the A/B read</div>';});
+      }
+      go.onclick=run;
+      inp.onkeydown=function(e){if(e.key==='Enter'){e.preventDefault();run();}};
+      run();
+    }
+    function flOpen(row){shipToggle(row,6,function(td){flMeasureBody(td,row.getAttribute('data-key'));});}
+    if(flOut){
+      flLoad();
+      flOut.addEventListener('click',function(e){
+        var t=shipHit(e,'[data-toggle]');if(t){flToggleEnabled(t.getAttribute('data-toggle'),t);return;}
+        var d=shipHit(e,'[data-del]');if(d){flDelete(d.getAttribute('data-del'),d);return;}
+        var row=e.target.closest&&e.target.closest('tr.xrow');if(row)flOpen(row);
+      });
+      flOut.addEventListener('keydown',function(e){
+        if(e.key!=='Enter'&&e.key!==' ')return;
+        var t=e.target.closest&&e.target.closest('[data-toggle]');
+        if(t){e.preventDefault();e.stopPropagation();flToggleEnabled(t.getAttribute('data-toggle'),t);return;}
+        var d=e.target.closest&&e.target.closest('[data-del]');
+        if(d){e.preventDefault();e.stopPropagation();flDelete(d.getAttribute('data-del'),d);return;}
+        var row=e.target.closest&&e.target.closest('tr.xrow');
+        if(row){e.preventDefault();flOpen(row);}
+      });
+    }
+    var flCreate=document.getElementById('flCreate');
+    if(flCreate){
+      flCreate.onclick=function(){
+        var row=this.parentNode,ki=document.getElementById('flKey'),di=document.getElementById('flDesc');
+        var key=(ki.value||'').trim();
+        if(!key){saNote(row,'a flag needs a key — that is the string your code passes to flag()','err');ki.focus();return;}
+        var f={key:key,description:(di.value||'').trim(),enabled:false};
+        if(document.getElementById('flKind').value==='ab'){
+          f.measured=true;f.variants=[{key:'control',weight:50},{key:'treatment',weight:50}];
+        }
+        fetch('/v1/flags',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(f)})
+          .then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j};});})
+          .then(function(r){
+            if(!r.ok){saNote(row,(r.j&&r.j.error)||'could not create the flag','err');return;}
+            saNote(row,'created "'+key+'", off — turn it on when you want visitors to get it');
+            ki.value='';di.value='';flLoad();
+          }).catch(function(){saNote(row,'could not reach the server — try again','err');});
+      };
+    }
+
+    // ---- surveys: the definitions, and what came back for each one.
+    var svOut=document.getElementById('svOut'),svList=[];
+    function svFind(id){for(var i=0;i<svList.length;i++)if(svList[i].id===id)return svList[i];return null;}
+    function svWhere(s){
+      var bits=[s.url_match?('paths containing '+s.url_match):'every page'];
+      if(s.sample_pct>0&&s.sample_pct<100)bits.push(s.sample_pct+'% of visitors');
+      return bits.join(' · ');
+    }
+    function svLoad(){
+      if(!svOut)return;
+      shipGet('/v1/surveys').then(function(r){
+        if(shipOff(svOut,r,'surveys are not enabled on this instance, so there is nothing to list. they persist to a .surveys.json beside your event data; when the engine cannot open that file it starts without them and logs the reason.'))return;
+        svList=r.j.surveys||[];
+        if(!svList.length){
+          svOut.innerHTML='<div class="agmeta">no surveys yet. create one from your editor with the <b>create_survey</b> tool, or POST /v1/surveys — a survey is one question (nps, rating, choice or text) plus where it should show. sdk.js renders it as a small popover and sends the answer as an ordinary event, so results are a query over your own event log like every other number here.</div>';
+          return;
+        }
+        var act=0;svList.forEach(function(s){if(s.active)act++;});
+        var h='<div class="agrow"><span class="agprov">computed · every response, no sampling</span>'+
+          '<span class="agmeta">'+svList.length+' survey'+(svList.length===1?'':'s')+' · '+act+
+          ' active · answers land as ordinary $survey_shown / $survey_response events</span></div>'+
+          '<table class="ctab"><thead><tr><th>survey</th><th>type</th><th>question</th>'+
+          '<th>where it shows</th><th>state</th></tr></thead><tbody>';
+        svList.forEach(function(s){
+          h+='<tr class="xrow" tabindex="0" role="button" data-id="'+esc(s.id)+'" title="open this survey\'s results">'+
+            '<td>'+shipCaret()+esc(s.name)+'</td><td class="mut">'+esc(s.type)+'</td>'+
+            '<td class="mut">'+esc(s.question)+'</td><td class="mut">'+esc(svWhere(s))+'</td>'+
+            '<td><span class="stpill'+(s.active?' on':'')+'" data-active="'+esc(s.id)+'" role="button" tabindex="0" '+
+            'title="'+(s.active?'stop showing it':'start showing it')+'">'+(s.active?'showing':'paused')+'</span></td></tr>';
+        });
+        svOut.innerHTML=h+'</tbody></table>'+
+          '<div class="agmeta" style="margin-top:8px">surveys are written from your editor (<b>create_survey</b>) or over POST /v1/surveys; this page shows them, flips them on and off, and reads what came back. click a row for its results.</div>';
+      }).catch(function(){svOut.innerHTML='<div class="inote err">could not load surveys</div>';});
+    }
+    function svToggleActive(id,pill){
+      var s=svFind(id);if(!s)return;
+      var on=!s.active;
+      saConfirm(svOut,pill,
+        on?('start showing "'+s.name+'" to visitors? sdk.js renders it as a popover on '+svWhere(s)+' from their next page load.')
+          :('stop showing "'+s.name+'"? visitors stop seeing it from their next page load. answers already collected stay, they are ordinary events.'),
+        on?'start showing it':'stop showing it',
+        function(){
+          var n={};for(var k in s)if(Object.prototype.hasOwnProperty.call(s,k))n[k]=s[k];
+          n.active=on;
+          fetch('/v1/surveys',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(n)})
+            .then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j};});})
+            .then(function(r){
+              if(!r.ok){saNote(svOut,(r.j&&r.j.error)||'could not save the survey','err');return;}
+              saNote(svOut,'');svLoad();
+            }).catch(function(){saNote(svOut,'could not reach the server — try again','err');});
+        });
+    }
+    function svResults(td,id){
+      var s=svFind(id);
+      shipGet('/v1/surveys/'+encodeURIComponent(id)+'/results?days='+encodeURIComponent(SA_DAYS))
+        .then(function(r){
+          if(r.j&&r.j.error){td.innerHTML='<span class="inote err">'+esc(r.j.error)+'</span>';return;}
+          var j=r.j;
+          if(!j.shown&&!j.responses){
+            td.innerHTML='<div class="agmeta">nobody has seen this survey in the last '+esc(SA_DAYS)+' days'+
+              ((s&&!s.active)?', and it is paused, so sdk.js is not showing it to anyone':'')+
+              '. an active survey whose url_match hits the current path renders as a small popover, and the widget sends <b>$survey_shown</b> then <b>$survey_response</b> with the answer.</div>';
+            return;
+          }
+          var h='<div class="stickrow">'+agTile(j.shown,'seen by')+agTile(j.responses,'answered')+
+            agTile(shipPct(j.rate_pct),'response rate');
+          if(j.nps!=null)h+=agTile(j.nps,'NPS · promoters minus detractors');
+          if(j.average!=null)h+=agTile(j.average,'average rating');
+          h+='</div>';
+          var bd=j.breakdown||[];
+          if(bd.length){
+            var mx=1;bd.forEach(function(c){if(c.n>mx)mx=c.n;});
+            h+='<table class="ctab" style="margin-top:12px"><thead><tr><th>answer</th><th class="n">responses</th>'+
+              '<th class="cbar"></th></tr></thead><tbody>'+
+              bd.map(function(c){return '<tr><td>'+esc(c.label)+'</td><td class="n">'+c.n+'</td>'+
+                '<td class="cbar"><div style="width:'+Math.round(c.n/mx*100)+'%"></div></td></tr>';}).join('')+
+              '</tbody></table>';
+          }
+          var rc=j.recent||[];
+          if(rc.length){
+            h+='<h3 style="margin-top:14px">what they wrote <span class="sub">· newest first, up to 20</span></h3>'+
+              '<table class="ctab"><tbody>'+rc.map(function(t){return '<tr><td>'+esc(t)+'</td></tr>';}).join('')+'</tbody></table>';
+          }
+          if(j.note)h+='<div class="agmeta" style="margin-top:8px">'+esc(j.note)+'</div>';
+          td.innerHTML=h+'<div class="agmeta" style="margin-top:8px">counted per distinct visitor over the last '+
+            esc(SA_DAYS)+' days in production scope, so one person answering twice counts once. this read windows by whole days: the toolbar\'s date range and filters do not apply to it.</div>';
+        }).catch(function(){td.innerHTML='<span class="inote err">could not load the results</span>';});
+    }
+    function svOpen(row){shipToggle(row,5,function(td){svResults(td,row.getAttribute('data-id'));});}
+    if(svOut){
+      svLoad();
+      svOut.addEventListener('click',function(e){
+        var a=shipHit(e,'[data-active]');if(a){svToggleActive(a.getAttribute('data-active'),a);return;}
+        var row=e.target.closest&&e.target.closest('tr.xrow');if(row)svOpen(row);
+      });
+      svOut.addEventListener('keydown',function(e){
+        if(e.key!=='Enter'&&e.key!==' ')return;
+        var a=e.target.closest&&e.target.closest('[data-active]');
+        if(a){e.preventDefault();e.stopPropagation();svToggleActive(a.getAttribute('data-active'),a);return;}
+        var row=e.target.closest&&e.target.closest('tr.xrow');
+        if(row){e.preventDefault();svOpen(row);}
       });
     }
 
