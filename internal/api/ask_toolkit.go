@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/deploys"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/flag"
+	"github.com/Arjun0606/smolanalytics/internal/goal"
 	"github.com/Arjun0606/smolanalytics/internal/heatmap"
 	"github.com/Arjun0606/smolanalytics/internal/session"
 	"github.com/Arjun0606/smolanalytics/internal/survey"
@@ -94,12 +96,12 @@ func (s *Server) answerToolkit(intent askIntent, q string, evs []event.Event, no
 		if !found {
 			return "No measured flags yet. Mark a flag measured so the SDK logs exposures, pick a goal event, and the A/B read shows per-variant conversion, lift, and 95% significance here.", tkReceipt("the A/B flag-impact report", "feature flags"), true
 		}
-		goal := tkEvent(q, evs)
-		if goal == "" {
+		goalEv := tkEvent(q, evs)
+		if goalEv == "" {
 			return fmt.Sprintf("Flag %q is measured, but I couldn't tell which goal event to score it on. Ask e.g. \"how is %s doing on checkout?\".", fl.Key, fl.Key), tkReceipt("the A/B flag-impact report", "feature flags"), true
 		}
-		rep := flag.Measure(evs, fl.Key, goal, 30)
-		return tkFlagImpactAnswer(fl.Key, goal, rep), tkReceipt(fmt.Sprintf("the A/B flag-impact report for %q on %q", fl.Key, goal), "feature flags"), true
+		rep := flag.Measure(evs, fl.Key, goalEv, 30)
+		return tkFlagImpactAnswer(fl.Key, goalEv, rep), tkReceipt(fmt.Sprintf("the A/B flag-impact report for %q on %q", fl.Key, goalEv), "feature flags"), true
 
 	case intentSessions, intentSessionTimeline:
 		ss := session.Sessions(evs, 7, 100)
@@ -163,8 +165,110 @@ func (s *Server) answerToolkit(intent askIntent, q string, evs []event.Event, no
 		}
 		return ans + " The agent observability card below has the full conversation-health view.",
 			tkReceipt("the agent conversation-health report", "agent observability"), true
+
+	// The three cards that used to have no ask path at all. Typing the exact title printed
+	// above them returned the capabilities menu, so the product denied owning a report the
+	// user could see further down the same page. Each answers from its real store now.
+	case intentGoals:
+		if s.goals == nil {
+			return "Goals aren't enabled on this instance.", tkReceipt("the goal store", "goals"), true
+		}
+		gs := s.goals.List()
+		if len(gs) == 0 {
+			return "No goals defined yet. A goal is one event or one path glob (like /thanks*) that counts as a win; define one on the goals card below and it gets a conversion rate plus the channels that drove it.",
+				tkReceipt("the goal store", "goals"), true
+		}
+		parts := make([]string, 0, len(gs))
+		for _, g := range gs {
+			if len(parts) == 3 {
+				break
+			}
+			r := goal.Resolve(evs, g, 30, now)
+			parts = append(parts, fmt.Sprintf("%q %d%% (%d of %d visitors, 30d)", g.Name, r.ConversionPct, r.Conversions, r.Visitors))
+		}
+		more := ""
+		if len(gs) > 3 {
+			more = fmt.Sprintf(" (+%d more)", len(gs)-3)
+		}
+		return fmt.Sprintf("%d goal%s: %s%s.", len(gs), tkPlural(len(gs)), strings.Join(parts, "; "), more),
+			tkReceipt("the goal-conversion report", "goals"), true
+
+	case intentSearch:
+		if s.gsc == nil || !s.gsc.Connected() {
+			return "Google Search Console isn't connected on this instance, so there are no search queries to report. Connect it in settings and the queries you rank for, their clicks, impressions and average position land on the google search queries card below.",
+				tkReceipt("the Search Console store", "google search queries"), true
+		}
+		rows, _, site, fetched := s.gsc.Snapshot()
+		if len(rows) == 0 {
+			return fmt.Sprintf("Search Console is connected to %s, but no query rows have come back yet. Google reports on a delay, so this fills in within a day or two.", site),
+				tkReceipt("the Search Console store", "google search queries"), true
+		}
+		top := make([]string, 0, 3)
+		clicks := 0
+		for i, r := range rows {
+			clicks += r.Clicks
+			if i < 3 {
+				top = append(top, fmt.Sprintf("%q (%d clicks, position %.0f)", r.Query, r.Clicks, r.Position))
+			}
+		}
+		return fmt.Sprintf("%d queries over the last 28 days on %s, %d clicks in total. Top: %s. Fetched %s.",
+				len(rows), site, clicks, strings.Join(top, ", "), tkAgo(fetched, now)),
+			tkReceipt("the Search Console 28-day report", "google search queries"), true
+
+	case intentEvents:
+		if len(evs) == 0 {
+			return "No events recorded yet. Once your SDK or API sends the first one it shows up on the event stream card below, newest first.",
+				tkReceipt("the raw event log", "event stream"), true
+		}
+		counts := map[string]int{}
+		for _, e := range evs {
+			counts[e.Name]++
+		}
+		type nc struct {
+			n string
+			c int
+		}
+		ordered := make([]nc, 0, len(counts))
+		for n, c := range counts {
+			ordered = append(ordered, nc{n, c})
+		}
+		sort.Slice(ordered, func(i, j int) bool {
+			if ordered[i].c != ordered[j].c {
+				return ordered[i].c > ordered[j].c
+			}
+			return ordered[i].n < ordered[j].n
+		})
+		top := make([]string, 0, 3)
+		for i, o := range ordered {
+			if i == 3 {
+				break
+			}
+			top = append(top, fmt.Sprintf("%s (%d)", o.n, o.c))
+		}
+		last := evs[len(evs)-1]
+		return fmt.Sprintf("%d events across %d event name%s in this window. Most common: %s. Most recent: %s, %s.",
+				len(evs), len(counts), tkPlural(len(counts)), strings.Join(top, ", "), last.Name, tkAgo(last.Timestamp, now)),
+			tkReceipt("the raw event log", "event stream"), true
 	}
 	return "", "", false
+}
+
+// tkAgo renders how long ago something happened, for answers that state freshness.
+func tkAgo(t, now time.Time) string {
+	if t.IsZero() {
+		return "at an unknown time"
+	}
+	d := now.Sub(t)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+	}
 }
 
 // tkReceipt states what computed the answer and points at where to open it. The pointer

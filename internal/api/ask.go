@@ -242,7 +242,15 @@ const (
 	// the capabilities menu. Same reports the /v1/agent endpoints and MCP agent tools run.
 	intentAgentTools         askIntent = "agent_tools"
 	intentAgentConversations askIntent = "agent_conversations"
-	intentUnknown            askIntent = "unknown"
+
+	// Three deck cards used to have no ask path at all: typing their own visible name
+	// ("goals", "google search queries", "event stream") returned the capabilities menu,
+	// i.e. the product denied owning a report that was rendered further down the same page.
+	// Each is backed by a real store, so each now answers for real.
+	intentGoals   askIntent = "goals"
+	intentSearch  askIntent = "search_console"
+	intentEvents  askIntent = "event_stream"
+	intentUnknown askIntent = "unknown"
 )
 
 // classifyAsk routes a lowercased question to one intent. Order is the whole
@@ -274,6 +282,29 @@ func classifyAsk(q string) askIntent {
 	// get answered as a generic funnel or signup count wearing a false "proven" stamp — the
 	// exact failure that burned a live demo. Keywords are specific so they don't steal the
 	// classic reports ("session duration" stays engagement, "red flag" stays the verdict).
+	// EVERY DECK CARD ANSWERS TO ITS OWN VISIBLE NAME. Ten of the cards on the page used to
+	// return the capabilities menu when a user typed the exact title printed above them
+	// ("lifecycle", "goals", "agent observability", "flags", "geo", "paths", "live", "event
+	// stream", "google search queries"), which reads as the product denying it has a report
+	// that is visibly sitting right there. These cases run FIRST so a card name always wins,
+	// then fall through to the richer phrasings below.
+	case hasWord(q, "goals", "goal") || hasAny(q, "goal conversion", "which goals"):
+		return intentGoals
+	case hasAny(q, "search queries", "google search", "search console", "which queries",
+		"queries do we rank", "ranking queries") || hasWord(q, "gsc"):
+		return intentSearch
+	case hasAny(q, "event stream", "raw events", "recent events", "latest events", "event log"):
+		return intentEvents
+	case hasAny(q, "agent observability", "agent health", "agent dashboard", "agent report"):
+		return intentAgentTools
+	case hasWord(q, "lifecycle"):
+		return intentLifecycle
+	case hasWord(q, "paths", "pathing"):
+		return intentPaths
+	case hasWord(q, "geo", "geography"):
+		return intentGeo
+	case hasWord(q, "flags"): // "feature flags" also matches below; this catches the bare card name
+		return intentFlag
 	case hasAny(q, "heatmap", "heat map", "click map", "where do users click", "where do people click",
 		"where are people clicking", "where are users clicking", "rage click", "rage-click", "scroll depth"):
 		return intentHeatmap
@@ -359,8 +390,12 @@ func classifyAsk(q string) askIntent {
 		}
 		return intentSources
 	// who's here now — the live count, before the generic web case
+	// hasWord("live") catches the bare card name ("live", "show me live") without letting
+	// Contains hijack "delivered". It sits INSIDE this case so it still respects the
+	// windowed-count guard below rather than bypassing it.
 	case hasAny(q, "right now", "on the site now", "online now", "live visitor", "who's on",
-		"whos on", "active right now", "currently on", "here now", " rn", "anyone live"):
+		"whos on", "active right now", "currently on", "here now", " rn", "anyone live") ||
+		hasWord(q, "live"):
 		if hasAny(q, "last hour", "past hour", "last 6 hours", "hours") {
 			return intentWeb // a windowed count, not the live-now feed
 		}
@@ -728,10 +763,17 @@ func answerScopedIntent(intent askIntent, evs []event.Event, scoped []event.Even
 		// "what's my MRR?" silently returning a weekly digest reads exactly like a model
 		// padding an answer, the very fear "plain-English analytics" triggers. So we say
 		// what we don't invent, then offer the closest real report.
-		return "I only answer from deterministic reports over the events you've sent, funnels, channels, " +
-			"retention, signups, active users, top pages, pageviews, and agent observability (tool-call " +
-			"latency, error taxonomy, conversation re-ask/abandon/resolution). I don't invent metrics you " +
-			"haven't tracked (revenue, MRR, churn) unless you send them as events. Here's the closest read I have:\n\n" +
+		// This list must stay in step with what the ask bar can ACTUALLY answer. It named a
+		// subset for a while, omitting heatmaps, surveys, flags/A-B, sessions, deploys,
+		// lifecycle, paths, geo, goals and search queries — every one of which is a card
+		// rendered further down this same page, so the product read as denying it owned
+		// reports the user could see.
+		return "I only answer from deterministic reports over the events you've sent: funnels and " +
+			"conversion, retention, stickiness, lifecycle, user paths, channels and campaigns, signups, " +
+			"active users, top and entry pages, pageviews, geo, goals, search queries, heatmaps, " +
+			"surveys, feature flags and A/B reads, sessions, deploy impact, and agent observability " +
+			"(tool-call latency, error taxonomy, conversation re-ask/abandon/resolution). I don't invent " +
+			"metrics you haven't tracked (revenue, MRR, churn) unless you send them as events. Here's the closest read I have:\n\n" +
 			answerBrief(evs, 7, now) + "\n\nAsk about any of those, scoped to today, yesterday, this/last week, " +
 			"this/last month, or last N days, or connect your own Claude/Cursor over MCP to go deeper."
 	}
@@ -2156,6 +2198,34 @@ func hasAny(s string, subs ...string) bool {
 		}
 	}
 	return false
+}
+
+// hasWord is hasAny with word boundaries. The short card names ("live", "flags", "geo",
+// "goals", "paths") are substrings of ordinary words — "delivered" contains "live",
+// "flagship" contains "flags" — so matching them with plain Contains would hijack
+// unrelated questions. Anything multi-word or distinctive can keep using hasAny.
+func hasWord(s string, words ...string) bool {
+	for _, w := range words {
+		for i := 0; ; {
+			j := strings.Index(s[i:], w)
+			if j < 0 {
+				break
+			}
+			st := i + j
+			en := st + len(w)
+			beforeOK := st == 0 || !isWordByte(s[st-1])
+			afterOK := en == len(s) || !isWordByte(s[en])
+			if beforeOK && afterOK {
+				return true
+			}
+			i = st + 1
+		}
+	}
+	return false
+}
+
+func isWordByte(b byte) bool {
+	return b == '_' || (b >= '0' && b <= '9') || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
 }
 
 // answerGeo counts distinct visitor countries (ingest-time geo). Geo stamping
