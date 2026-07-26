@@ -65,7 +65,7 @@ ai  ▸ Activation is 62% (657 of 1,051 signups reach "activate").
       The leak is activate→checkout on free (only 31% continue). Want the paths after activate?
 ```
 
-Your model gets **73 tools and 14 built-in prompts**, and it runs the whole product, not just queries: ask reports, roll out a flag, read the A/B result, create a cohort, set an alert, verify instrumentation. Anything it creates shows up on the dashboard instantly.
+Your model gets **76 tools and 14 built-in prompts**, and it runs the whole product, not just queries: ask reports, roll out a flag, read the A/B result, create a cohort, set an alert, verify instrumentation. Anything it creates shows up on the dashboard instantly.
 
 | Assistant | command | Assistant | command |
 |---|---|---|---|
@@ -171,7 +171,7 @@ One static binary, no cgo, no cluster. It binds `127.0.0.1` by default and refus
 
 ## Don't want to run it? → [smolanalytics Cloud](https://smolanalytics.com)
 
-Self-hosting is the free tier, unlimited, forever. The [hosted cloud](https://smolanalytics.com) adds an isolated instance per project, your whole team, the morning brief delivered, and scale with zero ops. **14-day full-product trial** (no card), then **Pro $29/mo** (1M events) or **Scale $99/mo** (10M events), flat **$5 per extra million**. Overage never locks your dashboard.
+Self-hosting is the free tier, unlimited, forever. The [hosted cloud](https://smolanalytics.com) adds an isolated instance per project, your whole team, the morning brief delivered, and scale with zero ops. **14-day full-product trial** (no card), then **Pro $49/mo** (1M events) or **Scale $149/mo** (10M events), flat **$8 per extra million**. Overage never locks your dashboard.
 
 ## The one thing it deliberately does not do
 
