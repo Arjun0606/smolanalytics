@@ -417,6 +417,27 @@
      silently bury the top of whatever you jumped to. */
   .deck>.pane,.deck>.stratum{scroll-margin-top:calc(var(--rail-h, 44px) + 14px)}
 
+  /* ═══ QUIET CARDS — a report with nothing in it yet used to cost as much vertical space
+     as a full one. On a young instance that is most of the page: the heatmap card alone was
+     688px of empty, the agent card 635px, and the deck ran to nearly nine screens. A card
+     with no data is still NAMED, still indexed, still explains how to fill itself. It just
+     stops taking a full card's worth of room to say "nothing here yet".
+     This is a density rule, never a hiding rule. ═══ */
+  .deck>.pane.quiet{padding:12px var(--card-pad);grid-column:span 4}
+  .deck>.pane.quiet h3{margin:0 0 6px}
+  .deck>.pane.quiet .exsummary,.deck>.pane.quiet .agmeta,.deck>.pane.quiet .inote{margin:0;font-size:11px;line-height:1.5}
+  /* the empty visual shells (an empty grid, an empty canvas, an axis with no series) carry
+     no information at all, so they go while the words that teach stay.
+     .exrow is deliberately NOT in this list: it holds the create-goal and create-flag
+     controls, and an empty card is exactly when you need them. */
+  .deck>.pane.quiet canvas,.deck>.pane.quiet .hmwrap,.deck>.pane.quiet table,
+  .deck>.pane.quiet .heat{display:none}
+  @media(max-width:880px){.deck>.pane.quiet{grid-column:1/-1}}
+
+  /* runaway lists get an internal scroll instead of pushing the page down. .live already
+     did this at 400px; sessions and the event table were not covered and ran to ~1000px. */
+  .deck>.pane .capped{max-height:420px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--line2) transparent}
+
   /* ═══ THE DECK INDEX — 22 always-on cards is more than anyone can scan, so every report
      past the first screen was effectively hidden ("where can I find the heatmap?"). It is
      built FROM the panes actually rendered, never a hardcoded list, so it cannot drift out
@@ -1136,7 +1157,7 @@
           <option value="100">100 newest</option>
         </select>
         <span class="sub">· one row per visit, click a row for its step-by-step journey · rebuilt from your event log at query time, not a screen recording · computed by /v1/sessions</span></h3>
-      <div id="sesOut"><div class="exsummary">…</div></div>
+      <div id="sesOut" class="capped"><div class="exsummary">…</div></div>
     </div>
 
     <div class="pane" id="pane-live" style="order:810" data-stratum="raw">
@@ -1671,6 +1692,39 @@
     }
     try { if(!saBuildDeckIndexGrouped()) saBuildDeckIndexFlat(); }
     catch(e){ saBuildDeckIndexFlat(); }
+
+    // ---- quiet the cards that have nothing in them yet.
+    // A card counts as EMPTY only when it holds no data-bearing element at all: no table row,
+    // no bar/segment, no tile, no populated canvas. Deciding from the TEXT would be wrong (a
+    // real report can contain the word "no"), so this asks the DOM what is actually rendered.
+    // Cards are re-checked after the async loaders run, because most of them fetch their body.
+    function saQuietEmptyCards(){
+      var deck=document.querySelector('.deck'); if(!deck)return;
+      // FAIL SAFE. An allowlist of "data-bearing elements" was tried first and it wrongly
+      // quieted three cards that were full of real numbers (conversion renders .segconv,
+      // lifecycle and stickiness render plain divs), which would have HIDDEN live data.
+      // So the rule is inverted: a card is quiet only when every one of its body nodes is a
+      // recognised empty-state note. Anything unrecognised counts as content and stays full.
+      var NOTE='.exsummary,.agmeta,.inote,.livemuted';
+      Array.prototype.forEach.call(deck.querySelectorAll('.pane'),function(p){
+        if(p.hidden)return;
+        var body=Array.prototype.filter.call(p.children,function(c){return c.tagName!=='H3';});
+        var quiet = body.length>0 && Array.prototype.every.call(body,function(c){
+          if(c.matches&&c.matches(NOTE))return true;
+          // a wrapper holding nothing but one note (e.g. #hmOut > .inote) is still empty
+          return c.children&&c.children.length===1&&c.children[0].matches&&c.children[0].matches(NOTE);
+        });
+        // never quiet a card that is still loading, or its shell would flicker away and back
+        if(quiet&&/^\s*…\s*$/.test((p.innerText||'').replace(/^[^\n]*\n/,'')))quiet=false;
+        p.classList.toggle('quiet',quiet);
+      });
+      // the index reflects the page, so nothing changes there: a quiet card keeps its chip.
+    }
+    saQuietEmptyCards();
+    // the loaders are async; re-run a few times rather than racing them, and once more on the
+    // load event so a slow report cannot leave a full card looking empty (or the reverse).
+    setTimeout(saQuietEmptyCards,1200); setTimeout(saQuietEmptyCards,3000);
+    window.addEventListener('load',function(){setTimeout(saQuietEmptyCards,600);});
 
     // the engine's ask intent → the deck card holding the full interactive view of it.
     // The ask answers used to end "open the Heatmap tab", but the tab rail was replaced by
