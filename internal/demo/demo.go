@@ -275,6 +275,7 @@ func Seed(s store.Store) error {
 		}
 	}
 	seedToolkit(s)
+	seedAgent(s)
 	return nil
 }
 
@@ -357,6 +358,99 @@ func seedToolkit(s store.Store) {
 		}
 	}
 
+	_ = s.Ingest(evs...)
+}
+
+// seedAgent emits the events behind the computed agent-observability reports (tool health +
+// conversation health), so the demo's /v1/agent/* and the homepage "it watches your agent too"
+// beat show real, non-empty numbers. Called from Seed() so it survives every re-anchor. Uses the
+// two reserved names (agent_tool_call, agent_turn, no $ prefix) so it flows the normal ingest path.
+func seedAgent(s store.Store) {
+	r := rand.New(rand.NewSource(7))
+	now := time.Now().UTC()
+	var evs []event.Event
+	i := 0
+	emit := func(name, user string, at time.Duration, props map[string]any) {
+		t := now.Add(at)
+		if t.After(now) {
+			return
+		}
+		i++
+		evs = append(evs, event.Event{ID: fmt.Sprintf("ag%d", i), Name: name, DistinctID: user, Timestamp: t, Properties: props})
+	}
+	clients := []string{"cursor", "claude", "copilot", "windsurf"}
+	// tool -> base latency ms, error probability, error taxonomy
+	type toolSpec struct {
+		name    string
+		base    int
+		errP    float64
+		errKind []string
+	}
+	tools := []toolSpec{
+		{"search_web", 420, 0.05, []string{"timeout", "rate_limit"}},
+		{"read_file", 35, 0.01, []string{"not_found"}},
+		{"run_query", 780, 0.13, []string{"timeout", "bad_args", "db_error"}}, // the slow, error-prone one
+		{"send_email", 610, 0.06, []string{"rate_limit", "invalid_recipient"}},
+		{"list_dir", 22, 0.0, nil},
+	}
+	// ~30 days of tool calls
+	for d := 0; d < 30; d++ {
+		for k := 0; k < 6+r.Intn(8); k++ {
+			ts := tools[r.Intn(len(tools))]
+			errored := r.Float64() < ts.errP
+			lat := float64(ts.base) * (0.5 + r.Float64()*1.4)
+			if errored {
+				lat += 2000 // errors run slow
+			}
+			props := map[string]any{
+				"tool": ts.name, "server": "app-mcp", "client": clients[r.Intn(len(clients))],
+				"latency_ms": lat, "conversation_id": fmt.Sprintf("c%d", r.Intn(70)),
+			}
+			if errored {
+				props["error"] = true
+				props["error_type"] = ts.errKind[r.Intn(len(ts.errKind))]
+			}
+			emit("agent_tool_call", fmt.Sprintf("au%d", r.Intn(40)),
+				-time.Duration(d)*24*time.Hour+time.Duration(k)*7*time.Minute, props)
+		}
+	}
+	// ~70 conversations of agent_turn events with realistic role sequences
+	for c := 0; c < 70; c++ {
+		cid := fmt.Sprintf("c%d", c)
+		uid := fmt.Sprintf("au%d", r.Intn(40))
+		turns := 1 + r.Intn(5)
+		base := -time.Duration(r.Intn(30)) * 24 * time.Hour
+		var seq []string
+		for t := 0; t < turns; t++ {
+			seq = append(seq, "user")
+			if r.Float64() < 0.15 { // re-ask: a second user turn before the assistant answers
+				seq = append(seq, "user")
+			}
+			if t < turns-1 || r.Float64() > 0.18 { // 18% abandon: last user turn gets no answer
+				seq = append(seq, "assistant")
+			}
+		}
+		resolved := seq[len(seq)-1] == "assistant" && r.Float64() < 0.8
+		models := []string{"claude-fable-5", "gpt-4o", "claude-opus-4-8"}
+		for k, role := range seq {
+			p := map[string]any{
+				"conversation_id": cid, "role": role, "model": models[r.Intn(len(models))],
+			}
+			if role == "assistant" {
+				p["ttft_ms"] = float64(200 + r.Intn(500))
+				p["latency_ms"] = float64(500 + r.Intn(1500))
+				p["tokens_out"] = float64(60 + r.Intn(500))
+			} else {
+				p["latency_ms"] = float64(5 + r.Intn(40))
+				p["tokens_in"] = float64(40 + r.Intn(400))
+			}
+			// resolved only on the final assistant turn of a resolved conversation (never guessed)
+			if k == len(seq)-1 && role == "assistant" {
+				p["resolved"] = resolved
+			}
+			emit("agent_turn", uid, base+time.Duration(k)*45*time.Second, p)
+		}
+	}
 	_ = s.Ingest(evs...)
 }
 
