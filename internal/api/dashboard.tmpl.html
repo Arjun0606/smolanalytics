@@ -1711,6 +1711,10 @@
         var body=Array.prototype.filter.call(p.children,function(c){return c.tagName!=='H3';});
         var quiet = body.length>0 && Array.prototype.every.call(body,function(c){
           if(c.matches&&c.matches(NOTE))return true;
+          // the loader that COMPUTED the report declares whether it came back empty. That is
+          // authoritative: inferring emptiness from the DOM is what mis-fired on real data.
+          if(c.dataset&&c.dataset.empty==='1')return true;
+          if(c.dataset&&c.dataset.empty==='0')return false;
           // a wrapper holding nothing but one note (e.g. #hmOut > .inote) is still empty
           return c.children&&c.children.length===1&&c.children[0].matches&&c.children[0].matches(NOTE);
         });
@@ -2197,6 +2201,7 @@
       if(!agConvEl)return;
       fetch(agURL('/v1/agent/conversations')).then(function(r){return r.json()}).then(function(j){
         if(j.error){agErr(agConvEl,j);return;}
+        agConvEl.dataset.empty=j.conversations?'0':'1';
         if(!j.conversations){
           agConvEl.innerHTML='<div class="agmeta">'+agNone('agent_turn')+' send one per conversation turn and this row fills in with turns, re-ask rate, abandon rate and time to first token:</div>'+
             agCode('smolanalytics.track("agent_turn", { conversation_id: "c_1042", role: "user" })\nsmolanalytics.track("agent_turn", { conversation_id: "c_1042", role: "assistant", ttft_ms: 240, resolved: true })')+
@@ -2226,6 +2231,7 @@
       fetch(agURL('/v1/agent/tools')).then(function(r){return r.json()}).then(function(j){
         if(j.error){agErr(agToolsEl,j);return;}
         var ts=j.tools||[];
+        agToolsEl.dataset.empty=ts.length?'0':'1';
         if(!ts.length){
           agToolsEl.innerHTML='<div class="agmeta">'+agNone('agent_tool_call')+' send one per tool or MCP dispatch and this table fills in with calls, error rate and latency p50/p90/p99 per tool:</div>'+
             agCode('smolanalytics.track("agent_tool_call", { tool: "search_web", client: "cursor", latency_ms: 412 })\nsmolanalytics.track("agent_tool_call", { tool: "search_web", client: "cursor", latency_ms: 2400, error: true, error_type: "timeout" })')+
@@ -2283,6 +2289,7 @@
       fetch(agURL('/v1/agent/labels','&label='+encodeURIComponent(name))).then(function(r){return r.json()}).then(function(j){
         if(j.error){agErr(agLabelsEl,j);return;}
         var vals=j.values||[],by=j.labeled_by||[];
+        agLabelsEl.dataset.empty=(vals.length||j.labeled)?'0':'1';
         var who=by.length?'labeled by <b>'+esc(by.join(', '))+'</b>'
           :(j.labeled?'no model name recorded on these labels':'nothing labeled yet');
         var h='<div class="aginfbox"><div class="agrow"><span class="aginf">model-inferred values</span>'+
