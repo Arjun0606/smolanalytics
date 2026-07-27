@@ -26,7 +26,7 @@
     --track-lbl:.06em; --track-num:-.02em; --track-body:-.01em;
     /* space — 4px base */
     --sp1:4px; --sp2:8px; --sp3:12px; --sp4:16px; --sp6:24px; --sp8:32px;
-    --zone:24px; --card-pad:18px; --gap:18px; --sec-pad:34px;
+    --zone:24px; --card-pad:18px; --gap:14px; --sec-pad:34px;
     /* peek heights. A stream pane shows a readable window and scrolls inside itself; it
        never becomes the page. The px value is the fallback for browsers without dvh, and
        nothing on the deck is allowed to exceed roughly a third of the viewport. */
@@ -420,7 +420,7 @@
       background:var(--bg);border-bottom:1px solid var(--line)}
     #sa-top .ask{flex:1;max-width:660px;margin:0}
     .sa-main{margin-left:var(--nav-w);padding:calc(var(--top-h) + 20px) clamp(20px,2.2vw,40px) 120px;max-width:none}
-    .sa-inner{max-width:1320px}
+    .sa-inner{max-width:1560px}
     /* the deck index becomes the rail's spine: one report per line, grouped, always visible */
     .sa-nav .deckindex{display:flex;flex-direction:column;align-items:stretch;gap:1px;padding:0}
     .sa-nav .deckindex .jsec{border-left:none;padding:10px 2px 4px;color:var(--dis)}
@@ -462,9 +462,15 @@
 
      Material and section change reading volume. They NEVER change findability: every card
      is still named at identical weight in the index, always, on cold open. */
-  .deck{display:grid;grid-template-columns:repeat(12,1fr);gap:var(--gap);margin:var(--zone) 0 0;align-items:start}
-  .deck>.pane{grid-column:span 6}
-  @media(max-width:880px){.deck{grid-template-columns:1fr}.deck>.pane,.deck>.pane.wide{grid-column:1/-1}}
+  /* ═══ THE FIELD ═══
+     16 of the 22 panes carried .wide, i.e. full width, so the deck was a single-file column
+     of full-width cards and that is what made it a ~7000px ribbon. Column COUNT is emergent
+     (auto-fill), never hard-coded, so the deck lays out correctly at every width and under
+     every combination of the Go conditionals. Width is assigned per id below.
+     order:N is still the only thing that POSITIONS anything — nothing here reads or writes it. */
+  .deck{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(280px,100%),1fr));
+    gap:var(--gap);margin:var(--zone) 0 0;align-items:stretch}
+  .deck>.pane{grid-column:span 1}
 
   /* ═══ SECTIONS — headings, not containers. They are grid siblings of the cards, so every
      pane stays a DIRECT child of .deck and its inline order:N still drives layout. Nesting
@@ -490,7 +496,25 @@
   .deck .pane{display:block;background:var(--s2);border:1px solid transparent;border-radius:var(--r-card);
     padding:var(--card-pad);min-width:0;transition:border-color var(--t-base) var(--ease),background var(--t-base) var(--ease)}
   .deck .pane:hover{border-color:var(--line);background:var(--s3)}
-  .deck .pane.wide{grid-column:1/-1}
+  /* .wide is KEPT and redefined: two tracks, not the whole plane */
+  .deck>.pane.wide{grid-column:span 2}
+  /* the five panes carrying wide tables, 3-hop path columns or a 200-row stream */
+  .deck>#pane-agent,.deck>#pane-sessions,.deck>#pane-retention,
+  .deck>#pane-events,.deck>#pane-paths{grid-column:span 3}
+  /* a quiet card opts out of stretch, or its taller row-mate cancels the density it just won */
+  .deck>.pane.quiet{align-self:start}
+  /* SPAN CLAMPS. auto-fill collapses tracks on its own, but an item spanning more tracks than
+     exist creates an implicit column and scrolls the page sideways. These are the only thing
+     between this layout and a horizontal scrollbar. */
+  @media(max-width:1240px){
+    .deck>#pane-agent,.deck>#pane-sessions,.deck>#pane-retention,
+    .deck>#pane-events,.deck>#pane-paths{grid-column:span 2}
+  }
+  @media(max-width:640px){
+    .deck>.pane,.deck>.pane.wide,
+    .deck>#pane-agent,.deck>#pane-sessions,.deck>#pane-retention,
+    .deck>#pane-events,.deck>#pane-paths{grid-column:1/-1}
+  }
   .deck #pane-retention{overflow-x:auto}
   /* card titles were 11px uppercase --mut2, the same weight as every caption on the page, so
      22 cards read as one undifferentiated field. Full contrast, sentence case, a touch larger:
