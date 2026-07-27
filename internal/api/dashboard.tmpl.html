@@ -386,6 +386,72 @@
   .foot a:hover{color:var(--accent)}
 
 
+
+  /* ═══ THE SHELL — fixed rail + fixed topbar ═══
+     Only above 1081px. Below it everything falls back to normal document flow, because a
+     264px rail on a phone is a drawer, and a drawer is a place to hide things. */
+  /* BELOW 1081px THE SHELL IS NOT HIDDEN, IT IS UNSTACKED. Hiding it would take the ask bar,
+     the scope controls, the report index, share, settings and Cloud with it — a drawer is a
+     place to hide things, and nothing on this page is allowed to hide. They simply become
+     ordinary blocks in the document, in reading order. */
+  .sa-nav,#sa-top{display:flex;flex-direction:column;gap:14px;padding:14px 0}
+  /* stacked, the topbar's children stretch to full width and #lastev (a long "seconds since
+     the newest event" line) pushed the body a few px wider than the viewport. Nothing on this
+     page may side-scroll the document. */
+  #sa-top{gap:10px;align-items:stretch;min-width:0}
+  #sa-top>*{min-width:0;max-width:100%}
+  #sa-top #lastev{overflow-wrap:anywhere}
+  .sa-nav{border-bottom:1px solid var(--line);margin-bottom:8px}
+  .sa-nav .sa-lbl{margin-top:6px}
+  .sa-nav .deckindex{display:flex;flex-wrap:wrap;gap:4px 8px}
+  .sa-foot{display:flex;gap:14px;flex-wrap:wrap}
+  .sa-tools{display:flex;gap:14px;flex-wrap:wrap;align-items:baseline}
+  @media(min-width:1081px){
+    :root{--nav-w:264px; --top-h:56px}
+    .sa-nav{display:flex;position:fixed;inset:0 auto 0 0;width:var(--nav-w);z-index:50;
+      flex-direction:column;gap:var(--sp4,18px);padding:14px 16px 18px;
+      background:var(--well);border-right:1px solid var(--line);
+      overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--line2) transparent}
+    #sa-top{display:flex;position:fixed;top:0;left:var(--nav-w);right:0;height:var(--top-h);z-index:45;
+      align-items:center;gap:12px;padding:0 clamp(20px,2.2vw,40px);
+      background:var(--bg);border-bottom:1px solid var(--line)}
+    #sa-top .ask{flex:1;max-width:660px;margin:0}
+    .sa-main{margin-left:var(--nav-w);padding:calc(var(--top-h) + 20px) clamp(20px,2.2vw,40px) 120px;max-width:none}
+    .sa-inner{max-width:1320px}
+    /* the deck index becomes the rail's spine: one report per line, grouped, always visible */
+    .sa-nav .deckindex{display:flex;flex-direction:column;align-items:stretch;gap:1px;padding:0}
+    .sa-nav .deckindex .jsec{border-left:none;padding:10px 2px 4px;color:var(--dis)}
+    .sa-nav .deckindex .jsec:first-child{padding-top:2px}
+    .sa-nav .deckindex a.jcard{padding:4px 6px;border-bottom:none;border-radius:4px;color:var(--mut)}
+    .sa-nav .deckindex a.jcard:hover{color:var(--fg);background:var(--s2);border-bottom:none}
+    .sa-nav .deckindex a.jcard.cur{color:var(--accent)}
+    .sa-lbl{font:400 10px/1 var(--mono);text-transform:uppercase;letter-spacing:.1em;color:var(--dis);margin-bottom:8px}
+    .sa-block{display:flex;flex-direction:column}
+    .sa-brand .logo{margin:0 0 10px}
+    .sa-nav .siteselect{width:100%}
+    /* scope stacks vertically in the rail rather than wrapping across the page */
+    .sa-scope .toolbar,.sa-scope .chiprail{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 8px;padding:0;border:0;position:static;background:none}
+    .sa-scope .ranges{display:flex;gap:4px;width:100%}
+    .sa-scope .rangebtn{flex:1;text-align:center}
+    .sa-scope .customrange{display:flex;gap:4px;width:100%;flex-wrap:wrap}
+    .sa-scope .customrange input{flex:1;min-width:96px}
+    .sa-scope .fbuilder{width:100%}
+    .sa-tools{gap:2px}
+    .sa-tools .hlink{padding:4px 6px;border-radius:4px}
+    .sa-tools .hlink:hover{background:var(--s2)}
+    .sa-foot{margin-top:auto;display:flex;flex-direction:column;gap:2px;padding-top:12px;border-top:1px solid var(--line)}
+    .sa-foot .hlink{padding:4px 6px;border-radius:4px}
+    .sa-foot .hlink:hover{background:var(--s2)}
+    .railnote{font:400 11px/1.5 var(--mono);color:var(--dis);display:none}
+    .deckindex:empty + .railnote{display:block}
+    /* #deckjump is now the ONLY sticky element on the page; it sits under the fixed topbar */
+    .deckjump{top:var(--top-h)}
+    .deck>.pane,.deck>.stratum{scroll-margin-top:calc(var(--top-h) + var(--rail-h,44px) + 14px)}
+    /* the answer docks under the input that produced it */
+    .sa-inner>.answer,.hero .answer{margin-top:0}
+  }
+  @media(min-width:1081px) and (max-width:1200px){:root{--nav-w:224px}}
+
   /* ═══ THE DECK — always-visible card grid replaces the 13-tab rail ═══
      12 columns instead of 2, purely so cards can differ in width. The mapping is an
      identity: a plain pane was 1-of-2 and is now span 6 of 12; .wide was 1/-1 and still
@@ -624,52 +690,26 @@
 </style>
 </head>
 <body>
-<header><div class="wrap bar">
-  <div class="logo"><span class="lmk">s</span>smol<b>analytics</b></div>
-  {{if gt (len .Sites) 1}}<select class="siteselect" onchange="location.href=this.value?('/?site='+encodeURIComponent(this.value)):'/'" title="scope every report to one site">
+<!-- ═══ THE SHELL ═══
+     A fixed rail and a fixed topbar. The rail is a MAP, NOT A ROUTER: the content column
+     still renders every report in one continuous document, so nothing is filtered, routed or
+     hidden — the inventory of what exists is simply on screen permanently instead of being
+     discoverable only by scrolling seven thousand pixels.
+     The WINDOW stays the scroller on purpose. Every scrollIntoView on this page, the
+     scroll-spy IntersectionObserver (root:null), #deckjump's position:sticky and the browser's
+     scroll restoration after a create-and-reload all depend on it. An inner overflow column
+     would break or degrade all of them for no visual gain. -->
+<aside class="sa-nav">
+  <div class="sa-brand"><div class="logo"><span class="lmk">s</span>smol<b>analytics</b></div>{{if gt (len .Sites) 1}}<select class="siteselect" onchange="location.href=this.value?('/?site='+encodeURIComponent(this.value)):'/'" title="scope every report to one site">
     <option value="">all sites</option>
     {{range .Sites}}<option value="{{.}}" {{if eq . $.Site}}selected{{end}}>{{.}}</option>{{end}}
-  </select>{{end}}
-  <div class="spacer"></div>
-  {{if ge .LastEventSecs 0}}<span class="hlink" id="lastev" data-secs="{{.LastEventSecs}}" title="seconds since the newest ingested event, proof this page is live">·</span>{{end}}
-  {{if .HasData}}<a class="livepill{{if gt .LiveNow 0}} on{{end}}" href="#pane-live" id="livepill"><span class="dot"></span><span id="livecount">{{if gt .LiveNow 0}}{{.LiveNow}} now{{else}}live{{end}}</span></a>{{end}}
-  <span class="agentpill{{if .AgentLive}} on{{end}}" id="agentpill" title="{{if .AgentName}}your agent, seen via real MCP traffic; click for connect options{{else}}connect your coding agent over MCP{{end}}">⌁ <span id="agentlbl">{{if .AgentName}}{{.AgentName}} · {{.AgentAgo}}{{if gt .AgentCalls 0}} · {{.AgentCalls}} calls{{end}}{{else}}agent{{end}}</span></span>
-  {{if .HasData}}<a class="hlink" href="#explore" id="exploreLink" title="run any report on your own events">explore</a>{{end}}
-  {{if .HasShares}}<a class="hlink" href="/settings/shares" id="shareBtn" title="mint a revocable read-only link">share</a>{{end}}
-  <a class="hlink" href="{{.CloudURL}}" target="_blank" style="color:var(--accent)">Cloud ↗</a>
-  <a class="hlink" href="/settings">settings</a>
-</div></header>
+  </select>{{end}}</div>
 
-<main class="wrap">
-  {{if .ShowingDev}}<div class="devnote">Showing <b>development</b> data (localhost / 127.0.0.1), the traffic production reports hide. <a href="/{{if .Site}}?site={{.Site}}{{end}}">← back to production</a></div>{{else if gt .DevHidden 0}}<div class="devnote">{{.DevHidden}} event{{if ne .DevHidden 1}}s{{end}} from localhost/development {{if eq .DevHidden 1}}is{{else}}are{{end}} hidden from these production reports. <a href="/?env=development{{if .Site}}&site={{.Site}}{{end}}">view dev data →</a></div>{{end}}
-
-  <!-- zone 1: the ask hero — the page's single focal point -->
-  <div class="hero">
-    <form class="ask" id="askform">
-      <span class="k">›</span>
-      <input id="askq" autocomplete="off" placeholder="ask anything about your data" aria-label="ask">
-      <span class="hint"><kbd>/</kbd><kbd>⏎</kbd></span>
-    </form>
-    <div class="askchips" id="askchips">
-      <span class="chip" data-q="what should I fix?">what should I fix?</span>
-      <span class="chip" data-q="where do users drop off?">where do users drop off?</span>
-      <span class="chip" data-q="which channel converts best?">which channel converts best?</span>
-      <span class="chip" data-q="what do users do after signup?">what do users do next?</span>
-      <span class="chip" data-q="are my users sticky?">are users sticky?</span>
-      <span class="chip" data-q="how is retention?">how is retention?</span>
-      <span class="chip" data-q="what happened this week?">what happened this week?</span>
-      <span class="chip" data-q="which tool is slowest?">which tool is slowest?</span>
-      <span class="chip" data-q="how is conversation health?">conversation health?</span>
-    </div>
-    {{if .ProductEvents}}<div class="askchips"><span class="chiplbl">your events</span>{{range .ProductEvents}}<span class="chip" data-q="how many {{.}} this week?">{{.}}</span>{{end}}</div>{{end}}
-    {{if .TopPages}}<div class="askchips"><span class="chiplbl">your pages</span>{{range .TopPages}}<span class="chip" data-q="visitors to {{.Value}}">{{.Value}}</span>{{end}}</div>{{end}}
-
-    <!-- zone 2: the answer slot — an artifact, not a chat -->
-    <div id="askresult" class="answer" hidden></div>
-    <div id="shareresult" class="answer" hidden></div>
-
-    <!-- zone 6: the analysis toolbar — range, dates, filters. one row, where the
-         incumbents put it; every control writes the querystring so views share -->
+  <!-- scope governs every pane at once, so it is chrome, not page content. Stacked in the
+       rail it reads as a facet column instead of a ribbon that shoved the page down, and it
+       removes the second of the page's two competing sticky bars. -->
+  <div class="sa-block sa-scope">
+    <div class="sa-lbl">scope</div>
     {{if .HasData}}<div class="toolbar">
       <nav class="ranges">{{range .Ranges}}<a class="rangebtn{{if and .On (not $.CustomRange)}} on{{end}}" href="{{.URL}}">{{.Label}}</a>{{end}}</nav>
       <form class="customrange{{if .CustomRange}} on{{end}}" id="rangeform">
@@ -698,7 +738,63 @@
         <datalist id="fbProps"></datalist><datalist id="fbVals"></datalist>
       </span>
     </div>
-    {{end}}
+  {{end}}
+  </div>
+
+  <div class="sa-block sa-reports">
+    <div class="sa-lbl">reports</div>
+    <!-- filled by saBuildDeckIndexGrouped from the panes that actually rendered, so this
+         list can never advertise a report that is not on the page, or miss one that is. -->
+    <div class="deckindex" id="deckindex"></div>
+    <div class="railnote">reports appear here as soon as your first events land.</div>
+  </div>
+
+  <div class="sa-block sa-tools">
+    <div class="sa-lbl">tools</div>
+    {{if .HasData}}<a class="hlink" href="#explore" id="exploreLink" title="run any report on your own events">explore</a>{{end}}
+    <a class="hlink" href="#board" id="boardLink">pinned</a>
+    <a class="hlink" href="#connect">connect your agent</a>
+  </div>
+
+  <div class="sa-foot">{{if .HasShares}}<a class="hlink" href="/settings/shares" id="shareBtn" title="mint a revocable read-only link">share</a>{{end}}<a class="hlink" href="/settings">settings</a><a class="hlink" href="{{.CloudURL}}" target="_blank" style="color:var(--accent)">Cloud ↗</a></div>
+</aside>
+
+<div id="sa-top">
+    <form class="ask" id="askform">
+      <span class="k">›</span>
+      <input id="askq" autocomplete="off" placeholder="ask anything about your data" aria-label="ask">
+      <span class="hint"><kbd>/</kbd><kbd>⏎</kbd></span>
+    </form>
+  <div class="spacer"></div>
+  {{if ge .LastEventSecs 0}}<span class="hlink" id="lastev" data-secs="{{.LastEventSecs}}" title="seconds since the newest ingested event, proof this page is live">·</span>{{end}}{{if .HasData}}<a class="livepill{{if gt .LiveNow 0}} on{{end}}" href="#pane-live" id="livepill"><span class="dot"></span><span id="livecount">{{if gt .LiveNow 0}}{{.LiveNow}} now{{else}}live{{end}}</span></a>{{end}}<span class="agentpill{{if .AgentLive}} on{{end}}" id="agentpill" title="{{if .AgentName}}your agent, seen via real MCP traffic; click for connect options{{else}}connect your coding agent over MCP{{end}}">⌁ <span id="agentlbl">{{if .AgentName}}{{.AgentName}} · {{.AgentAgo}}{{if gt .AgentCalls 0}} · {{.AgentCalls}} calls{{end}}{{else}}agent{{end}}</span></span>
+</div>
+
+<main class="sa-main"><div class="sa-inner">
+  {{if .ShowingDev}}<div class="devnote">Showing <b>development</b> data (localhost / 127.0.0.1), the traffic production reports hide. <a href="/{{if .Site}}?site={{.Site}}{{end}}">← back to production</a></div>{{else if gt .DevHidden 0}}<div class="devnote">{{.DevHidden}} event{{if ne .DevHidden 1}}s{{end}} from localhost/development {{if eq .DevHidden 1}}is{{else}}are{{end}} hidden from these production reports. <a href="/?env=development{{if .Site}}&site={{.Site}}{{end}}">view dev data →</a></div>{{end}}
+
+  <!-- zone 1: the ask hero — the page's single focal point -->
+  <div class="hero">
+
+    <div class="askchips" id="askchips">
+      <span class="chip" data-q="what should I fix?">what should I fix?</span>
+      <span class="chip" data-q="where do users drop off?">where do users drop off?</span>
+      <span class="chip" data-q="which channel converts best?">which channel converts best?</span>
+      <span class="chip" data-q="what do users do after signup?">what do users do next?</span>
+      <span class="chip" data-q="are my users sticky?">are users sticky?</span>
+      <span class="chip" data-q="how is retention?">how is retention?</span>
+      <span class="chip" data-q="what happened this week?">what happened this week?</span>
+      <span class="chip" data-q="which tool is slowest?">which tool is slowest?</span>
+      <span class="chip" data-q="how is conversation health?">conversation health?</span>
+    </div>
+    {{if .ProductEvents}}<div class="askchips"><span class="chiplbl">your events</span>{{range .ProductEvents}}<span class="chip" data-q="how many {{.}} this week?">{{.}}</span>{{end}}</div>{{end}}
+    {{if .TopPages}}<div class="askchips"><span class="chiplbl">your pages</span>{{range .TopPages}}<span class="chip" data-q="visitors to {{.Value}}">{{.Value}}</span>{{end}}</div>{{end}}
+
+    <!-- zone 2: the answer slot — an artifact, not a chat -->
+    <div id="askresult" class="answer" hidden></div>
+    <div id="shareresult" class="answer" hidden></div>
+
+    <!-- range, dates and filters used to sit here as a second sticky row. They govern every
+         pane at once, so they are shell now: see .sa-scope in the rail. -->
   </div>
 
   {{if .HasData}}
@@ -825,7 +921,7 @@
        "Always on the table" only helps if you can FIND it, so the deck is preceded by an
        index of its own cards, filled in by saBuildDeckIndex from what actually rendered. -->
   <nav class="deckjump" id="deckjump" aria-label="jump to a section"></nav>
-  <div class="deckindex" id="deckindex"></div>
+
   <div class="deck">
 
     <!-- SECTION HEADINGS. They are grid SIBLINGS of the cards, never wrappers: every pane
@@ -1341,7 +1437,7 @@
     ask == dashboard == MCP, <a href="https://smolanalytics.com/trust" target="_blank" rel="noopener">proven in CI ↗</a><br>
     updated {{.Updated}} · page computed in {{.ComputeMS}}ms · <a href="https://smolanalytics.com" target="_blank">smolanalytics</a>
   </div>
-</main>
+</div></main>
 
 <script>
   (function(){
