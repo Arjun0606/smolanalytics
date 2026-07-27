@@ -391,6 +391,11 @@ func serve(st store.Store, closeStore func() error, guardPublic bool) {
 	} else {
 		log.Printf("smolanalytics: export links disabled (%v)", err)
 	}
+	// The demo's /mcp is intentionally reachable without a credential so anyone can point an
+	// agent at it. That must not include writes: otherwise a stranger can create flags, delete
+	// goals or mint export links on the instance the homepage renders.
+	app.SetMCPReadOnly(demoMode)
+
 	if gs, err := gsc.Open(sp(".gsc.json")); err == nil {
 		app.SetGSC(gs)
 		if demoMode {

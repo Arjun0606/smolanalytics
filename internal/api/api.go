@@ -138,6 +138,12 @@ func (s *Server) SetGSC(g *gsc.Store) { s.gsc = g; s.mcp.SetGSC(g) }
 // SetGoals attaches the goals store (dashboard card + MCP goal tools).
 func (s *Server) SetGoals(g *goal.Store) { s.goals = g; s.mcp.SetGoals(g) }
 
+// SetMCPReadOnly refuses every mutating MCP tool. The public demo serves /mcp with no
+// credential on purpose (nothing is configured, so authorized() opens it), which also means
+// any stranger could otherwise create flags, delete goals, mint export links or change
+// retention on the very instance the marketing site renders.
+func (s *Server) SetMCPReadOnly(v bool) { s.mcp.SetReadOnly(v) }
+
 // SetAudit swaps in a persistent audit log.
 func (s *Server) SetAudit(l *audit.Log) { s.audit = l }
 
@@ -427,13 +433,17 @@ func (s *Server) serveRobots(w http.ResponseWriter, _ *http.Request) {
 // <YOUR_HOST>/install.md") actually gets a working, copy-ready guide instead of a 404.
 func (s *Server) serveInstallMD(w http.ResponseWriter, r *http.Request) {
 	host := baseURL(r)
-	wk, rk := s.writeKey, s.readKey
+	// NEVER interpolate the read key here. /install.md is in isPublic(), so this page is
+	// served to anyone who knows the host — and tenant hostnames are deterministic. The read
+	// key is the SECRET credential: it authorizes GET /v1/export (the entire raw event log),
+	// every /v1 report, and POST /mcp with all its tools, including the destructive ones.
+	// Templating it in turned an install guide into unauthenticated, full-tenant compromise.
+	// The write key is public by design (it ships inside sdk.js), so it stays.
+	wk := s.writeKey
 	if wk == "" {
 		wk = "YOUR_WRITE_KEY"
 	}
-	if rk == "" {
-		rk = "YOUR_READ_KEY"
-	}
+	rk := "YOUR_READ_KEY" // read from the dashboard's connect panel, never served publicly
 	md := strings.NewReplacer("{{HOST}}", host, "{{WRITE_KEY}}", wk, "{{READ_KEY}}", rk).Replace(installMD)
 	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 	_, _ = io.WriteString(w, md)

@@ -69,6 +69,11 @@ How to work:
 
 type Server struct {
 	store store.Store
+	// readOnly refuses every mutating tool. Set on the PUBLIC DEMO, whose /mcp is deliberately
+	// unauthenticated so anyone can point an agent at it — which also means any stranger could
+	// otherwise create flags, delete goals, mint export links or change retention on the
+	// instance the homepage renders. Reads stay open; nothing that writes does.
+	readOnly bool
 	// optional persistent stores backing the action tools (create_alert, save_report, …);
 	// nil in bare demo/stdio-without-files mode, where those tools explain how to enable them.
 	insights  *insights.Store
@@ -96,6 +101,24 @@ func (s *Server) SetSettings(st *settings.Store)   { s.settings = st }
 func (s *Server) SetTrackPlan(tp *trackplan.Store) { s.trackplan = tp }
 
 func New(s store.Store) *Server { return &Server{store: s} }
+
+// SetReadOnly makes this MCP server refuse every mutating tool.
+func (s *Server) SetReadOnly(v bool) { s.readOnly = v }
+
+// mutatingTools are the tools that change state. Listed explicitly rather than inferred from
+// a name prefix: a rename would silently reopen the hole, and a wrong guess here is a
+// vandalism surface on a public host.
+var mutatingTools = map[string]bool{
+	"create_alert": true, "delete_alert": true, "save_report": true, "delete_report": true,
+	"create_cohort": true, "create_sequence_cohort": true, "delete_cohort": true,
+	"create_webhook": true, "delete_webhook": true, "create_flag": true, "update_flag": true,
+	"delete_flag": true, "create_survey": true, "delete_survey": true, "create_goal": true,
+	"delete_goal": true, "create_defined_event": true, "delete_defined_event": true,
+	"create_api_key": true, "delete_api_key": true, "create_export_link": true,
+	"set_retention": true, "set_tracking_plan": true, "import_events": true,
+	"record_deploy": true, "delete_deploy": true, "label_conversation": true,
+	"create_share": true, "delete_share": true, "set_settings": true,
+}
 
 // --- JSON-RPC envelope ---
 
@@ -252,6 +275,9 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 	// than letting each handler silently see zero-valued args and emit a confusing error.
 	if len(args) > 0 && !json.Valid(args) {
 		return "", fmt.Errorf("invalid arguments: not valid JSON")
+	}
+	if s.readOnly && mutatingTools[name] {
+		return "", fmt.Errorf("%s is not available here: this is the public demo, which serves every report read-only", name)
 	}
 	evs, err := s.all()
 	if err != nil {
