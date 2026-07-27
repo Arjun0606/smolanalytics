@@ -26,7 +26,7 @@
     --track-lbl:.06em; --track-num:-.02em; --track-body:-.01em;
     /* space — 4px base */
     --sp1:4px; --sp2:8px; --sp3:12px; --sp4:16px; --sp6:24px; --sp8:32px;
-    --zone:24px; --card-pad:16px; --gap:16px; --sec-pad:28px;
+    --zone:24px; --card-pad:18px; --gap:18px; --sec-pad:34px;
     /* peek heights. A stream pane shows a readable window and scrolls inside itself; it
        never becomes the page. The px value is the fallback for browsers without dvh, and
        nothing on the deck is allowed to exceed roughly a third of the viewport. */
@@ -403,7 +403,7 @@
   .deck>.stratum{grid-column:1/-1;display:flex;align-items:baseline;gap:10px;margin:var(--sec-pad) 0 2px;
     font-weight:400}
   .deck>.stratum:first-child{margin-top:4px}
-  .deck>.stratum .stitle{font:400 var(--fs-lead,15px)/1.2 var(--mono);color:var(--fg);letter-spacing:.01em}
+  .deck>.stratum .stitle{font:400 17px/1.2 var(--mono);color:var(--fg);letter-spacing:-.01em}
   .deck>.stratum .ssub{font:400 11px/1 var(--mono);color:var(--dis);text-transform:uppercase;letter-spacing:.08em}
   .deck>.stratum .srule{flex:1;height:1px;background:var(--line);position:relative;overflow:hidden}
   .deck>.stratum .scount{font:400 11px/1 var(--mono);color:var(--dis);white-space:nowrap}
@@ -413,11 +413,22 @@
   .deck>.stratum .srule::after{content:"";position:absolute;inset:0;background:var(--accent);transform:scaleX(0);transform-origin:left;opacity:0}
   .deck>.stratum.hit .srule::after{animation:srun 700ms var(--ease-out)}
   @media(prefers-reduced-motion:reduce){.deck>.stratum.hit .srule::after{animation:none;transform:scaleX(1);opacity:.55}}
-  .deck .pane{display:block;background:var(--s1);border:1px solid var(--line);border-radius:var(--r-card);padding:var(--card-pad);min-width:0;transition:border-color var(--t-fast)}
-  .deck .pane:hover{border-color:var(--line2)}
+  /* No resting border. Twenty-two identically-outlined boxes WAS the clutter: every card
+     shouted equally, so the eye had nothing to hold. The surface (#111 on #0a0a0a) is enough
+     to read as a card, the section rules do the dividing, and a hairline appears on hover so
+     the card still acknowledges you. Border stays transparent rather than absent so nothing
+     reflows by 1px when it appears. */
+  .deck .pane{display:block;background:var(--s2);border:1px solid transparent;border-radius:var(--r-card);
+    padding:var(--card-pad);min-width:0;transition:border-color var(--t-base) var(--ease),background var(--t-base) var(--ease)}
+  .deck .pane:hover{border-color:var(--line);background:var(--s3)}
   .deck .pane.wide{grid-column:1/-1}
   .deck #pane-retention{overflow-x:auto}
-  .deck .pane h3{margin:0 0 12px}
+  /* card titles were 11px uppercase --mut2, the same weight as every caption on the page, so
+     22 cards read as one undifferentiated field. Full contrast, sentence case, a touch larger:
+     the title is now the second level of the hierarchy after the section heading. */
+  .deck .pane h3{margin:0 0 12px;font-size:12px;line-height:18px;text-transform:none;
+    letter-spacing:0;color:var(--fg)}
+  .deck .pane h3 .sub{color:var(--mut2)}
   .deck .pane h3 .sub{text-transform:none;letter-spacing:0;color:var(--dis);font-weight:400;margin-left:8px}
   /* clears the sticky rail, or every jump lands underneath it. --rail-h is MEASURED at
      runtime, never hardcoded: the rail wraps at narrow widths and a stale constant would

@@ -1437,6 +1437,12 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	buildKPIs(&vm, evs, trendEvent, rangeDays, nowT)
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// The page is a live report AND it carries the whole app inline, so a cached copy is
+	// both stale data and stale UI. It shipped with no cache directives at all, which lets a
+	// browser apply its own heuristic: an engine upgrade could roll out and the operator would
+	// still be looking at the previous build, with no way to tell. sdk.js is the asset that
+	// wants caching (it sends max-age=3600); this page never does.
+	w.Header().Set("Cache-Control", "no-store, must-revalidate")
 	vm.ComputeMS = int(time.Since(renderStart).Milliseconds())
 	// a template execution error TRUNCATES the page silently (it already cost us a
 	// missing funnel pane once) — always log it, loudly
