@@ -34,6 +34,13 @@ func TestDashboardInventory(t *testing.T) {
 		Controls           []string `json:"controls"`
 		JSWiredIDs         []string `json:"jsWiredIds"`
 		DelegatedSelectors []string `json:"delegatedSelectors"`
+		// Ids alone do not describe this page. Whole capabilities live on CLASSES (the visitor
+		// and session slide-overs, the inline prompt/confirm/note that stand in for window.*,
+		// the expandable in-table drills) and on DATA ATTRIBUTES (click-to-filter, who-is-behind
+		// -this-bar, funnel-step drilling). A rebuild that keeps every id and drops these would
+		// pass a naive check while silently removing the parts that make the page interactive.
+		BehaviourClasses []string `json:"behaviourClasses"`
+		DataAttributes   []string `json:"dataAttributes"`
 	}
 	if err := json.Unmarshal(inventoryJSON, &inv); err != nil {
 		t.Fatalf("inventory json: %v", err)
@@ -64,6 +71,22 @@ func TestDashboardInventory(t *testing.T) {
 	for _, id := range inv.JSWiredIDs {
 		if !strings.Contains(tmpl, `id="`+id+`"`) {
 			t.Errorf("WIRING BROKEN: JS calls getElementById(%q) but nothing in the markup has that id", id)
+		}
+	}
+
+	// the interactive fabric: slide-overs, inline prompts, drill affordances
+	for _, c := range inv.BehaviourClasses {
+		if !strings.Contains(tmpl, c) {
+			t.Errorf("BEHAVIOUR LOST: the class %q is gone — that removes an overlay, an inline "+
+				"prompt, or a drill-down the user could reach", c)
+		}
+	}
+
+	// click-to-filter, who-is-behind-this-bar, funnel-step drilling and friends are all driven
+	// by data attributes; losing one silently kills the interaction while the markup still looks right
+	for _, a := range inv.DataAttributes {
+		if !strings.Contains(tmpl, a) {
+			t.Errorf("DRILL LOST: attribute %q no longer appears — a click-through interaction is dead", a)
 		}
 	}
 
