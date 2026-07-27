@@ -30,8 +30,8 @@
     /* peek heights. A stream pane shows a readable window and scrolls inside itself; it
        never becomes the page. The px value is the fallback for browsers without dvh, and
        nothing on the deck is allowed to exceed roughly a third of the viewport. */
-    --peek-tail:280px; --peek-tail:clamp(180px,24dvh,280px);      /* the live feed */
-    --peek-stream:420px; --peek-stream:clamp(240px,34dvh,420px);  /* sessions, event stream */
+    --peek-tail:280px;   /* the live feed */
+    --peek-stream:420px; /* sessions, event stream */
     /* radii — three, nested smaller than parent */
     --r-ctl:4px; --r-card:8px; --r-pill:999px;
     /* control metrics — four heights replace eleven */
@@ -391,6 +391,14 @@
 
 
 
+  /* The dvh values must go behind @supports, NOT in a second declaration: a custom property is
+     only validated as a token stream at parse time, so a clamp() with an unsupported unit still
+     wins the cascade and fails later at substitution — which takes max-height to its initial
+     `none` and lets the streams run at full height on any engine without dvh. */
+  @supports (height:1dvh){
+    :root{--peek-tail:clamp(180px,24dvh,280px);--peek-stream:clamp(240px,34dvh,420px)}
+  }
+
   /* ═══ THE SHELL — fixed rail + fixed topbar ═══
      Only above 1081px. Below it everything falls back to normal document flow, because a
      264px rail on a phone is a drawer, and a drawer is a place to hide things. */
@@ -401,6 +409,11 @@
   /* .sa-main replaced main.wrap, which carried the page's gutters and max-width. Restore both
      for every width; the desktop rule below overrides with the shell's own geometry. */
   .sa-main{max-width:1060px;margin:0 auto;padding:0 20px 80px}
+  /* AT EVERY WIDTH, not just inside the shell. These lived in the >=1081px block, so on a
+     phone the note fell back to its default display and told the user "reports appear here as
+     soon as your first events land" directly beneath a populated list of 22 reports. */
+  .railnote{font:400 11px/1.5 var(--mono);color:var(--dis);display:none}
+  .deckindex:empty + .railnote{display:block}
   .sa-nav,#sa-top{display:flex;flex-direction:column;gap:14px;padding:14px 0}
   /* stacked, the topbar's children stretch to full width and #lastev (a long "seconds since
      the newest event" line) pushed the body a few px wider than the viewport. Nothing on this
@@ -452,8 +465,6 @@
     .sa-foot{margin-top:auto;display:flex;flex-direction:column;gap:2px;padding-top:12px;border-top:1px solid var(--line)}
     .sa-foot .hlink{padding:4px 6px;border-radius:4px}
     .sa-foot .hlink:hover{background:var(--s2)}
-    .railnote{font:400 11px/1.5 var(--mono);color:var(--dis);display:none}
-    .deckindex:empty + .railnote{display:block}
     /* #deckjump is now the ONLY sticky element on the page; it sits under the fixed topbar */
     .deckjump{top:var(--top-h)}
     .deck>.pane,.deck>.stratum{scroll-margin-top:calc(var(--top-h) + var(--rail-h,44px) + 14px)}
@@ -1834,12 +1845,24 @@
         html+='<a href="#'+it.id+'" data-pane="'+it.id+'">'+esc(it.label)+'</a>';
       });
       nav.innerHTML=html;
-      nav.addEventListener('click',function(e){
+      // Fill the RAIL too. Writing only into #deckjump left .deckindex empty, which triggers
+      // its :empty rule and prints "reports appear here as soon as your first events land"
+      // next to a page full of them. The fallback has to degrade to a working page, not a
+      // lying one.
+      var full=document.getElementById('deckindex');
+      if(full){
+        var fh='';
+        items.forEach(function(it){ fh+='<a class="jcard" href="#'+it.id+'" data-pane="'+it.id+'">'+esc(it.label)+'</a>'; });
+        full.innerHTML=fh;
+      }
+      function flatClick(e){
         var a=e.target.closest&&e.target.closest('a[data-pane]');
         if(!a)return;
         e.preventDefault(); // handle it ourselves so the card flashes and clears the sticky bar
         saJumpToPane(a.getAttribute('data-pane'));
-      });
+      }
+      nav.addEventListener('click',flatClick);
+      if(full)full.addEventListener('click',flatClick);
     }
     try { if(!saBuildDeckIndexGrouped()) saBuildDeckIndexFlat(); }
     catch(e){ saBuildDeckIndexFlat(); }
