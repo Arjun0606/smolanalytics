@@ -408,11 +408,14 @@
   .sa-tools{display:flex;gap:14px;flex-wrap:wrap;align-items:baseline}
   @media(min-width:1081px){
     :root{--nav-w:264px; --top-h:56px}
-    .sa-nav{display:flex;position:fixed;inset:0 auto 0 0;width:var(--nav-w);z-index:50;
-      flex-direction:column;gap:var(--sp4,18px);padding:14px 16px 18px;
+    .sa-nav{display:flex;flex-direction:column;position:fixed;inset:0 auto 0 0;width:var(--nav-w);z-index:50;
+      gap:var(--sp4,18px);padding:14px 16px 18px;
       background:var(--well);border-right:1px solid var(--line);
       overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--line2) transparent}
-    #sa-top{display:flex;position:fixed;top:0;left:var(--nav-w);right:0;height:var(--top-h);z-index:45;
+    /* flex-direction MUST be reset here. The stacked-phone rule below is the base, so without
+       this the topbar stays a COLUMN on desktop: the ask input gets clipped and the live/agent
+       pills drop out of a 56px fixed strip and land on top of the page content. */
+    #sa-top{display:flex;flex-direction:row;position:fixed;top:0;left:var(--nav-w);right:0;height:var(--top-h);z-index:45;
       align-items:center;gap:12px;padding:0 clamp(20px,2.2vw,40px);
       background:var(--bg);border-bottom:1px solid var(--line)}
     #sa-top .ask{flex:1;max-width:660px;margin:0}
