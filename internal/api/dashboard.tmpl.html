@@ -94,6 +94,10 @@
      made the whole BODY scroll sideways on a phone — the page reads as a box cut off at the
      edge. its own controls stay full size; only the row wraps. */
   .fbuilder{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;max-width:100%}
+  /* An author `display:` beats the UA sheet's [hidden]{display:none}, so every element this
+     page toggles with the hidden ATTRIBUTE (#fbuilder, #askresult, #shareresult, #board,
+     #chartAlt) needs this or it renders permanently expanded. */
+  [hidden]{display:none !important}
   .fbuilder input,.fbuilder select{background:var(--s1);border:1px solid var(--line);color:var(--fg);font-family:var(--mono);font-size:11px;padding:4px 8px;border-radius:5px;max-width:170px}
   .gtile .d{font-family:var(--mono);font-size:11px;margin-top:2px;color:var(--mut2)}
   .gtile .d.up{color:var(--ok)} .gtile .d.down{color:var(--warn)}
@@ -366,8 +370,8 @@
 
   /* the journey overlay: click any visitor to see what that one human actually did —
      the drill-through GA4 users name as their #1 missing thing */
-  .jshade{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:40;animation:fadein var(--t-base) var(--ease)}
-  .journey{position:fixed;top:0;right:0;bottom:0;width:min(440px,92vw);background:var(--s1);border-left:1px solid var(--line2);z-index:41;padding:var(--card-pad);overflow-y:auto;animation:slidein var(--t-slow) var(--ease-out)}
+  .jshade{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100;animation:fadein var(--t-base) var(--ease)}
+  .journey{position:fixed;top:0;right:0;bottom:0;width:min(440px,92vw);background:var(--s1);border-left:1px solid var(--line2);z-index:101;padding:var(--card-pad);overflow-y:auto;animation:slidein var(--t-slow) var(--ease-out)}
   .journey .jh{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:4px}
   .journey .jid{font-family:var(--mono);font-size:13px;font-weight:700;word-break:break-all}
   .journey .jclose{color:var(--mut2);cursor:pointer;font-family:var(--mono);font-size:12px;white-space:nowrap}
@@ -394,6 +398,9 @@
      the scope controls, the report index, share, settings and Cloud with it — a drawer is a
      place to hide things, and nothing on this page is allowed to hide. They simply become
      ordinary blocks in the document, in reading order. */
+  /* .sa-main replaced main.wrap, which carried the page's gutters and max-width. Restore both
+     for every width; the desktop rule below overrides with the shell's own geometry. */
+  .sa-main{max-width:1060px;margin:0 auto;padding:0 20px 80px}
   .sa-nav,#sa-top{display:flex;flex-direction:column;gap:14px;padding:14px 0}
   /* stacked, the topbar's children stretch to full width and #lastev (a long "seconds since
      the newest event" line) pushed the body a few px wider than the viewport. Nothing on this
