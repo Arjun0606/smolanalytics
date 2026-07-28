@@ -99,12 +99,23 @@ export function insertIntoNextLayout(src, host, writeKey) {
   return { status: "no-anchor", reason: "no </head> or <body> found in the layout" };
 }
 
+// Frameworks we deliberately do NOT edit, because the correct install is not a script tag
+// in an HTML file and pretending otherwise produces confident, wrong advice. Each returns
+// the install that actually works for that framework.
+export const MANUAL_SNIPPETS = {
+  nuxt: (host, key) =>
+    `// nuxt.config.ts\nexport default defineNuxtConfig({\n  app: {\n    head: {\n      script: [\n        { src: "${host}/sdk.js" },\n        { innerHTML: 'smolanalytics.init("${key}", { host: "${host}" });' },\n      ],\n    },\n  },\n});`,
+  astro: (host, key) =>
+    `<!-- in your layout's <head> -->\n<script is:inline src="${host}/sdk.js"></script>\n<script is:inline>smolanalytics.init("${key}", { host: "${host}" });</script>\n\n<!-- is:inline is required. Without it Astro bundles the script and the\n     init call runs before the SDK has defined smolanalytics. -->`,
+};
+
 /** Dispatch on the detection strategy. */
 export function applyStrategy(strategy, src, host, writeKey) {
   if (strategy === "html-head") return insertIntoHtml(src, host, writeKey);
   if (strategy === "next-app" || strategy === "next-pages") {
     return insertIntoNextLayout(src, host, writeKey);
   }
+  if (strategy === "manual") return { status: "manual" };
   return { status: "no-anchor", reason: `unknown strategy ${strategy}` };
 }
 

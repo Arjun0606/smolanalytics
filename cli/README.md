@@ -18,13 +18,19 @@ exactly which file it touched before it touches it.
 
 ## What it does
 
-- **Detects** Next.js (App and Pages Router), SvelteKit, Vite, Create React App, Astro, Nuxt,
-  and plain HTML.
-- **Inserts** the tracker into the right place — before `</head>` where there is one, and
-  after `<body>` in a Next.js layout that builds its head from `metadata`, which is the
-  default and the case most snippets get wrong.
-- **Adds** `SMOLANALYTICS_HOST` and `SMOLANALYTICS_WRITE_KEY` to your existing `.env.local`
-  or `.env`. It will not create one if you don't already keep one.
+**Edits the file for you** on Next.js (App and Pages Router), SvelteKit, Vite, Create React
+App, and plain HTML. It inserts before `</head>` where there is one, and after `<body>` in a
+Next.js layout that builds its head from `metadata` — that's the default `create-next-app`
+shape and the case most install snippets get wrong.
+
+**Prints the install and changes nothing** on Nuxt and Astro. Neither one installs as a
+script tag in an HTML file: Nuxt's belongs in `nuxt.config`, and Astro needs `is:inline` or
+the bundler reorders the script so `init` runs before the SDK exists. Editing those with a
+generic snippet would give you a page that looks instrumented and sends nothing, so it shows
+you the version that works instead.
+
+**Adds** `SMOLANALYTICS_HOST` and `SMOLANALYTICS_WRITE_KEY` to your existing `.env.local` or
+`.env`. It will not create one if you don't already keep one.
 
 It is **idempotent**: run it twice and the second run leaves everything alone. It never
 half-edits a file, and when it can't find a safe place to insert it says so and prints the

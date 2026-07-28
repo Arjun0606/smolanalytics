@@ -7,6 +7,7 @@ import {
   upsertEnv,
   alreadyInstalled,
   applyStrategy,
+  MANUAL_SNIPPETS,
 } from "../lib/insert.mjs";
 
 /** Minimal fs stub: a map of path -> contents. */
@@ -52,9 +53,19 @@ describe("detect", () => {
     );
   });
 
-  test("Astro warns about is:inline, which is the thing everyone gets wrong", () => {
-    const d = detect(mkfs({ "package.json": pkg({ astro: "5" }) }));
-    assert.match(d.note, /is:inline/);
+  test("Astro and Nuxt are recognised but never edited", () => {
+    const astro = detect(mkfs({ "package.json": pkg({ astro: "5" }) }));
+    const nuxt = detect(mkfs({ "package.json": pkg({ nuxt: "3" }) }));
+    assert.equal(astro.strategy, "manual");
+    assert.equal(nuxt.strategy, "manual");
+    // the generic snippet would produce a page that looks instrumented and sends nothing
+    assert.equal(applyStrategy("manual", "<head></head>", "h", "k").status, "manual");
+  });
+
+  test("the manual snippets are the framework's REAL install, not the html one", () => {
+    assert.match(MANUAL_SNIPPETS.astro("h", "k"), /is:inline/);
+    assert.match(MANUAL_SNIPPETS.nuxt("h", "k"), /defineNuxtConfig/);
+    assert.match(MANUAL_SNIPPETS.nuxt("h", "k"), /app:\s*\{/);
   });
 
   test("Vite vs plain static HTML are named differently but handled the same", () => {

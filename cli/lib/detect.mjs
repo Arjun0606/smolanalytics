@@ -72,23 +72,16 @@ export function detect(fs) {
     return { framework: "SvelteKit", file: "src/app.html", strategy: "html-head" };
   }
 
-  // Nuxt and Astro own their HTML too; both are better served by their own config, so we
-  // say so rather than editing a generated file that will be overwritten.
+  // Nuxt and Astro are recognised but never edited. For both, the install that works is not
+  // a script tag dropped into an HTML file — Nuxt's belongs in nuxt.config, and Astro's needs
+  // is:inline or the bundler reorders it and init runs before the SDK exists. Editing them
+  // with the generic snippet would produce a page that looks instrumented and sends nothing,
+  // so these print the framework's real install and change nothing.
   if (has(deps, "nuxt")) {
-    return {
-      framework: "Nuxt",
-      file: "nuxt.config.ts",
-      strategy: "html-head",
-      note: "add the tags via app.head.script in nuxt.config, shown below",
-    };
+    return { framework: "Nuxt", file: "nuxt.config.ts", strategy: "manual", manual: "nuxt" };
   }
   if (has(deps, "astro")) {
-    return {
-      framework: "Astro",
-      file: "src/layouts/Layout.astro",
-      strategy: "html-head",
-      note: "Astro strips inline scripts unless they are marked is:inline",
-    };
+    return { framework: "Astro", file: "your layout", strategy: "manual", manual: "astro" };
   }
 
   // Vite and friends: a real index.html at the root that ships to the browser.

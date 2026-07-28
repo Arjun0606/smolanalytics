@@ -14,7 +14,7 @@ import path from "node:path";
 import readline from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { detect } from "../lib/detect.mjs";
-import { applyStrategy, upsertEnv, snippetHtml } from "../lib/insert.mjs";
+import { applyStrategy, upsertEnv, snippetHtml, MANUAL_SNIPPETS } from "../lib/insert.mjs";
 
 const C = {
   dim: (s) => `\x1b[2m${s}\x1b[0m`,
@@ -99,6 +99,16 @@ Self-hosting? Both are printed when the binary starts. On the hosted plane they'
 the project's setup page. The write key is public and ingest-only, it cannot read data.
 `);
     process.exitCode = 1;
+    return;
+  }
+
+  // Frameworks whose real install isn't a script tag: print the one that works, edit nothing.
+  if (found.strategy === "manual") {
+    console.log(`
+  ${C.yellow("This one needs a framework-specific install")}, so nothing was changed.
+
+${MANUAL_SNIPPETS[found.manual](host, key)}
+`);
     return;
   }
 
