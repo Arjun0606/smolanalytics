@@ -143,6 +143,11 @@ func Seed(s store.Store) error {
 	start := now.AddDate(0, 0, -(seedDays - 1)).Truncate(24 * time.Hour)
 	sources := []string{"google", "twitter", "hacker news", "direct", "reddit", "chatgpt", "claude", "perplexity"}
 	id := 0
+	// The real signup population, captured as it is created. seedAgent draws its users from
+	// this, so the agent's tool calls belong to people who also signed up. "u<n>" ids come
+	// from the shared EVENT counter, not a user counter, so they are sparse — guessing at
+	// them (u0, u37, u74...) mostly lands on ids that never existed.
+	var signedUp []string
 	emit := func(name, user string, t time.Time, props map[string]any) error {
 		// A demo must never show future-dated events: the retention loop projects opens up
 		// to 14 days past each signup, which overshoots today for recent cohorts. Drop those
@@ -180,6 +185,7 @@ func Seed(s store.Store) error {
 		nSignups := 18 + day/2 + r.Intn(20)
 		for i := 0; i < nSignups; i++ {
 			user := fmt.Sprintf("u%d", id)
+			signedUp = append(signedUp, user)
 			source := sources[r.Intn(len(sources))]
 			plan := "free"
 			if r.Float64() < 0.3 {
@@ -275,7 +281,7 @@ func Seed(s store.Store) error {
 		}
 	}
 	seedToolkit(s)
-	seedAgent(s)
+	seedAgent(s, signedUp)
 	return nil
 }
 
@@ -365,9 +371,49 @@ func seedToolkit(s store.Store) {
 // conversation health), so the demo's /v1/agent/* and the homepage "it watches your agent too"
 // beat show real, non-empty numbers. Called from Seed() so it survives every re-anchor. Uses the
 // two reserved names (agent_tool_call, agent_turn, no $ prefix) so it flows the normal ingest path.
-func seedAgent(s store.Store) {
+//
+// The agent's users are REAL PRODUCT USERS, not a separate population. That is the whole point
+// of the product and it used to be invisible here: agent events were seeded under "au0..au39"
+// while product events used "u<n>", so the two datasets never touched. A visitor building the
+// funnel that only this engine can compute — $pageview -> agent_tool_call -> checkout — got 0 at
+// the agent step and reasonably concluded it did not work.
+//
+// In a product that IS an agent, the person clicking around and the person whose tool calls you
+// are measuring are the same person. Seeding them as one population is what makes that true on
+// screen as well as in the engine.
+// adopters picks the subset of real signed-up users who use the agent. Agent usage
+// concentrates — a minority of your users adopt it and they use it a lot — and that shape is
+// what makes the joined funnel interesting rather than uniform. Spread across the whole
+// population so they span signup cohorts instead of clustering in the first day.
+func adopters(signedUp []string, n int) []string {
+	if len(signedUp) == 0 {
+		return nil
+	}
+	if n > len(signedUp) {
+		n = len(signedUp)
+	}
+	step := len(signedUp) / n
+	if step < 1 {
+		step = 1
+	}
+	out := make([]string, 0, n)
+	for i := 0; i < len(signedUp) && len(out) < n; i += step {
+		out = append(out, signedUp[i])
+	}
+	return out
+}
+
+// How many distinct product users adopt the agent.
+const agentAdopters = 40
+
+func seedAgent(s store.Store, signedUp []string) {
 	r := rand.New(rand.NewSource(7))
 	now := time.Now().UTC()
+	users := adopters(signedUp, agentAdopters)
+	if len(users) == 0 {
+		return // nothing signed up yet; an agent with no users is not a demo worth seeding
+	}
+	agentUser := func(r *rand.Rand) string { return users[r.Intn(len(users))] }
 	var evs []event.Event
 	i := 0
 	emit := func(name, user string, at time.Duration, props map[string]any) {
@@ -410,14 +456,14 @@ func seedAgent(s store.Store) {
 				props["error"] = true
 				props["error_type"] = ts.errKind[r.Intn(len(ts.errKind))]
 			}
-			emit("agent_tool_call", fmt.Sprintf("au%d", r.Intn(40)),
+			emit("agent_tool_call", agentUser(r),
 				-time.Duration(d)*24*time.Hour+time.Duration(k)*7*time.Minute, props)
 		}
 	}
 	// ~70 conversations of agent_turn events with realistic role sequences
 	for c := 0; c < 70; c++ {
 		cid := fmt.Sprintf("c%d", c)
-		uid := fmt.Sprintf("au%d", r.Intn(40))
+		uid := agentUser(r)
 		turns := 1 + r.Intn(5)
 		base := -time.Duration(r.Intn(30)) * 24 * time.Hour
 		var seq []string
