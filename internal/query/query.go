@@ -208,6 +208,23 @@ func Matches(e event.Event, filters []Filter) bool {
 	return true
 }
 
+// NonProduction lists the env values hidden from every default-scoped query. The browser SDK
+// stamps localhost and dev tunnels as "development", and Netlify deploy previews plus
+// staging/preview/dev subdomains as "preview"; anyone can set their own via init({env}).
+//
+// An explicit set, NOT `env != "production"`. The two failure modes are not symmetric: showing
+// a bit of preview traffic is noise the viewer can filter away, while hiding real traffic is
+// invisible from the dashboard and reads as "your product recorded nothing today". So an
+// unrecognised value stays VISIBLE — someone who writes env:"prod" or env:"live" must never
+// have their production numbers silently disappear because it did not match a magic string.
+var NonProduction = map[string]bool{
+	"development": true,
+	"preview":     true,
+	"staging":     true,
+	"test":        true,
+	"ci":          true,
+}
+
 func Apply(events []event.Event, filters []Filter) []event.Event {
 	filtersTouchEnv := false
 	for _, f := range filters {
@@ -219,7 +236,7 @@ func Apply(events []event.Event, filters []Filter) []event.Event {
 	out := make([]event.Event, 0, len(events))
 	for _, e := range events {
 		if !filtersTouchEnv {
-			if v, ok := e.Properties["env"]; ok && v == "development" {
+			if v, ok := e.Properties["env"].(string); ok && NonProduction[v] {
 				continue
 			}
 		}

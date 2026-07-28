@@ -16,7 +16,37 @@
   var queue = [];
   var did = null;
   var anon = false; // cookieless mode: nothing stored on the device, no banner needed
-  var envName = "production"; // "development" on localhost, or whatever init({env}) says
+  var envName = "production"; // see detectEnv, or whatever init({env}) says
+
+  // Which environment is this page? The dashboard hides everything that is not "production"
+  // by default, so getting this wrong in either direction is expensive: call a preview
+  // "production" and every branch deploy and CI run pollutes the real numbers, call a real
+  // site "development" and its traffic silently vanishes from the dashboard.
+  //
+  // So this only claims non-production for hosts that CANNOT be a production site. It is
+  // deliberately conservative: under-detecting leaves someone with slightly noisy numbers
+  // they can filter, over-detecting makes their actual traffic disappear, and only one of
+  // those is recoverable by the person looking at the screen.
+  //
+  // Notably absent: a bare *.vercel.app rule. Plenty of real production sites are served
+  // from vercel.app with no custom domain, so treating the domain as preview would hide
+  // their live traffic. Vercel exposes NEXT_PUBLIC_VERCEL_ENV at build time for exactly this
+  // — pass it through init({ env }) and it is authoritative.
+  function detectEnv(h) {
+    h = (h || "").toLowerCase();
+    // loopback and private ranges — a LAN address is never a production website
+    if (/^(localhost|127\.|0\.0\.0\.0|\[::1\]|::1|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(h)) return "development";
+    // reserved dev TLDs (RFC 6761 / 6762) and the conventional .lan
+    if (/\.(local|localhost|test|example|invalid|lan)$/.test(h)) return "development";
+    // dev tunnels: the host only exists because someone is sharing a local server
+    if (/(\.ngrok\.io|\.ngrok-free\.app|\.ngrok\.app|\.loca\.lt|\.trycloudflare\.com|\.lhr\.life|\.serveo\.net|\.telebit\.io)$/.test(h)) return "development";
+    // Netlify deploy previews and branch deploys. The double dash is Netlify's own separator
+    // and cannot appear in a normal site name, so this is unambiguous.
+    if (/--.+\.netlify\.app$/.test(h)) return "preview";
+    // explicit environment subdomains, e.g. staging.acme.com, preview.acme.dev
+    if (/^(staging|preview|dev|development|test|qa|uat|sandbox|canary)\./.test(h)) return "preview";
+    return "production";
+  }
   var timer = null;
   var flagCache = {};
   var flagMeasured = {}; // keys the server marked "measured" → log an exposure on read
@@ -566,7 +596,7 @@
       // derives a daily-rotating anonymous id instead. identify() still works after
       // login if you want real user analytics for signed-in users.
       anon = !!opts.anonymous;
-      envName = opts.env || (/^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])$/.test(location.hostname) ? "development" : "production");
+      envName = opts.env || detectEnv(location.hostname);
       distinctId();
       fetchFlags();
       if (opts.surveys !== false) fetchSurveys(); // set surveys:false to opt out of the widget

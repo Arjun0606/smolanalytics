@@ -651,18 +651,22 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	// are ingested but invisible here — "I sent events and the dashboard shows nothing"
 	// is an unexplained trust-killer. Count what's hidden so the UI can SAY so, and
 	// support ?env=development as an opt-in view of exactly that traffic.
-	showDev := r.URL.Query().Get("env") == "development"
+	// Any non-production env can be viewed with ?env=<value>, not just development: a Netlify
+	// deploy preview or a staging subdomain is stamped "preview", and traffic you can neither
+	// see by default nor ask for is traffic you have quietly lost.
+	wantEnv := r.URL.Query().Get("env")
+	showDev := wantEnv != "" && query.NonProduction[wantEnv]
 	devHidden := 0
 	for _, e := range evsAll {
-		if v, _ := e.Properties["env"].(string); v == "development" {
+		if v, _ := e.Properties["env"].(string); query.NonProduction[v] {
 			devHidden++
 		}
 	}
 	var evs []event.Event
 	if showDev {
-		evs = query.Apply(evsAll, []query.Filter{{Property: "env", Op: query.Eq, Value: "development"}})
+		evs = query.Apply(evsAll, []query.Filter{{Property: "env", Op: query.Eq, Value: wantEnv}})
 	} else {
-		evs = query.Apply(evsAll, nil) // production scope: dev-env events excluded by default
+		evs = query.Apply(evsAll, nil) // production scope: non-production envs excluded by default
 	}
 
 	// the verdict is computed here (global, before the site filter) so it matches
