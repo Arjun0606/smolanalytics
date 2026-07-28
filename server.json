@@ -1,16 +1,16 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.Arjun0606/smolanalytics",
-  "description": "Agent-operated web + product analytics. 47 tools + 13 prompts, answers always match the dashboard.",
+  "description": "Agent-operated web + product analytics. 79 tools + 14 prompts; answers are deterministic reports, and a CI test keeps MCP, API, and dashboard identical.",
   "repository": {
     "url": "https://github.com/Arjun0606/smolanalytics",
     "source": "github"
   },
-  "version": "0.8.2",
+  "version": "0.14.4",
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/arjun0606/smolanalytics:v0.8.2",
+      "identifier": "ghcr.io/arjun0606/smolanalytics:v0.14.4",
       "transport": {
         "type": "stdio"
       },

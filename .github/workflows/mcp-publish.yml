@@ -13,9 +13,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # the stamp step falls back to `git describe` on manual dispatch
+          fetch-depth: 0
       - name: install publisher
         run: |
           curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/').tar.gz" | tar xz mcp-publisher
+      # server.json's version is stamped from the tag being released, so the file can
+      # never go stale and re-publish an old version (which the registry rejects —
+      # that's how the listing froze at 0.8.2 for three weeks).
+      - name: stamp version
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          case "$TAG" in v*) ;; *) TAG="$(git describe --tags --abbrev=0)";; esac
+          VER="${TAG#v}"
+          python3 - "$VER" <<'EOF'
+          import json, sys
+          ver = sys.argv[1]
+          d = json.load(open('server.json'))
+          d['version'] = ver
+          d['packages'][0]['identifier'] = f'ghcr.io/arjun0606/smolanalytics:v{ver}'
+          json.dump(d, open('server.json', 'w'), indent=2)
+          EOF
       - name: publish
         run: |
           ./mcp-publisher login github-oidc
