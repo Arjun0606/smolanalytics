@@ -294,6 +294,10 @@ type dashVM struct {
 	RangeFrom      string // the custom window's inputs, echoed into the date pickers
 	RangeTo        string
 	EngagedHuman   string // "13m 23s", never "803s"
+	// sparklines for the two engagement tiles, computed with the same definitions as the
+	// numbers beside them (see engagementSeries)
+	SparkBounce  *sparkVM
+	SparkEngaged *sparkVM
 
 	// the data-richness dimensions (geo/devices/campaigns/entries/hours) — computed
 	// in internal/web, surfaced as breakdown tabs. Countries carry flag emoji.
@@ -451,6 +455,110 @@ func buildSpark(series []int, endClass string) *sparkVM {
 
 // dailySeries returns per-day counts over the last `days` calendar days ending today.
 // countUsers=true counts DISTINCT users per day (visitors); false counts matching events.
+// cumulativeUserSeries is the sparkline for the "Users · all time" tile: distinct users
+// known as of the end of each day, so the line RISES to exactly the number printed above
+// it. A daily-active series would have been the easy thing to reuse here and it would have
+// been a lie — the line would wobble under a number that only ever grows.
+//
+// Users first seen before the window still count, so the line starts high rather than at
+// zero. That is the point: it is cumulative, not per-day.
+// engagementSeries returns the per-day bounce-rate (%) and mean-engaged-seconds series for
+// the two engagement tiles, using the SAME definitions as internal/web so the sparkline
+// cannot drift from the number above it: bounce = visitors with exactly one pageview who
+// engaged under 10s, over all visitors with a pageview; engaged = mean engaged time per
+// engaged visitor. Both are computed per calendar day in one pass rather than by calling
+// the web report N times.
+//
+// Days with no pageviews yield 0 for both, which is honest: there is no rate to report.
+func engagementSeries(evs []event.Event, days int, now time.Time) (bounce []int, engaged []int) {
+	if days < 2 {
+		days = 2
+	}
+	if days > 30 {
+		days = 30
+	}
+	today := now.Truncate(24 * time.Hour)
+	from := today.AddDate(0, 0, -(days - 1))
+	pv := make([]map[string]int, days)
+	ms := make([]map[string]float64, days)
+	for i := 0; i < days; i++ {
+		pv[i] = map[string]int{}
+		ms[i] = map[string]float64{}
+	}
+	for _, e := range evs {
+		ts := e.Timestamp.UTC()
+		if ts.Before(from) {
+			continue
+		}
+		i := int(ts.Truncate(24 * time.Hour).Sub(from).Hours() / 24)
+		if i < 0 || i >= days {
+			continue
+		}
+		switch e.Name {
+		case "$pageview":
+			pv[i][e.DistinctID]++
+		case "$engagement":
+			if v, ok := e.Properties["engaged_ms"].(float64); ok && v > 0 {
+				ms[i][e.DistinctID] += v
+			}
+		}
+	}
+	bounce, engaged = make([]int, days), make([]int, days)
+	for i := 0; i < days; i++ {
+		if n := len(pv[i]); n > 0 {
+			b := 0
+			for u, c := range pv[i] {
+				if c == 1 && ms[i][u] < 10_000 {
+					b++
+				}
+			}
+			bounce[i] = int(float64(b)/float64(n)*100 + 0.5)
+		}
+		var total float64
+		cnt := 0
+		for _, v := range ms[i] {
+			total += v
+			cnt++
+		}
+		if cnt > 0 {
+			engaged[i] = int(total / float64(cnt) / 1000)
+		}
+	}
+	return bounce, engaged
+}
+
+func cumulativeUserSeries(evs []event.Event, days int, now time.Time) []int {
+	if days < 2 {
+		days = 2
+	}
+	if days > 30 {
+		days = 30
+	}
+	first := map[string]time.Time{}
+	for _, e := range evs {
+		if e.DistinctID == "" {
+			continue
+		}
+		if f, ok := first[e.DistinctID]; !ok || e.Timestamp.Before(f) {
+			first[e.DistinctID] = e.Timestamp
+		}
+	}
+	today := now.Truncate(24 * time.Hour)
+	out := make([]int, days)
+	for i := 0; i < days; i++ {
+		// end of the i-th day in the window
+		cutoff := today.AddDate(0, 0, -(days-1-i)).Add(24 * time.Hour)
+		n := 0
+		for _, f := range first {
+			if f.Before(cutoff) {
+				n++
+			}
+		}
+		out[i] = n
+	}
+	return out
+}
+
 func dailySeries(evs []event.Event, match func(event.Event) bool, days int, now time.Time, countUsers bool) []int {
 	if days < 2 {
 		days = 2
@@ -551,7 +659,7 @@ func buildKPIs(vm *dashVM, evs []event.Event, trendEvent string, days int, now t
 	if vm.ConvLabel != "" && vm.HasConversion {
 		cards = append(cards, kpiCard{Label: vm.ConvLabel, Value: fmt.Sprintf("%d%%", vm.OverallConv), Accent: true})
 	}
-	cards = append(cards, kpiCard{Label: "Users · all time", Value: comma(vm.TotalUsers)})
+	cards = append(cards, kpiCard{Label: "Users · all time", Value: comma(vm.TotalUsers), Spark: buildSpark(cumulativeUserSeries(evs, days, now), "")})
 	vm.KPIs = cards
 }
 
@@ -1378,6 +1486,21 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		vm.EngagedSecs = wv.AvgEngagedSecs
 		vm.EngagedHuman = humanDur(wv.AvgEngagedSecs)
 		vm.BouncePct = wv.BounceRatePct
+		if bs, es := engagementSeries(evs, rangeDays, nowT); len(bs) > 1 {
+			// endOf() is a closure scoped to the KPI block above, and its "up = good" rule is
+			// backwards for bounce anyway: a rising bounce rate is bad. So classify here.
+			endClass := func(delta int, upIsGood bool) string {
+				if delta == 0 {
+					return ""
+				}
+				if (delta > 0) == upIsGood {
+					return "good"
+				}
+				return "warn"
+			}
+			vm.SparkBounce = buildSpark(bs, endClass(bs[len(bs)-1]-bs[0], false))
+			vm.SparkEngaged = buildSpark(es, endClass(es[len(es)-1]-es[0], true))
+		}
 		vm.AIVisitors = wv.AIVisitors
 		// share-of-total is computed against the RIGHT denominator per dimension. Pages are
 		// per-pageview → divide by pageviews. Referrer/UTM/device/browser/os/country are

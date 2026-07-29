@@ -876,11 +876,13 @@
       <div class="kk">Bounce rate · {{.RangeDays}}d</div>
       <div class="kv">{{.BouncePct}}%</div>
       <div class="kd"><span class="kvp">one pageview, under 10s engaged</span></div>
+      {{with .SparkBounce}}<svg class="spark" viewBox="0 0 64 26" fill="none" preserveAspectRatio="none" aria-hidden="true"><polygon points="{{.Area}}" fill="var(--accent)" opacity=".07"/><polyline points="{{.Line}}" stroke="var(--spark)" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>{{end}}
     </div>
     <div class="kpi">
       <div class="kk">Avg engaged time · {{.RangeDays}}d</div>
       <div class="kv">{{.EngagedHuman}}</div>
       <div class="kd"><span class="kvp">visible and focused, per visitor</span></div>
+      {{with .SparkEngaged}}<svg class="spark" viewBox="0 0 64 26" fill="none" preserveAspectRatio="none" aria-hidden="true"><polygon points="{{.Area}}" fill="var(--accent)" opacity=".07"/><polyline points="{{.Line}}" stroke="var(--spark)" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>{{end}}
     </div>
     {{else if .HasWeb}}
     <div class="kpi">
