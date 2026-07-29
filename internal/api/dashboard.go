@@ -703,6 +703,8 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	// and it lives in the querystring so any past view is a shareable URL
 	rangeDays := 30
 	switch r.URL.Query().Get("days") {
+	case "1":
+		rangeDays = 1
 	case "7":
 		rangeDays = 7
 	case "90":
@@ -840,7 +842,11 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		if enc := nq.Encode(); enc != "" {
 			u += "?" + enc
 		}
-		return rangeVM{Label: fmt.Sprintf("%dd", d), URL: u, On: d == rangeDays}
+		label := fmt.Sprintf("%dd", d)
+		if d == 1 {
+			label = "24h"
+		}
+		return rangeVM{Label: label, URL: u, On: d == rangeDays}
 	}
 
 	names, _ := s.store.Names()
@@ -874,9 +880,17 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	// the chart's metric + grain are user-selectable and live in the URL like all
 	// analysis state (?metric=checkout&gran=week)
 	chartMetric := r.URL.Query().Get("metric")
-	gran, granErr := trends.ParseInterval(r.URL.Query().Get("gran"))
+	granParam := r.URL.Query().Get("gran")
+	gran, granErr := trends.ParseInterval(granParam)
 	if granErr != nil {
 		gran = trends.Day
+	}
+	// A one-day window drawn in day buckets is a single bar, which tells you nothing. The
+	// engine has always bucketed by hour; nothing ever asked it to. Note this cannot live
+	// in the granErr branch: ParseInterval("") returns (Day, nil), so an absent ?gran is
+	// not an error and that branch never runs.
+	if granParam == "" && rangeDays == 1 {
+		gran = trends.Hour
 	}
 	fr := funnel.ComputeOpts(evs, fsteps, 7*24*time.Hour, funnel.Options{Order: forder})
 	rr := retention.ComputeBucketed(evs, rdays, retEvent, rbucket, rroll)
@@ -989,7 +1003,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		AnyMode:        anyMode,
 		RangeFrom:      r.URL.Query().Get("from"),
 		RangeTo:        r.URL.Query().Get("to"),
-		Ranges:         []rangeVM{mkRange(7), mkRange(30), mkRange(90)},
+		Ranges:         []rangeVM{mkRange(1), mkRange(7), mkRange(30), mkRange(90)},
 		Chips:          chips,
 		SourceProp:     srcProp,
 		ConvByProp:     segProp,
@@ -1179,17 +1193,24 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	if tickEvery < 1 {
 		tickEvery = 1
 	}
+	// Bucket labels have to follow the grain. An hourly chart labelled "Jan 2" repeats the
+	// same string 24 times and hides the thing the view exists to show, which is the shape
+	// of the day.
+	shortFmt, longFmt := "1/2", "Jan 2"
+	if gran == trends.Hour {
+		shortFmt, longFmt = "3pm", "Mon 3pm"
+	}
 	for i, p := range tr.Points {
 		b := trendBar{
-			Date:      p.Date.Format("1/2"),
+			Date:      p.Date.Format(shortFmt),
 			ISO:       p.Date.Format("2006-01-02"),
 			Count:     p.Count,
 			HeightPct: int(math.Round(float64(p.Count) / float64(maxT) * 100)),
-			Tip:       fmt.Sprintf("%s · %d", p.Date.Format("Jan 2"), p.Count),
+			Tip:       fmt.Sprintf("%s · %d", p.Date.Format(longFmt), p.Count),
 			Peak:      i == peakIdx,
 		}
 		if i%tickEvery == 0 {
-			b.Tick = p.Date.Format("Jan 2")
+			b.Tick = p.Date.Format(shortFmt)
 		}
 		// P1-2: only compare against the prior window when it actually has data. A
 		// brand-new account's prior window is all zeros, so "(prior window: 0)" on
@@ -1197,7 +1218,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		if priorHasData && i < len(trPrior.Points) {
 			pp := trPrior.Points[i]
 			b.GhostPct = int(math.Round(float64(pp.Count) / float64(maxT) * 100))
-			b.Tip = fmt.Sprintf("%s · %d (prior window %s: %d)", p.Date.Format("Jan 2"), p.Count, pp.Date.Format("Jan 2"), pp.Count)
+			b.Tip = fmt.Sprintf("%s · %d (prior window %s: %d)", p.Date.Format(longFmt), p.Count, pp.Date.Format(longFmt), pp.Count)
 		}
 		vm.Trend = append(vm.Trend, b)
 	}
