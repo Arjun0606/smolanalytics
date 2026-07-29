@@ -2,7 +2,7 @@
 
 # smolanalytics
 
-**web + product analytics in one Go binary. ask it in your editor. the numbers provably match the dashboard.**
+**web + product analytics in one Go binary. no ClickHouse, no Kafka, no cluster. ask it in your editor.**
 
 [![CI](https://github.com/Arjun0606/smolanalytics/actions/workflows/ci.yml/badge.svg)](https://github.com/Arjun0606/smolanalytics/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/Arjun0606/smolanalytics?color=f5a623&label=release)](https://github.com/Arjun0606/smolanalytics/releases)
@@ -22,13 +22,13 @@
 
 <br>
 
-> ### your ai assistant admits it hallucinates your numbers. mine can't. it's a ci test.
+> ### self-hosting posthog means clickhouse, kafka, redis and a postgres. this is one binary.
 
-Every analytics tool now has an AI assistant. It is bolted inside their app, you pay for it, and it answers by generating a query (HogQL, SQL) that can silently disagree with the dashboard. PostHog's own MCP docs say results _"may not match the UI."_
+If you want product analytics you can actually run yourself, the options are bad. PostHog is a stack: ClickHouse, Kafka, Redis, and a Postgres to babysit. Plausible and Umami install easily but stop at web analytics, so no funnels, no retention, no cohorts.
 
-smolanalytics removes that whole failure mode. You ask from your own editor with your own model, so there is no AI bill. Every answer is a deterministic report, never generated SQL, and a CI [agreement test](internal/api/agreement_test.go) fails the build if the MCP answer and the `/v1` API ever disagree by a single byte. It **cannot make up a number**.
+smolanalytics is the middle that didn't exist. **One Go binary, one data file, no external database.** It does web analytics (visitors, referrers, UTM, devices) and product analytics (funnels, retention, paths, cohorts) from the same events, plus **feature flags, A/B testing, click heatmaps, in-product surveys, a session inspector, and deploy-impact**. Cookieless mode means no consent banner. MIT, free forever, and your data never leaves your box.
 
-And it is a complete platform, not a toy under that wedge: funnels, retention, paths, cohorts, and the Plausible-shaped web view, plus **feature flags, A/B testing, click heatmaps, in-product surveys, a session inspector, and deploy-impact**, all from one MIT Go binary. No Kafka, no ClickHouse, no cluster. Your data never leaves your box.
+It also answers in plain English, from the dashboard or from your editor over MCP, using your own model, so the AI part costs nothing.
 
 ## Try it in 30 seconds
 
