@@ -17,7 +17,7 @@
     /* text — three reading tones + disabled, every one AA on its surface */
     --fg:#EDEDED; --mut:#8A8A8A; --mut2:#7A7A7A; --dis:#5F5F5F;
     /* amber — one accent, a real ladder */
-    --accent:#F5A623; --accent-hi:#FFC24D; --accent-dim:#C77F0A; --accent-bar:#C98A1E;
+    --accent:#F5A623; --accent-hi:#FFC24D; --accent-dim:#C77F0A; --accent-bar:#C98A1E;--accent-bar-lo:#7E5412;--spark:#FFC24D;
     --a14:rgba(245,166,35,.14); --a25:rgba(245,166,35,.25); --a45:rgba(245,166,35,.45);
     --warn:#E5544B; --ok:#3FB27F; --ghost:#3A3A3A; --grid:#1C1C1C;
     /* type — exactly four sizes, weights 400/500/600 */
@@ -218,11 +218,15 @@
     .plot{flex:1;position:relative}
   .gridlines{position:absolute;inset:24px 0 0;display:flex;flex-direction:column;justify-content:space-between;pointer-events:none}
   .gridlines div{border-top:1px solid var(--grid);height:0}
-  .bars{display:flex;align-items:flex-end;gap:3px;height:150px;padding-top:24px;position:relative}
+  .bars{display:flex;align-items:flex-end;gap:3px;height:178px;padding-top:24px;position:relative}
   .bars .col{flex:1;display:flex;flex-direction:row;align-items:flex-end;gap:1px;height:100%;position:relative}
-  .bars .bar{flex:2;background:var(--accent-bar);min-height:2px;border-radius:2px 2px 0 0;transition:background var(--t-fast) var(--ease)}
-  .bars .ghost{flex:1;background:var(--ghost);min-height:1px;border-radius:2px 2px 0 0}
-  .bars .col:hover .bar{background:var(--accent)}
+  .bars .bar{flex:2;background:linear-gradient(180deg,var(--accent-bar) 0%,var(--accent-bar-lo) 100%);min-height:2px;border-radius:3px 3px 0 0;transition:background var(--t-fast) var(--ease),filter var(--t-fast) var(--ease)}
+  .bars .ghost{flex:1;background:var(--ghost);min-height:1px;border-radius:3px 3px 0 0;opacity:.45}
+  /* the tallest bar carries a top edge so the peak reads at a glance, not only via its label */
+  .bars .col.pk .bar{box-shadow:inset 0 2px 0 0 #FFC259}
+  /* in-progress bucket: hatched, so a half-finished day never reads as a collapse */
+  .bars .col.part .bar{background:repeating-linear-gradient(135deg,var(--accent-bar) 0 4px,var(--accent-bar-lo) 4px 8px);opacity:.8}
+  .bars .col:hover .bar{background:linear-gradient(180deg,#FFC259 0%,var(--accent) 100%)}
   /* instant tooltip — pure css, zero native-title delay, readable size */
   .bars .col .tip{display:none;position:absolute;bottom:calc(100% + 4px);left:50%;transform:translateX(-50%);
     background:var(--s3);border:1px solid var(--line2);border-radius:var(--r-ctl);padding:3px 9px;
@@ -851,7 +855,7 @@
         <div class="co-body">
           <div class="co-title">{{$first.Title}}</div>
           <div class="co-detail">{{$first.Detail}}</div>
-          <div class="co-meta"><span class="co-prov">computed, not guessed</span><span>a CI test proves this equals the dashboard, it can&rsquo;t be faked</span></div>
+          <div class="co-meta"><span class="co-prov">computed, not guessed</span><span>the same report this dashboard renders</span></div>
         </div>
         <div class="co-act"><a class="co-go" data-q="{{$first.Title}}">Show me &rarr;</a></div>
       </div>
@@ -867,7 +871,7 @@
       <div class="kk">{{.Label}}</div>
       <div class="kv{{if .Accent}} acc{{end}}">{{.Value}}</div>
       {{if .Delta}}<div class="kd {{.Dir}}">{{if eq .Dir "up"}}&#9650;{{else if eq .Dir "down"}}&#9660;{{end}} {{.Delta}} <span class="kvp">vs prior</span></div>{{else}}<div class="kd"><span class="kvp">&nbsp;</span></div>{{end}}
-      {{with .Spark}}<svg class="spark" viewBox="0 0 64 26" fill="none" preserveAspectRatio="none" aria-hidden="true"><polygon points="{{.Area}}" fill="var(--accent)" opacity=".07"/><polyline points="{{.Line}}" stroke="var(--spark)" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/>{{if .EndClass}}<circle cx="{{.EndX}}" cy="{{.EndY}}" r="2" class="spend {{.EndClass}}"/>{{end}}</svg>{{end}}
+      {{with .Spark}}<svg class="spark" viewBox="0 0 64 26" fill="none" preserveAspectRatio="none" aria-hidden="true"><polygon points="{{.Area}}" fill="var(--accent)" opacity=".12"/><polyline points="{{.Line}}" stroke="var(--spark)" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/>{{if .EndClass}}<circle cx="{{.EndX}}" cy="{{.EndY}}" r="2" class="spend {{.EndClass}}"/>{{end}}</svg>{{end}}
     </div>{{end}}
     {{if .HasEngagement}}
     <!-- engagement: only ever rendered when $engagement events exist, because both
@@ -876,13 +880,13 @@
       <div class="kk">Bounce rate · {{.RangeDays}}d</div>
       <div class="kv">{{.BouncePct}}%</div>
       <div class="kd"><span class="kvp">one pageview, under 10s engaged</span></div>
-      {{with .SparkBounce}}<svg class="spark" viewBox="0 0 64 26" fill="none" preserveAspectRatio="none" aria-hidden="true"><polygon points="{{.Area}}" fill="var(--accent)" opacity=".07"/><polyline points="{{.Line}}" stroke="var(--spark)" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>{{end}}
+      {{with .SparkBounce}}<svg class="spark" viewBox="0 0 64 26" fill="none" preserveAspectRatio="none" aria-hidden="true"><polygon points="{{.Area}}" fill="var(--accent)" opacity=".12"/><polyline points="{{.Line}}" stroke="var(--spark)" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>{{end}}
     </div>
     <div class="kpi">
       <div class="kk">Avg engaged time · {{.RangeDays}}d</div>
       <div class="kv">{{.EngagedHuman}}</div>
       <div class="kd"><span class="kvp">visible and focused, per visitor</span></div>
-      {{with .SparkEngaged}}<svg class="spark" viewBox="0 0 64 26" fill="none" preserveAspectRatio="none" aria-hidden="true"><polygon points="{{.Area}}" fill="var(--accent)" opacity=".07"/><polyline points="{{.Line}}" stroke="var(--spark)" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>{{end}}
+      {{with .SparkEngaged}}<svg class="spark" viewBox="0 0 64 26" fill="none" preserveAspectRatio="none" aria-hidden="true"><polygon points="{{.Area}}" fill="var(--accent)" opacity=".12"/><polyline points="{{.Line}}" stroke="var(--spark)" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>{{end}}
     </div>
     {{else if .HasWeb}}
     <div class="kpi">
@@ -922,7 +926,7 @@
       <div class="plot">
         <div class="gridlines"><div></div><div></div><div></div></div>
         <div class="bars">
-          {{range .Trend}}<div class="col" data-who="event={{$.ChartMetric}}&date={{.ISO}}" title="click: who is behind this bar"><span class="tip">{{.Tip}}</span>{{if and .Peak (gt .Count 0)}}<span class="peaklbl">{{.Count}}</span>{{end}}<div class="bar" style="height:{{.HeightPct}}%"></div>{{if gt $.GhostTotal 0}}<div class="ghost" style="height:{{.GhostPct}}%" aria-hidden="true"></div>{{end}}</div>{{end}}
+          {{range .Trend}}<div class="col{{if and .Peak (gt .Count 0)}} pk{{end}}{{if .Partial}} part{{end}}" data-who="event={{$.ChartMetric}}&date={{.ISO}}" title="click: who is behind this bar"><span class="tip">{{.Tip}}</span>{{if and .Peak (gt .Count 0)}}<span class="peaklbl">{{.Count}}</span>{{end}}<div class="bar" style="height:{{.HeightPct}}%"></div>{{if gt $.GhostTotal 0}}<div class="ghost" style="height:{{.GhostPct}}%" aria-hidden="true"></div>{{end}}</div>{{end}}
         </div>
         <div class="xaxis">
           {{range .Trend}}<span class="xt">{{.Tick}}</span>{{end}}
@@ -1449,7 +1453,7 @@
       <div class="cnote">
         then ask from your editor: <em>"what changed on my site this week?"</em> · <em>"why did {{.StatEventLabel}} drop?"</em> · <em>"which referrer converts best?"</em><br>
         your own model reads your data through the smolanalytics report tools. we never run a model, so it's free and unmetered.
-        every answer is a deterministic report, and a <a href="https://smolanalytics.com/trust" target="_blank" rel="noopener" style="color:var(--accent)">CI test ↗</a> proves the editor, this dashboard, and the ask bar always return the same number.
+        every answer is a deterministic report, computed from the same engine this dashboard renders from, so your editor and this page never disagree.
         self-hosting? <em>smolanalytics connect</em> wires Claude Desktop / Cursor in one command.
       </div>
     </div>
@@ -1481,7 +1485,7 @@
   <!-- zone 9: the covenant -->
   <div class="foot">
     every row, every event, no sampling, no thresholding, no "(other)" ·
-    ask == dashboard == MCP, <a href="https://smolanalytics.com/trust" target="_blank" rel="noopener">proven in CI ↗</a><br>
+    ask == dashboard == MCP, all from one report engine<br>
     updated {{.Updated}} · page computed in {{.ComputeMS}}ms · <a href="https://smolanalytics.com" target="_blank">smolanalytics</a>
   </div>
 </div></main>
@@ -1943,7 +1947,7 @@
           var chart=chartFor(j.intent||'');
           if(chart)h+='<div class="achart" id="achart"></div>';
           h+='<div class="arow">'+
-            '<a class="proof" href="https://smolanalytics.com/trust" target="_blank" rel="noopener">✓ proven · matches dashboard</a>';
+            '<span class="proof">computed report</span>';
           if(j.computed_by)h+='<details class="amethod"><summary>how</summary><div style="padding-top:6px">'+esc(j.computed_by)+'</div></details>';
           if(chart)h+='<button class="abtn" id="askpin">pin to board</button>';
           // only offer the jump when that card really is on this page
@@ -1983,7 +1987,7 @@
           var card=document.createElement('div');card.className='bcard';
           card.innerHTML='<div class="bh"><span class="bq">'+esc(it.name)+'</span><span class="bx" title="unpin">unpin ×</span></div>'+
             '<div class="bbody"></div>'+
-            '<div class="bprov"><a class="proof" href="https://smolanalytics.com/trust" target="_blank" rel="noopener">✓ proven</a>'+
+            '<div class="bprov"><span class="proof">computed</span>'+
             '<span class="amethod">computed by /v1/'+esc(it.type==='trend'?'trends':it.type)+'</span></div>';
           card.querySelector('.bx').onclick=function(){
             fetch('/v1/insights/'+it.id,{method:'DELETE'}).then(loadBoard);
@@ -3067,7 +3071,7 @@
           '<div class="co-tag"><span class="co-ic">'+(warn?'!':'✦')+'</span>'+(warn?'Fix first':'Today’s read')+'</div>'+
           '<div class="co-body"><div class="co-title">'+esc(f0.title)+'</div>'+
           '<div class="co-detail">'+esc(f0.detail)+'</div>'+
-          '<div class="co-meta"><span class="co-prov">computed, not guessed</span><span>a CI test proves this equals the dashboard, it can’t be faked</span></div></div>'+
+          '<div class="co-meta"><span class="co-prov">computed, not guessed</span><span>the same report this dashboard renders</span></div></div>'+
           '<div class="co-act"><a class="co-go" data-q="'+esc(f0.title)+'">Show me →</a></div></div>';
         if(fs.length>1){html+='<div class="verdict-more">';
           for(var i=1;i<fs.length;i++){var fd=fs[i];

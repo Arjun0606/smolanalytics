@@ -82,6 +82,10 @@ type trendBar struct {
 	Tick      string // x-axis date label under this bar ("" = no tick); every ~5th day
 	Peak      bool   // the window's max — annotated with its value, always visible
 	GhostPct  int    // the prior equal window's same-position value, same y-scale
+	// Partial marks a bucket still in progress (today, or the current hour). Without it the
+	// newest bar is always a stub next to a full prior-window bar, and the change column
+	// always reads like a crash — an artefact of the clock, not the product.
+	Partial bool
 }
 
 type segRow struct {
@@ -555,6 +559,21 @@ func cumulativeUserSeries(evs []event.Event, days int, now time.Time) []int {
 			}
 		}
 		out[i] = n
+	}
+	// Rebase to the window's own floor. buildSpark scales 0..max, and a cumulative total
+	// that grew 2% across the window (3040 -> 3100) then draws a flat line pinned to the
+	// top with the area filling the whole box — it renders as a featureless block, which
+	// is exactly what it looked like on screen. Subtracting the floor shows the SHAPE of
+	// the growth, which is all a sparkline claims to show; the tile's number carries the
+	// absolute value.
+	floor := out[0]
+	for _, v := range out {
+		if v < floor {
+			floor = v
+		}
+	}
+	for i := range out {
+		out[i] -= floor
 	}
 	return out
 }
@@ -1327,6 +1346,15 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 			pp := trPrior.Points[i]
 			b.GhostPct = int(math.Round(float64(pp.Count) / float64(maxT) * 100))
 			b.Tip = fmt.Sprintf("%s · %d (prior window %s: %d)", p.Date.Format(longFmt), p.Count, pp.Date.Format(longFmt), pp.Count)
+		}
+		// the newest bucket is only complete if the window ended in the past
+		if rangeAsof.IsZero() && i == len(tr.Points)-1 {
+			b.Partial = true
+			unit := "today so far"
+			if gran == trends.Hour {
+				unit = "this hour so far"
+			}
+			b.Tip += " · " + unit
 		}
 		vm.Trend = append(vm.Trend, b)
 	}
