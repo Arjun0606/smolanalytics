@@ -495,7 +495,7 @@ func engagementSeries(evs []event.Event, days int, now time.Time) (bounce []int,
 		if ts.Before(from) {
 			continue
 		}
-		i := int(ts.Truncate(24 * time.Hour).Sub(from).Hours() / 24)
+		i := int(ts.Truncate(24*time.Hour).Sub(from).Hours() / 24)
 		if i < 0 || i >= days {
 			continue
 		}
@@ -570,7 +570,7 @@ func cumulativeUserSeries(evs []event.Event, days int, now time.Time) []int {
 	out := make([]int, days)
 	for i := 0; i < days; i++ {
 		// end of the i-th day in the window
-		cutoff := today.AddDate(0, 0, -(days-1-i)).Add(24 * time.Hour)
+		cutoff := today.AddDate(0, 0, -(days - 1 - i)).Add(24 * time.Hour)
 		n := 0
 		for _, f := range first {
 			if f.Before(cutoff) {
