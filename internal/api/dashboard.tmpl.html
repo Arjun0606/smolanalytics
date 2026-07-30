@@ -1341,7 +1341,7 @@
     <div class="pane" id="pane-events" style="order:820" data-stratum="raw">
       <h3>event stream <span class="sub">· latest 200 · computed by /v1/events/recent</span></h3>
       <div class="exrow" style="margin-bottom:8px">
-        <input id="evFilter" autocomplete="off" placeholder="filter the stream: event name, visitor id, path, any property value…">
+        <input id="evFilter" autocomplete="off" placeholder="filter: event, visitor, path, property…">
       </div>
       <div id="evTable" class="live"><div class="livemuted">loading…</div></div>
       <div class="exsummary" style="margin-top:8px">latest 200 events · click a visitor to open their journey · computed by /v1/events/recent</div>
@@ -1379,7 +1379,7 @@
       <h3>cohorts · define a user group once, reuse anywhere</h3>
       <div class="exrow">
         <input id="coName" autocomplete="off" placeholder="cohort name (e.g. Paying users)">
-        <input id="coEvents" list="exEvents" autocomplete="off" placeholder="events, comma-separated (e.g. checkout)">
+        <input id="coEvents" list="exEvents" autocomplete="off" placeholder="events, comma-separated">
         <select id="coMatch"><option value="any">did any</option><option value="all">did all</option></select>
         <button id="coCreate">Create</button>
       </div>
@@ -2261,14 +2261,14 @@
     loadCohorts();
     function syncEx(){
       var t=exType.value,a=true,b=true,pa='',pb='';
-      if(t==='funnel'){pa='signup,activate,checkout (comma-separated)';b=false;}
+      if(t==='funnel'){pa='signup,activate,checkout';b=false;}
       else if(t==='trend'){pa='event (e.g. signup)';pb='breakdown property (optional)';}
       else if(t==='breakdown'){pa='event (blank = all)';pb='property (e.g. source)';}
       else if(t==='retention'){pa='return event (e.g. open)';pb='days (default 7)';}
       else if(t==='paths'){pa='start event (e.g. signup)';pb='depth (default 3)';}
       else if(t==='lifecycle'){a=false;pb='days (default 30)';}
       else if(t==='stickiness'){a=false;b=false;}
-      else if(t==='groups'){pa='group property (e.g. company)';b=false;}
+      else if(t==='groups'){pa='group property (company)';b=false;}
       exA.style.display=a?'':'none';exB.style.display=b?'':'none';exA.placeholder=pa;exB.placeholder=pb;
     }
     exType.onchange=syncEx; syncEx();
