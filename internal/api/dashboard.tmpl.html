@@ -411,6 +411,15 @@
   .journey .jrow .jt{color:var(--mut2);min-width:52px}
   .journey .jrow .je{color:var(--accent);min-width:110px}
   .journey .jrow .jp{color:var(--mut);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* On a phone the visitor descriptor ("US · desktop · Chrome · google") ellipsises to
+     "US · desktop · Chr…", losing the REFERRER, which is the most useful field in the line.
+     Below 640px let the row wrap and give the descriptor its own line instead: two short
+     lines that say everything beat one line that hides the answer. */
+  @media(max-width:640px){
+    .live .row{flex-wrap:wrap;gap:2px 10px}
+    .live .who{flex:1 0 100%;white-space:normal;overflow:visible;text-overflow:clip;word-break:break-word}
+    .live .ago{margin-left:auto}
+  }
   .live .who{cursor:pointer}
   .live .who:hover{color:var(--accent);text-decoration:underline}
 
