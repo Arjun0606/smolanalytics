@@ -534,6 +534,15 @@ func engagementSeries(evs []event.Event, days int, now time.Time) (bounce []int,
 
 // rangeLabel is the single name for the selected window. The range button said "24h" while
 // every KPI tile said "· 1d" for the same range, because each site formatted "%dd" itself.
+// rangeWindowLabel names the window including the sub-day presets, so the button, the KPI
+// tiles and the pane headers still cannot disagree (see rangeLabel).
+func rangeWindowLabel(days, hours int) string {
+	if hours > 0 {
+		return fmt.Sprintf("%dh", hours)
+	}
+	return rangeLabel(days)
+}
+
 func rangeLabel(days int) string {
 	if days == 1 {
 		return "24h"
@@ -650,7 +659,7 @@ type pathLevelVM struct {
 // buildKPIs assembles the headline metric cards from the already-computed numbers, each
 // with a real trailing-daily sparkline. This is the glance, elevated — the first thing a
 // builder sees, and it should feel effortless: the numbers that matter, moving.
-func buildKPIs(vm *dashVM, evs []event.Event, trendEvent string, days int, now time.Time) {
+func buildKPIs(vm *dashVM, evs []event.Event, trendEvent string, days, hours int, now time.Time) {
 	dir := func(d string) string {
 		if d == "" {
 			return ""
@@ -676,13 +685,13 @@ func buildKPIs(vm *dashVM, evs []event.Event, trendEvent string, days int, now t
 	if vm.HasWeb {
 		d := vm.VisitorsDelta
 		cards = append(cards, kpiCard{
-			Label: "Visitors · " + rangeLabel(days), Value: comma(vm.Visitors), Delta: d, Dir: dir(d),
+			Label: "Visitors · " + rangeWindowLabel(days, hours), Value: comma(vm.Visitors), Delta: d, Dir: dir(d),
 			Spark: buildSpark(dailySeries(evs, func(e event.Event) bool { return e.Name == "$pageview" }, days, now, true), endOf(d)),
 		})
 	}
 	sd := vm.SignupsDelta
 	cards = append(cards, kpiCard{
-		Label: vm.StatEventLabel + " · " + rangeLabel(days), Value: comma(vm.Signups), Delta: sd, Dir: dir(sd),
+		Label: vm.StatEventLabel + " · " + rangeWindowLabel(days, hours), Value: comma(vm.Signups), Delta: sd, Dir: dir(sd),
 		Spark: buildSpark(dailySeries(evs, func(e event.Event) bool { return e.Name == trendEvent }, days, now, false), endOf(sd)),
 	})
 	if vm.ConvLabel != "" && vm.HasConversion {
@@ -847,6 +856,17 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	case "90":
 		rangeDays = 90
 	}
+	// Sub-day windows. ?hours=6|12 narrows the CHART window without disturbing rangeDays,
+	// which every day-based helper below still needs to be at least 1 — web.Compute,
+	// engagementSeries, cumulativeUserSeries and buildKPIs all take a day count, and handing
+	// them 0 would produce empty tiles rather than a short window.
+	rangeHours := 0
+	switch r.URL.Query().Get("hours") {
+	case "6":
+		rangeHours, rangeDays = 6, 1
+	case "12":
+		rangeHours, rangeDays = 12, 1
+	}
 	var rangeAsof time.Time // zero = now (presets); set = custom range's end
 	customRange := false
 	if fs, ts := r.URL.Query().Get("from"), r.URL.Query().Get("to"); fs != "" && ts != "" {
@@ -965,10 +985,26 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// the range switcher links, preserving site + filters
+	// every preset link must clear BOTH range params, or clicking 7d after 6h leaves
+	// ?hours=6 in the URL and the chart silently stays on the six-hour window.
+	mkHours := func(h int) rangeVM {
+		nq := url.Values{}
+		for k, vals := range r.URL.Query() {
+			if k != "days" && k != "hours" && k != "gran" {
+				nq[k] = vals
+			}
+		}
+		nq.Set("hours", fmt.Sprint(h))
+		u := "/"
+		if enc := nq.Encode(); enc != "" {
+			u += "?" + enc
+		}
+		return rangeVM{Label: fmt.Sprintf("%dh", h), URL: u, On: rangeHours == h}
+	}
 	mkRange := func(d int) rangeVM {
 		nq := url.Values{}
 		for k, vals := range r.URL.Query() {
-			if k != "days" {
+			if k != "days" && k != "hours" && k != "gran" {
 				nq[k] = vals
 			}
 		}
@@ -979,7 +1015,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		if enc := nq.Encode(); enc != "" {
 			u += "?" + enc
 		}
-		return rangeVM{Label: rangeLabel(d), URL: u, On: d == rangeDays}
+		return rangeVM{Label: rangeLabel(d), URL: u, On: rangeHours == 0 && d == rangeDays}
 	}
 
 	names, _ := s.store.Names()
@@ -1022,7 +1058,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	// engine has always bucketed by hour; nothing ever asked it to. Note this cannot live
 	// in the granErr branch: ParseInterval("") returns (Day, nil), so an absent ?gran is
 	// not an error and that branch never runs.
-	if granParam == "" && rangeDays == 1 {
+	if granParam == "" && (rangeDays == 1 || rangeHours > 0) {
 		gran = trends.Hour
 	}
 	fr := funnel.ComputeOpts(evs, fsteps, 7*24*time.Hour, funnel.Options{Order: forder})
@@ -1037,13 +1073,20 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	// "last N days". The old rolling now−N·24h start pulled in a clipped partial leading
 	// day, rendering a phantom bar and a headline that disagreed with /v1 and MCP.
 	curFrom, curTo := endT.AddDate(0, 0, -rangeDays), rangeAsof
+	if rangeHours > 0 {
+		curFrom = endT.Add(-time.Duration(rangeHours) * time.Hour)
+	}
 	if curTo.IsZero() || curTo.After(nowT) {
 		curTo = nowT // presets (and any future-ending custom range) end NOW, never the future —
 		// matches parseTrendWindow + MCP so a clock-skewed future event can't make the
 		// headline stat disagree with /v1 and MCP
 	}
 	priorFrom, priorTo := endT.AddDate(0, 0, -2*rangeDays), endT.AddDate(0, 0, -rangeDays)
-	if rangeAsof.IsZero() && gran == trends.Day { // preset day-range → align to whole days
+	if rangeHours > 0 {
+		d := time.Duration(rangeHours) * time.Hour
+		priorFrom, priorTo = endT.Add(-2*d), endT.Add(-d)
+	}
+	if rangeAsof.IsZero() && gran == trends.Day && rangeHours == 0 { // preset day-range → align to whole days
 		day0 := nowT.Truncate(24 * time.Hour)
 		curFrom = day0.AddDate(0, 0, -(rangeDays - 1))
 		priorFrom = day0.AddDate(0, 0, -(2*rangeDays - 1))
@@ -1127,7 +1170,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		HasAgentEvents: hasAgentEvents,
 		ReportQS:       reportQ.Encode(),
 		RangeDays:      rangeDays,
-		RangeLabel:     rangeLabel(rangeDays),
+		RangeLabel:     rangeWindowLabel(rangeDays, rangeHours),
 		GhostTotal:     trPrior.Total,
 		FunnelOrder:    string(forder),
 		RetDays:        rdays,
@@ -1137,7 +1180,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		AnyMode:        anyMode,
 		RangeFrom:      r.URL.Query().Get("from"),
 		RangeTo:        r.URL.Query().Get("to"),
-		Ranges:         []rangeVM{mkRange(1), mkRange(7), mkRange(30), mkRange(90)},
+		Ranges:         []rangeVM{mkHours(6), mkHours(12), mkRange(1), mkRange(7), mkRange(30), mkRange(90)},
 		Chips:          chips,
 		SourceProp:     srcProp,
 		ConvByProp:     segProp,
@@ -1507,9 +1550,15 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	// the web glance — live now, visitors, top pages, referrers over the selected
 	// range, with deltas vs the prior equal window. Only shown when $pageview data
 	// exists; a backend-only instance stays product-only.
-	wv := web.Compute(evs, rangeDays, rangeAsof)
+	// ONE window for the tiles and the chart. A 6h preset that only moved the chart left
+	// every KPI reading 24h, which makes the range control look broken.
+	winDur := time.Duration(rangeDays) * 24 * time.Hour
+	if rangeHours > 0 {
+		winDur = time.Duration(rangeHours) * time.Hour
+	}
+	wv := web.ComputeWindow(evs, winDur, rangeAsof)
 	if wv.Pageviews > 0 {
-		wvPrior := web.Compute(evs, rangeDays, endT.AddDate(0, 0, -rangeDays))
+		wvPrior := web.ComputeWindow(evs, winDur, endT.Add(-winDur))
 		vm.VisitorsDelta = deltaStr(wv.Visitors, wvPrior.Visitors)
 		vm.PageviewsDelta = deltaStr(wv.Pageviews, wvPrior.Pageviews)
 		vm.HasWeb = true
@@ -1617,7 +1666,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	buildKPIs(&vm, evs, trendEvent, rangeDays, nowT)
+	buildKPIs(&vm, evs, trendEvent, rangeDays, rangeHours, nowT)
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	// The page is a live report AND it carries the whole app inline, so a cached copy is

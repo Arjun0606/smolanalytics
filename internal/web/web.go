@@ -55,13 +55,25 @@ const pageview = "$pageview"
 
 // Compute builds the overview over the trailing `days` (default 30) as of `asof`.
 func Compute(evs []event.Event, days int, asof time.Time) Result {
+	return ComputeWindow(evs, time.Duration(days)*24*time.Hour, asof)
+}
+
+// ComputeWindow is Compute over an arbitrary window rather than a whole number of days, so
+// the dashboard's sub-day presets (6h, 12h) can report the SAME window in the tiles as the
+// chart. Without it a 6h range moved the chart only and left every tile on 24h, which is a
+// range control that lies about what it changed.
+func ComputeWindow(evs []event.Event, window time.Duration, asof time.Time) Result {
 	if asof.IsZero() {
 		asof = time.Now().UTC()
 	}
-	if days <= 0 {
-		days = 30
+	if window <= 0 {
+		window = 30 * 24 * time.Hour
 	}
-	cutoff := asof.AddDate(0, 0, -days)
+	days := int(window.Hours() / 24)
+	if days < 1 {
+		days = 1
+	}
+	cutoff := asof.Add(-window)
 	liveCutoff := asof.Add(-5 * time.Minute)
 
 	bump := func(m map[string]*agg, key, user string) {
