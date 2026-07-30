@@ -269,6 +269,7 @@ type dashVM struct {
 	// EVERY zone inherits, exactly like the site selector. All state lives in the
 	// querystring so every filtered view is a shareable, server-renderable URL.
 	RangeDays      int
+	RangeLabel     string // "24h" | "7d" | ... — the ONE name for the window
 	Ranges         []rangeVM
 	Chips          []chipVM
 	VisitorsDelta  string // vs the prior equal window; "" when unknowable
@@ -531,6 +532,15 @@ func engagementSeries(evs []event.Event, days int, now time.Time) (bounce []int,
 	return bounce, engaged
 }
 
+// rangeLabel is the single name for the selected window. The range button said "24h" while
+// every KPI tile said "· 1d" for the same range, because each site formatted "%dd" itself.
+func rangeLabel(days int) string {
+	if days == 1 {
+		return "24h"
+	}
+	return fmt.Sprintf("%dd", days)
+}
+
 func cumulativeUserSeries(evs []event.Event, days int, now time.Time) []int {
 	if days < 2 {
 		days = 2
@@ -666,13 +676,13 @@ func buildKPIs(vm *dashVM, evs []event.Event, trendEvent string, days int, now t
 	if vm.HasWeb {
 		d := vm.VisitorsDelta
 		cards = append(cards, kpiCard{
-			Label: fmt.Sprintf("Visitors · %dd", days), Value: comma(vm.Visitors), Delta: d, Dir: dir(d),
+			Label: "Visitors · " + rangeLabel(days), Value: comma(vm.Visitors), Delta: d, Dir: dir(d),
 			Spark: buildSpark(dailySeries(evs, func(e event.Event) bool { return e.Name == "$pageview" }, days, now, true), endOf(d)),
 		})
 	}
 	sd := vm.SignupsDelta
 	cards = append(cards, kpiCard{
-		Label: fmt.Sprintf("%s · %dd", vm.StatEventLabel, days), Value: comma(vm.Signups), Delta: sd, Dir: dir(sd),
+		Label: vm.StatEventLabel + " · " + rangeLabel(days), Value: comma(vm.Signups), Delta: sd, Dir: dir(sd),
 		Spark: buildSpark(dailySeries(evs, func(e event.Event) bool { return e.Name == trendEvent }, days, now, false), endOf(sd)),
 	})
 	if vm.ConvLabel != "" && vm.HasConversion {
@@ -969,11 +979,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		if enc := nq.Encode(); enc != "" {
 			u += "?" + enc
 		}
-		label := fmt.Sprintf("%dd", d)
-		if d == 1 {
-			label = "24h"
-		}
-		return rangeVM{Label: label, URL: u, On: d == rangeDays}
+		return rangeVM{Label: rangeLabel(d), URL: u, On: d == rangeDays}
 	}
 
 	names, _ := s.store.Names()
@@ -1121,6 +1127,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		HasAgentEvents: hasAgentEvents,
 		ReportQS:       reportQ.Encode(),
 		RangeDays:      rangeDays,
+		RangeLabel:     rangeLabel(rangeDays),
 		GhostTotal:     trPrior.Total,
 		FunnelOrder:    string(forder),
 		RetDays:        rdays,

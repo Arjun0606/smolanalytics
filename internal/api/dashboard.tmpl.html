@@ -882,13 +882,13 @@
     <!-- engagement: only ever rendered when $engagement events exist, because both
          numbers are undefined without them and a 0% bounce rate would be a lie -->
     <div class="kpi">
-      <div class="kk">Bounce rate · {{.RangeDays}}d</div>
+      <div class="kk">Bounce rate · {{.RangeLabel}}</div>
       <div class="kv">{{.BouncePct}}%</div>
       <div class="kd"><span class="kvp">one pageview, under 10s engaged</span></div>
       {{with .SparkBounce}}<svg class="spark" viewBox="0 0 64 26" fill="none" preserveAspectRatio="none" aria-hidden="true"><polygon points="{{.Area}}" fill="var(--accent)" opacity=".12"/><polyline points="{{.Line}}" stroke="var(--spark)" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>{{end}}
     </div>
     <div class="kpi">
-      <div class="kk">Avg engaged time · {{.RangeDays}}d</div>
+      <div class="kk">Avg engaged time · {{.RangeLabel}}</div>
       <div class="kv">{{.EngagedHuman}}</div>
       <div class="kd"><span class="kvp">visible and focused, per visitor</span></div>
       {{with .SparkEngaged}}<svg class="spark" viewBox="0 0 64 26" fill="none" preserveAspectRatio="none" aria-hidden="true"><polygon points="{{.Area}}" fill="var(--accent)" opacity=".12"/><polyline points="{{.Line}}" stroke="var(--spark)" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>{{end}}
@@ -913,7 +913,7 @@
         <option value="week" {{if eq .Gran "week"}}selected{{end}}>weekly</option>
         <option value="month" {{if eq .Gran "month"}}selected{{end}}>monthly</option>
       </select>
-      <span class="sub">· last {{.RangeDays}}d{{if gt .GhostTotal 0}} · grey = prior {{.RangeDays}}d, same scale{{end}} · computed by /v1/trends</span>
+      <span class="sub">· last {{.RangeLabel}}{{if gt .GhostTotal 0}} · grey = prior {{.RangeLabel}}, same scale{{end}} · computed by /v1/trends</span>
       <select id="chartBreak" style="margin-left:auto;background:var(--s1);border:1px solid var(--line);color:var(--mut);font-family:var(--mono);font-size:10px;padding:2px 6px;border-radius:4px">
         <option value="">no breakdown</option>
         <option value="country">by country</option>
@@ -959,7 +959,7 @@
 
   {{if .Hours}}
   <div class="chartzone" style="margin-top:18px">
-    <div class="zonelbl">activity by hour <span class="sub">· UTC · last {{.RangeDays}}d · peak {{comma .HoursMax}}/hr</span></div>
+    <div class="zonelbl">activity by hour <span class="sub">· UTC · last {{.RangeLabel}} · peak {{comma .HoursMax}}/hr</span></div>
     <div class="bars" style="height:44px;padding-top:18px">
       {{range .Hours}}<div class="col"><span class="tip">{{.Hour}}:00 UTC · {{.Count}}</span><div class="bar" style="height:{{.HeightPct}}%"></div></div>{{end}}
     </div>
