@@ -1657,9 +1657,23 @@
       return '<div class="exbar"><div class="exfill" style="width:'+fillPct+'%"></div>'+
         '<div class="exmeta"><span>'+esc(label)+'</span><span>'+right+'</span></div></div>';
     }
+    // /v1/* returns ISO timestamps; rendering them raw put "2026-06-05T00:00:00Z · 36" in
+    // front of the user while every server-rendered chart said "Jun 5". Same style as the
+    // Go side (Jan 2 / 3pm) so the two halves of the dashboard agree.
+    var SA_MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    function fmtPoint(iso){
+      var d=new Date(iso);
+      if(isNaN(d.getTime()))return String(iso);
+      var s=SA_MON[d.getUTCMonth()]+' '+d.getUTCDate();
+      if(d.getUTCHours()||d.getUTCMinutes()){
+        var h=d.getUTCHours(),h12=h%12||12;
+        s+=' '+h12+(h<12?'am':'pm');
+      }
+      return s;
+    }
     function trendBars(pts){
       var max=1;pts.forEach(function(p){if(p.count>max)max=p.count;});
-      return '<div class="bars" style="height:90px;padding-top:20px">'+pts.map(function(p){return '<div class="col"><span class="tip">'+esc(p.date)+' · '+p.count+'</span><div class="bar" style="height:'+Math.round(p.count/max*100)+'%"></div></div>';}).join('')+'</div>';
+      return '<div class="bars" style="height:90px;padding-top:20px">'+pts.map(function(p){return '<div class="col"><span class="tip">'+esc(fmtPoint(p.date))+' · '+p.count+'</span><div class="bar" style="height:'+Math.round(p.count/max*100)+'%"></div></div>';}).join('')+'</div>';
     }
     function renderReport(t,j,el){
       if(j.error){el.innerHTML='<div class="exsummary">'+esc(j.error)+'</div>';return;}
@@ -1693,7 +1707,7 @@
       }else if(t==='lifecycle'){
         var d=j.days||[];
         el.innerHTML='<table class="lc"><tr><th>day</th><th class="n">new</th><th class="r">ret</th><th class="rs">res</th><th class="dm">dorm</th></tr>'+
-          d.slice(-14).map(function(x){return '<tr><td>'+String(x.date).slice(5,10)+'</td><td class="n">'+x.new+'</td><td class="r">'+x.returning+'</td><td class="rs">'+x.resurrected+'</td><td class="dm">'+x.dormant+'</td></tr>';}).join('')+'</table>';
+          d.slice(-14).map(function(x){return '<tr><td>'+esc(fmtPoint(x.date))+'</td><td class="n">'+x.new+'</td><td class="r">'+x.returning+'</td><td class="rs">'+x.resurrected+'</td><td class="dm">'+x.dormant+'</td></tr>';}).join('')+'</table>';
       }else if(t==='stickiness'){
         el.innerHTML='<div class="stickrow"><div class="sk"><div class="skv">'+(j.dau||0)+'</div><div class="skl">DAU</div></div>'+
           '<div class="sk"><div class="skv">'+(j.wau||0)+'</div><div class="skl">WAU</div></div>'+
