@@ -50,7 +50,23 @@ func absInt(n int) int {
 
 // Generate returns the digest: the biggest funnel leak, the headline event's
 // week-over-week change, and the retention read — computed exactly.
+// Generate detects the journey itself. Use it where there is no page context: the CLI, the
+// morning brief, an MCP call.
 func Generate(evs []event.Event) []Finding {
+	return GenerateForFunnel(evs, nil)
+}
+
+// GenerateForFunnel is Generate over a CALLER-SUPPLIED funnel.
+//
+// The dashboard picks its funnel one way (top events by volume, ordered by journey) and this
+// package picked its own another way (first-touch coverage), so one page could show a funnel
+// pane reading "$pageview → $engagement → $click" while its own verdict card said "overall
+// $pageview→$deadclick conversion is 7%". Both were internally honest and the page still
+// contradicted itself about what "the funnel" is. Passing the page's steps in makes the
+// verdict describe the funnel the reader is actually looking at.
+//
+// steps with fewer than 2 entries falls back to detecting, so existing callers are unchanged.
+func GenerateForFunnel(evs []event.Event, pageSteps []funnel.Step) []Finding {
 	var out []Finding
 	if len(evs) == 0 {
 		return out
@@ -80,9 +96,12 @@ func Generate(evs []event.Event) []Finding {
 	// first do them (median first-touch), so the auto-funnel follows the product's
 	// true flow instead of raw volume order.
 	var steps []funnel.Step
-	if has("signup") && has("activate") && has("checkout") {
+	switch {
+	case len(pageSteps) >= 2:
+		steps = pageSteps // the funnel the page is showing wins over any guess we would make
+	case has("signup") && has("activate") && has("checkout"):
 		steps = []funnel.Step{{Event: "signup"}, {Event: "activate"}, {Event: "checkout"}}
-	} else {
+	default:
 		steps = detectJourney(evs)
 	}
 	if len(steps) >= 2 {

@@ -820,7 +820,11 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	// and never flashes. Server-rendering it means the "what to look at" front door is
 	// real text on first paint and for no-JS/crawler views, not a "reading your data…"
 	// spinner (the thing a non-agent evaluator judged the whole product on).
-	verdict := insight.Generate(evs)
+	// Detect the funnel BEFORE the verdict so both describe the same one. Previously the
+	// verdict ran insight's own journey detection while the funnel pane ran detectFunnel,
+	// and the page could contradict itself about which funnel it was talking about.
+	verdictSteps, _ := detectFunnel(evs, eventsByVolume(evs))
+	verdict := insight.GenerateForFunnel(evs, verdictSteps)
 
 	// multi-site: every event carries `site` (the SDK stamps hostname). One global
 	// selector scopes the WHOLE dashboard — every report below inherits it.

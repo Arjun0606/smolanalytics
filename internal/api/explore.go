@@ -43,7 +43,10 @@ func (s *Server) notable(w http.ResponseWriter, r *http.Request) {
 		evs = query.Apply(evs, []query.Filter{{Property: "site", Op: query.Eq, Value: site}})
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"findings": insight.Generate(evs)})
+	// same funnel the dashboard renders, so the client-refreshed verdict cannot start
+	// describing a different one than the funnel pane below it
+	steps, _ := detectFunnel(evs, eventsByVolume(evs))
+	writeJSON(w, http.StatusOK, map[string]any{"findings": insight.GenerateForFunnel(evs, steps)})
 }
 
 // apiBrief returns the full morning digest — pulse, per-product portfolio split,
