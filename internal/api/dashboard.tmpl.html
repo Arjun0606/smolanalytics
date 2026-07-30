@@ -1227,7 +1227,7 @@
           <div title="returning {{.Returning}}" style="width:{{.RetPct}}%;background:var(--ok)"></div>
           <div title="resurrected {{.Resurrected}}" style="width:{{.ResPct}}%;background:#5B8DEF"></div>
         </div>
-        <span style="width:78px;font-family:var(--mono);font-size:10px;color:var(--dis);flex:none;text-align:right">-{{.Dormant}} dormant</span>
+        <span style="width:78px;font-family:var(--mono);font-size:10px;color:var(--dis);flex:none;text-align:right">{{if .Dormant}}-{{.Dormant}} dormant{{else}}none lost{{end}}</span>
       </div>{{end}}
     </div>
     {{end}}
@@ -2650,7 +2650,7 @@
           var h='<div class="agrow"><span class="agprov">computed · every session, no sampling</span>'+
             '<span class="agmeta">'+ss.length+' session'+(ss.length===1?'':'s')+' · newest first · last '+esc(SA_DAYS)+' days</span></div>'+
             '<table class="ctab"><thead><tr><th>visitor</th><th class="n">pages</th><th class="n">events</th>'+
-            '<th class="n">duration</th><th>entry → exit</th><th>started</th><th></th></tr></thead><tbody>';
+            '<th class="n">duration</th><th>entry → exit</th><th>started</th><th class="n">rage</th></tr></thead><tbody>';
           ss.forEach(function(s){
             var route=esc(s.entry_path||'(no page)');
             if(s.exit_path&&s.exit_path!==s.entry_path)route+=' → '+esc(s.exit_path);
