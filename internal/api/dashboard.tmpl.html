@@ -98,7 +98,7 @@
      page toggles with the hidden ATTRIBUTE (#fbuilder, #askresult, #shareresult, #board,
      #chartAlt) needs this or it renders permanently expanded. */
   [hidden]{display:none !important}
-  .fbuilder input,.fbuilder select{background:var(--s1);border:1px solid var(--line);color:var(--fg);font-family:var(--mono);font-size:11px;padding:4px 8px;border-radius:5px;max-width:170px}
+  .fbuilder input,.fbuilder select{background:var(--s1);border:1px solid var(--line);color:var(--fg);font-family:var(--mono);font-size:11px;padding:4px 8px;border-radius:5px;max-width:100%}
   .gtile .d{font-family:var(--mono);font-size:11px;margin-top:2px;color:var(--mut2)}
   .gtile .d.up{color:var(--ok)} .gtile .d.down{color:var(--warn)}
   .seg[data-fp]{cursor:pointer}
@@ -818,7 +818,7 @@
           <option value="regex">matches regex</option><option value="gt">&gt;</option><option value="lt">&lt;</option>
           <option value="set">is set</option><option value="notset">is not set</option>
         </select>
-        <input list="fbVals" id="fbVal" placeholder="value (a|b for either)" autocomplete="off">
+        <input list="fbVals" id="fbVal" placeholder="value, a|b for either" autocomplete="off">
         <button class="chip" id="fbGo" type="button">apply</button>
         <datalist id="fbProps"></datalist><datalist id="fbVals"></datalist>
       </span>
@@ -2195,12 +2195,33 @@
     // custom date range: two inputs -> ?from&to (clears the preset)
     var rform=document.getElementById('rangeform');
     if(rform){
+      ['rfrom','rto'].forEach(function(id){
+        var el=document.getElementById(id);
+        if(el)el.addEventListener('input',function(){el.setCustomValidity('');});
+      });
       rform.addEventListener('submit',function(e){
         e.preventDefault();
-        var f=document.getElementById('rfrom').value,t=document.getElementById('rto').value;
-        if(!f||!t)return;
+        var fi=document.getElementById('rfrom'),ti=document.getElementById('rto');
+        var f=fi.value,t=ti.value;
+        // silently returning here is why "go" looked broken: with a blank date nothing
+        // happened and nothing said why. tell the user which field is missing instead.
+        if(!f||!t){
+          var missing=!f?fi:ti;
+          missing.setCustomValidity('pick a start and an end date');
+          missing.reportValidity();
+          missing.focus();
+          return;
+        }
+        fi.setCustomValidity('');ti.setCustomValidity('');
+        if(f>t){
+          ti.setCustomValidity('the end date is before the start date');
+          ti.reportValidity();
+          return;
+        }
         var u=new URL(location.href);
-        u.searchParams.set('from',f);u.searchParams.set('to',t);u.searchParams.delete('days');u.hash='';
+        // clear BOTH presets, or a custom range picked from the 6h view keeps ?hours=6
+        u.searchParams.set('from',f);u.searchParams.set('to',t);
+        u.searchParams.delete('days');u.searchParams.delete('hours');u.hash='';
         location.href=u.toString();
       });
     }
