@@ -28,7 +28,20 @@ func (s *Server) notable(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	evs = query.Apply(evs, nil) // production scope: dev-env events excluded by default
+	// Honour the SAME env scope the dashboard is showing. This used to hardcode production
+	// scope and ignore every query param, so the verdict card on the ?env=development view
+	// reported production findings: a page that says "showing development data" led with
+	// "52 users fall off here" while its own KPI tiles read 1 visitor. The most prominent
+	// card on the page was the one thing not scoped to the page.
+	wantEnv := r.URL.Query().Get("env")
+	if wantEnv != "" && query.NonProduction[wantEnv] {
+		evs = query.Apply(evs, []query.Filter{{Property: "env", Op: query.Eq, Value: wantEnv}})
+	} else {
+		evs = query.Apply(evs, nil) // production scope: dev-env events excluded by default
+	}
+	if site := r.URL.Query().Get("site"); site != "" {
+		evs = query.Apply(evs, []query.Filter{{Property: "site", Op: query.Eq, Value: site}})
+	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"findings": insight.Generate(evs)})
 }

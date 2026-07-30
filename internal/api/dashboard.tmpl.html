@@ -187,7 +187,7 @@
   .kpi .kk{font-family:var(--mono);font-size:11px;letter-spacing:.02em;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:capitalize}
   .kpi .kv{font-family:var(--mono);font-size:27px;font-weight:600;letter-spacing:-.02em;margin-top:4px;line-height:1.14;color:var(--fg)}
   .kpi .kv.acc{color:var(--accent)}
-  .kpi .kd{font-size:11px;margin-top:8px;color:var(--mut);white-space:nowrap;padding-right:80px;overflow:hidden;text-overflow:ellipsis}
+  .kpi .kd{font-size:11px;line-height:1.35;margin-top:8px;color:var(--mut);padding-right:78px;white-space:normal;overflow-wrap:break-word;min-height:2.7em}
   .kpi .kd.up{color:var(--ok)} .kpi .kd.down{color:var(--warn)}
   .kpi .kd .kvp{color:var(--dis)}
   .kpi .spark{position:absolute;right:12px;bottom:13px;width:64px;height:26px;opacity:.85;pointer-events:none}
@@ -3170,7 +3170,12 @@
     // verdict refresh — matches /v1/notable exactly; empty verdict = the calm line
     var vEl=document.getElementById('verdict');
     if(vEl){
-      fetch('/v1/notable').then(function(r){return r.json()}).then(function(j){
+      // forward the page's scope (env, site) so the verdict matches the tiles beside it.
+      // fetching a bare /v1/notable is what made the dev view report production numbers.
+      var nq=new URLSearchParams();
+      var pq=new URLSearchParams(location.search);
+      ['env','site'].forEach(function(k){ if(pq.get(k)) nq.set(k,pq.get(k)); });
+      fetch('/v1/notable'+(nq.toString()?'?'+nq.toString():'')).then(function(r){return r.json()}).then(function(j){
         var fs=(j&&j.findings)||[];
         if(!fs.length){vEl.innerHTML='<div class="vcalm">nothing unusual right now: traffic and conversion look within normal range.</div>';return;}
         // build the SAME insight callout the server renders (lead finding as the callout,
