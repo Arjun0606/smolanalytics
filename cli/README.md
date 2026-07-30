@@ -55,10 +55,12 @@ on the project's setup page.
 
 ## Why this exists
 
-Analytics tools give you a number. Almost none of them let you check it. smolanalytics
-answers in plain English from a deterministic report, and a CI test proves the dashboard, the
-HTTP API and your editor all return the same number for the same question.
+Self-hosting PostHog means ClickHouse, Kafka, Redis and a Postgres. Plausible and Umami
+install easily but stop at web analytics, so no funnels, no retention, no cohorts.
 
-You can run that check yourself: **https://smolanalytics.com/proof**
+smolanalytics is one Go binary with no external database, and it does both: visitors and
+referrers alongside funnels, retention, paths and cohorts, plus feature flags, A/B tests,
+heatmaps and surveys. You ask it in plain English from the dashboard or your editor over MCP,
+using your own model, so the AI part costs nothing.
 
-MIT. Self-host free forever.
+MIT, every feature in the free binary, self-host forever.
