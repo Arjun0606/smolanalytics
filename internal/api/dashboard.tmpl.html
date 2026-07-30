@@ -318,7 +318,12 @@
   .exrow{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
   .exrow input,.exrow select{background:var(--s2);border:1px solid var(--line);color:var(--fg);font-family:var(--mono);font-size:12px;padding:7px 10px;border-radius:5px;outline:none;min-width:0}
   .exrow input:focus,.exrow select:focus{border-color:var(--accent)}
-  .exrow input{flex:1}
+  /* flex-BASIS, not min-width: a later global rule (the shared control styling for
+     input[type=text]/.exrow input/...) sets min-width:0 so inputs can always shrink and
+     never overflow a narrow pane. A min-width here loses to it on source order, silently.
+     A basis makes each input ask for 170px and WRAP (the row already sets flex-wrap)
+     while still being allowed to shrink, so nothing overflows. */
+  .exrow input{flex:1 1 170px}
   .exrow button{background:var(--accent);border:1px solid var(--accent);color:var(--bg);font-family:var(--mono);font-size:12px;font-weight:700;padding:7px 14px;border-radius:5px;cursor:pointer}
   .exrow button.btn2{background:transparent;color:var(--mut);border-color:var(--line)}
   .exrow button.btn2:hover{color:var(--accent);border-color:var(--accent)}
@@ -1232,7 +1237,7 @@
            now renders whenever the store is available, under whatever goals you already have. -->
       <div class="exrow" style="margin-bottom:0">
         <input id="gName" autocomplete="off" placeholder="goal name (e.g. Signed up)">
-        <input id="gValue" autocomplete="off" placeholder="event name (signup) or path glob (/thanks*)">
+        <input id="gValue" autocomplete="off" placeholder="event name, or /path* glob">
         <button id="gCreate">Create goal</button>
       </div>
       <!-- gNote is where the create handler writes validation and server errors, so it must
@@ -1296,7 +1301,7 @@
         <span class="sub">· every flag, who it is on for, and the A/B read behind a measured one · computed by /v1/flags</span></h3>
       <div id="flOut"><div class="exsummary">…</div></div>
       <div class="exrow" style="margin:14px 0 0">
-        <input id="flKey" autocomplete="off" placeholder="flag key (e.g. checkout_v2)">
+        <input id="flKey" autocomplete="off" placeholder="flag key (checkout_v2)">
         <input id="flDesc" autocomplete="off" placeholder="what it does (optional)">
         <select id="flKind" title="a boolean flag is on or off; an A/B flag splits users into two arms">
           <option value="bool">boolean · on or off</option>
