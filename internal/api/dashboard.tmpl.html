@@ -185,7 +185,7 @@
   .kpi{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:var(--r-card);background:var(--s1);padding:14px 15px 15px}
   .kpi:hover{border-color:var(--line2)}
   .kpi .kk{font-family:var(--mono);font-size:11px;letter-spacing:.02em;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:capitalize}
-  .kpi .kv{font-family:var(--mono);font-size:27px;font-weight:600;letter-spacing:-.02em;margin-top:7px;line-height:1;color:var(--fg)}
+  .kpi .kv{font-family:var(--mono);font-size:27px;font-weight:600;letter-spacing:-.02em;margin-top:4px;line-height:1.14;color:var(--fg)}
   .kpi .kv.acc{color:var(--accent)}
   .kpi .kd{font-size:11px;margin-top:8px;color:var(--mut);white-space:nowrap;padding-right:80px;overflow:hidden;text-overflow:ellipsis}
   .kpi .kd.up{color:var(--ok)} .kpi .kd.down{color:var(--warn)}
@@ -228,6 +228,13 @@
      numbers count once. The point is that the page reads as computed-just-now rather than
      printed, which is the one thing a static dashboard cannot say. The global
      prefers-reduced-motion guard above collapses all of these to instant. */
+  /* the first focusable element on the page: visually hidden until focused, so keyboard
+     users can reach the numbers without tabbing the whole rail, and nobody else sees it. */
+  .skiplink{position:absolute;left:8px;top:-48px;z-index:100;background:var(--accent);color:var(--bg);
+    font-family:var(--mono);font-size:12px;font-weight:700;padding:9px 14px;border-radius:var(--r-ctl);
+    text-decoration:none;transition:top var(--t-base) var(--ease)}
+  .skiplink:focus{top:8px}
+  h1.logo{margin:0;font-size:15px}
   @keyframes bargrow{from{transform:scaleY(0)}to{transform:scaleY(1)}}
   @keyframes sparkdraw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
   @keyframes panein{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
@@ -353,7 +360,7 @@
   table.lc .n{color:var(--ok)} table.lc .r{color:var(--accent)} table.lc .rs{color:var(--fg)} table.lc .dm{color:var(--mut2)}
   .stickrow{display:flex;gap:12px;flex-wrap:wrap;margin-top:6px}
   .sk{border:1px solid var(--line);border-radius:6px;background:var(--s2);padding:10px 16px;text-align:center}
-  .skv{font-family:var(--mono);font-size:20px;font-weight:700}
+  .skv{font-family:var(--mono);font-size:20px;font-weight:700;line-height:1.2}
   .skv.acc{color:var(--accent)}
   .skl{font-family:var(--mono);font-size:10px;color:var(--mut2);text-transform:uppercase;letter-spacing:.06em}
   .saved{display:flex;flex-wrap:wrap;gap:8px}
@@ -758,6 +765,7 @@
 </style>
 </head>
 <body>
+<a class="skiplink" href="#sa-top">skip to your dashboard</a>
 <!-- ═══ THE SHELL ═══
      A fixed rail and a fixed topbar. The rail is a MAP, NOT A ROUTER: the content column
      still renders every report in one continuous document, so nothing is filtered, routed or
@@ -767,8 +775,8 @@
      scroll-spy IntersectionObserver (root:null), #deckjump's position:sticky and the browser's
      scroll restoration after a create-and-reload all depend on it. An inner overflow column
      would break or degrade all of them for no visual gain. -->
-<aside class="sa-nav">
-  <div class="sa-brand"><div class="logo"><span class="lmk">s</span>smol<b>analytics</b></div>{{if gt (len .Sites) 1}}<select class="siteselect" onchange="location.href=this.value?('/?site='+encodeURIComponent(this.value)):'/'" title="scope every report to one site">
+<aside class="sa-nav" role="navigation" aria-label="reports and scope">
+  <div class="sa-brand"><h1 class="logo"><span class="lmk" aria-hidden="true">s</span>smol<b>analytics</b></h1>{{if gt (len .Sites) 1}}<select class="siteselect" onchange="location.href=this.value?('/?site='+encodeURIComponent(this.value)):'/'" title="scope every report to one site">
     <option value="">all sites</option>
     {{range .Sites}}<option value="{{.}}" {{if eq . $.Site}}selected{{end}}>{{.}}</option>{{end}}
   </select>{{end}}</div>
@@ -827,7 +835,7 @@
   <div class="sa-foot">{{if .HasShares}}<a class="hlink" href="/settings/shares" id="shareBtn" title="mint a revocable read-only link">share</a>{{end}}<a class="hlink" href="/settings">settings</a><a class="hlink" href="{{.CloudURL}}" target="_blank" style="color:var(--accent)">Cloud ↗</a></div>
 </aside>
 
-<div id="sa-top">
+<div id="sa-top" tabindex="-1">
     <form class="ask" id="askform">
       <span class="k">›</span>
       <input id="askq" autocomplete="off" placeholder="ask anything about your data" aria-label="ask">
@@ -928,7 +936,7 @@
         <option value="month" {{if eq .Gran "month"}}selected{{end}}>monthly</option>
       </select>
       <span class="sub">· last {{.RangeLabel}}{{if gt .GhostTotal 0}} · grey = prior {{.RangeLabel}}, same scale{{end}} · computed by /v1/trends</span>
-      <select id="chartBreak" style="margin-left:auto;background:var(--s1);border:1px solid var(--line);color:var(--mut);font-family:var(--mono);font-size:10px;padding:2px 6px;border-radius:4px">
+      <select id="chartBreak" style="margin-left:auto;background:var(--s1);border:1px solid var(--line);color:var(--mut);font-family:var(--mono);font-size:10px;padding:2px 6px;border-radius:4px" aria-label="break the chart down by a property">
         <option value="">no breakdown</option>
         <option value="country">by country</option>
         <option value="device">by device</option>
@@ -1219,7 +1227,7 @@
     <div class="pane" id="pane-stickiness" style="order:530" data-stratum="return">
       <h3>stickiness <span class="sub">· do they come back?</span></h3>
       <div style="display:flex;align-items:baseline;gap:10px;margin:10px 0 2px">
-        <span style="font-size:34px;line-height:1;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums;letter-spacing:-.02em">{{.Ratio}}%</span>
+        <span style="font-size:34px;line-height:1.14;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums;letter-spacing:-.02em">{{.Ratio}}%</span>
         <span style="font-family:var(--mono);font-size:11px;color:var(--mut)">DAU/MAU</span>
       </div>
       <div style="font-family:var(--mono);font-size:11px;color:var(--mut);margin-bottom:12px">{{.Verdict}}</div>
@@ -1250,8 +1258,8 @@
            created your first goal the only way to add a second disappeared from the UI. It
            now renders whenever the store is available, under whatever goals you already have. -->
       <div class="exrow" style="margin-bottom:0">
-        <input id="gName" autocomplete="off" placeholder="goal name (e.g. Signed up)">
-        <input id="gValue" autocomplete="off" placeholder="event name, or /path* glob">
+        <input id="gName" autocomplete="off" placeholder="goal name (e.g. Signed up)" aria-label="goal name">
+        <input id="gValue" autocomplete="off" placeholder="event name, or /path* glob" aria-label="goal event name or path glob">
         <button id="gCreate">Create goal</button>
       </div>
       <!-- gNote is where the create handler writes validation and server errors, so it must
@@ -1265,12 +1273,12 @@
 
     <div class="pane wide" id="pane-retention" style="order:510" data-stratum="return">
       <h3>returning users
-        <select id="retDays" class="zonesel" style="margin-left:8px">
+        <select id="retDays" class="zonesel" style="margin-left:8px" aria-label="how many periods of retention to show">
           <option value="7" {{if eq .RetDays 7}}selected{{end}}>7 periods</option>
           <option value="30" {{if eq .RetDays 30}}selected{{end}}>30 periods</option>
           <option value="90" {{if eq .RetDays 90}}selected{{end}}>90 periods</option>
         </select>
-        <select id="retBucket" class="zonesel">
+        <select id="retBucket" class="zonesel" aria-label="retention period length">
           <option value="day" {{if eq .RetBucket "day"}}selected{{end}}>daily</option>
           <option value="week" {{if eq .RetBucket "week"}}selected{{end}}>weekly</option>
           <option value="month" {{if eq .RetBucket "month"}}selected{{end}}>monthly</option>
@@ -1315,8 +1323,8 @@
         <span class="sub">· every flag, who it is on for, and the A/B read behind a measured one · computed by /v1/flags</span></h3>
       <div id="flOut"><div class="exsummary">…</div></div>
       <div class="exrow" style="margin:14px 0 0">
-        <input id="flKey" autocomplete="off" placeholder="flag key (checkout_v2)">
-        <input id="flDesc" autocomplete="off" placeholder="what it does (optional)">
+        <input id="flKey" autocomplete="off" placeholder="flag key (checkout_v2)" aria-label="feature flag key">
+        <input id="flDesc" autocomplete="off" placeholder="what it does (optional)" aria-label="what the feature flag does">
         <select id="flKind" title="a boolean flag is on or off; an A/B flag splits users into two arms">
           <option value="bool">boolean · on or off</option>
           <option value="ab">A/B · control vs treatment, 50/50</option>
@@ -1355,7 +1363,7 @@
     <div class="pane" id="pane-events" style="order:820" data-stratum="raw">
       <h3>event stream <span class="sub">· latest 200 · computed by /v1/events/recent</span></h3>
       <div class="exrow" style="margin-bottom:8px">
-        <input id="evFilter" autocomplete="off" placeholder="filter: event, visitor, path, property…">
+        <input id="evFilter" autocomplete="off" placeholder="filter: event, visitor, path, property…" aria-label="filter the event stream">
       </div>
       <div id="evTable" class="live"><div class="livemuted">loading…</div></div>
       <div class="exsummary" style="margin-top:8px">latest 200 events · click a visitor to open their journey · computed by /v1/events/recent</div>
@@ -1369,22 +1377,22 @@
     <div class="ptool">
       <h3>explore · run any report on your own events</h3>
       <div class="exrow">
-        <select id="exType">
+        <select id="exType" aria-label="report type to explore">
           <option value="funnel">Funnel</option><option value="trend">Trend</option>
           <option value="breakdown">Breakdown</option><option value="retention">Retention</option>
           <option value="paths">Paths</option><option value="lifecycle">Lifecycle</option>
           <option value="stickiness">Stickiness</option><option value="groups">Accounts</option>
         </select>
-        <input id="exA" list="exEvents" autocomplete="off" placeholder="signup,activate,checkout">
+        <input id="exA" list="exEvents" autocomplete="off" placeholder="signup,activate,checkout" aria-label="first report input">
         <input id="exB" autocomplete="off" placeholder="property" style="display:none">
         <button id="exRun">Run</button>
         <button id="exSave" class="btn2">Pin to board</button>
       </div>
       <div class="exrow">
         <select id="exCohort" title="scope to a cohort"><option value="">all users</option></select>
-        <input id="exFprop" list="exEvents" autocomplete="off" placeholder="filter property (optional)">
-        <select id="exFop"><option value="eq">=</option><option value="neq">≠</option><option value="contains">contains</option><option value="gt">&gt;</option><option value="lt">&lt;</option></select>
-        <input id="exFval" autocomplete="off" placeholder="value">
+        <input id="exFprop" list="exEvents" autocomplete="off" placeholder="filter property (optional)" aria-label="filter property">
+        <select id="exFop" aria-label="filter comparison operator"><option value="eq">=</option><option value="neq">≠</option><option value="contains">contains</option><option value="gt">&gt;</option><option value="lt">&lt;</option></select>
+        <input id="exFval" autocomplete="off" placeholder="value" aria-label="filter value">
       </div>
       <datalist id="exEvents"></datalist>
       <div id="exOut" class="exout"></div>
@@ -1392,9 +1400,9 @@
     <div class="ptool">
       <h3>cohorts · define a user group once, reuse anywhere</h3>
       <div class="exrow">
-        <input id="coName" autocomplete="off" placeholder="cohort name (e.g. Paying users)">
-        <input id="coEvents" list="exEvents" autocomplete="off" placeholder="events, comma-separated">
-        <select id="coMatch"><option value="any">did any</option><option value="all">did all</option></select>
+        <input id="coName" autocomplete="off" placeholder="cohort name (e.g. Paying users)" aria-label="cohort name">
+        <input id="coEvents" list="exEvents" autocomplete="off" placeholder="events, comma-separated" aria-label="cohort events">
+        <select id="coMatch" aria-label="how the cohort's event conditions combine"><option value="any">did any</option><option value="all">did all</option></select>
         <button id="coCreate">Create</button>
       </div>
       <div id="coList" class="saved"><div class="exsummary">no cohorts yet. a cohort is a named set of people defined by what they did (say, everyone who fired checkout). save one and it appears as a chip in explore above, scoping any report to just those people.</div></div>
@@ -1402,13 +1410,13 @@
     <div class="ptool">
       <h3>defined events · name a business event from captured clicks, retroactive, no code</h3>
       <div class="exrow">
-        <input id="deName" autocomplete="off" placeholder="event name (e.g. checkout)">
+        <input id="deName" autocomplete="off" placeholder="event name (e.g. checkout)" aria-label="defined event name">
         <span class="exsummary">=</span>
-        <select id="deEvent"><option value="$click">$click</option><option value="$pageview">$pageview</option><option value="$form_submit">$form_submit</option></select>
+        <select id="deEvent" aria-label="source event for the defined event"><option value="$click">$click</option><option value="$pageview">$pageview</option><option value="$form_submit">$form_submit</option></select>
         <span class="exsummary">where</span>
-        <select id="deField"><option value="text">text</option><option value="path">path</option><option value="id">id</option><option value="href">href</option><option value="classes">classes</option></select>
-        <select id="deOp"><option value="contains">contains</option><option value="equals">equals</option><option value="prefix">starts with</option></select>
-        <input id="deValue" autocomplete="off" placeholder="value (e.g. Buy now)">
+        <select id="deField" aria-label="which field of the event to match on"><option value="text">text</option><option value="path">path</option><option value="id">id</option><option value="href">href</option><option value="classes">classes</option></select>
+        <select id="deOp" aria-label="how to compare the field"><option value="contains">contains</option><option value="equals">equals</option><option value="prefix">starts with</option></select>
+        <input id="deValue" autocomplete="off" placeholder="value (e.g. Buy now)" aria-label="value to match">
         <button id="deCreate">Create</button>
       </div>
       <div id="deList" class="saved"><div class="exsummary">no defined events yet. a defined event names a pattern already in your autocaptured stream (a $click whose text contains "Buy now", say) so you can chart, funnel and filter it without shipping a single line of new tracking code.</div></div>
