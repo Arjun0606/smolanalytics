@@ -187,7 +187,7 @@
   .kpi .kk{font-family:var(--mono);font-size:11px;letter-spacing:.02em;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:capitalize}
   .kpi .kv{font-family:var(--mono);font-size:27px;font-weight:600;letter-spacing:-.02em;margin-top:7px;line-height:1;color:var(--fg)}
   .kpi .kv.acc{color:var(--accent)}
-  .kpi .kd{font-size:11px;margin-top:8px;color:var(--mut);white-space:nowrap}
+  .kpi .kd{font-size:11px;margin-top:8px;color:var(--mut);white-space:nowrap;padding-right:80px;overflow:hidden;text-overflow:ellipsis}
   .kpi .kd.up{color:var(--ok)} .kpi .kd.down{color:var(--warn)}
   .kpi .kd .kvp{color:var(--dis)}
   .kpi .spark{position:absolute;right:12px;bottom:13px;width:64px;height:26px;opacity:.85;pointer-events:none}
@@ -223,6 +223,20 @@
   .bars .bar{flex:2;background:linear-gradient(180deg,var(--accent-bar) 0%,var(--accent-bar-lo) 100%);min-height:2px;border-radius:3px 3px 0 0;transition:background var(--t-fast) var(--ease),filter var(--t-fast) var(--ease)}
   .bars .ghost{flex:1;background:var(--ghost);min-height:1px;border-radius:3px 3px 0 0;opacity:.45}
   /* the tallest bar carries a top edge so the peak reads at a glance, not only via its label */
+  /* ---- data-in motion --------------------------------------------------------------
+     Nothing here loops or draws attention on its own. Bars grow, lines draw themselves,
+     numbers count once. The point is that the page reads as computed-just-now rather than
+     printed, which is the one thing a static dashboard cannot say. The global
+     prefers-reduced-motion guard above collapses all of these to instant. */
+  @keyframes bargrow{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+  @keyframes sparkdraw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
+  @keyframes panein{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .bars .bar,.bars .ghost{transform-origin:bottom;animation:bargrow 520ms var(--ease-out) both;animation-delay:var(--bd,0ms)}
+  .spark polyline{stroke-dasharray:1;animation:sparkdraw 900ms var(--ease-out) both;animation-delay:var(--sd,120ms)}
+  .spark polygon{animation:fadein 700ms var(--ease) both;animation-delay:var(--sd,120ms)}
+  .deck>.pane{animation:panein 340ms var(--ease-out) both;animation-delay:var(--pd,0ms)}
+  /* a paying customer's live pill should feel live; everything else stays still */
+  .livepill.on .dot{animation:pulse 1.6s infinite}
   .bars .col.pk .bar{box-shadow:inset 0 2px 0 0 #FFC259}
   /* in-progress bucket: hatched, so a half-finished day never reads as a collapse */
   .bars .col.part .bar{background:repeating-linear-gradient(135deg,var(--accent-bar) 0 4px,var(--accent-bar-lo) 4px 8px);opacity:.8}
@@ -876,7 +890,7 @@
       <div class="kk">{{.Label}}</div>
       <div class="kv{{if .Accent}} acc{{end}}">{{.Value}}</div>
       {{if .Delta}}<div class="kd {{.Dir}}">{{if eq .Dir "up"}}&#9650;{{else if eq .Dir "down"}}&#9660;{{end}} {{.Delta}} <span class="kvp">vs prior</span></div>{{else}}<div class="kd"><span class="kvp">&nbsp;</span></div>{{end}}
-      {{with .Spark}}<svg class="spark" viewBox="0 0 64 26" fill="none" preserveAspectRatio="none" aria-hidden="true"><polygon points="{{.Area}}" fill="var(--accent)" opacity=".12"/><polyline points="{{.Line}}" stroke="var(--spark)" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/>{{if .EndClass}}<circle cx="{{.EndX}}" cy="{{.EndY}}" r="2" class="spend {{.EndClass}}"/>{{end}}</svg>{{end}}
+      {{with .Spark}}<svg class="spark" viewBox="0 0 64 26" fill="none" preserveAspectRatio="none" aria-hidden="true"><polygon points="{{.Area}}" fill="var(--accent)" opacity=".12"/><polyline pathLength="1" points="{{.Line}}" stroke="var(--spark)" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/>{{if .EndClass}}<circle cx="{{.EndX}}" cy="{{.EndY}}" r="2" class="spend {{.EndClass}}"/>{{end}}</svg>{{end}}
     </div>{{end}}
     {{if .HasEngagement}}
     <!-- engagement: only ever rendered when $engagement events exist, because both
@@ -884,14 +898,14 @@
     <div class="kpi">
       <div class="kk">Bounce rate · {{.RangeLabel}}</div>
       <div class="kv">{{.BouncePct}}%</div>
-      <div class="kd"><span class="kvp">one pageview, under 10s engaged</span></div>
-      {{with .SparkBounce}}<svg class="spark" viewBox="0 0 64 26" fill="none" preserveAspectRatio="none" aria-hidden="true"><polygon points="{{.Area}}" fill="var(--accent)" opacity=".12"/><polyline points="{{.Line}}" stroke="var(--spark)" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>{{end}}
+      <div class="kd"><span class="kvp">1 pageview, &lt;10s</span></div>
+      {{with .SparkBounce}}<svg class="spark" viewBox="0 0 64 26" fill="none" preserveAspectRatio="none" aria-hidden="true"><polygon points="{{.Area}}" fill="var(--accent)" opacity=".12"/><polyline pathLength="1" points="{{.Line}}" stroke="var(--spark)" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>{{end}}
     </div>
     <div class="kpi">
       <div class="kk">Avg engaged time · {{.RangeLabel}}</div>
       <div class="kv">{{.EngagedHuman}}</div>
-      <div class="kd"><span class="kvp">visible and focused, per visitor</span></div>
-      {{with .SparkEngaged}}<svg class="spark" viewBox="0 0 64 26" fill="none" preserveAspectRatio="none" aria-hidden="true"><polygon points="{{.Area}}" fill="var(--accent)" opacity=".12"/><polyline points="{{.Line}}" stroke="var(--spark)" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>{{end}}
+      <div class="kd"><span class="kvp">focused, per visitor</span></div>
+      {{with .SparkEngaged}}<svg class="spark" viewBox="0 0 64 26" fill="none" preserveAspectRatio="none" aria-hidden="true"><polygon points="{{.Area}}" fill="var(--accent)" opacity=".12"/><polyline pathLength="1" points="{{.Line}}" stroke="var(--spark)" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>{{end}}
     </div>
     {{else if .HasWeb}}
     <div class="kpi">
@@ -2043,6 +2057,44 @@
     if(el&&pw)el.onclick=function(e){e.preventDefault();pw.open=true;pw.scrollIntoView({behavior:'smooth',block:'start'});};
     var ap=document.getElementById('agentpill'),cs=document.getElementById('connect');
     if(ap&&cs)ap.onclick=function(){cs.open=true;cs.scrollIntoView({behavior:'smooth',block:'center'});};
+
+    // ---- data-in motion: stagger + count-up -------------------------------------------
+    // Bars and panes get their delay here rather than in CSS, because nth-child stagger for
+    // an arbitrary bucket count means 90 hand-written rules that still break at 91.
+    (function(){
+      var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion:reduce)').matches;
+      document.querySelectorAll('.bars .col').forEach(function(c,i){
+        c.style.setProperty('--bd', reduce ? '0ms' : Math.min(i*14, 700)+'ms');
+      });
+      document.querySelectorAll('.deck>.pane').forEach(function(el,i){
+        el.style.setProperty('--pd', reduce ? '0ms' : Math.min(i*35, 600)+'ms');
+      });
+      document.querySelectorAll('.spark').forEach(function(el,i){
+        el.style.setProperty('--sd', reduce ? '0ms' : (140 + i*90)+'ms');
+      });
+      if (reduce) return;
+      // Count-up. The tile MUST end on the exact string the server rendered, so the final
+      // frame writes the original text back verbatim rather than a reformatted number — a
+      // KPI that lands one comma or one percent off is worse than no animation at all.
+      document.querySelectorAll('.kpi .kv').forEach(function(el){
+        var orig = el.textContent;
+        var m = orig.match(/^(\D*?)([\d,]+)(\D*)$/);
+        if (!m) return;                                  // 13m 23s, "not measured yet", etc.
+        var target = parseInt(m[2].replace(/,/g,''), 10);
+        if (!isFinite(target) || target < 2) return;
+        var pre = m[1], post = m[3], t0 = null, DUR = 620;
+        function frame(ts){
+          if (t0 === null) t0 = ts;
+          var k = Math.min(1, (ts - t0) / DUR);
+          var eased = 1 - Math.pow(1 - k, 3);
+          if (k >= 1) { el.textContent = orig; return; }  // exact original, always
+          el.textContent = pre + Math.round(target * eased).toLocaleString('en-US') + post;
+          requestAnimationFrame(frame);
+        }
+        el.textContent = pre + '0' + post;
+        requestAnimationFrame(frame);
+      });
+    })();
 
     // ---- live feed: poll and render newest-first (only fetched when the pane exists)
     var live=document.getElementById('live');
