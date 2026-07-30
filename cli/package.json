@@ -1,6 +1,6 @@
 {
   "name": "smolanalytics",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Wire smolanalytics into your app with one command. Open-source analytics you can ask in plain English, where a CI test proves the dashboard, the API and your editor return the same number.",
   "type": "module",
   "bin": {
