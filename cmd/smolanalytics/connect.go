@@ -29,13 +29,11 @@ type mcpClient struct {
 
 func connect(args []string) {
 	host, key := parseHostKey(args)
-	target := ""
-	for _, a := range args { // the first bare (non-flag) arg is the editor
-		if !strings.HasPrefix(a, "-") {
-			target = a
-			break
-		}
-	}
+	// The first bare arg is the editor — but a flag's VALUE is also bare. Scanning naively
+	// meant `connect --host https://x.fly.dev --key sa_k` read the URL as the editor name,
+	// matched no assistant, and silently configured nothing. That is the documented cloud
+	// command, so for cloud users this subcommand did nothing at all and said so nowhere.
+	target := parseConnectTarget(args)
 
 	bin, err := os.Executable()
 	if err != nil {
@@ -58,7 +56,8 @@ func connect(args []string) {
 	}
 
 	explicit := target != "" && target != "all"
-	wrote := 0
+	wrote, failed := 0, 0
+	var skipped []mcpClient
 
 	for _, c := range mcpClients() {
 		if explicit && !strings.EqualFold(target, c.short) && !strings.EqualFold(target, c.name) {
@@ -67,12 +66,17 @@ func connect(args []string) {
 		if c.path == "" {
 			continue
 		}
-		// on auto-detect, only touch assistants that are actually installed (config dir exists)
+		// on auto-detect, only touch assistants that are actually installed (config dir
+		// exists). SAY when we skip one: silently passing over a client the user is sitting
+		// in front of is why this felt broken — you ran connect, your assistant was not
+		// mentioned at all, and there was nothing to act on.
 		if !explicit && !dirExists(filepath.Dir(c.path)) {
+			skipped = append(skipped, c)
 			continue
 		}
 		if err := mergeMCPConfig(c.path, c.key, entry); err != nil {
-			fmt.Printf("  %s: %v\n", c.name, err)
+			fmt.Printf("  ✗ %s: %v\n", c.name, err)
+			failed++
 			continue
 		}
 		fmt.Printf("  ✓ %s\n      %s\n", c.name, c.path)
@@ -85,8 +89,23 @@ func connect(args []string) {
 		wrote++
 	}
 
+	// Report what we did NOT touch, and exactly how to force it. A config dir only appears
+	// once the app has run at least once, so "not installed" here often means "installed but
+	// never opened", which is a state the user can fix in two seconds if we say so.
+	if len(skipped) > 0 {
+		fmt.Println()
+		fmt.Println("Not configured (no config folder yet, so the app looks uninstalled):")
+		for _, c := range skipped {
+			fmt.Printf("  – %-16s expected %s\n", c.name, c.path)
+		}
+		fmt.Println()
+		fmt.Println("If one of those IS installed, open it once so it creates its config, or force it:")
+		fmt.Printf("  smolanalytics connect --target %s\n", skipped[0].short)
+	}
+
 	if wrote == 0 {
-		fmt.Println("No installed assistant config found. Add this to your MCP config by hand")
+		fmt.Println()
+		fmt.Println("Nothing was configured automatically. Add this by hand")
 		fmt.Println("(most use the \"mcpServers\" key; VS Code uses \"servers\"):")
 		fmt.Println()
 		b, _ := json.MarshalIndent(map[string]any{"mcpServers": map[string]any{"smolanalytics": entry}}, "  ", "  ")
@@ -94,7 +113,14 @@ func connect(args []string) {
 		return
 	}
 	fmt.Println()
-	fmt.Println("Done. Restart the editor, then ask: \"what's my biggest funnel drop-off this week?\"")
+	if failed > 0 {
+		fmt.Printf("%d assistant(s) could not be written. The JSON above can be pasted by hand.\n", failed)
+	}
+	fmt.Println("Done. Now FULLY restart the assistant, not just its window:")
+	fmt.Println("  Claude Desktop  quit with Cmd-Q (closing the window is not enough), then reopen")
+	fmt.Println("  Cursor/Windsurf reload the window, or restart the app")
+	fmt.Println()
+	fmt.Println("Then ask: \"what's my biggest funnel drop-off this week?\"")
 }
 
 // mcpClients lists every assistant we can auto-configure, with OS-specific config paths.
@@ -168,4 +194,38 @@ func addClaudeCode(bin, data, host, key string) bool {
 func dirExists(p string) bool {
 	fi, err := os.Stat(p)
 	return err == nil && fi.IsDir()
+}
+
+// flagTakesValue reports whether a connect flag consumes the following argument, so the
+// editor-name scan does not mistake a flag's value for an assistant name.
+func flagTakesValue(flag string) bool {
+	switch strings.TrimLeft(flag, "-") {
+	case "host", "key", "target", "data":
+		return true
+	}
+	return false
+}
+
+// parseConnectTarget picks the editor name out of the args, skipping any flag values.
+//
+// It used to be an inline loop taking the first argument without a leading "-". A flag's
+// value is also bare, so `connect --host https://x.fly.dev --key sa_k` read the URL as the
+// editor, matched nothing, and configured nothing while printing no error.
+func parseConnectTarget(args []string) string {
+	skipNext := false
+	for _, a := range args {
+		if skipNext {
+			skipNext = false
+			continue
+		}
+		if strings.HasPrefix(a, "-") {
+			// --flag=value carries its own value; --flag consumes the next argument
+			if !strings.Contains(a, "=") && flagTakesValue(a) {
+				skipNext = true
+			}
+			continue
+		}
+		return a
+	}
+	return ""
 }
