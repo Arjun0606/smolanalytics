@@ -268,8 +268,16 @@ type dashVM struct {
 	// range + click-to-filter state: one global window and one global filter set that
 	// EVERY zone inherits, exactly like the site selector. All state lives in the
 	// querystring so every filtered view is a shareable, server-renderable URL.
-	RangeDays      int
-	RangeLabel     string // "24h" | "7d" | ... — the ONE name for the window
+	RangeDays  int
+	RangeLabel string // "24h" | "7d" | ... — the ONE name for the window
+	// View routes the deck, from ?zone= (?view= is already the web/product tab).
+	// Empty/"overview" shows the glance only; a stratum key shows that one section;
+	// "all" restores the original single continuous document.
+	//
+	// The rail used to be a MAP over one 21-report scroll. A real user's verdict on that was
+	// that it is "cluttered and visually overwhelming", and no comparable product puts 21
+	// reports on a single page. So the rail is a ROUTER now, and the default is the glance.
+	View           string
 	Ranges         []rangeVM
 	Chips          []chipVM
 	VisitorsDelta  string // vs the prior equal window; "" when unknowable
@@ -851,6 +859,15 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	// range control: ?days=7|30|90 presets, or ?from=YYYY-MM-DD&to=YYYY-MM-DD for
 	// arbitrary time travel — every windowed zone below recomputes over the window,
 	// and it lives in the querystring so any past view is a shareable URL
+	// ?view= already selects the web/product tab, so the deck router gets its own param.
+	// They are independent: you can be on the product tab AND looking at one zone.
+	zone := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("zone")))
+	switch zone {
+	case "", "overview", "all", "convert", "acquire", "behave", "return", "ship", "agent", "raw":
+	default:
+		zone = "" // an unknown zone falls back to the glance rather than an empty page
+	}
+
 	rangeDays := 30
 	switch r.URL.Query().Get("days") {
 	case "1":
@@ -1175,6 +1192,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		ReportQS:       reportQ.Encode(),
 		RangeDays:      rangeDays,
 		RangeLabel:     rangeWindowLabel(rangeDays, rangeHours),
+		View:           zone,
 		GhostTotal:     trPrior.Total,
 		FunnelOrder:    string(forder),
 		RetDays:        rdays,

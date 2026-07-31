@@ -235,6 +235,31 @@
     text-decoration:none;transition:top var(--t-base) var(--ease)}
   .skiplink:focus{top:8px}
   h1.logo{margin:0;font-size:15px}
+  /* ---- deck router ------------------------------------------------------------------
+     21 reports on one scroll was the single biggest complaint: "cluttered and visually
+     overwhelming". No comparable product does that. The rail is a router now and the
+     default is the glance: verdict, KPIs, chart. Everything else is one click away, and
+     zone=all restores the original continuous document for anyone who preferred it.
+
+     Routing by attribute rather than by rendering less keeps the change small and keeps
+     the client-built rail index able to see every zone, so navigation never loses an
+     entry just because it is not the current one. */
+  body[data-zone="overview"] .deck > .stratum,
+  body[data-zone="overview"] .deck > .pane { display: none; }
+  body[data-zone="convert"] .deck > :not([data-stratum="convert"]),
+  body[data-zone="acquire"] .deck > :not([data-stratum="acquire"]),
+  body[data-zone="behave"]  .deck > :not([data-stratum="behave"]),
+  body[data-zone="return"]  .deck > :not([data-stratum="return"]),
+  body[data-zone="ship"]    .deck > :not([data-stratum="ship"]),
+  body[data-zone="agent"]   .deck > :not([data-stratum="agent"]),
+  body[data-zone="raw"]     .deck > :not([data-stratum="raw"]) { display: none; }
+  /* the zone switcher itself */
+  .zonebar{display:flex;flex-wrap:wrap;gap:4px;margin:0 0 14px}
+  .zonebtn{font-family:var(--mono);font-size:11px;color:var(--mut);text-decoration:none;
+    padding:5px 9px;border:1px solid var(--line);border-radius:var(--r-ctl);white-space:nowrap;
+    transition:border-color var(--t-fast) var(--ease),color var(--t-fast) var(--ease)}
+  .zonebtn:hover{color:var(--fg);border-color:var(--line3)}
+  .zonebtn.on{color:var(--bg);background:var(--accent);border-color:var(--accent);font-weight:700}
   @keyframes bargrow{from{transform:scaleY(0)}to{transform:scaleY(1)}}
   @keyframes sparkdraw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
   @keyframes panein{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
@@ -773,7 +798,7 @@
 
 </style>
 </head>
-<body>
+<body data-zone="{{if .View}}{{.View}}{{else}}overview{{end}}">
 <a class="skiplink" href="#sa-top">skip to your dashboard</a>
 <!-- ═══ THE SHELL ═══
      A fixed rail and a fixed topbar. The rail is a MAP, NOT A ROUTER: the content column
@@ -1009,6 +1034,7 @@
        index of its own cards, filled in by saBuildDeckIndex from what actually rendered. -->
   <nav class="deckjump" id="deckjump" aria-label="jump to a section"></nav>
 
+  <nav class="zonebar" id="zonebar" aria-label="dashboard sections"></nav>
   <div class="deck">
 
     <!-- SECTION HEADINGS. They are grid SIBLINGS of the cards, never wrappers: every pane
@@ -2075,6 +2101,39 @@
     var ap=document.getElementById('agentpill'),cs=document.getElementById('connect');
     if(ap&&cs)ap.onclick=function(){cs.open=true;cs.scrollIntoView({behavior:'smooth',block:'center'});};
 
+
+    // ---- zone switcher ------------------------------------------------------------------
+    // Built from the strata that actually rendered, so it can never offer an empty zone.
+    // Preserves every other query param, because the window, filters, site and tab must
+    // survive a zone change: switching section should never silently reset your scope.
+    (function(){
+      var deck=document.querySelector('.deck'); if(!deck)return;
+      var host=document.getElementById('zonebar'); if(!host)return;
+      var current=document.body.getAttribute('data-zone')||'overview';
+      var zones=[{k:'overview',label:'overview'}];
+      // sort by the deck's own CSS order, not DOM order: the sections are laid out with
+      // `order:` so the markup sequence is not the reading sequence, and a switcher that
+      // lists "agent" before "conversion" contradicts the page underneath it.
+      var found=[];
+      Array.prototype.forEach.call(deck.querySelectorAll('.stratum'),function(h){
+        var k=h.getAttribute('data-stratum'); if(!k)return;
+        var o=parseInt(h.style.order,10); if(isNaN(o))o=9999;
+        found.push({k:k,label:h.getAttribute('data-short')||k,order:o});
+      });
+      found.sort(function(a,b){return a.order-b.order});
+      zones=zones.concat(found);
+      zones.push({k:'all',label:'everything'});
+      var html='';
+      zones.forEach(function(z){
+        var q=new URLSearchParams(location.search);
+        if(z.k==='overview')q.delete('zone'); else q.set('zone',z.k);
+        q.delete('_'); // never carry a cache-buster into a shared link
+        var href='/'+(q.toString()?'?'+q.toString():'');
+        html+='<a class="zonebtn'+(z.k===current?' on':'')+'" href="'+href+'"'+
+              (z.k===current?' aria-current="page"':'')+'>'+z.label+'</a>';
+      });
+      host.innerHTML=html;
+    })();
     // ---- data-in motion: stagger + count-up -------------------------------------------
     // Bars and panes get their delay here rather than in CSS, because nth-child stagger for
     // an arbitrary bucket count means 90 hand-written rules that still break at 91.
