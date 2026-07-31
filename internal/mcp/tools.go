@@ -59,6 +59,10 @@ var toolList = []map[string]any{
 				"type":        "string",
 				"description": "Optional property to segment the funnel by (from the user's first step). Returns one funnel per value, e.g. breakdown \"source\" gives conversion by acquisition channel.",
 			},
+			"breakdown_limit": map[string]any{
+				"type":        "number",
+				"description": "Max breakdown segments returned, largest first (default 10); when segments are cut, omitted_segments says how many.",
+			},
 			"order": map[string]any{
 				"type":        "string",
 				"enum":        []string{"ordered", "strict", "unordered"},
@@ -132,7 +136,7 @@ var toolList = []map[string]any{
 	},
 	{
 		"name":        "web_overview",
-		"description": "The web-analytics view: unique visitors, pageviews, LIVE visitors right now, top pages, referrers (grouped by host), UTM sources, and device split — from autocaptured $pageview events. Use for 'how's traffic', 'where do visitors come from', 'top pages', 'how many people are on the site right now'.",
+		"description": "The web-analytics view: unique visitors, pageviews, LIVE visitors right now, top pages, entry pages (where visits start), exit pages (where visits END — the page-level drop-off answer), referrers (grouped by host), UTM sources, and device split — from autocaptured $pageview events. Use for 'how's traffic', 'where do visitors come from', 'top pages', 'which page loses the most visitors', 'how many people are on the site right now'.",
 		"inputSchema": obj(map[string]any{
 			"days":    map[string]any{"type": "number", "description": "Trailing window in days (default 30)."},
 			"filters": filtersSchema,
@@ -169,9 +173,9 @@ var toolList = []map[string]any{
 	},
 	{
 		"name":        "paths",
-		"description": "User flows: after a start event, what do users do next (ranked at each step), over any window (days=7, from/to, or omit for all time)? Use for 'what do users do after signup', 'where do users go from the pricing page', 'common paths after X'.",
+		"description": "User flows: after a start event, what do users do next (ranked at each step), over any window (days=7, from/to, or omit for all time)? Start with a page path (\"/pricing\") instead of an event name to follow page-to-page NAVIGATION — pageview paths only, autocapture noise excluded, reloads collapsed. Use for 'what do users do after signup', 'where do users go from the pricing page', 'common paths after X'.",
 		"inputSchema": obj(map[string]any{
-			"start":   map[string]any{"type": "string", "description": "The event to start the flow from, e.g. \"signup\"."},
+			"start":   map[string]any{"type": "string", "description": "The event to start the flow from, e.g. \"signup\" — or a page path beginning with \"/\" (e.g. \"/pricing\") to follow page-to-page navigation instead."},
 			"depth":   map[string]any{"type": "number", "description": "How many steps to follow (default 3)."},
 			"days":    map[string]any{"type": "number", "description": "Rolling window in days ending now. Omit for all time."},
 			"hours":   map[string]any{"type": "number", "description": "Rolling window in hours ending now."},

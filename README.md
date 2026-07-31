@@ -84,6 +84,14 @@ Your model gets **79 tools and 14 built-in prompts**, and it runs the whole prod
 ```
 
 Claude Code, HTTP: `claude mcp add --transport http smolanalytics http://localhost:8080/mcp`. Any MCP client works (stdio + Streamable HTTP). When a **read** key is set, add `"headers": { "Authorization": "Bearer YOUR_KEY" }`.
+
+Testing the endpoint by hand? Streamable HTTP requires an `Accept` header naming both content types, or the request is rejected:
+
+```sh
+curl -X POST http://localhost:8080/mcp -H "Authorization: Bearer YOUR_KEY" \
+  -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+```
 </details>
 
 There is also a built-in **dashboard ask bar** (zero setup, no code lookup) for quick data questions like _"visitors to /pricing"_ or _"where do people drop off?"_.

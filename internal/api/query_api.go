@@ -583,11 +583,13 @@ func (s *Server) apiStickiness(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, engagement.ComputeStickiness(evs, time.Time{}))
 }
 
-// GET /v1/paths?start=signup&depth=3&filters=... — what users do after an event
+// GET /v1/paths?start=signup&depth=3&filters=... — what users do after an event.
+// A "/"-prefixed start (?start=/pricing) follows page-to-page navigation instead,
+// same contract as the MCP paths tool.
 func (s *Server) apiPaths(w http.ResponseWriter, r *http.Request) {
 	start := r.URL.Query().Get("start")
 	if start == "" {
-		writeErr(w, http.StatusBadRequest, "start event is required")
+		writeErr(w, http.StatusBadRequest, "start is required: an event name, or a page path beginning with \"/\" (e.g. /pricing) to follow page-to-page navigation")
 		return
 	}
 	depth := 3
@@ -610,6 +612,10 @@ func (s *Server) apiPaths(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	evs = scopeToWindow(evs, from, to)
+	if strings.HasPrefix(start, "/") {
+		writeJSON(w, http.StatusOK, paths.Pages(evs, start, depth))
+		return
+	}
 	writeJSON(w, http.StatusOK, paths.After(evs, start, depth))
 }
 

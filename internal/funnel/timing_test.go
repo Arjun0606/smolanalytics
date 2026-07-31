@@ -44,3 +44,31 @@ func TestFunnel_NoConvertersNoTiming(t *testing.T) {
 		t.Errorf("no full conversion should give zero timing, got Converted=%d Median=%v", r.Converted, r.MedianConvSecs)
 	}
 }
+
+func TestTimingNoteOnLowSamples(t *testing.T) {
+	t0 := time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC)
+	ev := func(u, name string, off time.Duration) event.Event {
+		return event.Event{Name: name, DistinctID: u, Timestamp: t0.Add(off)}
+	}
+	steps := []Step{{"signup"}, {"checkout"}}
+
+	// one converter: the "median" is one person's timing — the payload must say so
+	one := []event.Event{ev("A", "signup", 0), ev("A", "checkout", time.Hour)}
+	if r := Compute(one, steps, 0); r.TimingNote == "" {
+		t.Fatal("1 converter must carry a timing_note")
+	}
+
+	// five converters: a real (if small) distribution — no nagging
+	var five []event.Event
+	for _, u := range []string{"A", "B", "C", "D", "E"} {
+		five = append(five, ev(u, "signup", 0), ev(u, "checkout", time.Hour))
+	}
+	if r := Compute(five, steps, 0); r.TimingNote != "" {
+		t.Fatalf("5 converters should have no timing_note, got %q", r.TimingNote)
+	}
+
+	// zero converters: no timing at all, so no note either
+	if r := Compute([]event.Event{ev("A", "signup", 0)}, steps, 0); r.TimingNote != "" {
+		t.Fatalf("0 converters should have no timing_note, got %q", r.TimingNote)
+	}
+}

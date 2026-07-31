@@ -81,3 +81,76 @@ func After(events []event.Event, start string, depth int) Result {
 	}
 	return res
 }
+
+// Pages follows page-to-page navigation instead of event-to-event flow: anchored at
+// each user's first $pageview of startPath, the levels rank the PATHS of the pageviews
+// that follow (Step.Event holds the path). Autocaptured $click/$engagement noise never
+// enters, so the answer is "where do visitors go next", not "what did the SDK record
+// next". Consecutive repeat pageviews of the same path collapse into one — a reload is
+// not a navigation.
+func Pages(events []event.Event, startPath string, depth int) Result {
+	if depth < 1 {
+		depth = 3
+	}
+	byUser := map[string][]event.Event{}
+	for _, e := range events {
+		if e.Name != "$pageview" {
+			continue
+		}
+		if p, _ := e.Properties["path"].(string); p == "" {
+			continue
+		}
+		byUser[e.DistinctID] = append(byUser[e.DistinctID], e)
+	}
+
+	levelCounts := make([]map[string]int, depth)
+	for i := range levelCounts {
+		levelCounts[i] = map[string]int{}
+	}
+	users := 0
+
+	for _, evs := range byUser {
+		sort.SliceStable(evs, func(i, j int) bool { return evs[i].Timestamp.Before(evs[j].Timestamp) })
+		startIdx := -1
+		for i, e := range evs {
+			if p, _ := e.Properties["path"].(string); p == startPath {
+				startIdx = i
+				break
+			}
+		}
+		if startIdx < 0 {
+			continue
+		}
+		users++
+		prev := startPath
+		d := 0
+		for _, e := range evs[startIdx+1:] {
+			if d >= depth {
+				break
+			}
+			p, _ := e.Properties["path"].(string)
+			if p == prev {
+				continue // reload, not a navigation
+			}
+			levelCounts[d][p]++
+			prev = p
+			d++
+		}
+	}
+
+	res := Result{Start: startPath, Users: users}
+	for d := 0; d < depth; d++ {
+		steps := make([]Step, 0, len(levelCounts[d]))
+		for name, c := range levelCounts[d] {
+			steps = append(steps, Step{Event: name, Count: c})
+		}
+		sort.Slice(steps, func(i, j int) bool {
+			if steps[i].Count != steps[j].Count {
+				return steps[i].Count > steps[j].Count
+			}
+			return steps[i].Event < steps[j].Event
+		})
+		res.Levels = append(res.Levels, Level{Depth: d + 1, Steps: steps})
+	}
+	return res
+}

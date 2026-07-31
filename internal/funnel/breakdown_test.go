@@ -42,3 +42,20 @@ func TestComputeBreakdown_SegmentsByStep0Property(t *testing.T) {
 		t.Errorf("twitter: signup=%d checkout=%d, want 2 and 1", tw.Steps[0].Count, tw.Steps[2].Count)
 	}
 }
+
+func TestCapSegments(t *testing.T) {
+	segs := make([]SegmentResult, 12)
+	for i := range segs {
+		segs[i] = SegmentResult{Value: string(rune('a' + i))}
+	}
+	kept, omitted := CapSegments(segs, 10)
+	if len(kept) != 10 || omitted != 2 {
+		t.Fatalf("cap 12→10: kept=%d omitted=%d, want 10/2", len(kept), omitted)
+	}
+	if kept, omitted = CapSegments(segs, 0); len(kept) != 12 || omitted != 0 {
+		t.Fatalf("limit 0 = no cap: kept=%d omitted=%d, want 12/0", len(kept), omitted)
+	}
+	if kept, omitted = CapSegments(segs[:3], 10); len(kept) != 3 || omitted != 0 {
+		t.Fatalf("under the cap nothing is cut: kept=%d omitted=%d, want 3/0", len(kept), omitted)
+	}
+}

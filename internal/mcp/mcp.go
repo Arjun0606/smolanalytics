@@ -291,16 +291,17 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		return jsonText(map[string]any{"events": names})
 	case "funnel":
 		var a struct {
-			Steps       []string            `json:"steps"`
-			WindowHours float64             `json:"window_hours"`
-			Breakdown   string              `json:"breakdown"`
-			Days        float64             `json:"days"`
-			From        string              `json:"from"`
-			To          string              `json:"to"`
-			Filters     FilterSet           `json:"filters"`
-			Order       string              `json:"order"`
-			Exclude     []string            `json:"exclude"`
-			StepFilters []map[string]string `json:"step_filters"`
+			Steps          []string            `json:"steps"`
+			WindowHours    float64             `json:"window_hours"`
+			Breakdown      string              `json:"breakdown"`
+			BreakdownLimit int                 `json:"breakdown_limit"`
+			Days           float64             `json:"days"`
+			From           string              `json:"from"`
+			To             string              `json:"to"`
+			Filters        FilterSet           `json:"filters"`
+			Order          string              `json:"order"`
+			Exclude        []string            `json:"exclude"`
+			StepFilters    []map[string]string `json:"step_filters"`
 		}
 		if err := unmarshalArgs(args, &a); err != nil {
 			return "", err
@@ -337,8 +338,18 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		// breakdown: conversion by a property (segment by the user's first step-0 value) —
 		// same shape as GET /v1/funnel?breakdown=, locked by agreement_test.
 		if a.Breakdown != "" {
-			return jsonText(map[string]any{"steps": a.Steps, "breakdown": a.Breakdown,
-				"segments": funnel.ComputeBreakdown(query.StampFirstTouch(query.ScopeUsers(evs, a.Filters, false), a.Breakdown), steps, window, a.Breakdown)})
+			segs := funnel.ComputeBreakdown(query.StampFirstTouch(query.ScopeUsers(evs, a.Filters, false), a.Breakdown), steps, window, a.Breakdown)
+			limit := a.BreakdownLimit
+			if limit <= 0 {
+				limit = 10 // same default as GET /v1/funnel — surfaces must agree
+			}
+			kept, omitted := funnel.CapSegments(segs, limit)
+			out := map[string]any{"steps": a.Steps, "breakdown": a.Breakdown, "segments": kept}
+			if omitted > 0 {
+				out["omitted_segments"] = omitted
+				out["note"] = fmt.Sprintf("showing the %d largest segments by entry users; %d smaller omitted — raise breakdown_limit to see more", limit, omitted)
+			}
+			return jsonText(out)
 		}
 		order, oerr := funnel.ParseOrder(a.Order)
 		if oerr != nil {
@@ -685,10 +696,22 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 			return "", err
 		}
 		if a.Start == "" {
-			return "", fmt.Errorf("paths needs a start event")
+			known, _ := s.store.Names()
+			sort.Strings(known)
+			hint := ""
+			if len(known) > 0 {
+				hint = " — tracked events: " + strings.Join(known, ", ")
+			}
+			return "", fmt.Errorf("paths needs a start: an event name to follow the event flow, or a page path beginning with \"/\" (e.g. \"/pricing\") to follow page-to-page navigation%s", hint)
 		}
-		if err := s.checkEvents(a.Start); err != nil {
-			return "", err
+		// a "/"-prefixed start is a page path (a path can never collide with an event
+		// name): follow pageview→pageview navigation instead of the raw event flow,
+		// which for web data is autocapture noise ($engagement, $click) at every level.
+		pageMode := strings.HasPrefix(a.Start, "/")
+		if !pageMode {
+			if err := s.checkEvents(a.Start); err != nil {
+				return "", err
+			}
 		}
 		if err := query.Validate(a.Filters); err != nil {
 			return "", err
@@ -706,7 +729,11 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		if pErr != nil {
 			return "", pErr
 		}
-		return jsonText(paths.After(scopeWindow(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters), pFrom, pTo), a.Start, a.Depth))
+		scoped := scopeWindow(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters), pFrom, pTo)
+		if pageMode {
+			return jsonText(paths.Pages(scoped, a.Start, a.Depth))
+		}
+		return jsonText(paths.After(scoped, a.Start, a.Depth))
 	case "heatmap":
 		var a struct {
 			Path     string    `json:"path"`

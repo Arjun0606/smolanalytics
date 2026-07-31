@@ -38,6 +38,7 @@ type Result struct {
 	UTMMediums   []Row   `json:"utm_mediums"`
 	UTMCampaigns []Row   `json:"utm_campaigns"`
 	EntryPages   []Row   `json:"entry_pages"`
+	ExitPages    []Row   `json:"exit_pages"` // last pageview of each session — where visits END
 	TopTitles    []Row   `json:"top_titles"`
 	Hours        [24]int `json:"hours"` // pageviews by UTC hour of day — the activity rhythm
 	// engagement — from $engagement events (SDK measures visible+focused time).
@@ -89,8 +90,10 @@ func ComputeWindow(evs []event.Event, window time.Duration, asof time.Time) Resu
 	pages, refs, utms, devices, aiRefs := map[string]*agg{}, map[string]*agg{}, map[string]*agg{}, map[string]*agg{}, map[string]*agg{}
 	browsers, oses, countries, mediums, campaigns, titles := map[string]*agg{}, map[string]*agg{}, map[string]*agg{}, map[string]*agg{}, map[string]*agg{}, map[string]*agg{}
 	// entry page = the FIRST pageview of each session (fallback: visitor+utc-day when
-	// the SDK predates session_id) — "where do people land" as its own dimension
+	// the SDK predates session_id) — "where do people land" as its own dimension; exit
+	// page = the LAST — "where do visits die", the page-level drop-off answer
 	entryFirst := map[string]event.Event{}
+	exitLast := map[string]event.Event{}
 	firstPV := map[string]event.Event{} // each visitor's earliest pageview (first-touch attribution)
 	var hours [24]int
 	visitors, live, aiVisitors := map[string]bool{}, map[string]bool{}, map[string]bool{}
@@ -143,6 +146,9 @@ func ComputeWindow(evs []event.Event, window time.Duration, asof time.Time) Resu
 		if first, ok := entryFirst[sess]; !ok || e.Timestamp.Before(first.Timestamp) {
 			entryFirst[sess] = e
 		}
+		if last, ok := exitLast[sess]; !ok || e.Timestamp.After(last.Timestamp) {
+			exitLast[sess] = e
+		}
 	}
 	// first-touch attribution: each visitor counted once per acquisition/device
 	// dimension, so every breakdown sums to exactly the visitor total.
@@ -184,6 +190,12 @@ func ComputeWindow(evs []event.Event, window time.Duration, asof time.Time) Resu
 			bump(entries, p, e.DistinctID)
 		}
 	}
+	exits := map[string]*agg{}
+	for _, e := range exitLast {
+		if p, _ := e.Properties["path"].(string); p != "" {
+			bump(exits, p, e.DistinctID)
+		}
+	}
 
 	r := Result{
 		PeriodDays:  days,
@@ -203,6 +215,7 @@ func ComputeWindow(evs []event.Event, window time.Duration, asof time.Time) Resu
 		UTMMediums:   rank(mediums, 10),
 		UTMCampaigns: rank(campaigns, 10),
 		EntryPages:   rank(entries, 10),
+		ExitPages:    rank(exits, 10),
 		TopTitles:    rank(titles, 10),
 		Hours:        hours,
 	}

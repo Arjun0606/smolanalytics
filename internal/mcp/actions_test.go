@@ -156,3 +156,25 @@ func TestActionsWithoutStoresExplain(t *testing.T) {
 		t.Fatalf("bare mode must explain how to enable actions, got %v", err)
 	}
 }
+
+func TestSaveReportCoercesParams(t *testing.T) {
+	s := actionServer(t)
+
+	// the funnel tool takes steps as an ARRAY — saving the same question must too
+	out, err := callAct(t, s, "save_report",
+		`{"name":"Landing drop-off","type":"funnel","params":{"steps":["$pageview","$pageview"],"window_hours":24,"strict":true}}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `"steps":"$pageview,$pageview"`) {
+		t.Fatalf("array steps should be stored comma-joined: %s", out)
+	}
+	if !strings.Contains(out, `"window_hours":"24"`) || !strings.Contains(out, `"strict":"true"`) {
+		t.Fatalf("numbers and bools should coerce to their natural strings: %s", out)
+	}
+
+	// an object has no string form — a clear error, never a "%v" mangle stored forever
+	if _, err := callAct(t, s, "save_report", `{"name":"bad","type":"funnel","params":{"steps":{"a":1}}}`); err == nil {
+		t.Fatal("object param must be rejected")
+	}
+}

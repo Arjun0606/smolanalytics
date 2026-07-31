@@ -43,6 +43,10 @@ type Result struct {
 	P25ConvSecs float64 `json:"p25_conversion_secs"`
 	P75ConvSecs float64 `json:"p75_conversion_secs"`
 	P90ConvSecs float64 `json:"p90_conversion_secs"`
+	// under 5 converters the percentiles above are one or two people's timings, and a
+	// median of 140719s from n=1 reads as a distribution when it's an anecdote — say so
+	// in the payload itself, the same honesty rule whats_notable applies to findings.
+	TimingNote string `json:"timing_note,omitempty"`
 }
 
 // Compute runs the funnel over events. A user counts toward step i only if they
@@ -126,6 +130,25 @@ func segValue(v any) string {
 		return s
 	}
 	return fmt.Sprintf("%v", v)
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
+}
+
+// CapSegments keeps the `limit` largest segments (ComputeBreakdown already sorts by
+// step-0 users descending, ties by value) and reports how many were cut. A noisy
+// breakdown property (path, referrer) yields dozens of n=1 segments; returning them
+// all buries the answer. Both the HTTP handler and the MCP tool cap through this one
+// function with the same default, so the agreement guarantee holds.
+func CapSegments(segs []SegmentResult, limit int) ([]SegmentResult, int) {
+	if limit <= 0 || len(segs) <= limit {
+		return segs, 0
+	}
+	return segs[:limit], len(segs) - limit
 }
 
 // furthestStep returns how many funnel steps a single user completed (0..len), the time
@@ -393,6 +416,9 @@ func finishFromCounts(res *Result, steps []Step, counts []int, convTimes []time.
 			return convTimes[rank].Seconds()
 		}
 		res.P25ConvSecs, res.P75ConvSecs, res.P90ConvSecs = pct(0.25), pct(0.75), pct(0.90)
+		if n < 5 {
+			res.TimingNote = fmt.Sprintf("conversion-time stats are from %d converter%s — treat as anecdote, not a distribution", n, plural(n))
+		}
 	}
 	for i := range res.Steps {
 		res.Steps[i].Count = counts[i]

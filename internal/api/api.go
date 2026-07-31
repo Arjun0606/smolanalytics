@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -891,7 +892,18 @@ func (s *Server) apiFunnel(w http.ResponseWriter, r *http.Request) {
 		for i, st := range steps {
 			names[i] = st.Event
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"steps": names, "breakdown": bd, "segments": funnel.ComputeBreakdown(query.StampFirstTouch(evs, bd), steps, window, bd)})
+		segs := funnel.ComputeBreakdown(query.StampFirstTouch(evs, bd), steps, window, bd)
+		limit := 10 // same default as the MCP funnel tool — surfaces must agree
+		if v, err := strconv.Atoi(q.Get("breakdown_limit")); err == nil && v > 0 {
+			limit = v
+		}
+		kept, omitted := funnel.CapSegments(segs, limit)
+		out := map[string]any{"steps": names, "breakdown": bd, "segments": kept}
+		if omitted > 0 {
+			out["omitted_segments"] = omitted
+			out["note"] = fmt.Sprintf("showing the %d largest segments by entry users; %d smaller omitted — raise breakdown_limit to see more", limit, omitted)
+		}
+		writeJSON(w, http.StatusOK, out)
 		return
 	}
 	writeJSON(w, http.StatusOK, funnel.ComputeOpts(evs, steps, window, opts))

@@ -196,6 +196,8 @@ func TestMCPAPIAgreement(t *testing.T) {
 		{"web overview", "/v1/web?days=30", "web_overview", `{"days":30}`, false},
 		{"lifecycle capped at 180 both sides", "/v1/lifecycle?days=500", "lifecycle", `{"days":500}`, false},
 		{"paths capped at 10 both sides", "/v1/paths?start=signup&depth=50", "paths", `{"start":"signup","depth":50}`, false},
+		// a "/"-prefixed start flips both surfaces into page-to-page navigation mode
+		{"paths page mode", "/v1/paths?start=/pricing", "paths", `{"start":"/pricing"}`, false},
 		{"heatmap", "/v1/heatmap?path=/pricing", "heatmap", `{"path":"/pricing"}`, false},
 		{"heatmap desktop bucket + grid", "/v1/heatmap?path=/pricing&viewport=desktop&cols=20&row_px=40", "heatmap", `{"path":"/pricing","viewport":"desktop","cols":20,"row_px":40}`, false},
 		// agent observability: /v1/agent/* must equal the MCP agent tools byte-for-byte.

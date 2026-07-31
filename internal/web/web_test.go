@@ -140,3 +140,25 @@ func TestNoEngagementNoFabrication(t *testing.T) {
 		t.Fatalf("no engagement data → no fabricated bounce/duration: %+v", r)
 	}
 }
+
+func TestExitPages(t *testing.T) {
+	now := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+	evs := []event.Event{
+		// u1's session: / -> /pricing — the visit DIES on /pricing, not /
+		pv("u1", "/", "", nil, now.Add(-10*time.Minute)),
+		pv("u1", "/pricing", "", nil, now.Add(-9*time.Minute)),
+		// u2 bounces on /docs — entry and exit are the same page
+		pv("u2", "/docs", "", nil, now.Add(-8*time.Minute)),
+	}
+	r := Compute(evs, 7, now)
+	got := map[string]int{}
+	for _, row := range r.ExitPages {
+		got[row.Value] = row.Visitors
+	}
+	if got["/pricing"] != 1 || got["/docs"] != 1 {
+		t.Fatalf("exit_pages = %+v, want /pricing:1 and /docs:1", r.ExitPages)
+	}
+	if _, ok := got["/"]; ok {
+		t.Fatal("/ was only ever an entry — it must not rank as an exit")
+	}
+}

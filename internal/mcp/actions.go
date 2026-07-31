@@ -9,6 +9,7 @@ package mcp
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,6 +22,45 @@ import (
 )
 
 func zeroTime() time.Time { return time.Time{} }
+
+// coerceParams normalizes save_report params to the stored string form: strings pass
+// through, numbers/bools format naturally, arrays of scalars join with commas (the
+// form the saved-report renderer parses). Objects and nested arrays have no string
+// form — those are a clear error, never a silent "%v" mangle.
+func coerceParams(in map[string]any) (map[string]string, error) {
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		s, err := coerceScalar(v)
+		if err == nil {
+			out[k] = s
+			continue
+		}
+		items, ok := v.([]any)
+		if !ok {
+			return nil, fmt.Errorf("param %q must be a string, number, bool, or an array of those", k)
+		}
+		parts := make([]string, len(items))
+		for i, it := range items {
+			if parts[i], err = coerceScalar(it); err != nil {
+				return nil, fmt.Errorf("param %q must be a string, number, bool, or an array of those", k)
+			}
+		}
+		out[k] = strings.Join(parts, ",")
+	}
+	return out, nil
+}
+
+func coerceScalar(v any) (string, error) {
+	switch t := v.(type) {
+	case string:
+		return t, nil
+	case float64: // encoding/json's one number type
+		return strconv.FormatFloat(t, 'f', -1, 64), nil
+	case bool:
+		return strconv.FormatBool(t), nil
+	}
+	return "", fmt.Errorf("not a scalar")
+}
 
 // SetInsights / SetCohorts / SetWebhooks / SetAlerts attach the persistent stores.
 // The API server forwards its own stores here so both surfaces share one source of truth.
@@ -136,13 +176,20 @@ func init() {
 		},
 		map[string]any{
 			"name":        "save_report",
-			"description": "Pin a report to the board at the top of the dashboard (labelled \"pinned · your questions\") so the user sees it on every visit. type: funnel|trend|breakdown|retention. params mirror the matching report tool's arguments as strings, e.g. funnel: {\"steps\":\"signup,activate,checkout\"}; trend: {\"event\":\"signup\"}; breakdown: {\"event\":\"signup\",\"property\":\"source\"}.",
+			"description": "Pin a report to the board at the top of the dashboard (labelled \"pinned · your questions\") so the user sees it on every visit. type: funnel|trend|breakdown|retention. params mirror the matching report tool's arguments — pass them the same way, arrays included: funnel: {\"steps\":[\"signup\",\"activate\",\"checkout\"]} (a \"signup,activate,checkout\" string also works); trend: {\"event\":\"signup\"}; breakdown: {\"event\":\"signup\",\"property\":\"source\"}.",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"name":   map[string]any{"type": "string", "description": "Label shown on the dashboard"},
-					"type":   map[string]any{"type": "string", "enum": []string{"funnel", "trend", "breakdown", "retention"}},
-					"params": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}},
+					"name": map[string]any{"type": "string", "description": "Label shown on the dashboard"},
+					"type": map[string]any{"type": "string", "enum": []string{"funnel", "trend", "breakdown", "retention"}},
+					"params": map[string]any{"type": "object", "additionalProperties": map[string]any{
+						"anyOf": []any{
+							map[string]any{"type": "string"},
+							map[string]any{"type": "number"},
+							map[string]any{"type": "boolean"},
+							map[string]any{"type": "array", "items": map[string]any{"type": []string{"string", "number", "boolean"}}},
+						},
+					}},
 				},
 				"required": []string{"name", "type", "params"},
 			},
@@ -375,9 +422,9 @@ func (s *Server) callAction(name string, args json.RawMessage) (bool, string, er
 			return true, "", fmt.Errorf(noStore, "saved-report")
 		}
 		var p struct {
-			Name   string            `json:"name"`
-			Type   string            `json:"type"`
-			Params map[string]string `json:"params"`
+			Name   string         `json:"name"`
+			Type   string         `json:"type"`
+			Params map[string]any `json:"params"`
 		}
 		if err := unmarshalArgs(args, &p); err != nil {
 			return true, "", err
@@ -387,7 +434,14 @@ func (s *Server) callAction(name string, args json.RawMessage) (bool, string, er
 		default:
 			return true, "", fmt.Errorf("type must be funnel|trend|breakdown|retention, got %q", p.Type)
 		}
-		in, err := s.insights.Save(insights.Insight{Name: p.Name, Type: p.Type, Params: p.Params})
+		// the live report tools take steps as an ARRAY; forcing the saved copy of the
+		// same question into comma-strings made every model relearn the difference the
+		// hard way. Coerce scalars and scalar arrays to the stored string form instead.
+		params, perr := coerceParams(p.Params)
+		if perr != nil {
+			return true, "", perr
+		}
+		in, err := s.insights.Save(insights.Insight{Name: p.Name, Type: p.Type, Params: params})
 		if err != nil {
 			return true, "", err
 		}
