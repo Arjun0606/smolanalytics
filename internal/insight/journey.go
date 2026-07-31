@@ -177,9 +177,9 @@ func segmentBlame(evs []event.Event, from, to string) *Finding {
 				}
 				worst = &Finding{
 					Severity: "warn",
-					Title:    fmt.Sprintf("It's %s=%s: converts worst at %s → %s%s", prop, val, from, to, mult),
-					Detail: qualify(fmt.Sprintf("only %d%% of %s=%s users continue vs %d%% overall (%d of %d). Fix this segment first, it's the biggest lever on the funnel.",
-						int(r*100+0.5), prop, val, int(overall.rate()*100+0.5), seg.converted, seg.entered), seg.entered),
+					Title:    fmt.Sprintf("%s convert worst from %s to %s%s", capFirst(HumanSegment(prop, val)), HumanEventIng(from), HumanEventIng(to), mult),
+					Detail: qualify(fmt.Sprintf("only %d%% of %s continue, against %d%% for everyone (%d of %d). Fixing this group is the biggest single lever on the funnel.",
+						int(r*100+0.5), HumanSegment(prop, val), int(overall.rate()*100+0.5), seg.converted, seg.entered), seg.entered),
 				}
 			}
 		}

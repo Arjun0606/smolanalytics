@@ -70,8 +70,13 @@ func TestSegmentBlame(t *testing.T) {
 	if f == nil {
 		t.Fatal("expected a blame finding for the tiktok segment")
 	}
-	if !strings.Contains(f.Title, "tiktok") || !strings.Contains(f.Title, "source") {
-		t.Fatalf("blame should name source=tiktok: %q", f.Title)
+	// named in human terms now ("Visitors from tiktok"), so the property word is deliberately
+	// gone from the title — assert on the value and on the absence of filter syntax.
+	if !strings.Contains(f.Title, "tiktok") {
+		t.Fatalf("blame should name the tiktok segment: %q", f.Title)
+	}
+	if strings.Contains(f.Title, "source=") {
+		t.Fatalf("blame still reads like a filter: %q", f.Title)
 	}
 
 	// uniform segments → no finding
@@ -117,8 +122,13 @@ func TestSegmentBlameFirstTouch(t *testing.T) {
 	if f == nil {
 		t.Fatal("expected blame on device=mobile, got nil (first-touch stamp not applied?)")
 	}
-	if !strings.Contains(f.Title, "mobile") || !strings.Contains(f.Title, "device") {
-		t.Fatalf("blame should name device=mobile: %q", f.Title)
+	// the group is now named in human terms ("Mobile visitors"), not filter syntax, so the
+	// property word is deliberately absent — assert on what the reader actually sees.
+	if !strings.Contains(strings.ToLower(f.Title), "mobile") {
+		t.Fatalf("blame should name the mobile segment: %q", f.Title)
+	}
+	if strings.Contains(f.Title, "device=") {
+		t.Fatalf("blame still reads like a filter: %q", f.Title)
 	}
 	if !strings.Contains(f.Title, "×") { // the multiplier makes it land
 		t.Fatalf("blame should quantify how much worse: %q", f.Title)

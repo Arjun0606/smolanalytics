@@ -121,9 +121,10 @@ func GenerateForFunnel(evs []event.Event, pageSteps []funnel.Step) []Finding {
 		if worstDrop > 0 {
 			dropoff := Finding{
 				Severity: "warn",
-				Title:    fmt.Sprintf("Biggest drop-off: %s → %s", worstFrom, worstTo),
-				Detail: qualify(fmt.Sprintf("only %d%% continue; %d users fall off here. Overall %s→%s conversion is %d%%.",
-					worstPct, worstDrop, fr.Steps[0].Event, fr.Steps[len(fr.Steps)-1].Event, int(fr.OverallConversion*100+0.5)), worstBase),
+				Title:    fmt.Sprintf("Biggest drop-off: after they %s", HumanStep(worstFrom)),
+				Detail: qualify(fmt.Sprintf("only %d%% go on to %s, so %d people stop here. End to end, %d%% get from %s to %s.",
+					worstPct, HumanEventBase(worstTo), worstDrop, int(fr.OverallConversion*100+0.5),
+					HumanEventIng(fr.Steps[0].Event), HumanEventIng(fr.Steps[len(fr.Steps)-1].Event)), worstBase),
 			}
 			// name the segment to blame — the single most actionable thing on the page
 			// ("it's mobile, 1.6× worse"). When we have it, LEAD with it and let the raw
@@ -169,7 +170,7 @@ func GenerateForFunnel(evs []event.Event, pageSteps []funnel.Step) []Finding {
 		}
 		out = append(out, Finding{
 			Severity: sev,
-			Title:    fmt.Sprintf("%s is %s %d%% week-over-week", head, dir, absInt(change)),
+			Title:    fmt.Sprintf("%s is %s %d%% week-over-week", HumanEventNoun(head), dir, absInt(change)),
 			Detail:   qualify(fmt.Sprintf("%d in the last 7 days vs %d the week before.", last7, prev7), prev7),
 		})
 	}
@@ -254,13 +255,13 @@ func anomalies(evs []event.Event, names []string, now time.Time) []Finding {
 		if dev < 0 {
 			best = Finding{
 				Severity: "warn",
-				Title:    fmt.Sprintf("%s dropped %d%% in the last 24h", n, pct),
+				Title:    fmt.Sprintf("%s dropped %d%% in the last 24h", HumanEventNoun(n), pct),
 				Detail:   fmt.Sprintf("%d in the last 24h vs ~%.0f/day normally, worth a look (tracking down, or a regression?).", s.last24, baseDaily),
 			}
 		} else {
 			best = Finding{
 				Severity: "info",
-				Title:    fmt.Sprintf("%s jumped %d%% in the last 24h", n, pct),
+				Title:    fmt.Sprintf("%s jumped %d%% in the last 24h", HumanEventNoun(n), pct),
 				Detail:   fmt.Sprintf("%d in the last 24h vs ~%.0f/day normally.", s.last24, baseDaily),
 			}
 		}

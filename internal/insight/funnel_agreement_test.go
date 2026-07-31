@@ -56,13 +56,14 @@ func TestGenerateForFunnelDescribesTheSuppliedSteps(t *testing.T) {
 	if dropoff == "" {
 		t.Fatalf("expected a drop-off finding over the supplied funnel; got none")
 	}
-	// the overall-conversion clause must name the supplied funnel's endpoints
-	if !strings.Contains(dropoff, "$pageview") || !strings.Contains(dropoff, "$click") {
+	// The endpoints are now rendered in human terms, so assert on those rather than the raw
+	// names — the finding must still describe the SUPPLIED funnel and no other.
+	if !strings.Contains(dropoff, HumanEventIng("$pageview")) || !strings.Contains(dropoff, HumanEventIng("$click")) {
 		t.Errorf("finding should name the supplied funnel's ends, got: %s", dropoff)
 	}
-	// and must NOT name a step the caller did not ask for
-	if strings.Contains(dropoff, "$deadclick") {
-		t.Errorf("finding names $deadclick, which is not in the supplied funnel: %s", dropoff)
+	// and must NOT describe a step the caller did not ask for
+	if strings.Contains(dropoff, HumanEventIng("$deadclick")) || strings.Contains(dropoff, "$deadclick") {
+		t.Errorf("finding describes $deadclick, which is not in the supplied funnel: %s", dropoff)
 	}
 }
 
