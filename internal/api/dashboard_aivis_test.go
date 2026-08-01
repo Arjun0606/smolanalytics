@@ -101,6 +101,7 @@ func TestAIVisPaneTeachesWhenNeverSampled(t *testing.T) {
 	if !strings.Contains(body, `id="pane-aivis"`) {
 		t.Fatal("pane must render even with no checks — a missing card teaches nothing")
 	}
+	// self-hosted (no cloud url): the runner is theirs to write, so teach the contract
 	for _, want := range []string{"$geo_check", "/v1/events", "model_version", "claude-grounded", "User-Agent", `data-empty="1"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("empty state is missing %q — it has to be enough to actually wire a runner", want)
@@ -218,5 +219,35 @@ func TestAIVisRankIsByMentionsNotDisplayOrder(t *testing.T) {
 	}
 	if !strings.Contains(body, ">#3</div>") {
 		t.Error("expected rank #3 of 3 — the honest position")
+	}
+}
+
+// A hosted customer must never be handed a curl for a job the cloud already does for them.
+// That reads as "this feature is not finished" — which is exactly how it read the first time.
+func TestAIVisManagedInstanceGetsAButtonNotACurl(t *testing.T) {
+	t.Setenv("SMOLANALYTICS_PASSWORD", "op-pass-1234")
+	st := memory.New()
+	s := New(st)
+	// main.go wires this from SMOLANALYTICS_CLOUD_URL; the hosted provisioner points it at
+	// the project's own setup page, which is where the GEO switch lives
+	s.SetCloudURL("https://smolanalytics.com/projects/prj_test/setup")
+	if err := st.Ingest(event.Event{
+		Name: "$pageview", DistinctID: "v1", Timestamp: time.Now().UTC(),
+		Properties: map[string]any{"path": "/"},
+	}); err != nil {
+		t.Fatalf("ingest: %v", err)
+	}
+	body := renderDash(t, s, "op-pass-1234")
+
+	if !strings.Contains(body, "Set up AI visibility") {
+		t.Error("a managed instance must offer the switch, not the protocol")
+	}
+	if !strings.Contains(body, "https://smolanalytics.com/projects/prj_test/setup") {
+		t.Error("the button must point at this project's own setup page")
+	}
+	// the curl may exist behind a disclosure for the curious, but must not be the answer
+	i, j := strings.Index(body, "Set up AI visibility"), strings.Index(body, "curl -X POST")
+	if j >= 0 && j < i {
+		t.Error("the curl appears before the button — the hosted reader meets the protocol first")
 	}
 }

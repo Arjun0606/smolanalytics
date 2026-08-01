@@ -1501,7 +1501,13 @@
         {{if .Ever}}
         <div class="exsummary">this instance has recorded <b>$geo_check</b> events, but none in this window{{if .Scoped}} that match the filters above{{end}}. visibility is sampled on a schedule rather than continuously, so a short window can hold zero checks — <a href="{{.WidenURL}}">widen to 90 days</a>.{{if .Scoped}} a check event carries <b>engine</b>, <b>prompt</b> and <b>rank</b>; it carries no <b>site</b> or <b>path</b>, so a site or page filter excludes every one of them. clear the filters to see them.{{end}}</div>
         {{else}}
-        <div class="exsummary">nothing has sampled the AI engines for this product yet. this card reads <b>$geo_check</b> events — one per answer sampled, from one engine, for one prompt — so it fills in the moment a run posts its results here. that is a plain event, not a second store: it lands in the same log as everything else, which is why this card, <b>/v1/ai-visibility</b> and the <b>ai_visibility</b> MCP tool all read the same rows and can never disagree.</div>
+        {{if .Managed}}
+        <div class="exsummary">Nothing has asked the AI engines about you yet. We run the sampling for you — it just needs turning on, and picking the questions takes one click.</div>
+        <a class="cbtn primary" href="{{.CloudURL}}" target="_blank" rel="noopener" style="margin-top:10px;display:inline-block">Set up AI visibility &rarr;</a>
+        <div class="agmeta" style="margin-top:8px">We read your homepage once to work out your category and competitors, write 25 questions a real buyer would ask, and then ask them daily. You can edit or delete any of them. This card fills in after the first run.</div>
+        {{else}}
+        <div class="exsummary">Nothing has sampled the AI engines for this product yet. You&rsquo;re self-hosting, so the sampling is yours to run: post one <b>$geo_check</b> event per answer you sample and this card reads them — the same rows <b>/v1/ai-visibility</b> and the <b>ai_visibility</b> MCP tool read, so the three can never disagree.</div>
+        <details style="margin-top:8px"><summary class="hlink">the event to post &rarr;</summary>
         <pre class="code" style="font-size:11px;margin:8px 0 0">curl -X POST {{$.Base}}/v1/events \
   -H "Authorization: Bearer {{if $.WriteKey}}{{$.WriteKey}}{{else}}YOUR_WRITE_KEY{{end}}" \
   -H "User-Agent: my-geo-runner/1.0" \
@@ -1514,7 +1520,9 @@
         "competitors":"PostHog, Plausible",
         "verbatim":"open-source analytics you can just ask questions",
         "model_version":"claude-sonnet-4-6"}}'</pre>
-        <div class="agmeta">one POST per sampled answer. <b>rank</b> is the 1-based position among the tools that answer named (0 = named but not ranked), <b>competitors</b> is comma-separated, <b>verbatim</b> is one line of how it described you, and <b>model_version</b> is the exact model id — a quote with no model and date on it is not evidence, so this card will not show one without them. put the mode in the engine name (<b>claude</b> vs <b>claude-grounded</b>) and the two get their own rows, because a model that knows you and a live web search that surfaces you are different claims. sample the same prompt several times a week and let the rates settle: one answer is an anecdote, and this card says so on every bar until the runs add up. <b>send a User-Agent header</b> — $-prefixed events that arrive without one are dropped at ingest as crawler traffic, silently.</div>
+        <div class="agmeta">One POST per sampled answer. <b>rank</b> is the 1-based position among the tools that answer named (0 = named but not ranked), <b>competitors</b> is comma-separated, <b>verbatim</b> is one line of how it described you, and <b>model_version</b> is the exact model id — a quote with no model and date is not evidence. Put the mode in the engine name (<b>claude</b> vs <b>claude-grounded</b>): a model that knows you and a live web search that surfaces you are different claims. Sample each prompt several times a week and let the rates settle. <b>Send a User-Agent header</b> — $-prefixed events arriving without one are dropped at ingest as crawler traffic, silently.</div>
+        </details>
+        {{end}}
         {{end}}
       </div>
       {{end}}
