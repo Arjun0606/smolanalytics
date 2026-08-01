@@ -4,6 +4,12 @@ name: mcp-registry
 on:
   release:
     types: [published]
+  # releases here are created BY release.yml with GITHUB_TOKEN, and GitHub suppresses
+  # workflow-triggering events from token-created releases — so the release trigger
+  # above never fires and the registry listing froze at 0.14.4 for two weeks. Tags are
+  # pushed by a human, so this trigger actually fires.
+  push:
+    tags: ["v*"]
   workflow_dispatch:
 permissions:
   id-token: write
