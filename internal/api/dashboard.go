@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/agent"
+	"github.com/Arjun0606/smolanalytics/internal/aivis"
 	"github.com/Arjun0606/smolanalytics/internal/engagement"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
@@ -214,7 +215,15 @@ type dashVM struct {
 	HasEngagement bool
 	EngagedSecs   int
 	BouncePct     int
-	AIVisitors    int
+	AIVisitors int
+	// AIRefs is which assistants those visitors arrived FROM — the traffic half of the AI
+	// channel. web.Result computed it all along and no surface rendered it until the
+	// AI-visibility card gave it the other half to sit beside.
+	AIRefs []segRow
+	// AIVis is the AI-visibility (GEO) card: what the engines SAY about this product,
+	// aggregated from $geo_check sampling events. It sits beside AIVisitors/AIRefs on
+	// purpose — nobody else holds both halves, so nobody else can put them side by side.
+	AIVis aivisVM
 	// search console (when the operator connected it)
 	HasSearch  bool
 	SearchRows []segRow // query → clicks, bar-scaled
@@ -653,6 +662,58 @@ type pathLevelVM struct {
 	Steps []segRow
 }
 
+// geoWeekBar is one week of the share-of-voice trend, shaped for the .bars/.col chart the
+// rest of the deck already draws with. MentPct/RecPct are ALREADY percentages, so they are
+// the bar heights directly: this chart's y-axis is a fixed 0-100%, never a rescale against
+// the window's max. Nothing here recomputes a rate — every number came out of aivis.
+type geoWeekBar struct {
+	Label   string
+	Tip     string
+	MentPct int
+	RecPct  int
+	// Thin marks a week whose rate rests on too few runs to have settled, or the week
+	// still filling. Drawn with the existing .part hatch: visible, but not readable as a
+	// settled number.
+	Thin bool
+}
+
+// geoVerbatim is how one engine described the product on its newest sampled run. The model
+// id and the run date are not decoration — the same sentence from a different model on a
+// different day is a different fact, and a quote without them is unfalsifiable.
+type geoVerbatim struct {
+	Engine, Text, Model, When, Ago string
+}
+
+// aivisVM is the AI-visibility pane. It EMBEDS aivis.Result — the identical struct
+// /v1/ai-visibility and the MCP ai_visibility tool serialize — so this card cannot drift
+// from the other two surfaces. Every other field is presentation over those same numbers:
+// bar heights, human dates, tooltips. No rate is derived here.
+type aivisVM struct {
+	aivis.Result
+	Weeks     []geoWeekBar
+	Comps     []segRow
+	Verbatims []geoVerbatim
+	// Latest is the newest week, for the headline tiles. A pointer so the template's
+	// {{with}} skips it cleanly when no check landed in the window.
+	Latest      *aivis.WeekPoint
+	LatestLabel string
+	FirstWeek   string
+	LastWeek    string
+	// ShowTrend gates the chart at two weeks. One bar is a reading, not a direction, and
+	// drawing it as a trend is the exact dishonesty the low-sample rule exists to stop.
+	ShowTrend bool
+	// Ever says a $geo_check has EVER been ingested here, read from the store's event NAMES
+	// rather than this window. "nothing yet" and "nothing HERE" are different empty states
+	// with different fixes, and conflating them is how a filtered-out report reads as a
+	// feature nobody ever set up.
+	Ever bool
+	// Scoped means a site/env/filter chip is narrowing the page, so an empty card might
+	// mean the filters excluded the checks rather than that none exist. $geo_check events
+	// carry no site or path, so ANY web-property filter excludes all of them.
+	Scoped   bool
+	WidenURL string // the 90d view of this same page, filters preserved
+}
+
 // buildKPIs assembles the headline metric cards from the already-computed numbers, each
 // with a real trailing-daily sparkline. This is the glance, elevated — the first thing a
 // builder sees, and it should feel effortless: the numbers that matter, moving.
@@ -776,6 +837,116 @@ func buildDepthCards(vm *dashVM, evs []event.Event, fsteps []funnel.Step, trendE
 			vm.HasPaths = len(vm.PathLevels) > 0
 		}
 	}
+}
+
+// buildAIVis renders the AI-visibility card from aivis.Compute over THIS PAGE'S window and
+// filters — the same evs slice, day count and asof web.ComputeWindow gets below — so the
+// card can never quietly answer over a wider range than the toolbar advertises. That
+// covenant is why this pane ships no window control of its own.
+func buildAIVis(vm *dashVM, evs []event.Event, names []string, days int, asof time.Time, scoped bool, widenURL string) {
+	av := aivisVM{
+		Result:   aivis.Compute(evs, days, asof),
+		Ever:     hasName(names, "$geo_check"),
+		Scoped:   scoped,
+		WidenURL: widenURL,
+	}
+	end := asof
+	if end.IsZero() {
+		end = time.Now().UTC()
+	}
+	// the Monday of the bucket still in progress, derived with the SAME expression aivis
+	// buckets by, so "is this the current week" cannot drift from the bucket key itself
+	cw := end.UTC()
+	curWeek := cw.AddDate(0, 0, -((int(cw.Weekday()) + 6) % 7)).Format("2006-01-02")
+
+	label := func(iso string) string {
+		t, err := time.Parse("2006-01-02", iso)
+		if err != nil {
+			return iso
+		}
+		return t.Format("Jan 2")
+	}
+	plural := func(n int) string {
+		if n == 1 {
+			return ""
+		}
+		return "s"
+	}
+	for _, w := range av.Trend {
+		lbl := label(w.WeekStart)
+		// the caveat rides on the bar you are looking at, not in a footnote under the card
+		why := ""
+		switch {
+		case w.WeekStart == curWeek:
+			why = " · week still filling"
+		case w.Runs < 3:
+			why = " · under 3 runs, not settled"
+		}
+		av.Weeks = append(av.Weeks, geoWeekBar{
+			Label:   lbl,
+			MentPct: w.MentionedPct,
+			RecPct:  w.RecommendedPct,
+			Thin:    w.Runs < 3 || w.WeekStart == curWeek,
+			Tip: fmt.Sprintf("wk of %s · %d run%s · mentioned %d · recommended %d",
+				lbl, w.Runs, plural(w.Runs), w.MentionedPct, w.RecommendedPct) + "%" + why,
+		})
+	}
+	if n := len(av.Trend); n > 0 {
+		last := av.Trend[n-1] // copy: av is about to be copied into the vm by value
+		av.Latest = &last
+		av.LatestLabel = label(last.WeekStart)
+		av.FirstWeek, av.LastWeek = label(av.Trend[0].WeekStart), av.LatestLabel
+	}
+	av.ShowTrend = len(av.Weeks) >= 2
+
+	top := 0
+	for _, c := range av.Competitors {
+		if c.Mentions > top {
+			top = c.Mentions
+		}
+	}
+	for i, c := range av.Competitors {
+		if i >= 8 {
+			break
+		}
+		row := segRow{Value: c.Name, Count: c.Mentions}
+		if top > 0 {
+			row.BarPct = int(float64(c.Mentions)/float64(top)*100 + 0.5)
+		}
+		// deliberately NO FilterProp: `competitors` is a property only $geo_check carries,
+		// so drilling on one would filter the whole page down to check events and empty
+		// every other card. A drill that destroys the page is worse than no drill.
+		av.Comps = append(av.Comps, row)
+	}
+
+	for _, e := range av.Engines {
+		if e.LatestVerbatim == "" {
+			continue
+		}
+		v := geoVerbatim{Engine: e.Engine, Text: e.LatestVerbatim, Model: e.LatestModel}
+		if v.Model == "" {
+			v.Model = "model id not sent"
+		}
+		if t, err := time.Parse(time.RFC3339, e.LatestAt); err == nil {
+			v.When = t.UTC().Format("Jan 2, 15:04 MST")
+			// a custom range ending in the past makes "now minus then" negative; clamp
+			// rather than print "-14d ago" on a perfectly valid time-travelled view
+			d := end.Sub(t)
+			if d < 0 {
+				d = 0
+			}
+			switch {
+			case d < time.Hour:
+				v.Ago = fmt.Sprintf("%dm ago", int(d.Minutes()))
+			case d < 48*time.Hour:
+				v.Ago = fmt.Sprintf("%dh ago", int(d.Hours()))
+			default:
+				v.Ago = fmt.Sprintf("%dd ago", int(d.Hours()/24))
+			}
+		}
+		av.Verbatims = append(av.Verbatims, v)
+	}
+	vm.AIVis = av
 }
 
 func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
@@ -1517,6 +1688,12 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	// as product analytics, not web analytics. Same compute the MCP tools use.
 	buildDepthCards(&vm, evs, fsteps, trendEvent, nowT)
 
+	// AI visibility over the SAME window/filters as everything above. `scoped` is what
+	// separates "nothing sampled yet" from "your filters exclude the checks" — $geo_check
+	// carries no site or path, so any web-property chip hides every one of them.
+	buildAIVis(&vm, evs, names, rangeDays, rangeAsof,
+		len(chips) > 0 || site != "" || showDev, mkRange(90).URL)
+
 	if s.goals != nil {
 		for _, d := range s.goals.List() {
 			rep := goal.Resolve(evs, d, 30, time.Time{})
@@ -1622,6 +1799,10 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		}
 		vm.TopPages = toRows(wv.TopPages, 6, wv.Pageviews)
 		vm.Referrers = toRows(wv.Referrers, 6, sumRows(wv.Referrers))
+		// the traffic half of the AI channel, for the AI-visibility card. Counted per
+		// VISITOR at first touch (web.go bumps aiRefs from firstPV), so the denominator is
+		// the AI visitors themselves, not pageviews.
+		vm.AIRefs = toRows(wv.AIReferrers, 6, sumRows(wv.AIReferrers))
 		vm.EntryPages = toRows(wv.EntryPages, 6, sumRows(wv.EntryPages))
 		vm.Browsers = toRows(wv.Browsers, 6, sumRows(wv.Browsers))
 		vm.OSes = toRows(wv.OSes, 6, sumRows(wv.OSes))

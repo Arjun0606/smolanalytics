@@ -215,11 +215,16 @@
   table.ctab .cbar div{height:8px;background:rgba(245,166,35,.35);border-radius:2px}
   .chartwrap{display:flex;gap:10px}
   .yaxis{display:flex;flex-direction:column;justify-content:space-between;text-align:right;color:var(--mut2);font-family:var(--mono);font-size:10px;padding:24px 0 0;height:174px;min-width:28px}
-    .plot{flex:1;position:relative}
+    /* min-width:0 is load-bearing, not tidying: a flex item defaults to min-width:auto, so
+       .plot refuses to shrink below the min-content width of its bars. At a 90-day range
+       that is 90 columns plus 89 3px gaps — wider than a phone — and the overflow pushes
+       the whole BODY sideways rather than scrolling inside the chart. Same reason .col
+       carries it: the columns must be allowed to compress, not just the track. */
+    .plot{flex:1;min-width:0;position:relative}
   .gridlines{position:absolute;inset:24px 0 0;display:flex;flex-direction:column;justify-content:space-between;pointer-events:none}
   .gridlines div{border-top:1px solid var(--grid);height:0}
   .bars{display:flex;align-items:flex-end;gap:3px;height:178px;padding-top:24px;position:relative}
-  .bars .col{flex:1;display:flex;flex-direction:row;align-items:flex-end;gap:1px;height:100%;position:relative}
+  .bars .col{flex:1;min-width:0;display:flex;flex-direction:row;align-items:flex-end;gap:1px;height:100%;position:relative}
   .bars .bar{flex:2;background:linear-gradient(180deg,var(--accent-bar) 0%,var(--accent-bar-lo) 100%);min-height:2px;border-radius:3px 3px 0 0;transition:background var(--t-fast) var(--ease),filter var(--t-fast) var(--ease)}
   .bars .ghost{flex:1;background:var(--ghost);min-height:1px;border-radius:3px 3px 0 0;opacity:.45}
   /* the tallest bar carries a top edge so the peak reads at a glance, not only via its label */
@@ -270,8 +275,13 @@
   .bars .col .peaklbl{position:absolute;bottom:calc(100% + 2px);left:50%;transform:translateX(-50%);
     font-family:var(--mono);font-size:11px;color:var(--accent);white-space:nowrap}
   .bars .col:hover .peaklbl{display:none}
-  .xaxis{display:flex;gap:3px;margin-top:6px}
-  .xaxis .xt{flex:1;color:var(--mut2);font-family:var(--mono);font-size:10px;white-space:nowrap;overflow:visible}
+  .xaxis{display:flex;gap:3px;margin-top:6px;min-width:0}
+  /* ticks are sparse — most .xt are empty and the labelled ones deliberately spill past
+     their 1px box (that is how a 90-bucket axis stays readable). min-width:0 lets the
+     boxes compress; the last child is right-aligned so its label spills INWARD, because
+     spilling outward is what pushed the whole body into a horizontal scroll on a phone. */
+  .xaxis .xt{flex:1;min-width:0;color:var(--mut2);font-family:var(--mono);font-size:10px;white-space:nowrap;overflow:visible}
+  .xaxis .xt:last-child{text-align:right}
 
   /* zone 7 — the board: pinned questions as live cards */
   .board{margin:var(--zone) 0 0}
@@ -763,6 +773,17 @@
   /* the confirm row is the prompt row with a sentence where the input was */
   .inprompt .ipq{flex:1;min-width:190px;font-family:var(--mono);font-size:12px;line-height:1.5;color:var(--fg)}
 
+  /* AI VISIBILITY. Everything here is borrowed — .bars for the trend, .ctab for the engine
+     rows, .seg for prompts/competitors/referrers, .sk for the tiles. The one new shape is
+     the verbatim, and it earns it: it is the only thing on this page an ENGINE wrote rather
+     than something we computed, so it reads as a quotation and carries the model id and run
+     date inline. Strip those and it is an unfalsifiable claim. */
+  .deck #pane-aivis{overflow-x:auto}
+  .gverb{margin:0 0 8px;padding:8px 12px;border-left:2px solid var(--a45);background:var(--well);
+    border-radius:0 var(--r-ctl) var(--r-ctl) 0;font:400 13px/1.5 var(--sans);color:var(--fg)}
+  .gverb .gvmeta{display:block;margin-top:5px;font:400 10px/1.4 var(--mono);color:var(--dis);
+    text-transform:uppercase;letter-spacing:.06em}
+
 </style>
 </head>
 <body>
@@ -1249,6 +1270,126 @@
       {{range .SearchRows}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
     </div>
     {{end}}
+
+    <!-- AI VISIBILITY (GEO). Two halves of one question, and this is the only place that
+         holds both: what the AI engines SAY about this product (sampled runs, aggregated
+         by internal/aivis) sits next to what they actually SEND it (the ai-referrer
+         channel off the same event log). Checks are ordinary EVENTS, which is why this
+         card, /v1/ai-visibility and the ai_visibility MCP tool cannot disagree — one query
+         path, one struct, three surfaces. The card embeds that struct rather than copying
+         numbers out of it.
+         Rates stay PER ENGINE on purpose: "claude" (does the model KNOW you) and
+         "claude-grounded" (does live search SURFACE you) are different claims, and
+         averaging them would hide exactly the divergence this report exists to show.
+         No window control here: every zone on this page answers over the toolbar's window,
+         and a per-card range picker is how a panel starts quietly answering a wider
+         question than the page says it is.
+         (Do not write template actions in these comments: html/template parses actions
+         inside HTML comments, so an unpaired one here is a parse error at EOF.) -->
+    <div class="pane wide" id="pane-aivis" style="order:360" data-stratum="acquire">
+      <h3>AI visibility
+        <span class="sub">· what the AI engines say about you, next to what they send you · same window and filters as every zone above · computed by /v1/ai-visibility</span></h3>
+      {{with .AIVis}}
+      {{if .Checks}}
+      <div data-empty="0">
+        <div class="agrow">
+          <span class="agprov">computed · {{comma .Checks}} sampled run{{if ne .Checks 1}}s{{end}}</span>
+          <span class="agmeta">{{len .Engines}} engine{{if ne (len .Engines) 1}}s{{end}} · {{len .Prompts}} prompt{{if ne (len .Prompts) 1}}s{{end}} · last {{.Days}} days</span>
+        </div>
+        <div class="stickrow">
+          {{with .Latest}}
+          <div class="sk"><div class="skv acc">{{.MentionedPct}}%</div><div class="skl">mentioned</div></div>
+          <div class="sk"><div class="skv">{{.RecommendedPct}}%</div><div class="skl">recommended</div></div>
+          <div class="sk"><div class="skv">{{.Runs}}</div><div class="skl">runs that week</div></div>
+          {{end}}
+          {{if $.HasWeb}}<div class="sk"><div class="skv">{{comma $.AIVisitors}}</div><div class="skl">visitors from AI</div></div>{{end}}
+        </div>
+        {{if .LatestLabel}}<div class="agmeta" style="margin-top:6px">the three rate tiles are the week of {{.LatestLabel}} alone, over the run count beside them — the table below is the whole {{.Days}}-day window.</div>{{end}}
+        {{if .Note}}<div class="inote err">{{.Note}}</div>{{end}}
+
+        {{if .ShowTrend}}
+        <div class="zonelbl" style="margin:16px 0 6px">share of voice · % of that week's runs
+          <span class="sub">amber = mentioned at all · grey = recommended as a pick · hatched = still filling or under 3 runs</span></div>
+        <div class="bars" style="height:112px;padding-top:20px">
+          {{range .Weeks}}<div class="col{{if .Thin}} part{{end}}"><span class="tip">{{.Tip}}</span><div class="bar" style="height:{{.MentPct}}%"></div><div class="ghost" style="height:{{.RecPct}}%"></div></div>{{end}}
+        </div>
+        <div style="display:flex;justify-content:space-between;color:var(--mut2);font-family:var(--mono);font-size:10px;margin-top:4px"><span>{{.FirstWeek}}</span><span>y-axis 0&ndash;100%</span><span>{{.LastWeek}}</span></div>
+        {{else}}
+        <div class="agmeta" style="margin-top:14px">one week of checks in this window, so there is no trend to draw — a single bar is a reading, not a direction. <a href="{{.WidenURL}}">widen to 90 days</a>, or let another week of sampling land.</div>
+        {{end}}
+
+        <div class="zonelbl" style="margin:18px 0 0">per engine
+          <span class="sub">grounded and ungrounded stay separate rows — the engine name carries the mode</span></div>
+        <table class="ctab">
+          <thead><tr><th>engine</th><th class="n">runs</th><th class="n">mentioned</th><th class="n">recommended</th><th class="n">avg rank</th><th>model on newest run</th></tr></thead>
+          <tbody>
+          {{range .Engines}}<tr>
+            <td>{{.Engine}}</td>
+            <td class="n">{{.Runs}}</td>
+            <td class="n">{{.Mentioned}} of {{.Runs}} <span class="mut">({{.MentionedPct}}%)</span></td>
+            <td class="n">{{.Recommended}} of {{.Runs}} <span class="mut">({{.RecommendedPct}}%)</span></td>
+            <td class="n">{{if .AvgRank}}{{.AvgRank}} <span class="mut">(of {{.Ranked}})</span>{{else}}<span class="mut">never ranked</span>{{end}}</td>
+            <td class="mut">{{if .LatestModel}}{{.LatestModel}}{{else}}not sent{{end}}</td>
+          </tr>{{end}}
+          </tbody>
+        </table>
+        <div class="agmeta">every rate ships with the runs it came from — read the pair, never the percentage alone. avg rank is the mean 1-based position among the tools an answer named, over the runs that ranked you at all.</div>
+
+        <div class="zonelbl" style="margin:18px 0 6px">how each engine describes you
+          <span class="sub">newest sample per engine, with the model id and run date that produced it</span></div>
+        {{range .Verbatims}}<blockquote class="gverb">{{.Text}}<span class="gvmeta">{{.Engine}} · {{.Model}} · {{.When}}{{if .Ago}} · {{.Ago}}{{end}}</span></blockquote>{{else}}<div class="agmeta">no verbatim came back on any engine's newest run. the runner sends one line as <b>verbatim</b>; nothing here is written from the numbers.</div>{{end}}
+
+        <div class="webcols" style="margin-top:18px">
+          <div>
+            <h3>prompts tracked</h3>
+            {{range .Prompts}}<div class="seg" title="{{.Prompt}}"><div class="segbar" style="width:{{.MentionedPct}}%"></div><div class="segmeta"><span class="segname">{{.Prompt}}</span><span class="segnums">{{.Mentioned}}/{{.Runs}}</span></div></div>{{else}}<div class="exsummary">no prompt text came back on these checks. the runner sends the question it asked as <b>prompt</b>.</div>{{end}}
+            <div class="agmeta">bar = the share of that prompt's own runs that mentioned you; the number is mentioned-over-runs.</div>
+          </div>
+          <div>
+            <h3>competitors named alongside you</h3>
+            {{range .Comps}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">no competitor names in these answers. the runner sends them as a comma-separated <b>competitors</b> property; nothing is read out of the verbatim here.</div>{{end}}
+            <div class="agmeta">counts, not rates: how many sampled answers named them at all. these rows are deliberately not click-to-filter — <b>competitors</b> is a property only check events carry, so filtering the page to it would empty every other card.</div>
+          </div>
+        </div>
+
+        <div class="zonelbl" style="margin:18px 0 6px">what they actually sent you
+          <span class="sub">the other half: real visitors who arrived from an AI assistant, same window</span></div>
+        {{if $.HasWeb}}
+        {{range $.AIRefs}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{else}}<div class="exsummary">no visitor arrived from an AI assistant in this window. the host is read off each visitor's first pageview, so this fills in the moment someone clicks through from one.</div>{{end}}
+        {{else}}
+        <div class="exsummary">this instance has no <b>$pageview</b>, so the traffic half is not measurable here. what the engines say is above; what they send is only knowable once the page they link to is tracked.</div>
+        {{end}}
+        <div class="agmeta">two different units, side by side on purpose: everything above counts sampled <b>answers</b>, this counts real <b>visitors</b>. neither is a conversion rate over the other. the names differ too — a sampled engine is <b>claude</b> or <b>claude-grounded</b>, a referrer is the host <b>claude.ai</b>.</div>
+      </div>
+
+      {{else}}
+      <!-- Two empty states, because there are two different situations with two different
+           fixes, and answering both with one sentence is how a filtered-out report reads
+           as a feature nobody ever built. Wrapped in data-empty so the quiet-card rule
+           collapses the card to its explanation instead of a full card of nothing. -->
+      <div data-empty="1">
+        {{if .Ever}}
+        <div class="exsummary">this instance has recorded <b>$geo_check</b> events, but none in this window{{if .Scoped}} that match the filters above{{end}}. visibility is sampled on a schedule rather than continuously, so a short window can hold zero checks — <a href="{{.WidenURL}}">widen to 90 days</a>.{{if .Scoped}} a check event carries <b>engine</b>, <b>prompt</b> and <b>rank</b>; it carries no <b>site</b> or <b>path</b>, so a site or page filter excludes every one of them. clear the filters to see them.{{end}}</div>
+        {{else}}
+        <div class="exsummary">nothing has sampled the AI engines for this product yet. this card reads <b>$geo_check</b> events — one per answer sampled, from one engine, for one prompt — so it fills in the moment a run posts its results here. that is a plain event, not a second store: it lands in the same log as everything else, which is why this card, <b>/v1/ai-visibility</b> and the <b>ai_visibility</b> MCP tool all read the same rows and can never disagree.</div>
+        <pre class="code" style="font-size:11px;margin:8px 0 0">curl -X POST {{$.Base}}/v1/events \
+  -H "Authorization: Bearer {{if $.WriteKey}}{{$.WriteKey}}{{else}}YOUR_WRITE_KEY{{end}}" \
+  -H "User-Agent: my-geo-runner/1.0" \
+  -d '{"name":"$geo_check","distinct_id":"geo-runner","properties":{
+        "engine":"claude",
+        "prompt":"best analytics for indie devs",
+        "mentioned":true,
+        "recommended":true,
+        "rank":1,
+        "competitors":"PostHog, Plausible",
+        "verbatim":"open-source analytics you can just ask questions",
+        "model_version":"claude-sonnet-4-6"}}'</pre>
+        <div class="agmeta">one POST per sampled answer. <b>rank</b> is the 1-based position among the tools that answer named (0 = named but not ranked), <b>competitors</b> is comma-separated, <b>verbatim</b> is one line of how it described you, and <b>model_version</b> is the exact model id — a quote with no model and date on it is not evidence, so this card will not show one without them. put the mode in the engine name (<b>claude</b> vs <b>claude-grounded</b>) and the two get their own rows, because a model that knows you and a live web search that surfaces you are different claims. sample the same prompt several times a week and let the rates settle: one answer is an anecdote, and this card says so on every bar until the runs add up. <b>send a User-Agent header</b> — $-prefixed events that arrive without one are dropped at ingest as crawler traffic, silently.</div>
+        {{end}}
+      </div>
+      {{end}}
+      {{end}}
+    </div>
 
     <div class="pane" id="pane-goals" style="order:230" data-stratum="convert">
       <h3>goals</h3>
@@ -1942,7 +2083,7 @@
       retention:'pane-retention', channels:'pane-sources', sources:'pane-sources',
       toppages:'pane-pages', entrypages:'pane-pages', web:'pane-pages', webdim:'pane-devices',
       geo:'pane-geo', paths:'pane-paths', lifecycle:'pane-lifecycle', stickiness:'pane-stickiness',
-      live:'pane-live', convby:'pane-conversion', ai:'pane-sources',
+      live:'pane-live', convby:'pane-conversion', ai:'pane-aivis',
       goals:'pane-goals', search_console:'pane-search', event_stream:'pane-events'
     };
     // the engine's ask intent → the chart that should render under the answer

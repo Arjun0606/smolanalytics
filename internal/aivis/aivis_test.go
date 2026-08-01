@@ -71,3 +71,26 @@ func TestComputeEmptyAndWindow(t *testing.T) {
 		t.Fatalf("out-of-window check leaked in: %+v", r)
 	}
 }
+
+func TestRawCountsShipWithRates(t *testing.T) {
+	// 3 runs, 2 mentioned, 1 recommended, 2 ranked — the counts must be reported, not
+	// left to be re-derived from a rounded percentage downstream.
+	evs := []event.Event{
+		check("claude", "p", true, true, 1, "", "", 0),
+		check("claude", "p", true, false, 2, "", "", time.Hour),
+		check("claude", "p", false, false, 0, "", "", 2*time.Hour),
+	}
+	r := Compute(evs, 30, base.Add(24*time.Hour))
+	e := r.Engines[0]
+	if e.Runs != 3 || e.Mentioned != 2 || e.Recommended != 1 || e.Ranked != 2 {
+		t.Fatalf("counts = runs %d, mentioned %d, recommended %d, ranked %d; want 3/2/1/2", e.Runs, e.Mentioned, e.Recommended, e.Ranked)
+	}
+	// 2 of 3 rounds to 67% — re-deriving 67% of 3 would give 2.01, which is why the
+	// count is carried rather than reconstructed.
+	if e.MentionedPct != 67 {
+		t.Fatalf("mentioned pct = %d, want 67", e.MentionedPct)
+	}
+	if r.Prompts[0].Mentioned != 2 || r.Prompts[0].Runs != 3 {
+		t.Fatalf("prompt row lost its raw counts: %+v", r.Prompts[0])
+	}
+}

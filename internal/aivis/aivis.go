@@ -31,12 +31,18 @@ import (
 
 const checkEvent = "$geo_check"
 
-// EngineRow is one AI engine's visibility over the window.
+// EngineRow is one AI engine's visibility over the window. Raw counts ship beside
+// every percentage on purpose: "recommended in 3 of 5 runs" is a fact a reader can
+// judge, "60%" over an unstated denominator is not — and re-deriving the count from
+// the rate downstream would both round wrong and create a second computed path.
 type EngineRow struct {
 	Engine         string  `json:"engine"`
 	Runs           int     `json:"runs"`
+	Mentioned      int     `json:"mentioned"`       // runs that mention the product
+	Recommended    int     `json:"recommended"`     // runs that recommend it
 	MentionedPct   int     `json:"mentioned_pct"`   // % of runs that mention the product
 	RecommendedPct int     `json:"recommended_pct"` // % of runs that recommend it
+	Ranked         int     `json:"ranked"`          // runs that gave a 1-based rank (AvgRank's denominator)
 	AvgRank        float64 `json:"avg_rank"`        // mean 1-based rank when ranked; 0 = never ranked
 	LatestVerbatim string  `json:"latest_verbatim"` // how the newest run describes us
 	LatestModel    string  `json:"latest_model"`
@@ -47,6 +53,8 @@ type EngineRow struct {
 type PromptRow struct {
 	Prompt         string `json:"prompt"`
 	Runs           int    `json:"runs"`
+	Mentioned      int    `json:"mentioned"`
+	Recommended    int    `json:"recommended"`
 	MentionedPct   int    `json:"mentioned_pct"`
 	RecommendedPct int    `json:"recommended_pct"`
 }
@@ -171,8 +179,9 @@ func Compute(evs []event.Event, days int, asof time.Time) Result {
 	res := Result{Days: days, Checks: total}
 	for name, a := range engines {
 		row := EngineRow{
-			Engine: name, Runs: a.runs,
+			Engine: name, Runs: a.runs, Mentioned: a.mentioned, Recommended: a.recommended,
 			MentionedPct: pct(a.mentioned, a.runs), RecommendedPct: pct(a.recommended, a.runs),
+			Ranked:         a.ranked,
 			LatestVerbatim: a.latestVerbatim, LatestModel: a.latestModel,
 		}
 		if a.ranked > 0 {
@@ -190,7 +199,7 @@ func Compute(evs []event.Event, days int, asof time.Time) Result {
 		return res.Engines[i].Engine < res.Engines[j].Engine
 	})
 	for p, a := range prompts {
-		res.Prompts = append(res.Prompts, PromptRow{Prompt: p, Runs: a.runs, MentionedPct: pct(a.mentioned, a.runs), RecommendedPct: pct(a.recommended, a.runs)})
+		res.Prompts = append(res.Prompts, PromptRow{Prompt: p, Runs: a.runs, Mentioned: a.mentioned, Recommended: a.recommended, MentionedPct: pct(a.mentioned, a.runs), RecommendedPct: pct(a.recommended, a.runs)})
 	}
 	sort.Slice(res.Prompts, func(i, j int) bool {
 		if res.Prompts[i].Runs != res.Prompts[j].Runs {

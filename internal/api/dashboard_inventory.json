@@ -1,6 +1,7 @@
 {
   "panes": [
     "pane-agent",
+    "pane-aivis",
     "pane-campaigns",
     "pane-conversion",
     "pane-deploys",
@@ -150,6 +151,7 @@
     "livepill",
     "obstatus",
     "pane-agent",
+    "pane-aivis",
     "pane-live",
     "rangeform",
     "retBucket",
@@ -195,6 +197,7 @@
     "fchip",
     "fop",
     "goalcard",
+    "gverb",
     "heat",
     "hmcell",
     "hmscale",
@@ -218,6 +221,7 @@
     "data-c",
     "data-del",
     "data-did",
+    "data-empty",
     "data-fp",
     "data-fv",
     "data-id",
