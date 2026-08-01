@@ -172,6 +172,15 @@ var toolList = []map[string]any{
 		}, nil),
 	},
 	{
+		"name":        "fix_brief",
+		"description": "Turn ONE finding from the verdict into a brief you can act on: the computed evidence behind it (each row carrying the report that recomputes it), the measured pages it shows up on, what to do, and the acceptance criterion that has to move before the fix counts. Call whats_notable first if you want to choose a finding; omit `finding` for the lead one. YOU write the code — this returns the evidence, never a patch. Use for 'fix what my analytics found', 'what should I change and how will we know it worked'.",
+		"inputSchema": obj(map[string]any{
+			"finding": map[string]any{"type": "string", "description": "The finding's exact title, or its fingerprint. Omit for the lead (highest-severity) finding."},
+			"steps":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "The funnel definition the finding should be computed over, e.g. [\"signup\",\"activate\",\"checkout\"]. Omit to let the engine detect it."},
+			"filters": filtersSchema,
+		}, nil),
+	},
+	{
 		"name":        "ai_visibility",
 		"description": "AI search visibility (GEO): how often the AI engines (Claude, ChatGPT, Perplexity — grounded and ungrounded modes as separate rows) mention or RECOMMEND this product in sampled answers, with average rank, competitor mention counts, weekly share-of-voice trend, and the latest verbatim description per engine. Computed from $geo_check sampling events; cross-reference web_overview's ai_referrers for the traffic those answers actually send. Use for 'does ChatGPT recommend us', 'how does Claude describe us', 'AI visibility vs competitors'.",
 		"inputSchema": obj(map[string]any{

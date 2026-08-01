@@ -197,6 +197,10 @@ func TestMCPAPIAgreement(t *testing.T) {
 		{"lifecycle capped at 180 both sides", "/v1/lifecycle?days=500", "lifecycle", `{"days":500}`, false},
 		{"paths capped at 10 both sides", "/v1/paths?start=signup&depth=50", "paths", `{"start":"signup","depth":50}`, false},
 		{"ai visibility", "/v1/ai-visibility?days=90", "ai_visibility", `{"days":90}`, false},
+		// the fix brief is a REPORT, not a UI helper: the sheet, the endpoint and the tool
+		// must hand out one story about a finding, not three
+		{"fix brief lead finding", "/v1/fix-brief", "fix_brief", `{}`, false},
+		{"fix brief over an explicit funnel", "/v1/fix-brief?steps=signup,activate,checkout", "fix_brief", `{"steps":["signup","activate","checkout"]}`, false},
 		{"ai visibility capped at 365 both sides", "/v1/ai-visibility?days=999", "ai_visibility", `{"days":999}`, false},
 		// a "/"-prefixed start flips both surfaces into page-to-page navigation mode
 		{"paths page mode", "/v1/paths?start=/pricing", "paths", `{"start":"/pricing"}`, false},

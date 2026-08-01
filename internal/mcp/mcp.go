@@ -31,6 +31,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/engagement"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/exportlink"
+	"github.com/Arjun0606/smolanalytics/internal/fixbrief"
 	"github.com/Arjun0606/smolanalytics/internal/flag"
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
 	"github.com/Arjun0606/smolanalytics/internal/goal"
@@ -681,6 +682,31 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 			return "", err
 		}
 		return jsonText(engagement.ComputeStickiness(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters), time.Time{}))
+	case "fix_brief":
+		var a struct {
+			Finding string    `json:"finding"`
+			Steps   []string  `json:"steps"`
+			Filters FilterSet `json:"filters"`
+		}
+		if err := unmarshalArgs(args, &a); err != nil {
+			return "", err
+		}
+		if err := query.Validate(a.Filters); err != nil {
+			return "", err
+		}
+		if err := guardFilters(evs, a.Filters); err != nil {
+			return "", err
+		}
+		var steps []funnel.Step
+		for _, n := range a.Steps {
+			if n = strings.TrimSpace(n); n != "" {
+				steps = append(steps, funnel.Step{Event: n})
+			}
+		}
+		if len(steps) < 2 {
+			steps = nil // same floor as GET /v1/fix-brief — the surfaces must agree
+		}
+		return jsonText(fixbrief.Compute(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters), steps, a.Finding, time.Time{}))
 	case "ai_visibility":
 		var a struct {
 			Days    int       `json:"days"`

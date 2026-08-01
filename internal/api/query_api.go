@@ -15,6 +15,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/cohort"
 	"github.com/Arjun0606/smolanalytics/internal/engagement"
 	"github.com/Arjun0606/smolanalytics/internal/event"
+	"github.com/Arjun0606/smolanalytics/internal/fixbrief"
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
 	"github.com/Arjun0606/smolanalytics/internal/groups"
 	"github.com/Arjun0606/smolanalytics/internal/paths"
@@ -603,6 +604,40 @@ func (s *Server) apiAIVisibility(w http.ResponseWriter, r *http.Request) {
 		days = 365 // same cap as the MCP tool — surfaces must agree
 	}
 	writeJSON(w, http.StatusOK, aivis.Compute(evs, days, time.Time{}))
+}
+
+// GET /v1/fix-brief?finding=<title|fingerprint>&steps=a,b,c — one verdict finding turned into
+// something a coding agent can act on: the computed evidence, the measured pages it shows up on,
+// and the acceptance criterion. A report like any other, not a UI helper: the fix_brief MCP tool
+// must return byte-identical JSON (agreement_test), and the dashboard's "Fix with your agent"
+// sheet renders this exact struct.
+func (s *Server) apiFixBrief(w http.ResponseWriter, r *http.Request) {
+	evs, err := s.filtered(r)
+	if err != nil {
+		writeQueryErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, fixbrief.Compute(evs,
+		parseFunnelSteps(r.URL.Query().Get("steps")), r.URL.Query().Get("finding"), time.Time{}))
+}
+
+// parseFunnelSteps reads the funnel definition the CALLER is looking at. The verdict deliberately
+// describes the funnel the reader sees (insight.GenerateForFunnel), so a brief pulled with no
+// steps can be about a different funnel than the one on the dashboard. The dashboard therefore
+// always sends its own, and the brief echoes them in every evidence row so an agent can reproduce
+// it exactly. Under two steps there is no funnel and we fall back to detection, identically on
+// both surfaces.
+func parseFunnelSteps(csv string) []funnel.Step {
+	var out []funnel.Step
+	for _, n := range strings.Split(csv, ",") {
+		if n = strings.TrimSpace(n); n != "" {
+			out = append(out, funnel.Step{Event: n})
+		}
+	}
+	if len(out) < 2 {
+		return nil
+	}
+	return out
 }
 
 // GET /v1/paths?start=signup&depth=3&filters=... — what users do after an event.

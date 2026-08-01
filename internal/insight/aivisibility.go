@@ -169,6 +169,10 @@ func aiVisibilityShift(evs []event.Event, now time.Time) *Finding {
 	// (n=21, small sample)" tells them the same thing twice, the second time in ours.
 	return &Finding{
 		Severity: sev,
+		Kind:     KindAIVis,
+		Metric:   engine,
+		Rate:     curPct,
+		N:        curRuns,
 		Title: fmt.Sprintf("%s %s you in %d%% of AI answers, %s from %d%%",
 			HumanEngine(engine), verb, curPct, dir, oldPct),
 		Detail: fmt.Sprintf("%d of %d sampled answers this week, %s from %d of %d the week before. %s",

@@ -2,6 +2,7 @@ package insight
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -352,7 +353,9 @@ func TestGeoChecksDoNotPolluteTheRestOfTheVerdict(t *testing.T) {
 		t.Fatalf("geo checks changed the product verdict: %d findings vs %d", len(dirtyRest), len(clean))
 	}
 	for i := range clean {
-		if dirtyRest[i] != clean[i] {
+		// Finding carries a []string now, so compare deeply rather than with != (which no
+		// longer compiles — and would have compared only the scalar half if it did).
+		if !reflect.DeepEqual(dirtyRest[i], clean[i]) {
 			t.Errorf("finding %d changed with GEO on:\n  clean: %+v\n  dirty: %+v", i, clean[i], dirtyRest[i])
 		}
 	}

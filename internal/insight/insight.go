@@ -5,9 +5,12 @@
 package insight
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/event"
@@ -15,11 +18,46 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/retention"
 )
 
+// Kinds name the DETECTOR behind a finding. Downstream surfaces (the fix brief, the cloud's
+// fix-PR runner) branch on these. They must never branch on Title: Title is a sentence written
+// for a human and gets reworded whenever the wording improves, which would silently break a
+// consumer in another repository with nothing failing loudly.
+const (
+	KindDropoff   = "funnel_dropoff"
+	KindSegment   = "segment"
+	KindAnomaly   = "anomaly"
+	KindTrend     = "trend"
+	KindRetention = "retention"
+	KindAIVis     = "ai_visibility"
+)
+
 // Finding is one notable thing, ranked by severity ("warn" before "info").
 type Finding struct {
 	Severity string `json:"severity"` // warn | info
 	Title    string `json:"title"`
 	Detail   string `json:"detail"`
+
+	// The machine half. Every value below was already in the detector's hand when it wrote the
+	// sentence above, so acting on a finding never means re-reading its prose.
+	Kind   string   `json:"kind"`
+	Metric string   `json:"metric,omitempty"` // the event this is about
+	Steps  []string `json:"steps,omitempty"`  // the funnel it was computed over
+	From   string   `json:"from,omitempty"`   // the step users reach
+	To     string   `json:"to,omitempty"`     // the step they fail to reach
+	Prop   string   `json:"prop,omitempty"`   // the segment property being blamed
+	Value  string   `json:"value,omitempty"`  // the segment value being blamed
+	Rate   int      `json:"rate,omitempty"`   // the headline percentage (signed for deltas)
+	N      int      `json:"n,omitempty"`      // the base the rate is computed over
+}
+
+// Fingerprint is a finding's identity ACROSS PROCESSES: sha1 of the lowercased, trimmed title,
+// first 12 hex chars. The cloud's fix-PR runner derives its branch name and its idempotency key
+// with the exact same recipe (lib/finding-id.ts). If the two ever diverge, a brief, the email
+// link that opens it and the PR opened from it stop being about the same thing — and nothing
+// errors. Do not change this on one side.
+func (f Finding) Fingerprint() string {
+	sum := sha1.Sum([]byte(strings.ToLower(strings.TrimSpace(f.Title))))
+	return hex.EncodeToString(sum[:])[:12]
 }
 
 // minSample is the floor for any rate/percentage finding: below this base count
@@ -147,8 +185,19 @@ func GenerateForFunnel(evs []event.Event, pageSteps []funnel.Step) []Finding {
 			}
 		}
 		if worstDrop > 0 {
+			names := make([]string, 0, len(fr.Steps))
+			for _, s := range fr.Steps {
+				names = append(names, s.Event)
+			}
 			dropoff := Finding{
 				Severity: "warn",
+				Kind:     KindDropoff,
+				Metric:   worstTo,
+				Steps:    names,
+				From:     worstFrom,
+				To:       worstTo,
+				Rate:     worstPct,
+				N:        worstBase,
 				Title:    fmt.Sprintf("Biggest drop-off: after they %s", HumanStep(worstFrom)),
 				Detail: qualify(fmt.Sprintf("only %d%% go on to %s, so %d people stop here. End to end, %d%% get from %s to %s.",
 					worstPct, HumanEventBase(worstTo), worstDrop, int(fr.OverallConversion*100+0.5),
@@ -159,6 +208,9 @@ func GenerateForFunnel(evs []event.Event, pageSteps []funnel.Step) []Finding {
 			// drop-off follow as context, so the verdict opens with the root cause, not the
 			// symptom.
 			if f := segmentBlame(evs, worstFrom, worstTo); f != nil {
+				// the blame finding leaks out of the SAME funnel — carry its definition so a
+				// brief built from it re-runs the exact funnel the reader was looking at
+				f.Steps = names
 				out = append(out, *f, dropoff)
 			} else {
 				out = append(out, dropoff)
@@ -198,6 +250,10 @@ func GenerateForFunnel(evs []event.Event, pageSteps []funnel.Step) []Finding {
 		}
 		out = append(out, Finding{
 			Severity: sev,
+			Kind:     KindTrend,
+			Metric:   head,
+			Rate:     change,
+			N:        prev7,
 			Title:    fmt.Sprintf("%s is %s %d%% week-over-week", HumanEventNoun(head), dir, absInt(change)),
 			Detail:   qualify(fmt.Sprintf("%d in the last 7 days vs %d the week before.", last7, prev7), prev7),
 		})
@@ -224,7 +280,8 @@ func GenerateForFunnel(evs []event.Event, pageSteps []funnel.Step) []Finding {
 			title = fmt.Sprintf("Day-1 retention %d%%, day-7 %d%%", p1, p7)
 			detail = fmt.Sprintf("of %d users past day 1 (%d past day 7), any activity counts as returning.", size1, size7)
 		}
-		out = append(out, Finding{Severity: sev, Title: title, Detail: qualify(detail, size1)})
+		out = append(out, Finding{Severity: sev, Kind: KindRetention, Rate: p1, N: size1,
+			Title: title, Detail: qualify(detail, size1)})
 	}
 
 	// warnings first
@@ -282,15 +339,15 @@ func anomalies(evs []event.Event, names []string, now time.Time) []Finding {
 		pct := int(math.Round(score * 100))
 		if dev < 0 {
 			best = Finding{
-				Severity: "warn",
-				Title:    fmt.Sprintf("%s dropped %d%% in the last 24h", HumanEventNoun(n), pct),
-				Detail:   fmt.Sprintf("%d in the last 24h vs ~%.0f/day normally, worth a look (tracking down, or a regression?).", s.last24, baseDaily),
+				Severity: "warn", Kind: KindAnomaly, Metric: n, Rate: -pct, N: s.baseTotal,
+				Title:  fmt.Sprintf("%s dropped %d%% in the last 24h", HumanEventNoun(n), pct),
+				Detail: fmt.Sprintf("%d in the last 24h vs ~%.0f/day normally, worth a look (tracking down, or a regression?).", s.last24, baseDaily),
 			}
 		} else {
 			best = Finding{
-				Severity: "info",
-				Title:    fmt.Sprintf("%s jumped %d%% in the last 24h", HumanEventNoun(n), pct),
-				Detail:   fmt.Sprintf("%d in the last 24h vs ~%.0f/day normally.", s.last24, baseDaily),
+				Severity: "info", Kind: KindAnomaly, Metric: n, Rate: pct, N: s.baseTotal,
+				Title:  fmt.Sprintf("%s jumped %d%% in the last 24h", HumanEventNoun(n), pct),
+				Detail: fmt.Sprintf("%d in the last 24h vs ~%.0f/day normally.", s.last24, baseDaily),
 			}
 		}
 		best.Detail = qualify(best.Detail, s.baseTotal)
