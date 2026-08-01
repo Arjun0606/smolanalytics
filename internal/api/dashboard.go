@@ -204,10 +204,7 @@ type dashVM struct {
 	// multi-site: observed `site` values + the currently selected one ("" = all)
 	Sites []string
 	Site  string
-	// web-first screen one, full product view behind the tab; product-only
-	// instances (no pageviews) always see the product view.
-	ShowProduct bool
-	HasWeb      bool
+	HasWeb bool
 	LiveNow     int
 	Visitors    int // unique visitors, 30d
 	Pageviews   int // 30d
@@ -270,14 +267,6 @@ type dashVM struct {
 	// querystring so every filtered view is a shareable, server-renderable URL.
 	RangeDays  int
 	RangeLabel string // "24h" | "7d" | ... — the ONE name for the window
-	// View routes the deck, from ?zone= (?view= is already the web/product tab).
-	// Empty/"overview" shows the glance only; a stratum key shows that one section;
-	// "all" restores the original single continuous document.
-	//
-	// The rail used to be a MAP over one 21-report scroll. A real user's verdict on that was
-	// that it is "cluttered and visually overwhelming", and no comparable product puts 21
-	// reports on a single page. So the rail is a ROUTER now, and the default is the glance.
-	View           string
 	Ranges         []rangeVM
 	Chips          []chipVM
 	VisitorsDelta  string // vs the prior equal window; "" when unknowable
@@ -823,17 +812,6 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		evs = query.Apply(evsAll, nil) // production scope: non-production envs excluded by default
 	}
 
-	// the verdict is computed here (global, before the site filter) so it matches
-	// /v1/notable exactly — the client refetch then replaces it with identical content
-	// and never flashes. Server-rendering it means the "what to look at" front door is
-	// real text on first paint and for no-JS/crawler views, not a "reading your data…"
-	// spinner (the thing a non-agent evaluator judged the whole product on).
-	// Detect the funnel BEFORE the verdict so both describe the same one. Previously the
-	// verdict ran insight's own journey detection while the funnel pane ran detectFunnel,
-	// and the page could contradict itself about which funnel it was talking about.
-	verdictSteps, _ := detectFunnel(evs, eventsByVolume(evs))
-	verdict := insight.GenerateForFunnel(evs, verdictSteps)
-
 	// multi-site: every event carries `site` (the SDK stamps hostname). One global
 	// selector scopes the WHOLE dashboard — every report below inherits it.
 	siteSet := map[string]bool{}
@@ -850,23 +828,25 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	if len(sites) > 20 {
 		sites = sites[:20]
 	}
-	view := r.URL.Query().Get("view")
 	site := r.URL.Query().Get("site")
 	if site != "" {
 		evs = query.Apply(evs, []query.Filter{{Property: "site", Op: query.Eq, Value: site}})
 	}
 
+	// the verdict is computed AFTER the site/env scope so it describes the traffic you
+	// are actually looking at — computed before the site filter, a multi-site instance
+	// opened site B under a diagnosis of site A. It stays window-independent on
+	// purpose: the verdict reports NOW, the range control scopes the reports below.
+	// Server-rendered only — real text on first paint, one source of markup.
+	// Detect the funnel BEFORE the verdict so both describe the same one. Previously the
+	// verdict ran insight's own journey detection while the funnel pane ran detectFunnel,
+	// and the page could contradict itself about which funnel it was talking about.
+	verdictSteps, _ := detectFunnel(evs, eventsByVolume(evs))
+	verdict := insight.GenerateForFunnel(evs, verdictSteps)
+
 	// range control: ?days=7|30|90 presets, or ?from=YYYY-MM-DD&to=YYYY-MM-DD for
-	// arbitrary time travel — every windowed zone below recomputes over the window,
+	// arbitrary time travel — every windowed report below recomputes over the window,
 	// and it lives in the querystring so any past view is a shareable URL
-	// ?view= already selects the web/product tab, so the deck router gets its own param.
-	// They are independent: you can be on the product tab AND looking at one zone.
-	zone := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("zone")))
-	switch zone {
-	case "", "overview", "all", "convert", "acquire", "behave", "return", "ship", "agent", "raw":
-	default:
-		zone = "" // an unknown zone falls back to the glance rather than an empty page
-	}
 
 	rangeDays := 30
 	switch r.URL.Query().Get("days") {
@@ -1192,7 +1172,6 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		ReportQS:       reportQ.Encode(),
 		RangeDays:      rangeDays,
 		RangeLabel:     rangeWindowLabel(rangeDays, rangeHours),
-		View:           zone,
 		GhostTotal:     trPrior.Total,
 		FunnelOrder:    string(forder),
 		RetDays:        rdays,
@@ -1538,7 +1517,6 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	// as product analytics, not web analytics. Same compute the MCP tools use.
 	buildDepthCards(&vm, evs, fsteps, trendEvent, nowT)
 
-	vm.ShowProduct = true // default; flipped to tabbed mode below when web data exists
 	if s.goals != nil {
 		for _, d := range s.goals.List() {
 			rep := goal.Resolve(evs, d, 30, time.Time{})
@@ -1584,7 +1562,6 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		vm.VisitorsDelta = deltaStr(wv.Visitors, wvPrior.Visitors)
 		vm.PageviewsDelta = deltaStr(wv.Pageviews, wvPrior.Pageviews)
 		vm.HasWeb = true
-		vm.ShowProduct = view == "product"
 		vm.LiveNow = wv.LiveNow
 		vm.Visitors = wv.Visitors
 		vm.Pageviews = wv.Pageviews

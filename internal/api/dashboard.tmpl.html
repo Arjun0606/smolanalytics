@@ -235,31 +235,19 @@
     text-decoration:none;transition:top var(--t-base) var(--ease)}
   .skiplink:focus{top:8px}
   h1.logo{margin:0;font-size:15px}
-  /* ---- deck router ------------------------------------------------------------------
-     21 reports on one scroll was the single biggest complaint: "cluttered and visually
-     overwhelming". No comparable product does that. The rail is a router now and the
-     default is the glance: verdict, KPIs, chart. Everything else is one click away, and
-     zone=all restores the original continuous document for anyone who preferred it.
-
-     Routing by attribute rather than by rendering less keeps the change small and keeps
-     the client-built rail index able to see every zone, so navigation never loses an
-     entry just because it is not the current one. */
-  body[data-zone="overview"] .deck > .stratum,
-  body[data-zone="overview"] .deck > .pane { display: none; }
-  body[data-zone="convert"] .deck > :not([data-stratum="convert"]),
-  body[data-zone="acquire"] .deck > :not([data-stratum="acquire"]),
-  body[data-zone="behave"]  .deck > :not([data-stratum="behave"]),
-  body[data-zone="return"]  .deck > :not([data-stratum="return"]),
-  body[data-zone="ship"]    .deck > :not([data-stratum="ship"]),
-  body[data-zone="agent"]   .deck > :not([data-stratum="agent"]),
-  body[data-zone="raw"]     .deck > :not([data-stratum="raw"]) { display: none; }
-  /* the zone switcher itself */
-  .zonebar{display:flex;flex-wrap:wrap;gap:4px;margin:0 0 14px}
-  .zonebtn{font-family:var(--mono);font-size:11px;color:var(--mut);text-decoration:none;
-    padding:5px 9px;border:1px solid var(--line);border-radius:var(--r-ctl);white-space:nowrap;
-    transition:border-color var(--t-fast) var(--ease),color var(--t-fast) var(--ease)}
-  .zonebtn:hover{color:var(--fg);border-color:var(--line3)}
-  .zonebtn.on{color:var(--bg);background:var(--accent);border-color:var(--accent);font-weight:700}
+  /* ---- one composed document --------------------------------------------------------
+     The ?zone= router hid deck children with CSS while re-rendering the whole glance on
+     every "subscreen" — navigation re-filing, not design. The page is ONE document again,
+     composed by disclosure order: verdict (sentences first) → KPIs → the chart → the
+     deck's ranked sections. Depth is scroll or a rail click, never a page swap that
+     resets your reading position. See DASHBOARD_REDESIGN.md for the research trail. */
+  /* provenance: the quiet line that says the numbers were computed, not cached */
+  .prov{font-family:var(--mono);font-size:11px;color:var(--mut2);margin:6px 2px 0}
+  .prov b{color:var(--mut);font-weight:400}
+  /* ask shortcuts, one scrollable row below the chart — prompts, not headlines */
+  .chiprow{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;flex-wrap:nowrap;margin-top:14px}
+  .chiprow::-webkit-scrollbar{display:none}
+  .chiprow .chip{flex:0 0 auto}
   @keyframes bargrow{from{transform:scaleY(0)}to{transform:scaleY(1)}}
   @keyframes sparkdraw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
   @keyframes panein{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
@@ -529,8 +517,6 @@
     .sa-foot{margin-top:auto;display:flex;flex-direction:column;gap:2px;padding-top:12px;border-top:1px solid var(--line)}
     .sa-foot .hlink{padding:4px 6px;border-radius:4px}
     .sa-foot .hlink:hover{background:var(--s2)}
-    /* #deckjump is now the ONLY sticky element on the page; it sits under the fixed topbar */
-    .deckjump{top:var(--top-h)}
     .deck>.pane,.deck>.stratum{scroll-margin-top:calc(var(--top-h) + var(--rail-h,44px) + 14px)}
     /* the answer docks under the input that produced it */
     .sa-inner>.answer,.hero .answer{margin-top:0}
@@ -634,29 +620,10 @@
      did this at 400px; sessions and the event table were not covered and ran to ~1000px. */
   .deck>.pane .capped{max-height:var(--peek-stream);overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--line2) transparent}
 
-  /* ═══ THE DECK INDEX — 22 always-on cards is more than anyone can scan, so every report
-     past the first screen was effectively hidden ("where can I find the heatmap?"). It is
-     built FROM the panes actually rendered, never a hardcoded list, so it cannot drift out
-     of sync the way a written-down list would.
-
-     Two layers, because they answer two different questions. The sticky rail answers
-     "where am I in 22 cards" and must cost almost no viewport. The full index answers
-     "where is X" and can scroll away once used. 22 pills wrapped over three sticky rows
-     was itself part of the clutter. ═══ */
-  .deckjump{position:sticky;top:0;z-index:30;display:flex;flex-wrap:wrap;gap:2px 14px;align-items:center;
-    padding:9px 0;margin:var(--zone) 0 0;background:var(--bg);border-bottom:1px solid var(--line)}
-  .deckjump:empty{display:none}
-  .deckjump .jhere{font:400 11px/1 var(--mono);color:var(--mut2);white-space:nowrap}
-  .deckjump .jhere b{color:var(--fg);font-weight:400}
-  .deckjump a{font:400 11px/1 var(--mono);color:var(--mut2);text-decoration:none;padding:5px 2px;
-    border-bottom:1px solid transparent;white-space:nowrap;
-    transition:color var(--t-fast) var(--ease),border-color var(--t-fast) var(--ease)}
-  .deckjump a:hover{color:var(--fg);border-bottom-color:var(--line3)}
-  .deckjump a.cur{color:var(--accent);border-bottom-color:var(--accent)}
-  .deckjump .jcount{margin-left:auto;font:400 11px/1 var(--mono);color:var(--dis)}
-
-  /* the complete index: every card by name, grouped, NOT sticky. Borderless mono rather
-     than 22 pills, which competed with the cards themselves. */
+  /* ═══ THE DECK INDEX — the rail's grouped map over the deck, built FROM the panes that
+     actually rendered (never a hardcoded list, so it cannot drift). It is the ONE
+     navigation over the reports: the sticky #deckjump bar and the ?zone= switcher that
+     duplicated it are gone. A scroll-spy marks the current section in the rail. ═══ */
   .deckindex{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;padding:10px 0 2px}
   .deckindex:empty{display:none}
   .deckindex .jsec{font:400 10px/1 var(--mono);text-transform:uppercase;letter-spacing:.08em;
@@ -665,7 +632,7 @@
   .deckindex a.jcard{font:400 11px/1 var(--mono);color:var(--mut2);text-decoration:none;padding:4px 2px;
     border-bottom:1px solid transparent}
   .deckindex a.jcard:hover{color:var(--fg);border-bottom-color:var(--accent)}
-  @media(max-width:880px){.deckjump{position:static}.deckindex .jsec{flex-basis:100%;border-left:none;padding-left:2px}}
+  @media(max-width:880px){.deckindex .jsec{flex-basis:100%;border-left:none;padding-left:2px}}
   /* a jumped-to card flashes its border once, so you can see WHICH of the 21 you landed on */
   @keyframes panehit{0%,100%{border-color:var(--line)}18%,72%{border-color:var(--accent)}}
   .deck .pane.hit{animation:panehit 1.5s var(--ease)}
@@ -798,7 +765,7 @@
 
 </style>
 </head>
-<body data-zone="{{if .View}}{{.View}}{{else}}overview{{end}}">
+<body>
 <a class="skiplink" href="#sa-top">skip to your dashboard</a>
 <!-- ═══ THE SHELL ═══
      A fixed rail and a fixed topbar. The rail is a MAP, NOT A ROUTER: the content column
@@ -882,33 +849,18 @@
 <main class="sa-main"><div class="sa-inner">
   {{if .ShowingDev}}<div class="devnote">Showing <b>development</b> data (localhost / 127.0.0.1), the traffic production reports hide. <a href="/{{if .Site}}?site={{.Site}}{{end}}">← back to production</a></div>{{else if gt .DevHidden 0}}<div class="devnote">{{.DevHidden}} event{{if ne .DevHidden 1}}s{{end}} from localhost/development {{if eq .DevHidden 1}}is{{else}}are{{end}} hidden from these production reports. <a href="/?env=development{{if .Site}}&site={{.Site}}{{end}}">view dev data →</a></div>{{end}}
 
-  <!-- zone 1: the ask hero — the page's single focal point -->
+  <!-- the answer slot — an artifact, not a chat. Renders only when you ask; the ask
+       shortcuts live below the chart (they are prompts, not the page's headline). -->
   <div class="hero">
-
-    <div class="askchips" id="askchips">
-      <span class="chip" data-q="what should I fix?">what should I fix?</span>
-      <span class="chip" data-q="where do users drop off?">where do users drop off?</span>
-      <span class="chip" data-q="which channel converts best?">which channel converts best?</span>
-      <span class="chip" data-q="what do users do after signup?">what do users do next?</span>
-      <span class="chip" data-q="are my users sticky?">are users sticky?</span>
-      <span class="chip" data-q="how is retention?">how is retention?</span>
-      <span class="chip" data-q="what happened this week?">what happened this week?</span>
-      <span class="chip" data-q="which tool is slowest?">which tool is slowest?</span>
-      <span class="chip" data-q="how is conversation health?">conversation health?</span>
-    </div>
-    {{if .ProductEvents}}<div class="askchips"><span class="chiplbl">your events</span>{{range .ProductEvents}}<span class="chip" data-q="how many {{.}} this week?">{{.}}</span>{{end}}</div>{{end}}
-    {{if .TopPages}}<div class="askchips"><span class="chiplbl">your pages</span>{{range .TopPages}}<span class="chip" data-q="visitors to {{.Value}}">{{.Value}}</span>{{end}}</div>{{end}}
-
-    <!-- zone 2: the answer slot — an artifact, not a chat -->
     <div id="askresult" class="answer" hidden></div>
     <div id="shareresult" class="answer" hidden></div>
-
-    <!-- range, dates and filters used to sit here as a second sticky row. They govern every
-         pane at once, so they are shell now: see .sa-scope in the rail. -->
   </div>
 
   {{if .HasData}}
-  <!-- zone 3: the verdict as sentences. empty verdict = one calm line, never a card -->
+  <!-- THE FRONT PAGE, in reading order: verdict (what needs you, as sentences) → KPIs
+       (is it OK, as 4-7 numbers) → provenance → the one chart. A visitor with 5 seconds
+       leaves informed after the first two blocks; everything below is evidence.
+       The verdict as sentences: empty verdict = one calm line, never a card -->
   <div class="verdict">
     <div id="verdict">
       {{if .Verdict}}{{$first := index .Verdict 0}}<div class="callout{{if eq $first.Severity "warn"}} warn{{end}}">
@@ -958,7 +910,9 @@
     {{end}}
   </div>
 
-  <!-- zone 5: exactly one chart -->
+  <div class="prov">window <b>{{.RangeLabel}}</b> · recomputed from raw events on every load · the API and your agent get byte-identical answers</div>
+
+  <!-- exactly one chart -->
   <div class="chartzone">
     <div class="zonelbl">
       <select id="chartMetric" class="zonesel" title="chart any event">
@@ -1013,28 +967,43 @@
     {{end}}
   </div>
 
+  <!-- ask shortcuts: one scrollable row of prompts. They used to open the page as three
+       wrapped rows ABOVE the verdict — 20+ choices before any value, exactly the Hick's-law
+       tax the research warns about. As a row under the chart they are an invitation, and
+       the chart they annotate is already on screen. -->
+  <div class="chiprow askchips" id="askchips">
+    <span class="chiplbl">ask</span>
+    <span class="chip" data-q="what should I fix?">what should I fix?</span>
+    <span class="chip" data-q="where do users drop off?">where do users drop off?</span>
+    <span class="chip" data-q="which channel converts best?">which channel converts best?</span>
+    <span class="chip" data-q="what do users do after signup?">what do users do next?</span>
+    <span class="chip" data-q="are my users sticky?">are users sticky?</span>
+    <span class="chip" data-q="how is retention?">how is retention?</span>
+    <span class="chip" data-q="what happened this week?">what happened this week?</span>
+    <span class="chip" data-q="which tool is slowest?">which tool is slowest?</span>
+    <span class="chip" data-q="how is conversation health?">conversation health?</span>
+    {{range .ProductEvents}}<span class="chip" data-q="how many {{.}} this week?">{{.}}</span>{{end}}
+  </div>
+
   {{if .Hours}}
-  <div class="chartzone" style="margin-top:18px">
-    <div class="zonelbl">activity by hour <span class="sub">· UTC · last {{.RangeLabel}} · peak {{comma .HoursMax}}/hr</span></div>
+  <details class="charttable">
+    <summary>activity by hour · UTC · peak {{comma .HoursMax}}/hr ▾</summary>
     <div class="bars" style="height:44px;padding-top:18px">
       {{range .Hours}}<div class="col"><span class="tip">{{.Hour}}:00 UTC · {{.Count}}</span><div class="bar" style="height:{{.HeightPct}}%"></div></div>{{end}}
     </div>
     <div class="axis" style="display:flex;justify-content:space-between;color:var(--mut2);font-family:var(--mono);font-size:10px;margin-top:4px"><span>00:00</span><span>12:00</span><span>23:00</span></div>
-  </div>
+  </details>
   {{end}}
 
-  <!-- zone 7: the board — grows only from questions you pinned; empty = invisible -->
+  <!-- the board — grows only from questions you pinned; empty = invisible -->
   <div class="board" id="board" hidden>
     <div class="zonelbl">pinned · your questions</div>
     <div class="boardgrid" id="boardgrid"></div>
   </div>
 
-  <!-- zone 8: the deck — every report always on the table, nothing hiding behind a tab.
-       "Always on the table" only helps if you can FIND it, so the deck is preceded by an
-       index of its own cards, filled in by saBuildDeckIndex from what actually rendered. -->
-  <nav class="deckjump" id="deckjump" aria-label="jump to a section"></nav>
-
-  <nav class="zonebar" id="zonebar" aria-label="dashboard sections"></nav>
+  <!-- the deck — every report on the table, in section order. The rail's grouped index
+       (saBuildDeckIndex) is the ONE map over it: section links that scroll, a scroll-spy
+       that reads back where you are. No sticky jump bar, no second router. -->
   <div class="deck">
 
     <!-- SECTION HEADINGS. They are grid SIBLINGS of the cards, never wrappers: every pane
@@ -1807,9 +1776,8 @@
     // back to the flat builder below rather than to a page with chips missing.
     function saBuildDeckIndexGrouped(){
       var deck=document.querySelector('.deck'),
-          nav=document.getElementById('deckjump'),
           full=document.getElementById('deckindex');
-      if(!deck||!nav||!full)return false;
+      if(!deck||!full)return false;
       var strata=[];
       Array.prototype.forEach.call(deck.querySelectorAll('.stratum'),function(h){
         var o=parseInt(h.style.order,10); if(isNaN(o))o=9999;
@@ -1852,15 +1820,10 @@
         s.el.hidden=!s.cards.length;
       });
       var live=strata.filter(function(s){return s.cards.length});
-      // layer A: where am I, plus one hop per section
-      var a='<span class="jhere">▸ <b id="jhere">'+esc(live[0]?live[0].title:'')+'</b></span>';
-      live.forEach(function(s){ a+='<a href="#'+s.id+'" data-sec="'+s.id+'" id="chip-'+s.id+'" title="'+esc(s.title)+'">'+esc(s.short)+'</a>'; });
-      a+='<span class="jcount">'+total+' report'+(total===1?'':'s')+'</span>';
-      nav.innerHTML=a;
-      // layer B: every card by name, grouped, identical weight
+      // the ONE map: sections + cards in the rail. The sticky #deckjump duplicate is gone.
       var b='';
       live.forEach(function(s){
-        b+='<a class="jsec" href="#'+s.id+'" data-sec="'+s.id+'">'+esc(s.title)+'</a>';
+        b+='<a class="jsec" id="chip-'+s.id+'" href="#'+s.id+'" data-sec="'+s.id+'">'+esc(s.title)+'</a>';
         s.cards.forEach(function(c){ b+='<a class="jcard" href="#'+c.id+'" data-pane="'+c.id+'">'+esc(c.label)+'</a>'; });
       });
       full.innerHTML=b;
@@ -1871,13 +1834,9 @@
         var pid=t.getAttribute('data-pane');
         if(pid)saJumpToPane(pid); else saJumpToSection(t.getAttribute('data-sec'));
       }
-      nav.addEventListener('click',onClick); full.addEventListener('click',onClick);
-      // the rail's height drives scroll-margin; measure it rather than guessing
-      function measure(){ document.documentElement.style.setProperty('--rail-h',nav.offsetHeight+'px'); }
-      measure(); window.addEventListener('resize',measure);
-      // scroll-spy: turns a menu into a position readout, for free, at no extra height
+      full.addEventListener('click',onClick);
+      // scroll-spy: the rail reads back which section you're in, at no extra height
       if(window.IntersectionObserver){
-        var here=document.getElementById('jhere');
         var io=new IntersectionObserver(function(entries){
           entries.forEach(function(en){
             if(!en.isIntersecting)return;
@@ -1885,10 +1844,9 @@
             live.forEach(function(s){
               var chip=document.getElementById('chip-'+s.id);
               if(chip)chip.classList.toggle('cur',s.id===id);
-              if(s.id===id&&here)here.textContent=s.title;
             });
           });
-        },{rootMargin:'-'+(nav.offsetHeight+8)+'px 0px -55% 0px'});
+        },{rootMargin:'-64px 0px -55% 0px'});
         live.forEach(function(s){io.observe(s.el);});
       }
       return true;
@@ -1896,8 +1854,8 @@
     // kept verbatim as the fallback: if anything about the grouped build throws, the page
     // degrades to exactly the flat index that shipped before, never to missing chips.
     function saBuildDeckIndexFlat(){
-      var deck=document.querySelector('.deck'), nav=document.getElementById('deckjump');
-      if(!deck||!nav)return;
+      var deck=document.querySelector('.deck'), full=document.getElementById('deckindex');
+      if(!deck||!full)return;
       var seen={}, items=[];
       Array.prototype.forEach.call(deck.querySelectorAll('.pane'),function(p){
         // pane-web-empty is the teaching placeholder shown INSTEAD of the web cards; it is
@@ -1922,29 +1880,16 @@
       });
       if(!items.length)return;
       items.sort(function(a,b){return a.order-b.order});
-      var html='<span class="jhere">jump to</span>';
-      items.forEach(function(it){
-        html+='<a href="#'+it.id+'" data-pane="'+it.id+'">'+esc(it.label)+'</a>';
-      });
-      nav.innerHTML=html;
-      // Fill the RAIL too. Writing only into #deckjump left .deckindex empty, which triggers
-      // its :empty rule and prints "reports appear here as soon as your first events land"
-      // next to a page full of them. The fallback has to degrade to a working page, not a
-      // lying one.
-      var full=document.getElementById('deckindex');
-      if(full){
-        var fh='';
-        items.forEach(function(it){ fh+='<a class="jcard" href="#'+it.id+'" data-pane="'+it.id+'">'+esc(it.label)+'</a>'; });
-        full.innerHTML=fh;
-      }
+      var fh='';
+      items.forEach(function(it){ fh+='<a class="jcard" href="#'+it.id+'" data-pane="'+it.id+'">'+esc(it.label)+'</a>'; });
+      full.innerHTML=fh;
       function flatClick(e){
         var a=e.target.closest&&e.target.closest('a[data-pane]');
         if(!a)return;
-        e.preventDefault(); // handle it ourselves so the card flashes and clears the sticky bar
+        e.preventDefault(); // handle it ourselves so the card flashes
         saJumpToPane(a.getAttribute('data-pane'));
       }
-      nav.addEventListener('click',flatClick);
-      if(full)full.addEventListener('click',flatClick);
+      full.addEventListener('click',flatClick);
     }
     try { if(!saBuildDeckIndexGrouped()) saBuildDeckIndexFlat(); }
     catch(e){ saBuildDeckIndexFlat(); }
@@ -2102,38 +2047,6 @@
     if(ap&&cs)ap.onclick=function(){cs.open=true;cs.scrollIntoView({behavior:'smooth',block:'center'});};
 
 
-    // ---- zone switcher ------------------------------------------------------------------
-    // Built from the strata that actually rendered, so it can never offer an empty zone.
-    // Preserves every other query param, because the window, filters, site and tab must
-    // survive a zone change: switching section should never silently reset your scope.
-    (function(){
-      var deck=document.querySelector('.deck'); if(!deck)return;
-      var host=document.getElementById('zonebar'); if(!host)return;
-      var current=document.body.getAttribute('data-zone')||'overview';
-      var zones=[{k:'overview',label:'overview'}];
-      // sort by the deck's own CSS order, not DOM order: the sections are laid out with
-      // `order:` so the markup sequence is not the reading sequence, and a switcher that
-      // lists "agent" before "conversion" contradicts the page underneath it.
-      var found=[];
-      Array.prototype.forEach.call(deck.querySelectorAll('.stratum'),function(h){
-        var k=h.getAttribute('data-stratum'); if(!k)return;
-        var o=parseInt(h.style.order,10); if(isNaN(o))o=9999;
-        found.push({k:k,label:h.getAttribute('data-short')||k,order:o});
-      });
-      found.sort(function(a,b){return a.order-b.order});
-      zones=zones.concat(found);
-      zones.push({k:'all',label:'everything'});
-      var html='';
-      zones.forEach(function(z){
-        var q=new URLSearchParams(location.search);
-        if(z.k==='overview')q.delete('zone'); else q.set('zone',z.k);
-        q.delete('_'); // never carry a cache-buster into a shared link
-        var href='/'+(q.toString()?'?'+q.toString():'');
-        html+='<a class="zonebtn'+(z.k===current?' on':'')+'" href="'+href+'"'+
-              (z.k===current?' aria-current="page"':'')+'>'+z.label+'</a>';
-      });
-      host.innerHTML=html;
-    })();
     // ---- data-in motion: stagger + count-up -------------------------------------------
     // Bars and panes get their delay here rather than in CSS, because nth-child stagger for
     // an arbitrary bucket count means 90 hand-written rules that still break at 91.
@@ -3226,33 +3139,8 @@
       });
     }
 
-    // verdict refresh — matches /v1/notable exactly; empty verdict = the calm line
-    var vEl=document.getElementById('verdict');
-    if(vEl){
-      // forward the page's scope (env, site) so the verdict matches the tiles beside it.
-      // fetching a bare /v1/notable is what made the dev view report production numbers.
-      var nq=new URLSearchParams();
-      var pq=new URLSearchParams(location.search);
-      ['env','site'].forEach(function(k){ if(pq.get(k)) nq.set(k,pq.get(k)); });
-      fetch('/v1/notable'+(nq.toString()?'?'+nq.toString():'')).then(function(r){return r.json()}).then(function(j){
-        var fs=(j&&j.findings)||[];
-        if(!fs.length){vEl.innerHTML='<div class="vcalm">nothing unusual right now: traffic and conversion look within normal range.</div>';return;}
-        // build the SAME insight callout the server renders (lead finding as the callout,
-        // the rest as secondary lines), so a client refresh never downgrades the design.
-        var f0=fs[0], warn=(f0.severity==='warn');
-        var html='<div class="callout'+(warn?' warn':'')+'">'+
-          '<div class="co-tag"><span class="co-ic">'+(warn?'!':'✦')+'</span>'+(warn?'Fix first':'Today’s read')+'</div>'+
-          '<div class="co-body"><div class="co-title">'+esc(f0.title)+'</div>'+
-          '<div class="co-detail">'+esc(f0.detail)+'</div>'+
-          '<div class="co-meta"><span class="co-prov">computed, not guessed</span><span>the same report this dashboard renders</span></div></div>'+
-          '<div class="co-act"><a class="co-go" data-q="'+esc(f0.title)+'">Show me →</a></div></div>';
-        if(fs.length>1){html+='<div class="verdict-more">';
-          for(var i=1;i<fs.length;i++){var fd=fs[i];
-            html+='<div class="vline'+(fd.severity==='warn'?' warn':'')+'"><span class="vdot"></span><span class="vt">'+esc(fd.title)+'</span><span class="vsep">·</span><span class="vd">'+esc(fd.detail)+'</span><a class="vwhy" data-q="'+esc(fd.title)+'">why? →</a></div>';}
-          html+='</div>';}
-        vEl.innerHTML=html;
-      }).catch(function(){});
-    }
+    // the verdict is server-rendered once, scope-aware, at request time — a client
+    // refetch that rebuilt the same markup from JS was a second copy to keep in sync.
 
     // the week, one expandable line — same digest as `smolanalytics brief` + cloud email
     var bEl=document.getElementById('brief');
