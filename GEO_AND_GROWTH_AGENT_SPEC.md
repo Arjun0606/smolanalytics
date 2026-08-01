@@ -1,8 +1,15 @@
 # Build spec: GEO module + auditable growth agent (2026-08-01)
 
-Greenlit by Arjun. Bar: "super super well" — rip the best of the incumbents,
-improve where they're structurally stuck. Ship order: growth-agent v1 (mostly
-reuse) → GEO v1 (the new wedge) → iterate both.
+Greenlit by Arjun. Bar (his words): "no v1 or nothing — done fully and completely,
+seamlessly integrated, software people think twice before skipping." SHIPPING RULE:
+the "v1/v2" labels below are internal build sequencing ONLY. Nothing becomes
+user-visible until the complete loop works end to end — for GEO: prompt
+auto-generation + editable set, daily sampling per the recipe, engine report on all
+three surfaces with agreement locks, the dashboard pane, the verdict rule, and the
+alert preset, all live together. For the growth agent: the brief action on the
+verdict card + email + MCP prompt + the PR runner extension, together. No
+"coming soon" copy, no half-lit panes (shipped-means-reachable rule, inverted:
+reachable-means-finished).
 
 ---
 
