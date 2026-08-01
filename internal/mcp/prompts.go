@@ -72,7 +72,7 @@ var promptList = []map[string]any{
 var promptText = map[string]string{
 	"fix-the-verdict": `Act on this project's verdict — the growth-agent loop, with you as the agent and every number auditable:
 1. Call whats_notable and take the LEAD finding (fall back to the next finding if the lead isn't actionable in code).
-2. Pull the evidence behind it — the same computed reports the finding cites: funnel (for drop-off findings), retention, trends, web_overview (exit_pages for page-level leaks), paths with a "/"-prefixed start for navigation dead-ends. Quote the exact numbers in your working notes; every one of them is deterministic and re-runnable, so your diagnosis can be audited by anyone who reruns the same tool.
+2. Pull the evidence behind it — the same computed reports the finding cites: funnel (for drop-off findings), retention, trends, web_overview (its exit pages show where visits die), paths with a "/"-prefixed start for navigation dead-ends. Quote the exact numbers in your working notes; every one of them is deterministic and re-runnable, so your diagnosis can be audited by anyone who reruns the same tool.
 3. Find the code behind the numbers: the page, component, or handler for the leaking step. Read it before proposing anything.
 4. Propose the SMALLEST fix that the evidence supports (copy, CTA, dead-end link, missing empty-state, broken flow) — never a redesign. Show me the diff and WHY the evidence points at it before applying. Apply only after I agree.
 5. Define acceptance up front: which report should move, in which direction, over what window (e.g. "funnel step 2 conversion, currently 29%, should rise within 7 days"). After I deploy, set a reminder to re-run that exact report — or create_alert on the metric so the answer comes to us.
