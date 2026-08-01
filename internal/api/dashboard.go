@@ -693,6 +693,31 @@ type geoVerbatim struct {
 	Engine, Text, Model, When, Ago string
 }
 
+// sovSeries is one brand's line in the share-of-voice chart, already projected into SVG
+// coordinates. The projection happens in Go, not the template: the template has exactly one
+// helper function (comma), and doing arithmetic in it would mean a second place where a
+// percentage could be computed differently from aivis.
+type sovSeries struct {
+	Name   string
+	Us     bool
+	Color  string
+	Points string // polyline "x,y x,y ..."
+	Last   int    // final week's share, for the inline legend value
+	Share  int    // share across the whole window
+	Dot    struct{ X, Y float64 }
+}
+
+// sovChart is the hero visual: every brand the engines name, trended. A GEO report that
+// shows only your own line answers "are we visible" while the question that pays is
+// "are we visible COMPARED TO the alternatives the model keeps offering instead".
+type sovChart struct {
+	Series []sovSeries
+	Weeks  []string // x labels
+	First  string
+	Last   string
+	Has    bool // at least two weeks and one series — below that a line is a dot
+}
+
 // aivisVM is the AI-visibility pane. It EMBEDS aivis.Result — the identical struct
 // /v1/ai-visibility and the MCP ai_visibility tool serialize — so this card cannot drift
 // from the other two surfaces. Every other field is presentation over those same numbers:
@@ -711,6 +736,12 @@ type aivisVM struct {
 	// ShowTrend gates the chart at two weeks. One bar is a reading, not a direction, and
 	// drawing it as a trend is the exact dishonesty the low-sample rule exists to stop.
 	ShowTrend bool
+	SOV       sovChart
+	// Sent/Rank/Cited are the signals the sampler already captured and no surface rendered.
+	SentPos, SentNeu, SentNeg, SentRated int
+	BrandRank, BrandCount                int
+	RankRows                             []segRow
+	CitedRate, CitedRuns, GroundRuns     int
 	// Ever says a $geo_check has EVER been ingested here, read from the store's event NAMES
 	// rather than this window. "nothing yet" and "nothing HERE" are different empty states
 	// with different fixes, and conflating them is how a filtered-out report reads as a
@@ -907,6 +938,89 @@ func buildAIVis(vm *dashVM, evs []event.Event, names []string, days int, asof ti
 		av.FirstWeek, av.LastWeek = label(av.Trend[0].WeekStart), av.LatestLabel
 	}
 	av.ShowTrend = len(av.Weeks) >= 2
+
+	// --- the share-of-voice chart, projected into SVG space here so the template does no
+	// arithmetic. Y is a PERCENTAGE of that week's brand mentions, fixed 0-100, because a
+	// rescaled y-axis makes a flat line look like a collapse.
+	{
+		// amber is ours; the competitor ramp is deliberately desaturated so the eye finds our
+		// line first in a chart that may hold five of them
+		// Distinguishable HUES, not five shades of grey. The competing tools are criticised
+		// by name for palettes you cannot tell apart at five series, and a legend nobody can
+		// map back to a line is a chart that does not work. Amber stays reserved for us, so
+		// our line is findable before the legend is read.
+		palette := []string{"#4EA8DE", "#B57BEE", "#E5726B", "#4FB286", "#C9A227"}
+		const w, h = 640.0, 150.0
+		// av.Weeks is the BAR chart's rows; the shared x-axis lives on the embedded result
+		n := len(av.Result.Weeks)
+		if n >= 2 {
+			// each week's denominator: every brand mention that week, so the series sum to 100%
+			tot := make([]int, n)
+			for _, b := range av.Share {
+				for i, v := range b.Weekly {
+					if i < n {
+						tot[i] += v
+					}
+				}
+			}
+			ci := 0
+			for _, b := range av.Share {
+				if len(b.Weekly) != n {
+					continue
+				}
+				ser := sovSeries{Name: b.Name, Us: b.Us, Share: b.SharePct, Color: "var(--accent)"}
+				if !b.Us {
+					ser.Color = palette[ci%len(palette)]
+					ci++
+				}
+				pts := make([]string, 0, n)
+				for i, v := range b.Weekly {
+					p := 0
+					if tot[i] > 0 {
+						p = int(float64(v)/float64(tot[i])*100 + 0.5)
+					}
+					x := w * float64(i) / float64(n-1)
+					y := h - (h * float64(p) / 100)
+					pts = append(pts, fmt.Sprintf("%.1f,%.1f", x, y))
+					if i == n-1 {
+						ser.Last, ser.Dot.X, ser.Dot.Y = p, x, y
+					}
+				}
+				ser.Points = strings.Join(pts, " ")
+				av.SOV.Series = append(av.SOV.Series, ser)
+			}
+			av.SOV.Weeks = av.Result.Weeks
+			av.SOV.First, av.SOV.Last = label(av.Result.Weeks[0]), label(av.Result.Weeks[n-1])
+			av.SOV.Has = len(av.SOV.Series) > 0
+		}
+	}
+	// Rank among every brand the engines name, stated plainly even when it is unflattering —
+	// "you are 4th of 4" is the sentence that makes someone act, and hiding it is how a
+	// visibility dashboard becomes decoration.
+	// Rank by TOTAL MENTIONS, never by position in av.Share — that slice is sorted with our
+	// own series first so the chart's primary line is unambiguous, so reading an index off it
+	// would report "#1 of 5" to a product sitting last. A flattering number computed from a
+	// display order is worse than no number.
+	if len(av.Share) > 0 {
+		var usTotal int
+		for _, b := range av.Share {
+			if b.Us {
+				usTotal = b.Total
+			}
+		}
+		rank := 1
+		for _, b := range av.Share {
+			if !b.Us && b.Total > usTotal {
+				rank++
+			}
+		}
+		av.BrandRank, av.BrandCount = rank, len(av.Share)
+	}
+	av.SentPos, av.SentNeu, av.SentNeg, av.SentRated = av.Sentiment.Positive, av.Sentiment.Neutral, av.Sentiment.Negative, av.Sentiment.Rated
+	av.CitedRate, av.CitedRuns, av.GroundRuns = av.Result.CitedRate, av.Result.CitedRuns, av.Result.GroundRuns
+	for _, rb := range av.RankDist {
+		av.RankRows = append(av.RankRows, segRow{Value: rb.Label, Count: rb.Runs, BarPct: rb.Pct, Pct: rb.Pct})
+	}
 
 	top := 0
 	for _, c := range av.Competitors {

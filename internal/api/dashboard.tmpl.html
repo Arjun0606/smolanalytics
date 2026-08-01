@@ -805,6 +805,25 @@
      the verbatim, and it earns it: it is the only thing on this page an ENGINE wrote rather
      than something we computed, so it reads as a quotation and carries the model id and run
      date inline. Strip those and it is an unfalsifiable claim. */
+  /* the share-of-voice chart. Fixed 0-100% y-axis: this is a SHARE, and rescaling to the
+     window's max would make a brand holding steady at 20% look like it was climbing. */
+  .sovwrap{position:relative;margin:10px 0 4px;padding-left:26px}
+  /* a real y-axis: without labelled gridlines a share chart whose series all sit under 40%
+     reads as a flat band near the floor, and the reader cannot tell 13% from 35% by eye */
+  .sovax{position:absolute;left:0;top:0;height:190px;display:flex;flex-direction:column;
+    justify-content:space-between;font-family:var(--mono);font-size:9px;color:var(--mut2);
+    padding:4px 0 22px;text-align:right;width:22px}
+  .sovgrid line{stroke:var(--grid);stroke-width:1}
+  .sovline{fill:none;stroke-width:2;vector-effect:non-scaling-stroke}
+  .sovline.us{stroke-width:3}
+  .sovleg{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:6px}
+  .sovleg span{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;color:var(--mut)}
+  .sovleg i{width:12px;height:3px;border-radius:2px;display:inline-block}
+  .sovleg b{color:var(--fg);font-weight:600}
+  /* the sentiment bar: three segments of one 100% rail, so it reads as a composition
+     rather than three unrelated numbers */
+  .sentbar{display:flex;height:10px;border-radius:3px;overflow:hidden;background:var(--s2);margin:6px 0 4px}
+  .sentbar i{display:block;height:100%}
   .deck #pane-aivis{overflow-x:auto}
   .gverb{margin:0 0 8px;padding:8px 12px;border-left:2px solid var(--a45);background:var(--well);
     border-radius:0 var(--r-ctl) var(--r-ctl) 0;font:400 13px/1.5 var(--sans);color:var(--fg)}
@@ -1373,8 +1392,53 @@
         {{if .LatestLabel}}<div class="agmeta" style="margin-top:6px">the three rate tiles are the week of {{.LatestLabel}} alone, over the run count beside them — the table below is the whole {{.Days}}-day window.</div>{{end}}
         {{if .Note}}<div class="inote err">{{.Note}}</div>{{end}}
 
+        {{if .BrandCount}}
+        <div class="stickrow" style="margin-top:14px">
+          <div class="sk"><div class="skv{{if gt .BrandRank 3}}{{else}} acc{{end}}">#{{.BrandRank}}</div><div class="skl">of {{.BrandCount}} brands named</div></div>
+          {{range .Share}}{{if .Us}}<div class="sk"><div class="skv">{{.SharePct}}%</div><div class="skl">share of voice</div></div>{{end}}{{end}}
+          {{if .GroundRuns}}<div class="sk"><div class="skv">{{.CitedRate}}%</div><div class="skl">web runs citing you</div></div>{{end}}
+        </div>
+        <div class="agmeta" style="margin-top:6px">rank is over every brand these answers named, us included — stated plainly even when it stings, because a visibility number you can&rsquo;t place against the alternatives is decoration.</div>
+        {{end}}
+
+        {{if .SOV.Has}}
+        <div class="zonelbl" style="margin:18px 0 2px">share of voice · you against everyone the engines name
+          <span class="sub">% of all brand mentions that week · amber is you</span></div>
+        <div class="sovwrap">
+          <svg viewBox="-2 -6 648 162" preserveAspectRatio="none" style="width:100%;height:190px;display:block;overflow:visible" role="img" aria-label="share of voice over time">
+            <g class="sovgrid"><line x1="0" y1="0" x2="640" y2="0"/><line x1="0" y1="37.5" x2="640" y2="37.5"/><line x1="0" y1="75" x2="640" y2="75"/><line x1="0" y1="112.5" x2="640" y2="112.5"/><line x1="0" y1="150" x2="640" y2="150"/></g>
+            {{range .SOV.Series}}<polyline class="sovline{{if .Us}} us{{end}}" points="{{.Points}}" stroke="{{.Color}}"/>
+            <circle cx="{{.Dot.X}}" cy="{{.Dot.Y}}" r="{{if .Us}}4{{else}}3{{end}}" fill="{{.Color}}"/>{{end}}
+          </svg>
+          <div class="sovax"><span>100</span><span>75</span><span>50</span><span>25</span><span>0</span></div>
+          <div style="display:flex;justify-content:space-between;color:var(--mut2);font-family:var(--mono);font-size:10px;margin-top:2px"><span>{{.SOV.First}}</span><span>share of every brand mention, %</span><span>{{.SOV.Last}}</span></div>
+        </div>
+        <div class="sovleg">{{range .SOV.Series}}<span><i style="background:{{.Color}}"></i>{{if .Us}}<b>you</b>{{else}}{{.Name}}{{end}} <b>{{.Last}}%</b> now &middot; {{.Share}}% overall</span>{{end}}</div>
+        {{end}}
+
+        {{if .SentRated}}
+        <div class="zonelbl" style="margin:18px 0 2px">how they talk about you
+          <span class="sub">across {{.SentRated}} scored answer{{if ne .SentRated 1}}s{{end}} · not being named is counted apart from being named badly</span></div>
+        <div class="sentbar">
+          {{if .SentPos}}<i style="background:var(--ok);width:{{.SentPos}}fr;flex:{{.SentPos}}" title="positive"></i>{{end}}
+          {{if .SentNeu}}<i style="background:var(--line3);flex:{{.SentNeu}}" title="neutral"></i>{{end}}
+          {{if .SentNeg}}<i style="background:var(--warn);flex:{{.SentNeg}}" title="negative"></i>{{end}}
+        </div>
+        <div class="agmeta">{{.SentPos}} positive · {{.SentNeu}} neutral · {{.SentNeg}} negative{{if .Sentiment.Absent}} · {{.Sentiment.Absent}} didn&rsquo;t name you at all{{end}}</div>
+        {{end}}
+
+        {{if .RankRows}}
+        <div class="zonelbl" style="margin:18px 0 6px">where you land when they rank
+          <span class="sub">position among the tools an answer listed, over the runs that ranked you</span></div>
+        {{range .RankRows}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}
+        {{end}}
+
+        {{if .GroundRuns}}
+        <div class="agmeta" style="margin-top:12px">web-search runs cited your own domain in <b>{{.CitedRuns}} of {{.GroundRuns}}</b> ({{.CitedRate}}%) — your content earning retrieval, which is a different thing from being named from memory.</div>
+        {{end}}
+
         {{if .ShowTrend}}
-        <div class="zonelbl" style="margin:16px 0 6px">share of voice · % of that week's runs
+        <div class="zonelbl" style="margin:18px 0 6px">your own visibility · % of that week's runs
           <span class="sub">amber = mentioned at all · grey = recommended as a pick · hatched = still filling or under 3 runs</span></div>
         <div class="bars" style="height:112px;padding-top:20px">
           {{range .Weeks}}<div class="col{{if .Thin}} part{{end}}"><span class="tip">{{.Tip}}</span><div class="bar" style="height:{{.MentPct}}%"></div><div class="ghost" style="height:{{.RecPct}}%"></div></div>{{end}}

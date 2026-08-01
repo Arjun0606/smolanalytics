@@ -94,3 +94,66 @@ func TestRawCountsShipWithRates(t *testing.T) {
 		t.Fatalf("prompt row lost its raw counts: %+v", r.Prompts[0])
 	}
 }
+
+func TestShareOfVoiceAndSignals(t *testing.T) {
+	// two weeks: we lose ground, PostHog gains. This is the comparison a GEO report exists
+	// to make — visibility in isolation says nothing about whether you are winning.
+	var evs []event.Event
+	wk2 := -8 * 24 * time.Hour // the week before
+	for i := 0; i < 6; i++ {
+		e := check("claude", "best analytics", true, true, 1, "PostHog", "great", wk2+time.Duration(i)*time.Hour)
+		e.Properties["sentiment"] = "positive"
+		evs = append(evs, e)
+	}
+	for i := 0; i < 6; i++ {
+		mentioned := i < 2 // only 2 of 6 this week
+		e := check("claude", "best analytics", mentioned, false, 0, "PostHog, Mixpanel", "", time.Duration(i)*time.Hour)
+		e.Properties["sentiment"] = map[bool]string{true: "neutral", false: "absent"}[mentioned]
+		evs = append(evs, e)
+	}
+	// a grounded run that cited our own domain — a different achievement from being named
+	g := check("claude-grounded", "best analytics", true, true, 2, "PostHog", "cited", time.Hour)
+	g.Properties["cited_domain"] = true
+	g.Properties["sentiment"] = "positive"
+	evs = append(evs, g)
+
+	r := Compute(evs, 30, base.Add(24*time.Hour))
+
+	if len(r.Weeks) != 2 {
+		t.Fatalf("weeks = %v, want 2 buckets", r.Weeks)
+	}
+	if len(r.Share) == 0 || !r.Share[0].Us {
+		t.Fatalf("our own series must lead the share list: %+v", r.Share)
+	}
+	us := r.Share[0]
+	if len(us.Weekly) != len(r.Weeks) {
+		t.Fatalf("series must align to the shared x-axis: %d vs %d", len(us.Weekly), len(r.Weeks))
+	}
+	// we were named 6 times the first week and 3 the second (2 ungrounded + 1 grounded)
+	if us.Weekly[0] != 6 || us.Weekly[1] != 3 {
+		t.Errorf("our weekly mentions = %v, want [6 3]", us.Weekly)
+	}
+	var posthog *BrandSeries
+	for i := range r.Share {
+		if r.Share[i].Name == "PostHog" {
+			posthog = &r.Share[i]
+		}
+	}
+	if posthog == nil {
+		t.Fatal("a competitor named in every answer must appear in the share series")
+	}
+	if posthog.Total <= us.Total {
+		t.Errorf("PostHog was named more often than us; share must show it (%d vs %d)", posthog.Total, us.Total)
+	}
+	// sentiment: absent is counted apart from negative — not being named is not criticism
+	if r.Sentiment.Absent == 0 || r.Sentiment.Negative != 0 {
+		t.Errorf("absent must not be scored as negative: %+v", r.Sentiment)
+	}
+	// citation rate divides by GROUNDED runs only; ungrounded runs cannot cite anything
+	if r.GroundRuns != 1 || r.CitedRuns != 1 || r.CitedRate != 100 {
+		t.Errorf("citation rate must use grounded runs as its denominator: %d/%d = %d%%", r.CitedRuns, r.GroundRuns, r.CitedRate)
+	}
+	if len(r.RankDist) == 0 {
+		t.Error("ranked runs must produce a rank distribution")
+	}
+}

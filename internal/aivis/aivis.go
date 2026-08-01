@@ -36,6 +36,11 @@ import (
 // is a drift waiting to happen.
 const CheckEvent = "$geo_check"
 
+// usBrand labels this product's own series in the share-of-voice chart. A literal "you"
+// rather than the brand name: the chart is read by the one person it is about, and a
+// legend that says "you" against three competitor names needs no explaining.
+const usBrand = "you"
+
 // EngineRow is one AI engine's visibility over the window. Raw counts ship beside
 // every percentage on purpose: "recommended in 3 of 5 runs" is a fact a reader can
 // judge, "60%" over an unstated denominator is not — and re-deriving the count from
@@ -78,6 +83,37 @@ type WeekPoint struct {
 	RecommendedPct int    `json:"recommended_pct"`
 }
 
+// BrandSeries is one brand's presence across the window — us, or a competitor named
+// alongside us. This is the raw material for the share-of-voice chart: the question a
+// GEO report exists to answer is not "how visible are we" in isolation, it is "how
+// visible are we COMPARED TO the alternatives the model keeps naming".
+type BrandSeries struct {
+	Name     string `json:"name"`
+	Us       bool   `json:"us"`        // the product this instance belongs to
+	Weekly   []int  `json:"weekly"`    // mentions per week, index-aligned to Result.Weeks
+	Total    int    `json:"total"`     // mentions across the whole window
+	SharePct int    `json:"share_pct"` // total as a share of every brand mention in the window
+}
+
+// SentimentRoll counts how the answers that DID mention us described us. Absent is
+// counted separately from negative on purpose: not being named is not the same as
+// being named badly, and collapsing them would turn silence into criticism.
+type SentimentRoll struct {
+	Positive int `json:"positive"`
+	Neutral  int `json:"neutral"`
+	Negative int `json:"negative"`
+	Absent   int `json:"absent"`
+	Rated    int `json:"rated"` // runs carrying any sentiment at all (the denominator)
+}
+
+// RankBucket is how often we land in each position of the lists that rank us. "4+" is
+// one bucket because the difference between 7th and 9th is noise at these sample sizes.
+type RankBucket struct {
+	Label string `json:"label"` // "1st" | "2nd" | "3rd" | "4+"
+	Runs  int    `json:"runs"`
+	Pct   int    `json:"pct"`
+}
+
 // Result is the AI-visibility report.
 type Result struct {
 	Days        int             `json:"days"`
@@ -86,6 +122,17 @@ type Result struct {
 	Prompts     []PromptRow     `json:"prompts"`
 	Competitors []CompetitorRow `json:"competitors"`
 	Trend       []WeekPoint     `json:"trend"`
+	// Weeks is the shared x-axis every series below is aligned to, so a chart can plot
+	// them together without re-deriving buckets and drifting from Trend.
+	Weeks     []string      `json:"weeks"`
+	Share     []BrandSeries `json:"share"`
+	Sentiment SentimentRoll `json:"sentiment"`
+	RankDist  []RankBucket  `json:"rank_dist"`
+	// CitedRate is how often an answer cited THIS product's own domain — content earning
+	// retrieval, which is a different achievement from being named from memory.
+	CitedRate  int `json:"cited_rate"`
+	CitedRuns  int `json:"cited_runs"`
+	GroundRuns int `json:"ground_runs"` // grounded runs, the only ones that can cite anything
 	// Note carries the low-sample warning ("" when the data clears the bar) — the
 	// same honesty rule the funnel's timing stats and whats_notable follow.
 	Note string `json:"note,omitempty"`
@@ -127,6 +174,14 @@ func Compute(evs []event.Event, days int, asof time.Time) Result {
 	competitors := map[string]int{}
 	weeks := map[string]*agg{}
 	total := 0
+	// share-of-voice raw material: per week, how many times each brand was named. "us" is
+	// counted from `mentioned` and competitors from the `competitors` property, so both
+	// sides of the comparison come off the same sampled answer.
+	brandWeek := map[string]map[string]int{} // brand -> weekStart -> mentions
+	weekSeen := map[string]bool{}
+	var sent SentimentRoll
+	ranks := map[int]int{}
+	citedRuns, groundRuns := 0, 0
 
 	for _, e := range evs {
 		if e.Name != CheckEvent || e.Timestamp.Before(cutoff) || e.Timestamp.After(asof) {
@@ -174,9 +229,49 @@ func Compute(evs []event.Event, days int, asof time.Time) Result {
 		monday := ts.AddDate(0, 0, -((int(ts.Weekday()) + 6) % 7)).Format("2006-01-02")
 		bump(weeks, monday)
 
+		weekSeen[monday] = true
+		bump2 := func(brand string) {
+			if brandWeek[brand] == nil {
+				brandWeek[brand] = map[string]int{}
+			}
+			brandWeek[brand][monday]++
+		}
+		if mentioned {
+			bump2(usBrand)
+		}
 		for _, c := range strings.Split(asStr(e.Properties["competitors"]), ",") {
 			if c = strings.TrimSpace(c); c != "" {
 				competitors[c]++
+				bump2(c)
+			}
+		}
+
+		switch asStr(e.Properties["sentiment"]) {
+		case "positive":
+			sent.Positive++
+			sent.Rated++
+		case "neutral":
+			sent.Neutral++
+			sent.Rated++
+		case "negative":
+			sent.Negative++
+			sent.Rated++
+		case "absent":
+			sent.Absent++
+			sent.Rated++
+		}
+		if r := int(rank); r >= 1 {
+			if r > 4 {
+				r = 4 // 7th vs 9th is noise at these sample sizes
+			}
+			ranks[r]++
+		}
+		// only a grounded run can cite anything, so it is the honest denominator for a
+		// citation rate — dividing by every run would understate it by the ungrounded share
+		if strings.HasSuffix(eng, "-grounded") {
+			groundRuns++
+			if asBool(e.Properties["cited_domain"]) {
+				citedRuns++
 			}
 		}
 	}
@@ -230,10 +325,67 @@ func Compute(evs []event.Event, days int, asof time.Time) Result {
 		a := weeks[k]
 		res.Trend = append(res.Trend, WeekPoint{WeekStart: k, Runs: a.runs, MentionedPct: pct(a.mentioned, a.runs), RecommendedPct: pct(a.recommended, a.runs)})
 	}
+	// --- the shared x-axis, then every series aligned to it ---
+	for w := range weekSeen {
+		res.Weeks = append(res.Weeks, w)
+	}
+	sort.Strings(res.Weeks)
+	idx := make(map[string]int, len(res.Weeks))
+	for i, w := range res.Weeks {
+		idx[w] = i
+	}
+	allMentions := 0
+	for _, byWeek := range brandWeek {
+		for _, n := range byWeek {
+			allMentions += n
+		}
+	}
+	for brand, byWeek := range brandWeek {
+		row := BrandSeries{Name: brand, Us: brand == usBrand, Weekly: make([]int, len(res.Weeks))}
+		for w, n := range byWeek {
+			row.Weekly[idx[w]] = n
+			row.Total += n
+		}
+		row.SharePct = pct(row.Total, allMentions)
+		res.Share = append(res.Share, row)
+	}
+	// us first so the chart's primary series is unambiguous, then the loudest competitors
+	sort.Slice(res.Share, func(i, j int) bool {
+		if res.Share[i].Us != res.Share[j].Us {
+			return res.Share[i].Us
+		}
+		if res.Share[i].Total != res.Share[j].Total {
+			return res.Share[i].Total > res.Share[j].Total
+		}
+		return res.Share[i].Name < res.Share[j].Name
+	})
+	res.Sentiment = sent
+	for _, b := range []struct {
+		label string
+		key   int
+	}{{"1st", 1}, {"2nd", 2}, {"3rd", 3}, {"4+", 4}} {
+		if n := ranks[b.key]; n > 0 {
+			res.RankDist = append(res.RankDist, RankBucket{Label: b.label, Runs: n, Pct: pct(n, rankedTotal(ranks))})
+		}
+	}
+	res.CitedRuns, res.GroundRuns = citedRuns, groundRuns
+	res.CitedRate = pct(citedRuns, groundRuns)
+
 	// a single-digit sample is an anecdote, and per-engine slices thinner still —
 	// say so in the payload, mirroring the funnel's timing_note discipline.
 	if total > 0 && total < 10 {
 		res.Note = "visibility rates are computed from under 10 sampled runs — directional at best until more checks accumulate"
 	}
 	return res
+}
+
+// rankedTotal is the denominator for the rank distribution: only the runs that actually
+// ranked us. Dividing by every run would report "10% first place" for a product that was
+// first every single time it was ranked at all.
+func rankedTotal(ranks map[int]int) int {
+	t := 0
+	for _, n := range ranks {
+		t += n
+	}
+	return t
 }

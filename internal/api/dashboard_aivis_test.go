@@ -188,3 +188,35 @@ func itoa(n int) string {
 	}
 	return string(b)
 }
+
+// The rank badge is computed from mention totals, not from the display order — av.Share is
+// sorted with our own series FIRST so the chart's primary line is unambiguous, and reading an
+// index off that would tell a product sitting dead last that it ranks #1.
+func TestAIVisRankIsByMentionsNotDisplayOrder(t *testing.T) {
+	t.Setenv("SMOLANALYTICS_PASSWORD", "op-pass-1234")
+	st := memory.New()
+	s := New(st)
+	now := time.Now().UTC()
+	var evs []event.Event
+	for i := 0; i < 10; i++ {
+		// we are named twice; PostHog and Plausible are named in all ten → we are last
+		evs = append(evs, event.Event{
+			Name: "$geo_check", DistinctID: "geo-runner", Timestamp: now.Add(-time.Duration(i) * time.Hour),
+			Properties: map[string]any{
+				"engine": "claude", "prompt": "best analytics", "mentioned": i < 2,
+				"recommended": false, "rank": float64(0), "competitors": "PostHog, Plausible",
+				"model_version": "m",
+			},
+		})
+	}
+	if err := st.Ingest(evs...); err != nil {
+		t.Fatalf("ingest: %v", err)
+	}
+	body := renderDash(t, s, "op-pass-1234")
+	if strings.Contains(body, ">#1</div><div class=\"skl\">of 3 brands named") {
+		t.Error("a product named least often must not be shown as #1")
+	}
+	if !strings.Contains(body, ">#3</div>") {
+		t.Error("expected rank #3 of 3 — the honest position")
+	}
+}
