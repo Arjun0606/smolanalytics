@@ -88,3 +88,41 @@ referral truth).
 Sequencing within the greenlight: A-v1 this week (reuse-heavy), B-v1 cron+events
 next, B engine report + pane, then A-v2. Every piece: three surfaces + agreement
 locks + low-n honesty, per house rules.
+
+---
+
+## B-addendum: the v1 recipe (methodology research, 2026-08-01)
+
+Distilled from Peec/Profound/Otterly/Scrunch/Trakkr teardowns + variance studies:
+
+- **Prompt set: 25, auto-generated** (Claude reads the site's homepage → category,
+  use-cases, competitors): 10 category "best X for Y", 5 use-case, 5 comparison vs
+  detected competitors, 3 problem-solution, 2 branded. BRANDED CAPPED ≤10% — the
+  incumbents' rule, branded prompts inflate visibility. User-editable list.
+- **Sampling: 3 runs/prompt/day, temperature 1, report 7-day rolling aggregates.**
+  Research: within-prompt resampling = 34.8% of total variance in a 12,933-response
+  study — single samples are noise; ≥10 runs for coarse estimates; MoE ≈ ±8pp at
+  n=100. Never report single-day numbers (existing low-n Note already enforces the
+  spirit; aggregation window does the rest).
+- **Two modes, labeled honestly**: ungrounded ("does the model KNOW you") vs
+  web_search-grounded ("does the live web SURFACE you") — API-vs-UI divergence is
+  real and the honest tools label it. Convention: mode is encoded in the engine
+  name (`claude` vs `claude-grounded`) — zero schema change, separate rows for free.
+  Grounded is the cost driver ($10/1k searches): 1 grounded run/day vs 3 ungrounded.
+- **Parsing: Haiku judge, strict JSON** per answer: {mentioned, rank (position among
+  brands listed), recommended, sentiment, competitors[], cited_urls[]}; regex
+  pre-check for the exact brand string as a sanity signal. Judge over regex is the
+  consensus (name variants, false positives).
+- **Citations**: Anthropic web_search returns cited sources → capture whether the
+  user's DOMAIN was cited (their content earning retrieval, distinct from mention).
+- **Metrics shipped** (aivis already computes most): visibility % (mentioned rate),
+  recommended rate, avg rank, weekly share-of-voice trend, competitor mentions,
+  latest verbatim + model id per engine. Add later: first-mention rate, domain
+  citation rate, sentiment rollup.
+- **Cost envelope**: 25 prompts × 3 runs × 30d ungrounded + Haiku judging ≈ low
+  tens of $/brand/mo; grounded gated to daily-1. Cap per org, env-tunable.
+  Incumbent pricing for the same: €90-2,000/mo. That gap is the wedge.
+
+Engine status: internal/aivis SHIPPED (aggregation + tests green, commit 5cf61f7).
+Next: /v1/aivis + MCP tool + agreement lock → dashboard pane → cloud geo-check
+cron implementing this recipe → verdict rule (visibility shift × ai_referrers).
