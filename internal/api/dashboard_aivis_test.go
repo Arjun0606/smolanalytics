@@ -239,14 +239,17 @@ func TestAIVisManagedInstanceGetsAButtonNotACurl(t *testing.T) {
 	}
 	body := renderDash(t, s, "op-pass-1234")
 
-	if !strings.Contains(body, "Set up AI visibility") {
-		t.Error("a managed instance must offer the switch, not the protocol")
+	if !strings.Contains(body, "This starts by itself") {
+		t.Error("a managed instance must say the feature is automatic, not hand out a setup task")
+	}
+	if strings.Contains(body, "needs turning on") {
+		t.Error("nothing needs turning on — we derive the site from their own traffic")
 	}
 	if !strings.Contains(body, "https://smolanalytics.com/projects/prj_test/setup") {
 		t.Error("the button must point at this project's own setup page")
 	}
 	// the curl may exist behind a disclosure for the curious, but must not be the answer
-	i, j := strings.Index(body, "Set up AI visibility"), strings.Index(body, "curl -X POST")
+	i, j := strings.Index(body, "This starts by itself"), strings.Index(body, "curl -X POST")
 	if j >= 0 && j < i {
 		t.Error("the curl appears before the button — the hosted reader meets the protocol first")
 	}
