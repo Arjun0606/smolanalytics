@@ -29,7 +29,11 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/event"
 )
 
-const checkEvent = "$geo_check"
+// CheckEvent is the event name the GEO runner writes. Exported because other packages
+// must recognise the sampler's own writes — the verdict engine has to keep them OUT of
+// the product-activity view and IN the visibility view, and a second copy of the literal
+// is a drift waiting to happen.
+const CheckEvent = "$geo_check"
 
 // EngineRow is one AI engine's visibility over the window. Raw counts ship beside
 // every percentage on purpose: "recommended in 3 of 5 runs" is a fact a reader can
@@ -124,7 +128,7 @@ func Compute(evs []event.Event, days int, asof time.Time) Result {
 	total := 0
 
 	for _, e := range evs {
-		if e.Name != checkEvent || e.Timestamp.Before(cutoff) || e.Timestamp.After(asof) {
+		if e.Name != CheckEvent || e.Timestamp.Before(cutoff) || e.Timestamp.After(asof) {
 			continue
 		}
 		total++

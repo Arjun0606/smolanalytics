@@ -71,6 +71,27 @@ func GenerateForFunnel(evs []event.Event, pageSteps []funnel.Step) []Finding {
 	if len(evs) == 0 {
 		return out
 	}
+	now := time.Now().UTC()
+
+	// The GEO sampler writes $geo_check events to this same instance. They are our robot,
+	// not the product's users, so every finding below is computed with them removed —
+	// otherwise one synthetic distinct_id firing daily reads as a perfectly retained user,
+	// and the sampler's volume competes for the anomaly slot with a raw $-prefixed name.
+	// The visibility rule gets the unfiltered slice, because those checks are its input.
+	all := evs
+	evs = withoutGeoChecks(evs)
+
+	// Computed before the product-activity guard: an instance can hold a quarter of
+	// sampled answers and no traffic at all (checks arrive with the write key, the SDK
+	// lands later), and that reader still deserves their verdict.
+	geo := aiVisibilityShift(all, now)
+	if len(evs) == 0 {
+		if geo != nil {
+			out = append(out, *geo)
+		}
+		return out
+	}
+
 	count := map[string]int{}
 	for _, e := range evs {
 		count[e.Name]++
@@ -86,12 +107,19 @@ func GenerateForFunnel(evs []event.Event, pageSteps []funnel.Step) []Finding {
 		return names[i] < names[j]
 	})
 	has := func(n string) bool { _, ok := count[n]; return ok }
-	now := time.Now().UTC()
 
 	// 0) what changed in the last 24h vs the trailing-week baseline — the timeliest read
 	out = append(out, anomalies(evs, names, now)...)
 
-	// 1) biggest funnel leak — on the REAL journey. If the conventional names exist
+	// 1) what the AI engines say about you, next to what they send you. Placed above the
+	// funnel leak because it is a channel going quiet, which the funnel cannot show and
+	// no other tool holds both halves of; below the 24h anomaly because a week-scale
+	// move is never more urgent than something that broke today.
+	if geo != nil {
+		out = append(out, *geo)
+	}
+
+	// 2) biggest funnel leak — on the REAL journey. If the conventional names exist
 	// use them; otherwise order the widest-coverage events by when users actually
 	// first do them (median first-touch), so the auto-funnel follows the product's
 	// true flow instead of raw volume order.
@@ -138,7 +166,7 @@ func GenerateForFunnel(evs []event.Event, pageSteps []funnel.Step) []Finding {
 		}
 	}
 
-	// 2) headline event, week-over-week
+	// 3) headline event, week-over-week
 	head := "signup"
 	if !has(head) {
 		head = names[0]
@@ -175,7 +203,7 @@ func GenerateForFunnel(evs []event.Event, pageSteps []funnel.Step) []Finding {
 		})
 	}
 
-	// 3) retention read
+	// 4) retention read
 	// anchor: ANY event, the same default /v1/retention, the dashboard, and the ask
 	// bar use — four surfaces, one definition of "came back".
 	rr := retention.Compute(evs, 7, "")
