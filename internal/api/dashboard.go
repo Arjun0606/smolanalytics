@@ -203,19 +203,19 @@ type dashVM struct {
 	// the web-analytics glance (from $pageview autocapture) — present only when
 	// pageviews exist, so product-only (backend) instances see nothing extra
 	// multi-site: observed `site` values + the currently selected one ("" = all)
-	Sites []string
-	Site  string
-	HasWeb bool
-	LiveNow     int
-	Visitors    int // unique visitors, 30d
-	Pageviews   int // 30d
-	TopPages    []segRow
-	Referrers   []segRow
+	Sites     []string
+	Site      string
+	HasWeb    bool
+	LiveNow   int
+	Visitors  int // unique visitors, 30d
+	Pageviews int // 30d
+	TopPages  []segRow
+	Referrers []segRow
 	// engagement + the AI channel (shown only when measurable / present)
 	HasEngagement bool
 	EngagedSecs   int
 	BouncePct     int
-	AIVisitors int
+	AIVisitors    int
 	// AIRefs is which assistants those visitors arrived FROM — the traffic half of the AI
 	// channel. web.Result computed it all along and no surface rendered it until the
 	// AI-visibility card gave it the other half to sit beside.
@@ -274,8 +274,8 @@ type dashVM struct {
 	// range + click-to-filter state: one global window and one global filter set that
 	// EVERY zone inherits, exactly like the site selector. All state lives in the
 	// querystring so every filtered view is a shareable, server-renderable URL.
-	RangeDays  int
-	RangeLabel string // "24h" | "7d" | ... — the ONE name for the window
+	RangeDays      int
+	RangeLabel     string // "24h" | "7d" | ... — the ONE name for the window
 	Ranges         []rangeVM
 	Chips          []chipVM
 	VisitorsDelta  string // vs the prior equal window; "" when unknowable

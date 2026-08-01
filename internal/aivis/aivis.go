@@ -8,14 +8,15 @@
 // which is the half of the story the GEO tools don't hold.
 //
 // Event contract (properties on $geo_check):
-//   engine        string  — "claude", "chatgpt", "perplexity", ...
-//   prompt        string  — the question asked, e.g. "best analytics for indie devs"
-//   mentioned     bool    — product named anywhere in the answer
-//   recommended   bool    — product recommended / listed as a pick
-//   rank          number  — 1-based position among named tools (0 = unranked)
-//   competitors   string  — comma-separated competitor names seen in the answer
-//   verbatim      string  — one-line excerpt of how the answer describes us
-//   model_version string  — exact model id the sample ran against
+//
+//	engine        string  — "claude", "chatgpt", "perplexity", ...
+//	prompt        string  — the question asked, e.g. "best analytics for indie devs"
+//	mentioned     bool    — product named anywhere in the answer
+//	recommended   bool    — product recommended / listed as a pick
+//	rank          number  — 1-based position among named tools (0 = unranked)
+//	competitors   string  — comma-separated competitor names seen in the answer
+//	verbatim      string  — one-line excerpt of how the answer describes us
+//	model_version string  — exact model id the sample ran against
 //
 // Deterministic like every other report. Low-sample honesty is the caller-facing
 // rule: rates always ship with their run counts, and Result.Note flags thin data.
