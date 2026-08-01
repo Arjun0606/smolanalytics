@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/agent"
+	"github.com/Arjun0606/smolanalytics/internal/aivis"
 	"github.com/Arjun0606/smolanalytics/internal/alert"
 	"github.com/Arjun0606/smolanalytics/internal/alias"
 	"github.com/Arjun0606/smolanalytics/internal/cohort"
@@ -680,6 +681,24 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 			return "", err
 		}
 		return jsonText(engagement.ComputeStickiness(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters), time.Time{}))
+	case "ai_visibility":
+		var a struct {
+			Days    int       `json:"days"`
+			Filters FilterSet `json:"filters"`
+		}
+		if err := unmarshalArgs(args, &a); err != nil {
+			return "", err
+		}
+		if err := query.Validate(a.Filters); err != nil {
+			return "", err
+		}
+		if err := guardFilters(evs, a.Filters); err != nil {
+			return "", err
+		}
+		if a.Days > 365 {
+			a.Days = 365 // same cap as GET /v1/ai-visibility — surfaces must agree
+		}
+		return jsonText(aivis.Compute(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters), a.Days, time.Time{}))
 	case "whats_notable":
 		return jsonText(map[string]any{"findings": insight.Generate(evs)})
 	case "paths":

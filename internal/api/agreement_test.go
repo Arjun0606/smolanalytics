@@ -196,6 +196,8 @@ func TestMCPAPIAgreement(t *testing.T) {
 		{"web overview", "/v1/web?days=30", "web_overview", `{"days":30}`, false},
 		{"lifecycle capped at 180 both sides", "/v1/lifecycle?days=500", "lifecycle", `{"days":500}`, false},
 		{"paths capped at 10 both sides", "/v1/paths?start=signup&depth=50", "paths", `{"start":"signup","depth":50}`, false},
+		{"ai visibility", "/v1/ai-visibility?days=90", "ai_visibility", `{"days":90}`, false},
+		{"ai visibility capped at 365 both sides", "/v1/ai-visibility?days=999", "ai_visibility", `{"days":999}`, false},
 		// a "/"-prefixed start flips both surfaces into page-to-page navigation mode
 		{"paths page mode", "/v1/paths?start=/pricing", "paths", `{"start":"/pricing"}`, false},
 		{"heatmap", "/v1/heatmap?path=/pricing", "heatmap", `{"path":"/pricing"}`, false},
@@ -394,6 +396,21 @@ func featureAgreementServer(t *testing.T) (*httptest.Server, string) {
 			ev(survey.ResponseEvent, u, -35*time.Hour, map[string]any{survey.PropSurvey: surveyID, survey.PropAnswer: float64(i % 11)})
 		}
 	}
+	// AI-visibility samples: two engines (one grounded row via the naming convention),
+	// so /v1/ai-visibility and the ai_visibility tool have real aggregation to agree on.
+	ev("$geo_check", "geo-runner", -30*time.Hour, map[string]any{
+		"engine": "claude", "prompt": "best analytics for indie devs", "mentioned": true,
+		"recommended": true, "rank": float64(1), "competitors": "PostHog, Plausible",
+		"verbatim": "open-source agent-operated analytics", "model_version": "claude-test-1"})
+	ev("$geo_check", "geo-runner", -29*time.Hour, map[string]any{
+		"engine": "claude", "prompt": "best analytics for indie devs", "mentioned": true,
+		"recommended": false, "rank": float64(3), "competitors": "PostHog",
+		"verbatim": "an analytics option", "model_version": "claude-test-1"})
+	ev("$geo_check", "geo-runner", -28*time.Hour, map[string]any{
+		"engine": "claude-grounded", "prompt": "best analytics for indie devs", "mentioned": false,
+		"recommended": false, "rank": float64(0), "competitors": "PostHog, Mixpanel",
+		"verbatim": "", "model_version": "claude-test-1"})
+
 	// A clean 'alice' journey (no dev events) so session_timeline is stable to fetch by start.
 	ev("$pageview", "alice", -3*time.Hour, map[string]any{"path": "/"})
 	ev("$click", "alice", -3*time.Hour+2*time.Second, map[string]any{"path": "/", "x": float64(100), "y": float64(200), "vw": float64(1280), "text": "Start"})

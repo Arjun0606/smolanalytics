@@ -172,6 +172,14 @@ var toolList = []map[string]any{
 		}, nil),
 	},
 	{
+		"name":        "ai_visibility",
+		"description": "AI search visibility (GEO): how often the AI engines (Claude, ChatGPT, Perplexity — grounded and ungrounded modes as separate rows) mention or RECOMMEND this product in sampled answers, with average rank, competitor mention counts, weekly share-of-voice trend, and the latest verbatim description per engine. Computed from $geo_check sampling events; cross-reference web_overview's ai_referrers for the traffic those answers actually send. Use for 'does ChatGPT recommend us', 'how does Claude describe us', 'AI visibility vs competitors'.",
+		"inputSchema": obj(map[string]any{
+			"days":    map[string]any{"type": "number", "description": "Trailing window in days (default 90 — visibility moves slowly; capped at 365)."},
+			"filters": filtersSchema,
+		}, nil),
+	},
+	{
 		"name":        "paths",
 		"description": "User flows: after a start event, what do users do next (ranked at each step), over any window (days=7, from/to, or omit for all time)? Start with a page path (\"/pricing\") instead of an event name to follow page-to-page NAVIGATION — pageview paths only, autocapture noise excluded, reloads collapsed. Use for 'what do users do after signup', 'where do users go from the pricing page', 'common paths after X'.",
 		"inputSchema": obj(map[string]any{

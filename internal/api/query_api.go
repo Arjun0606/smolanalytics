@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/aivis"
 	"github.com/Arjun0606/smolanalytics/internal/cohort"
 	"github.com/Arjun0606/smolanalytics/internal/engagement"
 	"github.com/Arjun0606/smolanalytics/internal/event"
@@ -581,6 +582,27 @@ func (s *Server) apiStickiness(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, engagement.ComputeStickiness(evs, time.Time{}))
+}
+
+// GET /v1/ai-visibility?days=90&filters=... — AI search visibility (GEO), computed
+// from sampled $geo_check events: per-engine mention/recommend rates, avg rank,
+// competitor mentions, weekly share-of-voice, and the latest verbatim per engine.
+// Same single query path as everything else — the MCP ai_visibility tool must
+// return byte-identical answers (agreement_test).
+func (s *Server) apiAIVisibility(w http.ResponseWriter, r *http.Request) {
+	evs, err := s.filtered(r)
+	if err != nil {
+		writeQueryErr(w, err)
+		return
+	}
+	days := 0 // 0 → aivis default (90; visibility moves slowly)
+	if v, err := strconv.Atoi(r.URL.Query().Get("days")); err == nil && v > 0 {
+		days = v
+	}
+	if days > 365 {
+		days = 365 // same cap as the MCP tool — surfaces must agree
+	}
+	writeJSON(w, http.StatusOK, aivis.Compute(evs, days, time.Time{}))
 }
 
 // GET /v1/paths?start=signup&depth=3&filters=... — what users do after an event.

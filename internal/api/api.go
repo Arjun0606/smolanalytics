@@ -295,6 +295,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/retention", s.apiRetention)
 	mux.HandleFunc("GET /v1/lifecycle", s.apiLifecycle)
 	mux.HandleFunc("GET /v1/stickiness", s.apiStickiness)
+	mux.HandleFunc("GET /v1/ai-visibility", s.apiAIVisibility)
 	mux.HandleFunc("GET /v1/paths", s.apiPaths)
 	mux.HandleFunc("GET /v1/heatmap", s.apiHeatmap)
 	mux.HandleFunc("GET /v1/sessions", s.apiSessions)
