@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/aivis"
 	"github.com/Arjun0606/smolanalytics/internal/brief"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/insight"
@@ -87,6 +88,14 @@ func (s *Server) usage(w http.ResponseWriter, r *http.Request) {
 	// Stream the counts instead of materializing the whole history — the cloud polls this
 	// often, so keep it to a counter + a distinct-users set, not a full event slice.
 	err := s.store.Scan(time.Time{}, time.Time{}, func(e event.Event) error {
+		// The GEO sampler's own writes are OUR robot, not the customer's traffic, and this
+		// endpoint is what the cloud bills on. Counting them would charge a customer for
+		// the checks we chose to run on their behalf — and inflate the visitor count with
+		// one synthetic id. Excluded from every counter here for the same reason the
+		// verdict excludes them: they are not product activity.
+		if e.Name == aivis.CheckEvent {
+			return nil
+		}
 		total++
 		users[e.DistinctID] = true
 		if !e.Timestamp.Before(cutoff) { // inclusive "last 30 days"

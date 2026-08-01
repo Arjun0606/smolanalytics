@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/aivis"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/insight"
 )
@@ -63,6 +64,13 @@ func Build(evs []event.Event, days int, now time.Time) Brief {
 		return a
 	}
 	for _, e := range evs {
+		// the GEO sampler's own writes are not the product's traffic: one robot id firing
+		// daily would show up as a visitor and its volume as growth. The verdict engine
+		// already excludes them; the pulse above the verdict must agree, or the digest
+		// contradicts itself in its own first line.
+		if e.Name == aivis.CheckEvent {
+			continue
+		}
 		site, _ := e.Properties["site"].(string)
 		switch {
 		case !e.Timestamp.Before(cur):
