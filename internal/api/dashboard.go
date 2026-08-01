@@ -3,6 +3,7 @@ package api
 import (
 	_ "embed"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io"
@@ -18,6 +19,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/aivis"
 	"github.com/Arjun0606/smolanalytics/internal/engagement"
 	"github.com/Arjun0606/smolanalytics/internal/event"
+	"github.com/Arjun0606/smolanalytics/internal/fixbrief"
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
 	"github.com/Arjun0606/smolanalytics/internal/goal"
 	"github.com/Arjun0606/smolanalytics/internal/insight"
@@ -167,12 +169,19 @@ func toStr(v any) string {
 }
 
 type dashVM struct {
-	HasConversion  bool // a real funnel (≥2 distinct steps) — gates the conversion KPI/pane
-	TotalUsers     int
-	Signups        int
-	OverallConv    int
-	Funnel         []funnelRow
-	Verdict        []insight.Finding // server-rendered "what to look at" so the front door isn't a JS-only spinner
+	HasConversion bool // a real funnel (≥2 distinct steps) — gates the conversion KPI/pane
+	TotalUsers    int
+	Signups       int
+	OverallConv   int
+	Funnel        []funnelRow
+	Verdict       []insight.Finding
+	// FixBriefs is every verdict finding's fix brief, keyed by fingerprint, as a JSON island.
+	// Computed by the SAME path GET /v1/fix-brief and the fix_brief MCP tool return
+	// (fixbrief.ComputeAll), over the funnel THIS PAGE is showing — so the button, the endpoint
+	// and the tool can never hand out three different stories about one finding. Rendered
+	// server-side rather than fetched: the sheet must open at click speed, and the whole point
+	// of the action is that the evidence is already computed.
+	FixBriefs      template.JS // server-rendered "what to look at" so the front door isn't a JS-only spinner
 	Retention      []retRow
 	RetDayHeaders  []string
 	RetentionReady bool // P2-8: at least one observable post-D0 return exists
@@ -1214,6 +1223,15 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	rroll := boolParam(r.URL.Query().Get("rroll"))
 	nowT := time.Now().UTC()
+
+	// every finding's brief, computed over the funnel THIS PAGE is showing and on the page's
+	// own clock — so the sheet, GET /v1/fix-brief and the fix_brief MCP tool cannot tell three
+	// different stories about one finding. Server-rendered because the sheet must open at click
+	// speed; the evidence being already computed is the whole point of the action.
+	fixBriefs := map[string]fixbrief.Brief{}
+	for _, fb := range fixbrief.ComputeAll(evs, verdictSteps, nowT) {
+		fixBriefs[fb.Fingerprint] = fb
+	}
 	endT := nowT
 	if !rangeAsof.IsZero() {
 		endT = rangeAsof
@@ -1449,6 +1467,13 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		"- anything else that reads an mcp.json: {\"mcpServers\": {\"smolanalytics\": " + cfg + "}}\n\n" +
 		"After connecting, call the \"overview\" tool and report the visitor count so I know it works."
 	vm.CursorLink = template.URL("cursor://anysphere.cursor-deeplink/mcp/install?name=smolanalytics&config=" + base64.StdEncoding.EncodeToString([]byte(cfg)))
+	// A marshal failure must not take the page down with it: an empty island degrades the sheet
+	// to "no brief for that finding", which the renderer already handles honestly.
+	if bj, err := json.Marshal(fixBriefs); err == nil {
+		vm.FixBriefs = template.JS(bj)
+	} else {
+		vm.FixBriefs = template.JS("{}")
+	}
 	vm.VSCodeLink = template.URL("vscode:mcp/install?" + url.QueryEscape(vsCfg))
 
 	for i, st := range fr.Steps {

@@ -156,7 +156,34 @@
   .co-detail{margin-top:6px;color:var(--mut);font-size:13px;line-height:1.5}
   .co-meta{margin-top:11px;display:flex;gap:8px 14px;flex-wrap:wrap;align-items:center;font-family:var(--mono);font-size:10.5px;color:var(--dis)}
   .co-meta .co-prov{color:var(--mut);border:1px solid var(--line);border-radius:4px;padding:3px 8px}
-  .co-act{align-self:center}
+  /* The verdict now carries two actions: "Show me" opens the report (primary — the number is
+     always the first move), "Fix with your agent" hands the computed evidence to the thing that
+     will change the code (secondary weight, same control kit, so they read as one pair). */
+  .co-act{align-self:center;display:flex;flex-direction:column;gap:7px}
+  .co-fix{display:inline-block;background:var(--s2);border:1px solid var(--line2);color:var(--mut);font-family:var(--mono);font-size:12px;font-weight:600;border-radius:var(--r-ctl);padding:7px 14px;text-decoration:none;white-space:nowrap;text-align:center;cursor:pointer;transition:border-color var(--t-fast),color var(--t-fast)}
+  .co-fix:hover,.co-fix:focus-visible{border-color:var(--accent);color:var(--accent)}
+  .vfix{margin-left:10px;font-family:var(--mono);font-size:11px;color:var(--mut2);cursor:pointer;white-space:nowrap}
+  .vfix:hover,.vfix:focus-visible{color:var(--accent)}
+  /* the fix-brief sheet — same slide-over geometry as the visitor journey overlay, wider,
+     because this one is read rather than scanned */
+  .fxshade{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100;animation:fadein var(--t-base) var(--ease)}
+  .fixsheet{position:fixed;top:0;right:0;bottom:0;width:min(600px,95vw);background:var(--s1);border-left:1px solid var(--line2);z-index:101;padding:var(--card-pad);overflow-y:auto;animation:slidein var(--t-slow) var(--ease-out)}
+  .fixsheet .fxh{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:10px}
+  .fixsheet .fxtag{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:var(--track-lbl);color:var(--accent)}
+  .fixsheet .fxclose{color:var(--mut2);cursor:pointer;font-family:var(--mono);font-size:12px}
+  .fixsheet .fxclose:hover,.fixsheet .fxclose:focus-visible{color:var(--warn)}
+  .fixsheet .fxtitle{font-size:16px;font-weight:600;line-height:1.4}
+  .fixsheet .fxdetail{color:var(--mut);font-size:13px;line-height:1.7;margin-top:4px}
+  .fixsheet .fxnote{font-family:var(--mono);font-size:11px;color:var(--warn);margin-top:8px;line-height:1.7}
+  .fixsheet .fxsec{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:var(--track-lbl);color:var(--mut2);margin:20px 0 6px;border-top:1px solid var(--line);padding-top:12px}
+  .fxrow{padding:8px 0;border-bottom:1px solid var(--s2)}
+  .fxrow .fxlbl{font-size:12px;color:var(--mut)}
+  .fxrow .fxval{font-size:13px;color:var(--fg);font-variant-numeric:tabular-nums;margin-top:2px}
+  .fxrow .fxn{font-family:var(--mono);font-size:11px;color:var(--mut2)}
+  .fxrow .fxsrc{display:inline-block;margin-top:3px;font-family:var(--mono);font-size:10px;color:var(--mut2);text-decoration:none;word-break:break-all}
+  .fxrow .fxsrc:hover{color:var(--accent);text-decoration:underline}
+  .fixsheet ol.fxdo{margin:0;padding-left:18px;color:var(--mut);font-size:13px;line-height:1.75}
+  .fixsheet .fxaccept{font-size:13px;color:var(--fg);line-height:1.7}
   .co-go{display:inline-block;background:var(--accent);color:var(--bg);font-family:var(--mono);font-size:12px;font-weight:700;border-radius:var(--r-ctl);padding:8px 14px;text-decoration:none;white-space:nowrap;cursor:pointer;transition:background var(--t-fast)}
   .co-go:hover{background:var(--accent-hi)}
   .verdict-more{margin-top:2px}
@@ -885,19 +912,58 @@
   <div class="verdict">
     <div id="verdict">
       {{if .Verdict}}{{$first := index .Verdict 0}}<div class="callout{{if eq $first.Severity "warn"}} warn{{end}}">
-        <div class="co-tag"><span class="co-ic">{{if eq $first.Severity "warn"}}!{{else}}✦{{end}}</span>{{if eq $first.Severity "warn"}}Fix first{{else}}Today&rsquo;s read{{end}}</div>
+        <div class="co-tag"><span class="co-ic">{{if eq $first.Severity "warn"}}!{{else}}&#10022;{{end}}</span>{{if eq $first.Severity "warn"}}Fix first{{else}}Today&rsquo;s read{{end}}</div>
         <div class="co-body">
           <div class="co-title">{{$first.Title}}</div>
           <div class="co-detail">{{$first.Detail}}</div>
           <div class="co-meta"><span class="co-prov">computed, not guessed</span><span>the same report this dashboard renders</span></div>
         </div>
-        <div class="co-act"><a class="co-go" data-q="{{$first.Title}}">Show me &rarr;</a></div>
+        <div class="co-act">
+          <a class="co-go" data-q="{{$first.Title}}">Show me &rarr;</a>
+          <a class="co-fix" data-fix="{{$first.Fingerprint}}" role="button" tabindex="0">Fix with your agent &rarr;</a>
+        </div>
       </div>
-      {{if gt (len .Verdict) 1}}<div class="verdict-more">{{range slice .Verdict 1}}<div class="vline{{if eq .Severity "warn"}} warn{{end}}"><span class="vdot"></span><span class="vt">{{.Title}}</span><span class="vsep">·</span><span class="vd">{{.Detail}}</span><a class="vwhy" data-q="{{.Title}}">why? &rarr;</a></div>{{end}}</div>{{end}}
+      {{if gt (len .Verdict) 1}}<div class="verdict-more">{{range slice .Verdict 1}}<div class="vline{{if eq .Severity "warn"}} warn{{end}}"><span class="vdot"></span><span class="vt">{{.Title}}</span><span class="vsep">&middot;</span><span class="vd">{{.Detail}}</span><a class="vwhy" data-q="{{.Title}}">why? &rarr;</a><a class="vfix" data-fix="{{.Fingerprint}}" role="button" tabindex="0">brief &rarr;</a></div>{{end}}</div>{{end}}
       {{else}}<div class="vcalm">nothing unusual right now: traffic and conversion look within normal range.</div>{{end}}
     </div>
-    <details class="weekline"><summary>this week →</summary><div class="weekbody" id="brief"><div class="exsummary">…</div></div></details>
+    <details class="weekline"><summary>this week &rarr;</summary><div class="weekbody" id="brief"><div class="exsummary">&hellip;</div></div></details>
   </div>
+
+  <div class="fxshade" id="fxshade" hidden></div>
+  <aside class="fixsheet" id="fixsheet" hidden role="dialog" aria-modal="true" aria-labelledby="fxtitle">
+    <div class="fxh">
+      <div class="fxtag">fix brief &middot; computed evidence, your agent</div>
+      <span class="fxclose" id="fxclose" role="button" tabindex="0">close &#10005;</span>
+    </div>
+    <div class="fxtitle" id="fxtitle"></div>
+    <div class="fxdetail" id="fxdetail"></div>
+    <div class="fxnote" id="fxnote" hidden></div>
+    <div class="fxsec">the evidence &middot; every row re-runnable</div>
+    <div id="fxevidence"></div>
+    <div class="fxsec" id="fxwherelbl" hidden>where it shows up &middot; measured pages, read this code first</div>
+    <div id="fxwhere"></div>
+    <div class="fxsec">what to ask for</div>
+    <ol class="fxdo" id="fxdo"></ol>
+    <div class="fxsec">acceptance &middot; how you will know</div>
+    <div class="fxaccept" id="fxaccept"></div>
+    <div class="fxsec">hand it to your agent</div>
+    <div class="crow">
+      <span class="cn">Cursor</span>
+      <a class="cbtn primary" id="fxcursor" href="#">&#9889; open in Cursor</a>
+      <span class="exsummary">opens a new chat with this brief; Cursor asks you to confirm before it runs</span>
+    </div>
+    <div class="crow">
+      <span class="cn">Claude Code</span>
+      <span class="ccode" id="fxcc"></span>
+      <button class="copy" data-c="fxcc">copy</button>
+    </div>
+    <div class="crow" style="align-items:flex-start">
+      <span class="cn" style="padding-top:6px">any agent</span>
+      <pre class="code" id="fxprompt" style="flex:1;margin:0;font-size:11px;line-height:1.6;max-height:300px;overflow-y:auto"></pre>
+      <button class="copy" data-c="fxprompt">copy</button>
+    </div>
+    <div class="cnote" id="fxprov"></div>
+  </aside>
 
   <!-- zone 4: KPI cards — the numbers that matter, each with its delta and a real sparkline -->
   <div class="kpis">
@@ -1669,6 +1735,86 @@
     // exactly what the server computed — the client never re-derives.
     var SA_FUNNEL=[{{range $i,$s := .Funnel}}{{if $i}},{{end}}"{{$s.Event}}"{{end}}];
     var SA_EVENT="{{.StatEventLabel}}";
+
+    // ---- the fix brief: the verdict's second action. Server-computed by fixbrief.ComputeAll,
+    // the SAME struct GET /v1/fix-brief and the fix_brief MCP tool return, so the button, the
+    // endpoint and the editor cannot tell three different stories about one finding.
+    var SA_FIX = {{.FixBriefs}};
+
+    // Cursor's documented prompt deeplink caps at 8,000 URL-ENCODED characters. Over that it
+    // silently does nothing, so hand it the short "pull it yourself over MCP" ask instead of a
+    // truncated brief — a link that opens with half the evidence is worse than one that opens
+    // with instructions to fetch all of it.
+    var FX_URL_MAX=7600;
+    function fxDeeplinkText(b){
+      var full=encodeURIComponent(b.prompt);
+      return full.length<=FX_URL_MAX?b.prompt:b.ask;
+    }
+    // single-quote for a shell: the only escape that survives newlines and quotes intact
+    function fxShellQuote(s){return "'"+String(s).replace(/'/g,"'\\''")+"'";}
+
+    function fxRow(label,value,n,report){
+      return '<div class="fxrow"><div class="fxlbl">'+esc(label)+'</div>'+
+        '<div class="fxval">'+esc(value)+(n?' <span class="fxn">n='+n+'</span>':'')+'</div>'+
+        (report?'<a class="fxsrc" href="'+esc(report)+'" target="_blank" rel="noopener">re-run: '+esc(report)+'</a>':'')+'</div>';
+    }
+    function fxOpen(fp){
+      var b=SA_FIX&&SA_FIX[fp];
+      if(!b){
+        // a link from an old email can outlive the finding it named — fall back to today's lead
+        // and say so, rather than opening an empty sheet
+        for(var k in SA_FIX){if(Object.prototype.hasOwnProperty.call(SA_FIX,k)){b=SA_FIX[k];break;}}
+        if(!b)return;
+      }
+      document.getElementById('fxtitle').textContent=b.finding.title;
+      document.getElementById('fxdetail').textContent=b.finding.detail;
+      var note=document.getElementById('fxnote');
+      note.textContent=b.note||'';note.hidden=!b.note;
+      document.getElementById('fxevidence').innerHTML=(b.evidence||[]).map(function(e){
+        return fxRow(e.label,e.value,e.n,e.report);
+      }).join('')||'<div class="fxrow"><div class="fxlbl">no numeric evidence rows for this finding</div></div>';
+      var wl=document.getElementById('fxwherelbl'),wh=document.getElementById('fxwhere');
+      wh.innerHTML=(b.where||[]).map(function(w){
+        return fxRow(w.path,w.users+' — '+w.why,0,'');
+      }).join('');
+      wl.hidden=!(b.where&&b.where.length);
+      document.getElementById('fxdo').innerHTML=(b.do||[]).map(function(d){return '<li>'+esc(d)+'</li>';}).join('');
+      var a=b.acceptance||{};
+      document.getElementById('fxaccept').innerHTML=
+        esc(a.metric)+' is <b>'+esc(a.current)+'</b> today. It should go <b>'+esc(a.direction)+'</b> within '+esc(a.window)+'.<br>'+
+        '<a class="fxsrc" href="'+esc(a.report)+'" target="_blank" rel="noopener">re-run: '+esc(a.report)+'</a>'+
+        '<div class="fxlbl" style="margin-top:6px">if it does not move, the change was wrong. that is the whole point of writing it down first.</div>';
+      document.getElementById('fxprompt').textContent=b.prompt;
+      document.getElementById('fxcc').textContent='claude '+fxShellQuote(b.ask);
+      document.getElementById('fxcursor').href=
+        'cursor://anysphere.cursor-deeplink/prompt?text='+encodeURIComponent(fxDeeplinkText(b));
+      document.getElementById('fxprov').textContent=b.computed_by+' Finding id: '+b.fingerprint+'.';
+      document.getElementById('fxshade').hidden=false;
+      var sheet=document.getElementById('fixsheet');
+      sheet.hidden=false;sheet.scrollTop=0;
+      document.getElementById('fxclose').focus();
+    }
+    function fxClose(){
+      document.getElementById('fxshade').hidden=true;
+      document.getElementById('fixsheet').hidden=true;
+    }
+    document.addEventListener('click',function(e){
+      var t=e.target.closest('.co-fix[data-fix],.vfix[data-fix]');
+      if(t){e.preventDefault();fxOpen(t.getAttribute('data-fix'));return;}
+      if(e.target.closest('#fxclose')||e.target.id==='fxshade')fxClose();
+    });
+    document.addEventListener('keydown',function(e){
+      if(e.key==='Escape'&&!document.getElementById('fixsheet').hidden){fxClose();return;}
+      if(e.key!=='Enter'&&e.key!==' ')return;
+      var t=e.target.closest&&e.target.closest('.co-fix[data-fix],.vfix[data-fix],#fxclose');
+      if(t){e.preventDefault();t.click();}
+    });
+    // the daily brief email links to /#fix=<fingerprint>; the cloud's sign-in bounce carries the
+    // fragment through, so landing here opens that finding's brief with nothing else to click
+    (function(){
+      var m=/[#&]fix=([a-f0-9]{1,12})/.exec(location.hash);
+      if(m)fxOpen(m[1]);
+    })();
 
     function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
 
