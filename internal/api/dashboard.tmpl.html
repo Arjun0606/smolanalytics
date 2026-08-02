@@ -1394,7 +1394,8 @@
 
         {{if .BrandCount}}
         <div class="stickrow" style="margin-top:14px">
-          <div class="sk"><div class="skv{{if gt .BrandRank 3}}{{else}} acc{{end}}">#{{.BrandRank}}</div><div class="skl">of {{.BrandCount}} brands named</div></div>
+          {{if .BrandRank}}<div class="sk"><div class="skv{{if gt .BrandRank 3}}{{else}} acc{{end}}">#{{.BrandRank}}</div><div class="skl">of {{.BrandCount}} brands named</div></div>
+          {{else}}<div class="sk"><div class="skv" style="color:var(--warn)">not named</div><div class="skl">in any sampled answer</div></div>{{end}}
           {{range .Share}}{{if .Us}}<div class="sk"><div class="skv">{{.SharePct}}%</div><div class="skl">share of voice</div></div>{{end}}{{end}}
           {{if .GroundRuns}}<div class="sk"><div class="skv">{{.CitedRate}}%</div><div class="skl">web runs citing you</div></div>{{end}}
         </div>
@@ -1434,7 +1435,10 @@
         {{end}}
 
         {{if .GroundRuns}}
-        <div class="agmeta" style="margin-top:12px">web-search runs cited your own domain in <b>{{.CitedRuns}} of {{.GroundRuns}}</b> ({{.CitedRate}}%) — your content earning retrieval, which is a different thing from being named from memory.</div>
+        <div class="zonelbl" style="margin:18px 0 6px">read, versus picked
+          <span class="sub">of the web-search answers that cited your own domain</span></div>
+        <div class="agmeta">Your domain was cited in <b>{{.CitedRuns}} of {{.GroundRuns}}</b> web-search answers ({{.CitedRate}}%). Of those, <b>{{.CitedRec}}</b> recommended you and <b>{{.CitedNotRec}}</b> recommended someone else.</div>
+        {{if .CitedNotRec}}<div class="agmeta" style="margin-top:6px">Being read and passed over is not a content problem — the page was found. Models pick the names they already know and fetch sources afterwards, so that gap closes off your site: reviews, directory listings, and the roundups the model learned from.</div>{{end}}
         {{end}}
 
         {{if .ShowTrend}}

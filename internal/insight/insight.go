@@ -123,9 +123,17 @@ func GenerateForFunnel(evs []event.Event, pageSteps []funnel.Step) []Finding {
 	// sampled answers and no traffic at all (checks arrive with the write key, the SDK
 	// lands later), and that reader still deserves their verdict.
 	geo := aiVisibilityShift(all, now)
+	// the retrieval-vs-reputation split: read but not picked is a different problem from never
+	// being read, and only this instance holds both halves of the evidence
+	cnr := citedNotRecommended(all, now)
 	if len(evs) == 0 {
+		// a GEO-only instance still gets its verdict — both findings, not just the first.
+		// (checks arrive with the write key; the SDK often lands later.)
 		if geo != nil {
 			out = append(out, *geo)
+		}
+		if cnr != nil {
+			out = append(out, *cnr)
 		}
 		return out
 	}
@@ -155,6 +163,9 @@ func GenerateForFunnel(evs []event.Event, pageSteps []funnel.Step) []Finding {
 	// move is never more urgent than something that broke today.
 	if geo != nil {
 		out = append(out, *geo)
+	}
+	if cnr != nil {
+		out = append(out, *cnr)
 	}
 
 	// 2) biggest funnel leak — on the REAL journey. If the conventional names exist

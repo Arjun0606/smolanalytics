@@ -293,3 +293,42 @@ func withoutGeoChecks(evs []event.Event) []event.Event {
 	}
 	return out
 }
+
+// geoMinCited is the floor for the cited-not-recommended finding. Lower than geoMinRuns on
+// purpose: only GROUNDED runs can cite anything, so this denominator is a quarter of the
+// sampling by construction, and holding it to the same bar would silence a real and
+// actionable diagnosis for months.
+const geoMinCited = 8
+
+// citedNotRecommended is the diagnosis every competing tool collapses. Models choose the
+// brands they name from what they already know and retrieve sources afterwards, so "your page
+// was read and a rival got the recommendation" is not a content problem — writing more pages
+// will not fix it. It is a problem of what the model learned about your category before it
+// ever saw your site, which is fixed off-site: reviews, directories, being in the listicles
+// the model trained on. Saying that plainly is worth more than another percentage.
+func citedNotRecommended(evs []event.Event, now time.Time) *Finding {
+	r := aivis.Compute(evs, 30, now)
+	if r.CitedRuns < geoMinCited {
+		return nil
+	}
+	// only fires when the gap is the STORY: read most of the time, picked rarely
+	if r.CitedNotRecommended*100 < r.CitedRuns*70 {
+		return nil
+	}
+	return &Finding{
+		Severity: "warn",
+		Kind:     KindAIVis,
+		Rate:     pctOf(r.CitedNotRecommended, r.CitedRuns),
+		N:        r.CitedRuns,
+		Title:    fmt.Sprintf("AI search reads your site and still picks someone else, %d times out of %d", r.CitedNotRecommended, r.CitedRuns),
+		Detail: fmt.Sprintf("Of %d web-search answers that cited your own domain, %d recommended a competitor instead. That is not a content problem — the page was found and read. Models pick the names they know before they fetch anything, so this is decided off your site: reviews, directory listings, and being named in the roundups the model learned from.",
+			r.CitedRuns, r.CitedNotRecommended),
+	}
+}
+
+func pctOf(part, whole int) int {
+	if whole == 0 {
+		return 0
+	}
+	return int(float64(part)/float64(whole)*100 + 0.5)
+}

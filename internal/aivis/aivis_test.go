@@ -157,3 +157,27 @@ func TestShareOfVoiceAndSignals(t *testing.T) {
 		t.Error("ranked runs must produce a rank distribution")
 	}
 }
+
+// "Cited but not recommended" is the split every competing tool collapses into one number.
+// A model names brands from what it already knows and fetches sources afterwards, so your page
+// being read while a rival gets the pick is a different failure with a different fix.
+func TestCitedButNotRecommendedIsItsOwnNumber(t *testing.T) {
+	var evs []event.Event
+	// three grounded runs cite us; only one of them recommends us
+	for i := 0; i < 3; i++ {
+		e := check("claude-grounded", "best analytics", true, i == 0, 1, "PostHog", "v", time.Duration(i)*time.Hour)
+		e.Properties["cited_domain"] = true
+		evs = append(evs, e)
+	}
+	// an ungrounded run cannot cite anything and must not land in this denominator
+	evs = append(evs, check("claude", "best analytics", true, true, 1, "PostHog", "v", 4*time.Hour))
+
+	r := Compute(evs, 30, base.Add(24*time.Hour))
+	if r.GroundRuns != 3 {
+		t.Fatalf("ground runs = %d, want 3 (the ungrounded run must not count)", r.GroundRuns)
+	}
+	if r.CitedRuns != 3 || r.CitedRecommended != 1 || r.CitedNotRecommended != 2 {
+		t.Fatalf("split = cited %d, recommended %d, not-recommended %d; want 3/1/2",
+			r.CitedRuns, r.CitedRecommended, r.CitedNotRecommended)
+	}
+}

@@ -397,3 +397,59 @@ func TestHumanEngineNamesTheUnknownWithoutInventing(t *testing.T) {
 		}
 	}
 }
+
+// The retrieval-vs-reputation split. Being read and passed over has a completely different
+// fix from never being read, and telling someone to "write more content" for the first one
+// wastes months.
+func TestCitedButPassedOverIsItsOwnDiagnosis(t *testing.T) {
+	now := time.Now().UTC()
+	var evs []event.Event
+	for i := 0; i < 12; i++ {
+		e := event.Event{
+			Name: aivis.CheckEvent, DistinctID: "geo-runner", Timestamp: now.Add(-time.Duration(i) * time.Hour),
+			Properties: map[string]any{
+				"engine": "claude-grounded", "prompt": "best analytics", "mentioned": true,
+				"recommended": i == 0, "rank": float64(0), "competitors": "PostHog",
+				"cited_domain": true, "model_version": "m",
+			},
+		}
+		evs = append(evs, e)
+	}
+	var found *Finding
+	for _, f := range Generate(evs) {
+		if strings.Contains(f.Title, "picks someone else") {
+			g := f
+			found = &g
+		}
+	}
+	if found == nil {
+		t.Fatalf("expected the cited-not-recommended finding; got %+v", Generate(evs))
+	}
+	if !strings.Contains(found.Detail, "not a content problem") {
+		t.Errorf("the diagnosis must say what it is NOT, or the reader writes more pages: %q", found.Detail)
+	}
+	if !strings.Contains(found.Title, "11 times out of 12") {
+		t.Errorf("counts, not a bare rate: %q", found.Title)
+	}
+}
+
+// It must stay silent when the site is simply not being retrieved — that IS a content and
+// renderability problem, and this finding would send the reader in the wrong direction.
+func TestNotCitedAtAllDoesNotFireTheOffSiteDiagnosis(t *testing.T) {
+	now := time.Now().UTC()
+	var evs []event.Event
+	for i := 0; i < 12; i++ {
+		evs = append(evs, event.Event{
+			Name: aivis.CheckEvent, DistinctID: "geo-runner", Timestamp: now.Add(-time.Duration(i) * time.Hour),
+			Properties: map[string]any{
+				"engine": "claude-grounded", "prompt": "best analytics", "mentioned": false,
+				"recommended": false, "rank": float64(0), "cited_domain": false, "model_version": "m",
+			},
+		})
+	}
+	for _, f := range Generate(evs) {
+		if strings.Contains(f.Title, "picks someone else") {
+			t.Fatalf("a site that was never retrieved must not be told its problem is off-site: %+v", f)
+		}
+	}
+}

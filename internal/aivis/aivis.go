@@ -133,6 +133,13 @@ type Result struct {
 	CitedRate  int `json:"cited_rate"`
 	CitedRuns  int `json:"cited_runs"`
 	GroundRuns int `json:"ground_runs"` // grounded runs, the only ones that can cite anything
+	// CitedNotRecommended is the split that every tool in this category collapses. A model
+	// picks the brands it names from what it already knows, THEN goes and fetches sources —
+	// so your page being cited while a competitor gets the recommendation is a completely
+	// different failure from never being retrieved at all, and it has a different fix.
+	// Reported as counts because the denominator here is small by construction.
+	CitedRecommended    int `json:"cited_recommended"`
+	CitedNotRecommended int `json:"cited_not_recommended"`
 	// Note carries the low-sample warning ("" when the data clears the bar) — the
 	// same honesty rule the funnel's timing stats and whats_notable follow.
 	Note string `json:"note,omitempty"`
@@ -181,7 +188,7 @@ func Compute(evs []event.Event, days int, asof time.Time) Result {
 	weekSeen := map[string]bool{}
 	var sent SentimentRoll
 	ranks := map[int]int{}
-	citedRuns, groundRuns := 0, 0
+	citedRuns, groundRuns, citedRec := 0, 0, 0
 
 	for _, e := range evs {
 		if e.Name != CheckEvent || e.Timestamp.Before(cutoff) || e.Timestamp.After(asof) {
@@ -272,6 +279,9 @@ func Compute(evs []event.Event, days int, asof time.Time) Result {
 			groundRuns++
 			if asBool(e.Properties["cited_domain"]) {
 				citedRuns++
+				if recommended {
+					citedRec++
+				}
 			}
 		}
 	}
@@ -370,6 +380,7 @@ func Compute(evs []event.Event, days int, asof time.Time) Result {
 	}
 	res.CitedRuns, res.GroundRuns = citedRuns, groundRuns
 	res.CitedRate = pct(citedRuns, groundRuns)
+	res.CitedRecommended, res.CitedNotRecommended = citedRec, citedRuns-citedRec
 
 	// a single-digit sample is an anecdote, and per-engine slices thinner still —
 	// say so in the payload, mirroring the funnel's timing_note discipline.

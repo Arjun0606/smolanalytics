@@ -742,6 +742,7 @@ type aivisVM struct {
 	BrandRank, BrandCount                int
 	RankRows                             []segRow
 	CitedRate, CitedRuns, GroundRuns     int
+	CitedRec, CitedNotRec                int
 	// Ever says a $geo_check has EVER been ingested here, read from the store's event NAMES
 	// rather than this window. "nothing yet" and "nothing HERE" are different empty states
 	// with different fixes, and conflating them is how a filtered-out report reads as a
@@ -1009,22 +1010,31 @@ func buildAIVis(vm *dashVM, evs []event.Event, names []string, days int, asof ti
 	// would report "#1 of 5" to a product sitting last. A flattering number computed from a
 	// display order is worse than no number.
 	if len(av.Share) > 0 {
-		var usTotal int
+		usTotal, usPresent := 0, false
 		for _, b := range av.Share {
 			if b.Us {
-				usTotal = b.Total
+				usTotal, usPresent = b.Total, true
 			}
 		}
-		rank := 1
-		for _, b := range av.Share {
-			if !b.Us && b.Total > usTotal {
-				rank++
+		if usPresent {
+			rank := 1
+			for _, b := range av.Share {
+				if !b.Us && b.Total > usTotal {
+					rank++
+				}
 			}
+			av.BrandRank, av.BrandCount = rank, len(av.Share)
+		} else {
+			// Never named in a single answer, so there is no "us" series to rank. Ranking
+			// against an absent series produced "#4 of 3 brands named" — a position in a list
+			// we are not in. Being absent is the sharper fact anyway: BrandRank 0 makes the
+			// card say so instead of inventing a place for us.
+			av.BrandRank, av.BrandCount = 0, len(av.Share)+1
 		}
-		av.BrandRank, av.BrandCount = rank, len(av.Share)
 	}
 	av.SentPos, av.SentNeu, av.SentNeg, av.SentRated = av.Sentiment.Positive, av.Sentiment.Neutral, av.Sentiment.Negative, av.Sentiment.Rated
 	av.CitedRate, av.CitedRuns, av.GroundRuns = av.Result.CitedRate, av.Result.CitedRuns, av.Result.GroundRuns
+	av.CitedRec, av.CitedNotRec = av.Result.CitedRecommended, av.Result.CitedNotRecommended
 	for _, rb := range av.RankDist {
 		av.RankRows = append(av.RankRows, segRow{Value: rb.Label, Count: rb.Runs, BarPct: rb.Pct, Pct: rb.Pct})
 	}
