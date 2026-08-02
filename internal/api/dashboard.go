@@ -1672,15 +1672,19 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			frac := float64(c.Returned[d]) / float64(c.Size)
-			a := 0.08 + 0.92*frac
-			// light text drowns on a strong amber wash — flip it dark past the threshold
-			cellFg := "#EDEDED"
-			if a >= 0.45 {
-				cellFg = "#0A0A0A"
-			}
+			// The ramp tops out at 0.52, and the text never flips. Measured over the full
+			// 0.08-1.00 amber wash this grid used to use, there is a dead band from about
+			// 0.54 to 0.60 where NEITHER #EDEDED nor #0A0A0A reaches 4.5:1 — so no flip
+			// threshold could have been right, and the old one (0.45) chose dark text at a
+			// point where dark was 3.0:1 and light would have been 5.7:1. Capping the wash
+			// keeps one text colour AA across every cell (worst case 4.71:1 at the top of
+			// the ramp) and still leaves a clearly graded fill from rgb(40,34,23) to
+			// rgb(138,97,29). A retention number a reader cannot make out is not a
+			// weaker signal than a bright cell — it is no signal.
+			a := 0.08 + 0.44*frac
 			row.Cells = append(row.Cells, retCell{
 				Label: fmt.Sprintf("%d%%", int(math.Round(frac*100))),
-				Style: template.CSS(fmt.Sprintf("background:rgba(245,166,35,%.2f);color:%s", a, cellFg)),
+				Style: template.CSS(fmt.Sprintf("background:rgba(245,166,35,%.2f);color:#EDEDED", a)),
 			})
 		}
 		vm.Retention = append(vm.Retention, row)
@@ -1751,13 +1755,16 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	vm.TrendMid = (maxT + 1) / 2
 	vm.ChartMetric = trendEvent
 	vm.Gran = string(gran)
-	// the data-table half of the chart+table unit: newest first, capped at 15 rows
+	// the data-table half of the chart+table unit: newest first, and EVERY bucket the
+	// chart draws. It used to stop at 15 rows, which was fine while it was a convenience
+	// list beside the picture. It is now the chart's text equivalent — the only reading
+	// available to a screen reader, a keyboard, or a phone, because the per-bar numbers
+	// live in a .tip that is display:none until hover. A 30-bar chart with a 15-row table
+	// hides half the window from exactly the people who have nothing else to read.
+	// Length is handled where it belongs, by the scroll box on .charttable .tscroll.
 	{
 		n := len(tr.Points)
 		start := 0
-		if n > 15 {
-			start = n - 15
-		}
 		lbl := func(t time.Time) string {
 			switch gran {
 			case trends.Week:

@@ -426,25 +426,86 @@ edits, keep template actions out of comments.
 
 ## 8. What this does not fix
 
+*Closed in a follow-up pass. Kept as written, with what actually happened underneath each —
+the original wording is the useful part, because it is the record of what was known-broken and
+shipped anyway.*
+
 - **The panes are still long.** `#pane-aivis` measures ~2100px tall today. §4 shortens it
   materially (wider tracks, `.webcols` and `.stickrow` stop wrapping) but it will still be
   roughly two screens. Nothing here deletes a block, because nothing may be deleted. If length
   is the next complaint, the answer is the verbatims disclosure in §6 — not the caveats.
+  → **STILL OPEN, on purpose.** The condition has not been met: length has not been the next
+  complaint. The four text equivalents added below make the panes *longer*, each inside a
+  collapsed `<details>` and a 340px scroll box. Revisit only if someone complains about
+  length, and then do the verbatims, not the caveats.
 - **Keyboard-unreachable table columns.** Both panes remain `overflow-x:auto` containers with
   no focusable child, so at 390px the crawler table's `errors` and `last seen` columns cannot be
   reached without a pointer. WCAG 2.1.1. Deferred deliberately; needs the `.tscroll` wrapper
   work as its own change.
+  → **FIXED**, but not with a static `tabindex`. `saScrollables()` measures each container and
+  hands out a tab stop, `role="region"` and a derived `aria-label` only while it actually
+  overflows, re-measuring on resize and on `<details>` toggle — a permanent tabindex on every
+  wrapper is a dozen dead tab stops on a wide screen, which is its own keyboard bug. It also
+  skips any container whose contents are already focusable, since tabbing to a child scrolls
+  it into view and that is what 2.1.1 asks for. 7 of 7 overflowing containers operable at
+  390px, verified in a browser.
+  → The same audit turned up something worse, which the original finding missed: the **ask
+  chips** were `<span>`s with a click listener, and the verdict's "why?" / "Show me" were
+  `<a>`s with no `href`. The dashboard's primary call to action took no focus at all. They now
+  carry `role="button" tabindex="0"` with Enter and Space wired by hand.
 - **Charts have no text equivalent.** `.bars` puts its whole reading in a `.tip` span that is
   `display:none` until hover (removed from the a11y tree entirely), and `.crawlday` puts its
   reading in a bare `title=` on a role-less div. The file's own idiom for this is the visible
   `<details class="charttable">` at L1076. Not addressed here.
+  → **FIXED** for all four charts (main trend, activity-by-hour, weekly visibility, crawls by
+  day), each using that same `<details class="charttable">` idiom rather than a second pattern.
+  → Found while checking it: the main chart's table was **capped at 15 rows against 30 bars**.
+  That cap was correct when the table was a convenience list beside the picture; it is wrong
+  now that the table *is* the reading, because it hid half the window from exactly the people
+  with nothing else to read. Cap removed; length handled by `.charttable .tscroll`.
 - **`--mut2` is 4.22:1 on `--s2` and 3.97:1 on the hovered `--s3`**, so every 11px caption on
   the page — not just in these panes — is below AA. The `:root` comment claiming "every one AA
   on its surface" is false. Needs its own pass (§6).
+  → **FIXED** by shifting the whole ladder up one notch rather than patching usages:
+  `--mut` #8A8A8A→#9A9A9A (6.06:1 worst case), `--mut2` #7A7A7A→#8A8A8A (4.94:1), `--dis`
+  #5F5F5F→#7A7A7A (3.97:1). Every step keeps the same relative spacing it had, so no hierarchy
+  was traded for the contrast. `--dis` is the one tone below AA and now has exactly one
+  consumer: `.sk.agnull .skv`, a value that does not exist. The `:root` comment states the
+  measured numbers instead of asserting a pass. The select chevron's data URI, which cannot
+  read a custom property, is hand-synced and pinned by a test.
+  → §6 rejected raising `--mut2` partly because "~40 site-wide consumers" made it risky. That
+  reasoning was wrong: the consumers were the *reason* to fix it, not the reason to defer.
 - **`.bars .ghost`** (`--ghost` #3A3A3A at `opacity:.45`) composites to ~1.20:1 on `--s2`. In
   `#pane-aivis` that ghost bar *is* the "recommended as a pick" series and the legend names it
   in words. Half the trend chart is effectively invisible to everyone. Out of scope here, but
   it is the highest-value next item.
+  → **FIXED**: `--ghost` #6A6A6A with the `opacity:.45` dropped = 3.35:1, clearing the 3:1
+  WCAG 1.4.11 bar for a non-text graphic.
 - **The 133 hardcoded `font-size` declarations elsewhere in the file** still do not read the
   scale. §1 and §2.5 fix the tokens and these two panes; the rest of the dashboard still
   renders 9, 10 and 12px strays.
+  → **FIXED**: 133 → **0**. Every size reads `--fs-lbl/--fs-body/--fs-lead/--fs-num`, the
+  `font:` shorthand is gone entirely (it was also silently resetting the `tabular-nums`
+  declared on `:root`), and the rendered page measures **exactly four sizes** at all six
+  widths — 12 / 14 / 16 / 26. The header comment claiming "30/15/13/11" was as false as the
+  contrast one and now matches the tokens. 12px is the floor; `.co-ic`'s ring grew 15→18px so
+  its glyph could.
+
+### Found by rendering, not in any of the four critiques
+
+- **The retention heatmap had no legible text colour available.** It washed cells with amber
+  from `alpha 0.08` to `1.00` and flipped the label from light to dark at `0.45`. Measured
+  across that ramp there is a **dead band from ~0.54 to ~0.60 where neither `#EDEDED` nor
+  `#0A0A0A` reaches 4.5:1** — so no flip threshold could ever have been right, and the one
+  chosen picked dark text at a point where dark was 3.0:1 and light would have been 5.7:1.
+  Worst cell measured 2.82:1. The ramp itself was the bug: it now tops out at `0.52` with one
+  text colour throughout, worst case 5.14:1 measured in the browser, and the fill still grades
+  clearly from rgb(40,34,23) to rgb(138,97,29).
+
+### Pinned
+
+`internal/api/dashboard_legibility_test.go` locks all of it against the raw template: no
+hardcoded sizes, `--dis` carries no text, the three reading tones hold their measured values,
+the chevron stays synced, every chart has a text equivalent, and the ask controls keep their
+tab stops. Each of the five was mutation-tested — broken deliberately, confirmed failing,
+restored — because a lock that has never failed is not known to work.

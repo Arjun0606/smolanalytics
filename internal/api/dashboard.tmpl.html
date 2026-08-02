@@ -992,11 +992,11 @@
           <div class="co-meta"><span class="co-prov">computed, not guessed</span><span>the same report this dashboard renders</span></div>
         </div>
         <div class="co-act">
-          <a class="co-go" data-q="{{$first.Title}}">Show me &rarr;</a>
+          <a class="co-go" data-q="{{$first.Title}}" role="button" tabindex="0">Show me &rarr;</a>
           <a class="co-fix" data-fix="{{$first.Fingerprint}}" role="button" tabindex="0">Fix with your agent &rarr;</a>
         </div>
       </div>
-      {{if gt (len .Verdict) 1}}<div class="verdict-more">{{range slice .Verdict 1}}<div class="vline{{if eq .Severity "warn"}} warn{{end}}"><span class="vdot"></span><span class="vt">{{.Title}}</span><span class="vsep">&middot;</span><span class="vd">{{.Detail}}</span><a class="vwhy" data-q="{{.Title}}">why? &rarr;</a><a class="vfix" data-fix="{{.Fingerprint}}" role="button" tabindex="0">brief &rarr;</a></div>{{end}}</div>{{end}}
+      {{if gt (len .Verdict) 1}}<div class="verdict-more">{{range slice .Verdict 1}}<div class="vline{{if eq .Severity "warn"}} warn{{end}}"><span class="vdot"></span><span class="vt">{{.Title}}</span><span class="vsep">&middot;</span><span class="vd">{{.Detail}}</span><a class="vwhy" data-q="{{.Title}}" role="button" tabindex="0">why? &rarr;</a><a class="vfix" data-fix="{{.Fingerprint}}" role="button" tabindex="0">brief &rarr;</a></div>{{end}}</div>{{end}}
       {{else}}<div class="vcalm">nothing unusual right now: traffic and conversion look within normal range.</div>{{end}}
     </div>
     <details class="weekline"><summary>this week &rarr;</summary><div class="weekbody" id="brief"><div class="exsummary">&hellip;</div></div></details>
@@ -1136,16 +1136,16 @@
        the chart they annotate is already on screen. -->
   <div class="chiprow askchips" id="askchips">
     <span class="chiplbl">ask</span>
-    <span class="chip" data-q="what should I fix?">what should I fix?</span>
-    <span class="chip" data-q="where do users drop off?">where do users drop off?</span>
-    <span class="chip" data-q="which channel converts best?">which channel converts best?</span>
-    <span class="chip" data-q="what do users do after signup?">what do users do next?</span>
-    <span class="chip" data-q="are my users sticky?">are users sticky?</span>
-    <span class="chip" data-q="how is retention?">how is retention?</span>
-    <span class="chip" data-q="what happened this week?">what happened this week?</span>
-    <span class="chip" data-q="which tool is slowest?">which tool is slowest?</span>
-    <span class="chip" data-q="how is conversation health?">conversation health?</span>
-    {{range .ProductEvents}}<span class="chip" data-q="how many {{.}} this week?">{{.}}</span>{{end}}
+    <span class="chip" data-q="what should I fix?" role="button" tabindex="0">what should I fix?</span>
+    <span class="chip" data-q="where do users drop off?" role="button" tabindex="0">where do users drop off?</span>
+    <span class="chip" data-q="which channel converts best?" role="button" tabindex="0">which channel converts best?</span>
+    <span class="chip" data-q="what do users do after signup?" role="button" tabindex="0">what do users do next?</span>
+    <span class="chip" data-q="are my users sticky?" role="button" tabindex="0">are users sticky?</span>
+    <span class="chip" data-q="how is retention?" role="button" tabindex="0">how is retention?</span>
+    <span class="chip" data-q="what happened this week?" role="button" tabindex="0">what happened this week?</span>
+    <span class="chip" data-q="which tool is slowest?" role="button" tabindex="0">which tool is slowest?</span>
+    <span class="chip" data-q="how is conversation health?" role="button" tabindex="0">conversation health?</span>
+    {{range .ProductEvents}}<span class="chip" data-q="how many {{.}} this week?" role="button" tabindex="0">{{.}}</span>{{end}}
   </div>
 
   {{if .Hours}}
@@ -2182,11 +2182,23 @@
       if(e.key==='Escape'&&document.activeElement===q)q.blur();
     });
 
-    // chips + verdict "why?" links both feed the ask bar
-    document.addEventListener('click',function(e){
-      var c=e.target.closest('.chip[data-q],.vwhy[data-q],.co-go[data-q]');if(!c)return;
+    // chips + verdict "why?" links both feed the ask bar. These are spans and hrefless
+    // anchors, so they take no focus of their own: the markup carries role="button"
+    // tabindex="0" and Enter/Space has to be wired by hand, or the dashboard's primary
+    // call to action is reachable with a mouse and nothing else.
+    var ASKABLE='.chip[data-q],.vwhy[data-q],.co-go[data-q]';
+    function saAsk(c){
       q.value=c.getAttribute('data-q');f.dispatchEvent(new Event('submit',{cancelable:true}));
       q.scrollIntoView({behavior:'smooth',block:'center'});
+    }
+    document.addEventListener('click',function(e){
+      var c=e.target.closest(ASKABLE);if(!c)return;
+      saAsk(c);
+    });
+    document.addEventListener('keydown',function(e){
+      if(e.key!=='Enter'&&e.key!==' ')return;
+      var c=e.target.closest&&e.target.closest(ASKABLE);if(!c)return;
+      e.preventDefault();saAsk(c);
     });
 
     // click-to-filter: any row with data-fp adds a global filter chip and reloads —
@@ -2518,6 +2530,10 @@
         // 1px of tolerance: sub-pixel layout rounding reports a phantom overflow on
         // perfectly-fitting tables, and that would hand out tab stops that scroll nowhere.
         var over=(canX&&el.scrollWidth-el.clientWidth>1)||(canY&&el.scrollHeight-el.clientHeight>1);
+        // a container whose contents are already focusable is reachable: tabbing into a
+        // child scrolls it into view, which is what 2.1.1 asks for. Adding a stop on the
+        // box as well just makes the keyboard user press Tab one more time for nothing.
+        if(over&&el.querySelector('a[href],button,select,input,textarea,summary,[tabindex]:not([tabindex="-1"])'))over=false;
         if(over){
           if(el.getAttribute('data-scrollfocus')==='1')return;
           // never overwrite a role or a tab stop the markup already meant
