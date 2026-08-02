@@ -5,10 +5,27 @@ citations point at a discussion thread, and the median cited comment had **38 up
 do not need to go viral. You need to be the specific, correct answer in threads that rank.
 A good reply is a permanent citation surface. A post is one day of traffic.
 
-**A note on how this is split.** I cannot browse Reddit — it blocks Anthropic's crawler and a
-direct fetch 403s. So finding threads is yours (5 min, you have the account and the app).
-Writing the reply is mine, if you want it: paste me the thread title and the top comment and
-I'll draft in your voice. Everything below is built so most days you don't need me.
+**A note on how this is split.** I cannot browse Reddit, and this was tested three ways
+rather than assumed:
+
+1. Anthropic's crawler is blocked at the search layer — only SEO comparison pages come back.
+2. A direct fetch of `reddit.com/search.json` returns **403**.
+3. A real Chrome via Playwright gets served **"Prove your humanity — we're committed to
+   safety and security. But not for bots."** Zero results.
+
+The third one is a deliberate anti-bot challenge, not an accident, and defeating it is not
+worth doing: it is exactly the behaviour that gets an account and a domain banned, which
+costs far more than this saves. So this stays manual on purpose.
+
+A warning from that attempt, because it nearly went wrong: the first scrape reported "65
+threads found" and looked like a success. Every one was garbage — headphone reviews, an INTJ
+post, a marriage ad — because the extractor had pulled links off the challenge page. A count
+is not a result. If a tool ever hands you a thread list, open three at random before trusting
+any of it.
+
+So finding threads is yours (5 min, you have the account and the app). Writing the reply is
+mine, if you want it: paste me the thread title and the top comment and I'll draft in your
+voice. Everything below is built so most days you don't need me.
 
 ---
 
