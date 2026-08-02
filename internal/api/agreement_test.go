@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/aicrawl"
 	"github.com/Arjun0606/smolanalytics/internal/flag"
 	"github.com/Arjun0606/smolanalytics/internal/store/memory"
 	"github.com/Arjun0606/smolanalytics/internal/survey"
@@ -415,6 +416,23 @@ func featureAgreementServer(t *testing.T) (*httptest.Server, string) {
 		"recommended": false, "rank": float64(0), "competitors": "PostHog, Mixpanel",
 		"verbatim": "", "model_version": "claude-test-1"})
 
+	// AI-crawler reports: five crawlers across three operators and all three purposes, one
+	// of them served a 403, over two of the three paths the humans below read — so
+	// /v1/ai-crawlers and the ai_crawlers tool have real per-crawler, per-operator, error
+	// and coverage-gap aggregation to agree on rather than two empty structs.
+	crawl := func(name, op, purpose, path string, status float64, at time.Duration) {
+		ev(aicrawl.CrawlEvent, "$crawler", at, map[string]any{
+			"crawler": name, "operator": op, "purpose": purpose,
+			"path": path, "status": status, "site": "example.com"})
+	}
+	crawl("GPTBot", "OpenAI", aicrawl.PurposeTraining, "/pricing", 200, -20*time.Hour)
+	crawl("GPTBot", "OpenAI", aicrawl.PurposeTraining, "/pricing", 200, -19*time.Hour)
+	crawl("GPTBot", "OpenAI", aicrawl.PurposeTraining, "/docs", 200, -18*time.Hour)
+	crawl("OAI-SearchBot", "OpenAI", aicrawl.PurposeSearch, "/docs", 200, -17*time.Hour)
+	crawl("ChatGPT-User", "OpenAI", aicrawl.PurposeUser, "/pricing", 200, -16*time.Hour)
+	crawl("ClaudeBot", "Anthropic", aicrawl.PurposeTraining, "/docs", 200, -15*time.Hour)
+	crawl("PerplexityBot", "Perplexity", aicrawl.PurposeSearch, "/pricing", 403, -14*time.Hour)
+
 	// A clean 'alice' journey (no dev events) so session_timeline is stable to fetch by start.
 	ev("$pageview", "alice", -3*time.Hour, map[string]any{"path": "/"})
 	ev("$click", "alice", -3*time.Hour+2*time.Second, map[string]any{"path": "/", "x": float64(100), "y": float64(200), "vw": float64(1280), "text": "Start"})
@@ -428,6 +446,11 @@ func featureAgreementServer(t *testing.T) (*httptest.Server, string) {
 	ev(survey.ShownEvent, "devuser", -36*time.Hour, map[string]any{survey.PropSurvey: surveyID, "env": "development"})
 	ev(survey.ResponseEvent, "devuser", -35*time.Hour, map[string]any{survey.PropSurvey: surveyID, survey.PropAnswer: float64(10), "env": "development"})
 	ev("$pageview", "devuser", -3*time.Hour, map[string]any{"path": "/", "env": "development"})
+	// a crawl report from a preview deploy: dropped by the production scope on BOTH surfaces,
+	// and the pageview above is what makes the coverage gap's visitor count prove it happened
+	ev(aicrawl.CrawlEvent, "$crawler", -13*time.Hour, map[string]any{
+		"crawler": "GPTBot", "operator": "OpenAI", "purpose": aicrawl.PurposeTraining,
+		"path": "/", "status": float64(200), "site": "example.com", "env": "development"})
 
 	body, _ := json.Marshal(batch)
 	resp, err := http.Post(srv.URL+"/v1/events", "application/json", strings.NewReader(string(body)))
@@ -462,6 +485,42 @@ func TestSurveyResultsAgreement(t *testing.T) {
 	a := viaAPI(t, srv, "/v1/surveys/"+sid+"/results")
 	m := viaMCP(t, srv, "survey_results", fmt.Sprintf(`{"id":%q}`, sid))
 	assertAgree(t, "survey_results", a, m)
+}
+
+// TestAICrawlAgreement pins GET /v1/ai-crawlers == MCP ai_crawlers. The crawler report is the
+// one number a founder will quote at people ("Anthropic has read 40 of my pages"), so the
+// endpoint and the tool their agent calls have to be the same computation — including the
+// default window and the 365-day cap, which are the two places a second surface silently
+// drifts. The assertions after the comparison exist because two EMPTY results also agree:
+// without them this test would keep passing after the aggregation stopped working.
+func TestAICrawlAgreement(t *testing.T) {
+	srv, _ := featureAgreementServer(t)
+	assertAgree(t, "ai_crawlers", viaAPI(t, srv, "/v1/ai-crawlers?days=30"), viaMCP(t, srv, "ai_crawlers", `{"days":30}`))
+	assertAgree(t, "ai_crawlers default window", viaAPI(t, srv, "/v1/ai-crawlers"), viaMCP(t, srv, "ai_crawlers", `{}`))
+	assertAgree(t, "ai_crawlers capped at 365 both sides", viaAPI(t, srv, "/v1/ai-crawlers?days=999"), viaMCP(t, srv, "ai_crawlers", `{"days":999}`))
+
+	got := viaAPI(t, srv, "/v1/ai-crawlers?days=30")
+	if got["reporting"] != true || got["hits"] != float64(7) || got["errors"] != float64(1) {
+		t.Fatalf("expected 7 seeded fetches with 1 error, reporting on: %v", got)
+	}
+	if crawlers, _ := got["crawlers"].([]any); len(crawlers) != 5 {
+		t.Fatalf("expected the 5 seeded crawlers: %v", got["crawlers"])
+	}
+	// the purposes are counted apart, which is the module's whole argument
+	if got["training"] != float64(4) || got["search"] != float64(2) || got["user"] != float64(1) {
+		t.Fatalf("purposes were not kept apart: %v", got)
+	}
+	// The coverage gap doubles as the dev-env scope guard: a preview-deploy crawl of "/" is
+	// seeded, so if either surface stopped applying the production scope, "/" would read as
+	// crawled and this row would vanish from one of them.
+	gaps, _ := got["gaps"].([]any)
+	if len(gaps) != 1 {
+		t.Fatalf("expected exactly the one uncrawled page humans read: %v", got["gaps"])
+	}
+	g, _ := gaps[0].(map[string]any)
+	if g["path"] != "/" || g["views"] != float64(2) || g["visitors"] != float64(2) {
+		t.Fatalf("the coverage gap must be / read by 2 visitors, dev traffic excluded: %v", g)
+	}
 }
 
 // TestSessionAgreement pins the session inspector: GET /v1/sessions == MCP list_sessions, and

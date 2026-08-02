@@ -189,6 +189,14 @@ var toolList = []map[string]any{
 		}, nil),
 	},
 	{
+		"name":        "ai_crawlers",
+		"description": "Which AI crawlers have actually READ this site, reported by the site's own server: hits and pages per crawler (GPTBot, ClaudeBot, PerplexityBot, ChatGPT-User, OAI-SearchBot...) and per operator (OpenAI, Anthropic, Perplexity), split by purpose — a training sweep, search indexing, or a live assistant fetching the page to answer somebody RIGHT NOW — plus the errors your server handed them back, a per-day trend, and the pages real visitors read that no crawler has ever fetched. Computed from $ai_crawl events written by edge middleware: these crawlers execute no JavaScript, so a client-side pixel reports zero of them. This is the retrieval half of AI search — pair it with ai_visibility (what the engines SAY about you) and web_overview's ai_referrers (the traffic they send). Use for 'which AI crawlers have read my site', 'has ChatGPT crawled my docs', 'am I blocking GPTBot', 'what pages have the AI bots never seen'.",
+		"inputSchema": obj(map[string]any{
+			"days":    map[string]any{"type": "number", "description": "Trailing window in days (default 30; capped at 365)."},
+			"filters": filtersSchema,
+		}, nil),
+	},
+	{
 		"name":        "paths",
 		"description": "User flows: after a start event, what do users do next (ranked at each step), over any window (days=7, from/to, or omit for all time)? Start with a page path (\"/pricing\") instead of an event name to follow page-to-page NAVIGATION — pageview paths only, autocapture noise excluded, reloads collapsed. Use for 'what do users do after signup', 'where do users go from the pricing page', 'common paths after X'.",
 		"inputSchema": obj(map[string]any{

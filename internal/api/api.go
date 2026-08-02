@@ -297,6 +297,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/lifecycle", s.apiLifecycle)
 	mux.HandleFunc("GET /v1/stickiness", s.apiStickiness)
 	mux.HandleFunc("GET /v1/ai-visibility", s.apiAIVisibility)
+	mux.HandleFunc("GET /v1/ai-crawlers", s.apiAICrawlers) // the retrieval half: who has READ the site
 	mux.HandleFunc("GET /v1/fix-brief", s.apiFixBrief)
 	mux.HandleFunc("GET /v1/paths", s.apiPaths)
 	mux.HandleFunc("GET /v1/heatmap", s.apiHeatmap)

@@ -203,7 +203,17 @@ func Compute(evs []event.Event, days int, asof time.Time) Result {
 		days = 30
 	}
 	r := Result{Days: days, Crawlers: []CrawlerRow{}, Operators: []OperatorRow{}, Paths: []PathRow{}, Trend: []DayPoint{}, Gaps: []GapRow{}}
-	cut := asof.AddDate(0, 0, -days)
+	// ONE window, in calendar days, used by both the totals and the chart.
+	//
+	// The first version cut the totals on a rolling instant (asof minus days*24h) while
+	// bucketing the chart by date. Those are different windows: a hit in the overlap was
+	// counted in every total and drawn in no bar, so the chart disagreed with the headline
+	// printed directly above it. Calendar days are also what a bar chart means — each bar
+	// IS a date — and they make the trend exactly `days` long instead of a ragged days+1
+	// whose first bar is a partial day nobody can interpret.
+	lastDay := asof.UTC().Truncate(24 * time.Hour)
+	firstDay := lastDay.AddDate(0, 0, -(days - 1))
+	cut := firstDay
 
 	type crawlAgg struct {
 		row      CrawlerRow
@@ -340,10 +350,11 @@ func Compute(evs []event.Event, days int, asof time.Time) Result {
 			if e.Timestamp.Before(cut) {
 				continue
 			}
-			path := normPath(pageviewPath(e))
-			if path == "" {
-				continue
+			raw := pageviewPath(e)
+			if raw == "" {
+				continue // no location on the event: unknowable, not the homepage
 			}
+			path := normPath(raw)
 			views[path]++
 			if viewers[path] == nil {
 				viewers[path] = map[string]bool{}
@@ -420,8 +431,8 @@ func Compute(evs []event.Event, days int, asof time.Time) Result {
 	// dense trend: every day in the window, including the zeros. A sparse series would
 	// draw a straight line across a week of silence, which is the exact thing the reader
 	// is looking for.
-	for i := days - 1; i >= 0; i-- {
-		day := asof.AddDate(0, 0, -i).UTC().Format("2006-01-02")
+	for d := firstDay; !d.After(lastDay); d = d.AddDate(0, 0, 1) {
+		day := d.Format("2006-01-02")
 		if d := byDay[day]; d != nil {
 			r.Trend = append(r.Trend, *d)
 		} else {

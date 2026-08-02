@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/agent"
+	"github.com/Arjun0606/smolanalytics/internal/aicrawl"
 	"github.com/Arjun0606/smolanalytics/internal/aivis"
 	"github.com/Arjun0606/smolanalytics/internal/alert"
 	"github.com/Arjun0606/smolanalytics/internal/alias"
@@ -725,6 +726,28 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 			a.Days = 365 // same cap as GET /v1/ai-visibility — surfaces must agree
 		}
 		return jsonText(aivis.Compute(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters), a.Days, time.Time{}))
+	case "ai_crawlers":
+		var a struct {
+			Days    int       `json:"days"`
+			Filters FilterSet `json:"filters"`
+		}
+		if err := unmarshalArgs(args, &a); err != nil {
+			return "", err
+		}
+		if err := query.Validate(a.Filters); err != nil {
+			return "", err
+		}
+		if err := guardFilters(evs, a.Filters); err != nil {
+			return "", err
+		}
+		if a.Days > 365 {
+			a.Days = 365 // same cap as GET /v1/ai-crawlers — surfaces must agree
+		}
+		// aicrawl.Compute reads the $pageview stream too (that is how it finds the pages
+		// humans read and no crawler has), so the filters go on the WHOLE slice exactly as
+		// they do on the /v1 side. Filtering the crawl events alone would silently answer a
+		// different question than the endpoint.
+		return jsonText(aicrawl.Compute(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters), a.Days, time.Time{}))
 	case "whats_notable":
 		return jsonText(map[string]any{"findings": insight.Generate(evs)})
 	case "paths":
