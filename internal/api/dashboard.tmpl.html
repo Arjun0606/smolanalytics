@@ -15,7 +15,7 @@
     --bg:#0A0A0A; --well:#0D0D0D; --s1:#111111; --s2:#161616; --s3:#1C1C1C;
     --line:#262626; --line2:#2E2E2E; --line3:#3E3E3E;
     /* text — three reading tones + disabled, every one AA on its surface */
-    --fg:#EDEDED; --mut:#8A8A8A; --mut2:#7A7A7A; --dis:#5F5F5F;
+    --fg:#EDEDED; --sec:#B5B5B5; --mut:#8A8A8A; --mut2:#7A7A7A; --dis:#5F5F5F;
     /* amber — one accent, a real ladder */
     --accent:#F5A623; --accent-hi:#FFC24D; --accent-dim:#C77F0A; --accent-bar:#C98A1E;--accent-bar-lo:#7E5412;--spark:#FFC24D;
     --a14:rgba(245,166,35,.14); --a25:rgba(245,166,35,.25); --a45:rgba(245,166,35,.45);
@@ -229,10 +229,10 @@
   /* separates stacked sections inside one pane; the first heading in a pane keeps its
      own spacing so the card does not open with a stray rule under its title */
   .pane .zonelbl.zsep{border-top:1px solid var(--line);padding-top:20px;margin-top:26px}
-  .zonelbl{font-family:var(--mono);font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--mut);margin-bottom:10px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;max-width:100%;font-weight:600}
+  .zonelbl{font-family:var(--mono);font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--sec);margin-bottom:10px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;max-width:100%;font-weight:600}
   /* dimmer AND smaller than the heading it explains. Same size and colour made the two
      read as one run-on line. */
-  .zonelbl .sub{flex-basis:100%;text-transform:none;letter-spacing:0;color:var(--mut2);font-size:12px;font-weight:400;line-height:1.55;margin-top:4px}
+  .zonelbl .sub{flex-basis:100%;text-transform:none;letter-spacing:0;color:var(--mut);font-size:12px;font-weight:400;line-height:1.55;margin-top:4px}
   .zonesel{background:var(--s1);border:1px solid var(--line);color:var(--fg);font-family:var(--mono);font-size:11px;padding:2px 6px;border-radius:4px;margin-right:6px}
   .charttable{margin-top:10px}
   .charttable summary{cursor:pointer;list-style:none;font-family:var(--mono);font-size:11px;color:var(--mut2);padding:4px 0}
@@ -336,7 +336,7 @@
   /* the subtitle is a full sentence and was being asked to sit inline after the title,
      where it wrapped into the title's own letter-spacing and uppercase rhythm */
   .pane h3 .sub{display:block;margin:7px 0 0;font-size:12px;line-height:1.6;font-weight:400;
-    text-transform:none;letter-spacing:0;color:var(--mut2);max-width:80ch}
+    text-transform:none;letter-spacing:0;color:var(--mut);max-width:80ch}
 
   /* rows with share-of-total bars behind them */
   .seg{position:relative;height:var(--row-h);margin-bottom:4px;background:transparent;border:none;border-radius:var(--r-ctl);overflow:hidden;transition:background var(--t-fast) var(--ease)}
@@ -639,7 +639,7 @@
      the title is now the second level of the hierarchy after the section heading. */
   .deck .pane h3{margin:0 0 12px;font-size:12px;line-height:18px;text-transform:none;
     letter-spacing:0;color:var(--fg)}
-  .deck .pane h3 .sub{color:var(--mut2)}
+  .deck .pane h3 .sub{color:var(--mut)}
   /* clears the sticky rail, or every jump lands underneath it. --rail-h is MEASURED at
      runtime, never hardcoded: the rail wraps at narrow widths and a stale constant would
      silently bury the top of whatever you jumped to. */
