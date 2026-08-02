@@ -19,7 +19,7 @@
     /* amber — one accent, a real ladder */
     --accent:#F5A623; --accent-hi:#FFC24D; --accent-dim:#C77F0A; --accent-bar:#C98A1E;--accent-bar-lo:#7E5412;--spark:#FFC24D;
     --a14:rgba(245,166,35,.14); --a25:rgba(245,166,35,.25); --a45:rgba(245,166,35,.45);
-    --warn:#E5544B; --ok:#3FB27F; --ghost:#3A3A3A; --grid:#1C1C1C;
+    --warn:#E5544B; --ok:#3FB27F; --ghost:#6A6A6A; --grid:#1C1C1C;
     /* type — exactly four sizes, weights 400/500/600 */
     --fs-lbl:12px; --lh-lbl:18px; --fs-body:14px; --lh-body:22px;
     --fs-lead:16px; --lh-lead:24px; --fs-num:26px; --lh-num:32px;
@@ -262,7 +262,7 @@
   .bars{display:flex;align-items:flex-end;gap:3px;height:178px;padding-top:24px;position:relative}
   .bars .col{flex:1;min-width:0;display:flex;flex-direction:row;align-items:flex-end;gap:1px;height:100%;position:relative}
   .bars .bar{flex:2;background:linear-gradient(180deg,var(--accent-bar) 0%,var(--accent-bar-lo) 100%);min-height:2px;border-radius:3px 3px 0 0;transition:background var(--t-fast) var(--ease),filter var(--t-fast) var(--ease)}
-  .bars .ghost{flex:1;background:var(--ghost);min-height:1px;border-radius:3px 3px 0 0;opacity:.45}
+  .bars .ghost{flex:1;background:var(--ghost);min-height:1px;border-radius:3px 3px 0 0}
   /* the tallest bar carries a top edge so the peak reads at a glance, not only via its label */
   /* ---- data-in motion --------------------------------------------------------------
      Nothing here loops or draws attention on its own. Bars grow, lines draw themselves,
