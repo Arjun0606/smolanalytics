@@ -269,16 +269,18 @@ func rateOf(part, n int) float64 {
 	return float64(part) / float64(n)
 }
 
-// withoutGeoChecks removes the sampler's own writes from the product-activity view.
+// withoutGeoChecks removes the sampler's own writes — the AI-visibility checks AND the
+// site-readability scans — from the product-activity view.
 // They come from the GEO runner under one synthetic distinct_id on a daily schedule,
 // so left in they read as a user who returns every single day (retention), as a
 // high-volume event competing for the anomaly slot, and as a candidate funnel step
 // whose name has no reader-facing wording at all. Returns the input untouched when
 // there are none, which is every instance that never turned GEO on.
 func withoutGeoChecks(evs []event.Event) []event.Event {
+	ours := func(name string) bool { return name == aivis.CheckEvent || name == ReadableEvent }
 	n := 0
 	for _, e := range evs {
-		if e.Name == aivis.CheckEvent {
+		if ours(e.Name) {
 			n++
 		}
 	}
@@ -287,7 +289,7 @@ func withoutGeoChecks(evs []event.Event) []event.Event {
 	}
 	out := make([]event.Event, 0, len(evs)-n)
 	for _, e := range evs {
-		if e.Name != aivis.CheckEvent {
+		if !ours(e.Name) {
 			out = append(out, e)
 		}
 	}

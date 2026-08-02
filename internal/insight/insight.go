@@ -29,6 +29,7 @@ const (
 	KindTrend     = "trend"
 	KindRetention = "retention"
 	KindAIVis     = "ai_visibility"
+	KindReadable  = "site_readable"
 )
 
 // Finding is one notable thing, ranked by severity ("warn" before "info").
@@ -122,6 +123,9 @@ func GenerateForFunnel(evs []event.Event, pageSteps []funnel.Step) []Finding {
 	// Computed before the product-activity guard: an instance can hold a quarter of
 	// sampled answers and no traffic at all (checks arrive with the write key, the SDK
 	// lands later), and that reader still deserves their verdict.
+	// before anything about what the engines SAY: if they cannot read the page, every
+	// visibility number below is a symptom and this is the cause
+	readable := siteReadability(all, now)
 	geo := aiVisibilityShift(all, now)
 	// the retrieval-vs-reputation split: read but not picked is a different problem from never
 	// being read, and only this instance holds both halves of the evidence
@@ -129,6 +133,9 @@ func GenerateForFunnel(evs []event.Event, pageSteps []funnel.Step) []Finding {
 	if len(evs) == 0 {
 		// a GEO-only instance still gets its verdict — both findings, not just the first.
 		// (checks arrive with the write key; the SDK often lands later.)
+		if readable != nil {
+			out = append(out, *readable)
+		}
 		if geo != nil {
 			out = append(out, *geo)
 		}
@@ -161,6 +168,9 @@ func GenerateForFunnel(evs []event.Event, pageSteps []funnel.Step) []Finding {
 	// funnel leak because it is a channel going quiet, which the funnel cannot show and
 	// no other tool holds both halves of; below the 24h anomaly because a week-scale
 	// move is never more urgent than something that broke today.
+	if readable != nil {
+		out = append(out, *readable)
+	}
 	if geo != nil {
 		out = append(out, *geo)
 	}
