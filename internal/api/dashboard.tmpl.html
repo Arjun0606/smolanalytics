@@ -223,16 +223,40 @@
   .weekbody .vrow.warn .vt{color:var(--warn)}
 
   /* zone 4 — KPI cards: number + delta + a real trailing sparkline */
+  /* auto-fit packs as many columns as WILL fit and knows nothing about how many items there
+     are, so six tiles in a five-column track render as five and then a lone orphan — measured
+     at 1440, which is the width most people read this at. The quantity queries below pick a
+     column count that divides the item count instead. They are the whole fix; auto-fit stays
+     as the fallback for counts nobody has hit yet and for narrow screens. */
   .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:var(--gap);margin:var(--zone) 0 0}
-  .kpi{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:var(--r-card);background:var(--s1);padding:14px 15px 15px}
+  @media(min-width:1000px){
+    /* "has an Nth child that is also the last child" = exactly N children */
+    .kpis:has(>:nth-child(4):last-child){grid-template-columns:repeat(4,1fr)}
+    .kpis:has(>:nth-child(5):last-child){grid-template-columns:repeat(5,1fr)}
+    .kpis:has(>:nth-child(6):last-child){grid-template-columns:repeat(3,1fr)}
+    .kpis:has(>:nth-child(7):last-child){grid-template-columns:repeat(4,1fr)}
+    .kpis:has(>:nth-child(8):last-child){grid-template-columns:repeat(4,1fr)}
+    .kpis:has(>:nth-child(9):last-child){grid-template-columns:repeat(3,1fr)}
+    .kpis:has(>:nth-child(10):last-child){grid-template-columns:repeat(5,1fr)}
+  }
+  .kpi{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:var(--r-card);background:var(--s1);padding:14px 15px 15px;
+    display:flex;flex-direction:column}
   .kpi:hover{border-color:var(--line2)}
   .kpi .kk{font-family:var(--mono);font-size:var(--fs-lbl);letter-spacing:.02em;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:capitalize}
   .kpi .kv{font-family:var(--mono);font-size:var(--fs-num);font-weight:600;letter-spacing:-.02em;margin-top:4px;line-height:1.14;color:var(--fg)}
   .kpi .kv.acc{color:var(--accent)}
-  .kpi .kd{font-size:var(--fs-lbl);line-height:1.35;margin-top:8px;color:var(--mut);padding-right:78px;white-space:normal;overflow-wrap:break-word;min-height:2.7em}
+  /* margin-top:auto puts this on the floor of the card, so a card with no delta line has its
+     empty space in the MIDDLE (where it reads as breathing room) instead of under the number
+     (where it read as a card that failed to load). */
+  .kpi .kd{font-size:var(--fs-lbl);line-height:1.35;margin-top:auto;padding-top:8px;color:var(--mut);white-space:normal;overflow-wrap:break-word;min-height:2.2em}
   .kpi .kd.up{color:var(--ok)} .kpi .kd.down{color:var(--warn)}
   .kpi .kd .kvp{color:var(--mut2)}
-  .kpi .spark{position:absolute;right:12px;bottom:13px;width:64px;height:26px;opacity:.85;pointer-events:none}
+  /* The sparkline was a 64px thumbnail pinned to the bottom-right corner, which meant two
+     things fought over the same space: .kd carried a 78px right padding purely to dodge it, so
+     the supporting sentence wrapped early in a card that had room. As a full-width footer the
+     trend gets 5x the horizontal resolution — the point of a sparkline is the SHAPE, and 64px
+     of it is a smudge — and the sentence above it gets the whole card back. */
+  .kpi .spark{display:block;width:100%;height:30px;margin-top:10px;opacity:.9;pointer-events:none}
   .kpi .spark .spend.good{fill:var(--ok)} .kpi .spark .spend.warn{fill:var(--warn)}
 
   /* zone 5 — the one chart */
@@ -451,7 +475,17 @@
   table.lc th,table.lc td{padding:3px 10px;text-align:right;border-bottom:1px solid var(--s2)}
   table.lc th{color:var(--mut2);font-weight:500}
   table.lc .n{color:var(--ok)} table.lc .r{color:var(--accent)} table.lc .rs{color:var(--fg)} table.lc .dm{color:var(--mut2)}
-  .stickrow{display:flex;gap:12px;flex-wrap:wrap;margin-top:6px}
+  /* was flex with content-sized items, so a row read as five neat tiles and one much wider
+     one, then an orphan on the next line. A grid gives every tile the same width, which is
+     what makes a row of numbers comparable at a glance rather than just adjacent. */
+  .stickrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:6px}
+  @media(min-width:1000px){
+    .stickrow:has(>:nth-child(4):last-child){grid-template-columns:repeat(4,1fr)}
+    .stickrow:has(>:nth-child(5):last-child){grid-template-columns:repeat(5,1fr)}
+    .stickrow:has(>:nth-child(6):last-child){grid-template-columns:repeat(3,1fr)}
+    .stickrow:has(>:nth-child(7):last-child){grid-template-columns:repeat(4,1fr)}
+    .stickrow:has(>:nth-child(8):last-child){grid-template-columns:repeat(4,1fr)}
+  }
   .sk{border:1px solid var(--line);border-radius:6px;background:var(--s2);padding:14px 20px;text-align:center}
   .skv{font-family:var(--mono);font-size:var(--fs-num);font-weight:700;line-height:1.2;font-variant-numeric:tabular-nums}
   .skv.acc{color:var(--accent)}
@@ -1097,7 +1131,6 @@
         <option value="week" {{if eq .Gran "week"}}selected{{end}}>weekly</option>
         <option value="month" {{if eq .Gran "month"}}selected{{end}}>monthly</option>
       </select>
-      <span class="sub">· last {{.RangeLabel}}{{if gt .GhostTotal 0}} · grey = prior {{.RangeLabel}}, same scale{{end}} · computed by /v1/trends</span>
       <select id="chartBreak" style="margin-left:auto;background:var(--s1);border:1px solid var(--line);color:var(--mut);font-family:var(--mono);font-size:var(--fs-lbl);padding:2px 6px;border-radius:4px" aria-label="break the chart down by a property">
         <option value="">no breakdown</option>
         <option value="country">by country</option>
@@ -1107,6 +1140,7 @@
         <option value="source">by source</option>
         <option value="utm_source">by utm source</option>
       </select>
+      <span class="sub">· last {{.RangeLabel}}{{if gt .GhostTotal 0}} · grey = prior {{.RangeLabel}}, same scale{{end}} · computed by /v1/trends</span>
     </div>
     <div id="chartAlt" hidden></div>
     <div id="chartMain">

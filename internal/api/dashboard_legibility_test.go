@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"os"
 	"regexp"
 	"strings"
@@ -204,6 +205,32 @@ func TestBarsCannotDrawThroughTheirOwnValue(t *testing.T) {
 	}
 	if !strings.Contains(s, "--num-col:") {
 		t.Error("share page lost its value-column reservation")
+	}
+}
+
+// A tile grid sized with auto-fit knows how many columns FIT and nothing about how many items
+// there are, so six tiles in a five-column track render as five and then one orphan. Measured at
+// 1440 — the width most people read this at — on both the KPI row and every .stickrow inside a
+// pane. An orphan row is the single loudest "unfinished" signal a dashboard can send, and it was
+// on the first screen.
+func TestTileGridsCannotOrphanTheLastRow(t *testing.T) {
+	tpl := dashboardTemplateSource(t)
+	for _, grid := range []string{".kpis", ".stickrow"} {
+		// quantity queries: ":has(>:nth-child(N):last-child)" means "exactly N children"
+		for _, n := range []int{4, 5, 6, 7, 8} {
+			want := fmt.Sprintf("%s:has(>:nth-child(%d):last-child)", grid, n)
+			if !strings.Contains(tpl, want) {
+				t.Errorf("%s has no column rule for exactly %d tiles, so %d can orphan", grid, n, n)
+			}
+		}
+	}
+	// six is the count that actually broke, and three columns is the only even split of it that
+	// keeps the tiles readable at this width
+	if !strings.Contains(tpl, ".kpis:has(>:nth-child(6):last-child){grid-template-columns:repeat(3,1fr)}") {
+		t.Error("six KPI tiles no longer resolve to 3x2 — the 5+1 orphan is back")
+	}
+	if strings.Contains(tpl, ".stickrow{display:flex") {
+		t.Error(".stickrow is content-sized flex again: tiles get different widths, so the numbers stop being comparable")
 	}
 }
 
