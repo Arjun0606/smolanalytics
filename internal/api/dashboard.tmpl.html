@@ -21,8 +21,8 @@
     --a14:rgba(245,166,35,.14); --a25:rgba(245,166,35,.25); --a45:rgba(245,166,35,.45);
     --warn:#E5544B; --ok:#3FB27F; --ghost:#3A3A3A; --grid:#1C1C1C;
     /* type — exactly four sizes, weights 400/500/600 */
-    --fs-lbl:11px; --lh-lbl:16px; --fs-body:13px; --lh-body:20px;
-    --fs-lead:15px; --lh-lead:22px; --fs-num:24px; --lh-num:30px;
+    --fs-lbl:12px; --lh-lbl:18px; --fs-body:14px; --lh-body:22px;
+    --fs-lead:16px; --lh-lead:24px; --fs-num:26px; --lh-num:32px;
     --track-lbl:.06em; --track-num:-.02em; --track-body:-.01em;
     /* space — 4px base */
     --sp1:4px; --sp2:8px; --sp3:12px; --sp4:16px; --sp6:24px; --sp8:32px;
@@ -226,15 +226,22 @@
   /* flex-wrap so the chart's own controls (metric, granularity, breakdown) drop to a second
      line on a phone instead of pushing the BODY wider than the viewport. A zone label that
      side-scrolls the whole page is the "content cut off at the edge" failure. */
-  .zonelbl{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--mut2);margin-bottom:10px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;max-width:100%}
-  .zonelbl .sub{text-transform:none;letter-spacing:0;color:var(--mut2)}
+  /* separates stacked sections inside one pane; the first heading in a pane keeps its
+     own spacing so the card does not open with a stray rule under its title */
+  .pane .zonelbl.zsep{border-top:1px solid var(--line);padding-top:20px;margin-top:26px}
+  .zonelbl{font-family:var(--mono);font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--mut);margin-bottom:10px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;max-width:100%;font-weight:600}
+  /* dimmer AND smaller than the heading it explains. Same size and colour made the two
+     read as one run-on line. */
+  .zonelbl .sub{flex-basis:100%;text-transform:none;letter-spacing:0;color:var(--mut2);font-size:12px;font-weight:400;line-height:1.55;margin-top:4px}
   .zonesel{background:var(--s1);border:1px solid var(--line);color:var(--fg);font-family:var(--mono);font-size:11px;padding:2px 6px;border-radius:4px;margin-right:6px}
   .charttable{margin-top:10px}
   .charttable summary{cursor:pointer;list-style:none;font-family:var(--mono);font-size:11px;color:var(--mut2);padding:4px 0}
   .charttable summary:hover{color:var(--accent)}
-  table.ctab{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:12px;margin-top:6px}
-  table.ctab th{color:var(--mut2);font-weight:500;text-align:left;padding:4px 10px 4px 0;border-bottom:1px solid var(--line);font-size:10px;text-transform:uppercase;letter-spacing:.06em}
-  table.ctab td{padding:4px 10px 4px 0;border-bottom:1px solid var(--s2)}
+  .tscroll{overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch}
+  table.ctab{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:13px;margin-top:10px}
+  table.ctab th{color:var(--mut);font-weight:600;text-align:left;padding:6px 14px 6px 0;border-bottom:1px solid var(--line2);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+  table.ctab td{padding:8px 14px 8px 0;border-bottom:1px solid var(--s2)}
+  table.ctab .n{font-variant-numeric:tabular-nums}
   table.ctab .n{text-align:right}
   table.ctab .mut{color:var(--mut2)}
   table.ctab .up{color:var(--ok)} table.ctab .down{color:var(--warn)}
@@ -323,7 +330,11 @@
 
   /* zone 8 — breakdowns: one tabbed panel */
   .breakdowns{margin:var(--zone) 0 0}
-  .pane h3{font-size:13px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.07em;color:var(--mut2);margin:0 0 12px;font-weight:500}
+  .pane h3{font-size:15px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.07em;color:var(--fg);margin:0 0 14px;font-weight:600}
+  /* the subtitle is a full sentence and was being asked to sit inline after the title,
+     where it wrapped into the title's own letter-spacing and uppercase rhythm */
+  .pane h3 .sub{display:block;margin:7px 0 0;font-size:12px;line-height:1.6;font-weight:400;
+    text-transform:none;letter-spacing:0;color:var(--mut2);max-width:80ch}
 
   /* rows with share-of-total bars behind them */
   .seg{position:relative;height:var(--row-h);margin-bottom:4px;background:transparent;border:none;border-radius:var(--r-ctl);overflow:hidden;transition:background var(--t-fast) var(--ease)}
@@ -399,7 +410,7 @@
   .exrow button.btn2{background:transparent;color:var(--mut);border-color:var(--line)}
   .exrow button.btn2:hover{color:var(--accent);border-color:var(--accent)}
   .exout{margin-top:6px}
-  .exsummary{font-family:var(--mono);font-size:12px;color:var(--mut);margin:6px 0}
+  .exsummary{font-family:var(--mono);font-size:13px;line-height:1.65;color:var(--mut);margin:8px 0;max-width:80ch}
   .exbar{position:relative;height:30px;margin-bottom:4px;background:var(--s2);border:1px solid var(--line);border-radius:5px;overflow:hidden}
   .exfill{position:absolute;inset:0 auto 0 0;background:rgba(245,166,35,.15);border-right:2px solid rgba(245,166,35,.5)}
   .exmeta{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 11px;font-family:var(--mono);font-size:12px}
@@ -409,10 +420,10 @@
   table.lc th{color:var(--mut2);font-weight:500}
   table.lc .n{color:var(--ok)} table.lc .r{color:var(--accent)} table.lc .rs{color:var(--fg)} table.lc .dm{color:var(--mut2)}
   .stickrow{display:flex;gap:12px;flex-wrap:wrap;margin-top:6px}
-  .sk{border:1px solid var(--line);border-radius:6px;background:var(--s2);padding:10px 16px;text-align:center}
-  .skv{font-family:var(--mono);font-size:20px;font-weight:700;line-height:1.2}
+  .sk{border:1px solid var(--line);border-radius:6px;background:var(--s2);padding:14px 20px;text-align:center}
+  .skv{font-family:var(--mono);font-size:26px;font-weight:700;line-height:1.2;font-variant-numeric:tabular-nums}
   .skv.acc{color:var(--accent)}
-  .skl{font-family:var(--mono);font-size:10px;color:var(--mut2);text-transform:uppercase;letter-spacing:.06em}
+  .skl{font-family:var(--mono);font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;margin-top:3px}
   .saved{display:flex;flex-wrap:wrap;gap:8px}
   .saved .chip{display:inline-flex;gap:8px;align-items:center;border-radius:6px}
   .saved .chip .t{color:var(--mut2)}
@@ -627,7 +638,6 @@
   .deck .pane h3{margin:0 0 12px;font-size:12px;line-height:18px;text-transform:none;
     letter-spacing:0;color:var(--fg)}
   .deck .pane h3 .sub{color:var(--mut2)}
-  .deck .pane h3 .sub{text-transform:none;letter-spacing:0;color:var(--dis);font-weight:400;margin-left:8px}
   /* clears the sticky rail, or every jump lands underneath it. --rail-h is MEASURED at
      runtime, never hardcoded: the rail wraps at narrow widths and a stale constant would
      silently bury the top of whatever you jumped to. */
@@ -728,7 +738,7 @@
   .inprompt button.ipx{background:transparent;border-color:var(--line2);color:var(--mut);font-weight:500}
   .inprompt button.ipx:hover{border-color:var(--accent);color:var(--accent)}
   .inprompt .iphint{flex-basis:100%;font-family:var(--mono);font-size:var(--fs-lbl);line-height:var(--lh-lbl);color:var(--mut2)}
-  .inote{margin:8px 0 0;font-family:var(--mono);font-size:12px;line-height:1.5;color:var(--mut)}
+  .inote{margin:10px 0 0;font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--mut);max-width:80ch}
   .inote.err{color:var(--warn)}
 
   /* ═══ AGENT OBSERVABILITY. two kinds of number share this card and they must never
@@ -741,8 +751,8 @@
     font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:99px}
   .aginf{display:inline-flex;align-items:center;gap:5px;border:1px dashed var(--line3);color:var(--mut2);
     font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:99px}
-  .agmeta{font-family:var(--mono);font-size:11px;line-height:1.7;color:var(--mut2)}
-  .agmeta b{color:var(--mut);font-weight:600}
+  .agmeta{font-family:var(--mono);font-size:13px;line-height:1.65;color:var(--mut);max-width:80ch}
+  .agmeta b{color:var(--fg);font-weight:600}
   .agrow{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0 0 10px}
   .sk.agnull .skv{color:var(--dis)}
   table.ctab tr.agtool{cursor:pointer}
@@ -1075,6 +1085,7 @@
     {{if .ChartTable}}
     <details class="charttable" open>
       <summary>data table · newest first ▾</summary>
+      <div class="tscroll">
       <table class="ctab">
         <thead><tr><th>bucket</th><th class="n">{{.ChartMetric}}</th>{{if gt .GhostTotal 0}}<th class="n">prior</th><th class="n">change</th>{{end}}<th></th></tr></thead>
         <tbody>
@@ -1086,6 +1097,7 @@
         </tr>{{end}}
         </tbody>
       </table>
+      </div>
     </details>
     {{end}}
   </div>
@@ -1411,18 +1423,20 @@
 
         {{if .Ships}}
         <div class="agmeta" style="margin-top:16px"><b>Which ship moved it.</b> Each release compared against the seven days of sampled answers either side of it. This is correlation, not proof, which is why the run counts are printed and why a row only reads as a change when both sides carry enough runs to tell one from sampling noise.</div>
-        <table class="tbl">
-          <tr><th>shipped</th><th>commit</th><th class="num">recommended</th><th class="num">runs</th><th>read</th></tr>
+        <div class="tscroll">
+        <table class="ctab">
+          <tr><th>shipped</th><th>commit</th><th class="n">recommended</th><th class="n">runs</th><th>read</th></tr>
           {{range .Ships}}
           <tr>
             <td class="mut">{{.At.Format "Jan 2"}}</td>
             <td>{{if .ShortSHA}}<code>{{.ShortSHA}}</code> {{end}}{{.Message}}</td>
-            <td class="num">{{.RecommendedBefore}}% &rarr; {{.RecommendedAfter}}%</td>
-            <td class="num mut">{{.RunsBefore}} / {{.RunsAfter}}</td>
+            <td class="n">{{.RecommendedBefore}}% &rarr; {{.RecommendedAfter}}%</td>
+            <td class="n mut">{{.RunsBefore}} / {{.RunsAfter}}</td>
             <td>{{if .Significant}}{{if eq .Direction "improvement"}}<span class="acc">{{.RecommendedDelta}}pp better</span>{{else}}<span style="color:var(--warn)">{{.RecommendedDelta}}pp worse</span>{{end}}{{else}}<span class="mut">{{.Why}}</span>{{end}}</td>
           </tr>
           {{end}}
         </table>
+        </div>
         {{end}}
 
         {{if .BrandCount}}
@@ -1436,7 +1450,7 @@
         {{end}}
 
         {{if .SOV.Has}}
-        <div class="zonelbl" style="margin:18px 0 2px">share of voice · you against everyone the engines name
+        <div class="zonelbl zsep" style="margin:0 0 8px">share of voice · you against everyone the engines name
           <span class="sub">% of all brand mentions that week · amber is you</span></div>
         <div class="sovwrap">
           <svg viewBox="-2 -6 648 162" preserveAspectRatio="none" style="width:100%;height:190px;display:block;overflow:visible" role="img" aria-label="share of voice over time">
@@ -1451,7 +1465,7 @@
         {{end}}
 
         {{if .SentRated}}
-        <div class="zonelbl" style="margin:18px 0 2px">how they talk about you
+        <div class="zonelbl zsep" style="margin:0 0 8px">how they talk about you
           <span class="sub">across {{.SentRated}} scored answer{{if ne .SentRated 1}}s{{end}} · not being named is counted apart from being named badly</span></div>
         <div class="sentbar">
           {{if .SentPos}}<i style="background:var(--ok);width:{{.SentPos}}fr;flex:{{.SentPos}}" title="positive"></i>{{end}}
@@ -1462,20 +1476,20 @@
         {{end}}
 
         {{if .RankRows}}
-        <div class="zonelbl" style="margin:18px 0 6px">where you land when they rank
+        <div class="zonelbl zsep" style="margin:0 0 8px">where you land when they rank
           <span class="sub">position among the tools an answer listed, over the runs that ranked you</span></div>
         {{range .RankRows}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}
         {{end}}
 
         {{if .GroundRuns}}
-        <div class="zonelbl" style="margin:18px 0 6px">read, versus picked
+        <div class="zonelbl zsep" style="margin:0 0 8px">read, versus picked
           <span class="sub">of the web-search answers that cited your own domain</span></div>
         <div class="agmeta">Your domain was cited in <b>{{.CitedRuns}} of {{.GroundRuns}}</b> web-search answers ({{.CitedRate}}%). Of those, <b>{{.CitedRec}}</b> recommended you and <b>{{.CitedNotRec}}</b> recommended someone else.</div>
         {{if .CitedNotRec}}<div class="agmeta" style="margin-top:6px">Being read and passed over is not a content problem — the page was found. Models pick the names they already know and fetch sources afterwards, so that gap closes off your site: reviews, directory listings, and the roundups the model learned from.</div>{{end}}
         {{end}}
 
         {{if .ShowTrend}}
-        <div class="zonelbl" style="margin:18px 0 6px">your own visibility · % of that week's runs
+        <div class="zonelbl zsep" style="margin:0 0 8px">your own visibility · % of that week's runs
           <span class="sub">amber = mentioned at all · grey = recommended as a pick · hatched = still filling or under 3 runs</span></div>
         <div class="bars" style="height:112px;padding-top:20px">
           {{range .Weeks}}<div class="col{{if .Thin}} part{{end}}"><span class="tip">{{.Tip}}</span><div class="bar" style="height:{{.MentPct}}%"></div><div class="ghost" style="height:{{.RecPct}}%"></div></div>{{end}}
@@ -1485,8 +1499,9 @@
         <div class="agmeta" style="margin-top:14px">one week of checks in this window, so there is no trend to draw — a single bar is a reading, not a direction. <a href="{{.WidenURL}}">widen to 90 days</a>, or let another week of sampling land.</div>
         {{end}}
 
-        <div class="zonelbl" style="margin:18px 0 0">per engine
+        <div class="zonelbl zsep" style="margin:0 0 8px">per engine
           <span class="sub">grounded and ungrounded stay separate rows — the engine name carries the mode</span></div>
+        <div class="tscroll">
         <table class="ctab">
           <thead><tr><th>engine</th><th class="n">runs</th><th class="n">mentioned</th><th class="n">recommended</th><th class="n">avg rank</th><th>model on newest run</th></tr></thead>
           <tbody>
@@ -1500,9 +1515,10 @@
           </tr>{{end}}
           </tbody>
         </table>
+        </div>
         <div class="agmeta">every rate ships with the runs it came from — read the pair, never the percentage alone. avg rank is the mean 1-based position among the tools an answer named, over the runs that ranked you at all.</div>
 
-        <div class="zonelbl" style="margin:18px 0 6px">how each engine describes you
+        <div class="zonelbl zsep" style="margin:0 0 8px">how each engine describes you
           <span class="sub">newest sample per engine, with the model id and run date that produced it</span></div>
         {{range .Verbatims}}<blockquote class="gverb">{{.Text}}<span class="gvmeta">{{.Engine}} · {{.Model}} · {{.When}}{{if .Ago}} · {{.Ago}}{{end}}</span></blockquote>{{else}}<div class="agmeta">no verbatim came back on any engine's newest run. the runner sends one line as <b>verbatim</b>; nothing here is written from the numbers.</div>{{end}}
 
@@ -1519,7 +1535,7 @@
           </div>
         </div>
 
-        <div class="zonelbl" style="margin:18px 0 6px">what they actually sent you
+        <div class="zonelbl zsep" style="margin:0 0 8px">what they actually sent you
           <span class="sub">the other half: real visitors who arrived from an AI assistant, same window</span></div>
         {{if $.HasWeb}}
         {{range $.AIRefs}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{else}}<div class="exsummary">no visitor arrived from an AI assistant in this window. the host is read off each visitor's first pageview, so this fills in the moment someone clicks through from one.</div>{{end}}
@@ -1593,27 +1609,31 @@
         </div>
         {{end}}
 
-        <table class="tbl" style="margin-top:14px">
-          <tr><th>crawler</th><th>run by</th><th>why</th><th class="num">fetches</th><th class="num">pages</th><th class="num">errors</th><th>last seen</th></tr>
+        <div class="tscroll">
+        <table class="ctab" style="margin-top:14px">
+          <tr><th>crawler</th><th>run by</th><th>why</th><th class="n">fetches</th><th class="n">pages</th><th class="n">errors</th><th>last seen</th></tr>
           {{range .Crawlers}}
           <tr>
             <td><b>{{.Crawler}}</b></td>
             <td>{{.Operator}}</td>
             <td>{{if eq .Purpose "user"}}<span class="acc">answering someone now</span>{{else if eq .Purpose "search"}}indexing for answers{{else}}training{{end}}</td>
-            <td class="num">{{comma .Hits}}</td>
-            <td class="num">{{comma .Pages}}</td>
-            <td class="num">{{if .Errors}}<span style="color:var(--warn)">{{comma .Errors}}</span>{{else}}0{{end}}</td>
+            <td class="n">{{comma .Hits}}</td>
+            <td class="n">{{comma .Pages}}</td>
+            <td class="n">{{if .Errors}}<span style="color:var(--warn)">{{comma .Errors}}</span>{{else}}0{{end}}</td>
             <td class="mut">{{.LastPath}}</td>
           </tr>
           {{end}}
         </table>
+        </div>
 
         {{if .Gaps}}
         <div class="agmeta" style="margin-top:14px"><b>Read by people, never read by an assistant.</b> No AI can cite a page it has never fetched, and these have proven human demand. Link to them from a page the crawlers do reach, or list them in your sitemap.</div>
-        <table class="tbl">
-          <tr><th>page</th><th class="num">human views</th><th class="num">visitors</th></tr>
-          {{range .Gaps}}<tr><td>{{.Path}}</td><td class="num">{{comma .Views}}</td><td class="num">{{comma .Visitors}}</td></tr>{{end}}
+        <div class="tscroll">
+        <table class="ctab">
+          <tr><th>page</th><th class="n">human views</th><th class="n">visitors</th></tr>
+          {{range .Gaps}}<tr><td>{{.Path}}</td><td class="n">{{comma .Views}}</td><td class="n">{{comma .Visitors}}</td></tr>{{end}}
         </table>
+        </div>
         {{end}}
       </div>
       {{else}}
