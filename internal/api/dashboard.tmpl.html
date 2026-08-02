@@ -9,13 +9,23 @@
   /* the whole theme derives from three decisions: a near-black base, one amber accent
      used as punctuation only (focus ring, active underline, live pulse, pin), and a
      4-step surface ladder. elevation is tone + a 1px hairline — no box-shadow anywhere.
-     exactly four type sizes: 30px focal numbers, 15px sentences, 13px body, 11px labels. */
+     four type sizes and no fifth: 26px focal numbers, 16px sentences, 14px body, 12px
+     labels — the values in --fs-* below, which this comment used to contradict. 12px is
+     the floor; there is no 9px, 10px or 10.5px anywhere. If you need something quieter
+     than a 12px label, take it down a tone, not a size. */
   :root{
     /* surfaces — one ladder, strays named */
     --bg:#0A0A0A; --well:#0D0D0D; --s1:#111111; --s2:#161616; --s3:#1C1C1C;
     --line:#262626; --line2:#2E2E2E; --line3:#3E3E3E;
-    /* text — three reading tones + disabled, every one AA on its surface */
-    --fg:#EDEDED; --sec:#B5B5B5; --mut:#8A8A8A; --mut2:#7A7A7A; --dis:#5F5F5F;
+    /* text — three reading tones + disabled. MEASURED, not asserted: the worst surface any
+       of these renders on is --s3 (a hovered pane), so that is the number that has to clear
+       AA 4.5:1, and these do — --sec 8.31, --mut 6.06, --mut2 4.94. The previous ladder put
+       --mut2 at 4.22/3.97 and --dis at 2.83/2.67 while this comment claimed all of them
+       passed; both were carrying axis labels, table heads, the footer and links.
+       --dis is the ONLY tone below AA and is now used for exactly one thing: a value that
+       does not exist (.sk.agnull). At 3.97:1 it still clears the 3:1 non-text bar, and a
+       reader who has to read it is a bug — nothing there is text you need. */
+    --fg:#EDEDED; --sec:#B5B5B5; --mut:#9A9A9A; --mut2:#8A8A8A; --dis:#7A7A7A;
     /* amber — one accent, a real ladder */
     --accent:#F5A623; --accent-hi:#FFC24D; --accent-dim:#C77F0A; --accent-bar:#C98A1E;--accent-bar-lo:#7E5412;--spark:#FFC24D;
     --a14:rgba(245,166,35,.14); --a25:rgba(245,166,35,.25); --a45:rgba(245,166,35,.45);
@@ -56,34 +66,34 @@
   body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:var(--fs-body);line-height:1.5;letter-spacing:var(--track-body);-webkit-font-smoothing:antialiased}
   a{color:inherit}
   .wrap{max-width:1060px;margin:0 auto;padding:0 24px}
-  kbd{border:1px solid var(--line2);border-bottom-width:2px;border-radius:3px;padding:0 5px;font-family:var(--mono);font-size:10px;color:var(--mut)}
+  kbd{border:1px solid var(--line2);border-bottom-width:2px;border-radius:3px;padding:0 5px;font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut)}
 
   /* zone 0 — header: one quiet 48px row */
   header{border-bottom:1px solid var(--line);background:var(--bg)}
   .bar{display:flex;align-items:center;gap:12px;min-height:48px;flex-wrap:nowrap}
   @media(max-width:880px){.bar{flex-wrap:wrap;padding:6px 0}}
-  .logo{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-weight:600;letter-spacing:-.02em;font-size:15px;white-space:nowrap}
+  .logo{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-weight:600;letter-spacing:-.02em;font-size:var(--fs-lead);white-space:nowrap}
   .logo b{color:var(--accent);font-weight:600}
-  .logo .lmk{display:inline-grid;place-items:center;width:19px;height:19px;border-radius:5px;background:var(--accent);color:var(--bg);font-weight:700;font-size:13px}
-  .siteselect{background:transparent;border:1px solid var(--line);color:var(--mut);font-family:var(--mono);font-size:11px;padding:4px 8px;border-radius:4px;max-width:180px}
+  .logo .lmk{display:inline-grid;place-items:center;width:19px;height:19px;border-radius:5px;background:var(--accent);color:var(--bg);font-weight:700;font-size:var(--fs-body)}
+  .siteselect{background:transparent;border:1px solid var(--line);color:var(--mut);font-family:var(--mono);font-size:var(--fs-lbl);padding:4px 8px;border-radius:4px;max-width:180px}
   .spacer{flex:1}
-  .hlink{color:var(--mut);font-family:var(--mono);font-size:11px;text-decoration:none;white-space:nowrap;flex:none;padding:6px 4px;margin:-6px -4px}
+  .hlink{color:var(--mut);font-family:var(--mono);font-size:var(--fs-lbl);text-decoration:none;white-space:nowrap;flex:none;padding:6px 4px;margin:-6px -4px}
   .hlink:hover{color:var(--fg)}
-  .livepill{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;flex:none;font-family:var(--mono);font-size:11px;color:var(--mut);border:1px solid var(--line);padding:3px 9px;border-radius:99px;cursor:pointer;text-decoration:none}
+  .livepill{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;flex:none;font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);border:1px solid var(--line);padding:3px 9px;border-radius:99px;cursor:pointer;text-decoration:none}
   .livepill .dot{width:6px;height:6px;border-radius:50%;background:var(--line2)}
   .ranges{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
-  .rangebtn{font-family:var(--mono);font-size:11px;color:var(--mut);padding:4px 10px;text-decoration:none;border-right:1px solid var(--line)}
+  .rangebtn{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);padding:4px 10px;text-decoration:none;border-right:1px solid var(--line)}
   .rangebtn:last-child{border-right:none}
   .rangebtn.on{color:var(--accent);background:var(--s2)}
   .customrange{display:inline-flex;align-items:center;gap:5px}
-  .customrange input{background:var(--s1);border:1px solid var(--line);color:var(--mut);font-family:var(--mono);font-size:10px;padding:3px 6px;border-radius:4px;color-scheme:dark}
+  .customrange input{background:var(--s1);border:1px solid var(--line);color:var(--mut);font-family:var(--mono);font-size:var(--fs-lbl);padding:3px 6px;border-radius:4px;color-scheme:dark}
   .customrange.on input{border-color:var(--accent);color:var(--fg)}
-  .customrange .rangego{background:transparent;border:1px solid var(--line);color:var(--mut);font-family:var(--mono);font-size:10px;padding:3px 8px;border-radius:4px;cursor:pointer}
+  .customrange .rangego{background:transparent;border:1px solid var(--line);color:var(--mut);font-family:var(--mono);font-size:var(--fs-lbl);padding:3px 8px;border-radius:4px;cursor:pointer}
   .customrange .rangego:hover{border-color:var(--accent);color:var(--accent)}
   .rangebtn:hover{color:var(--fg)}
   .toolbar{position:sticky;top:0;z-index:30;background:var(--bg);display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;margin:16px 0 0;padding:8px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
   .chiprail{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0 0}
-  .fchip{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(245,166,35,.5);color:var(--accent);border-radius:99px;font-family:var(--mono);font-size:11px;padding:4px 11px}
+  .fchip{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(245,166,35,.5);color:var(--accent);border-radius:99px;font-family:var(--mono);font-size:var(--fs-lbl);padding:4px 11px}
   .fchip a{color:var(--mut);text-decoration:none}
   .fchip a:hover{color:var(--warn)}
   .fchip .fop{font-weight:600;cursor:pointer}
@@ -98,13 +108,13 @@
      page toggles with the hidden ATTRIBUTE (#fbuilder, #askresult, #shareresult, #board,
      #chartAlt) needs this or it renders permanently expanded. */
   [hidden]{display:none !important}
-  .fbuilder input,.fbuilder select{background:var(--s1);border:1px solid var(--line);color:var(--fg);font-family:var(--mono);font-size:11px;padding:4px 8px;border-radius:5px;max-width:100%}
-  .gtile .d{font-family:var(--mono);font-size:11px;margin-top:2px;color:var(--mut2)}
+  .fbuilder input,.fbuilder select{background:var(--s1);border:1px solid var(--line);color:var(--fg);font-family:var(--mono);font-size:var(--fs-lbl);padding:4px 8px;border-radius:5px;max-width:100%}
+  .gtile .d{font-family:var(--mono);font-size:var(--fs-lbl);margin-top:2px;color:var(--mut2)}
   .gtile .d.up{color:var(--ok)} .gtile .d.down{color:var(--warn)}
   .seg[data-fp]{cursor:pointer}
   .seg[data-fp]:hover .segbar{border-right-color:var(--accent)}
   .livepill.on .dot{background:var(--accent);animation:pulse 1.6s infinite}
-  .agentpill{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;flex:none;font-family:var(--mono);font-size:11px;color:var(--mut);border:1px solid var(--line);padding:3px 9px;border-radius:99px;cursor:pointer}
+  .agentpill{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;flex:none;font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);border:1px solid var(--line);padding:3px 9px;border-radius:99px;cursor:pointer}
   .agentpill:hover{border-color:var(--accent);color:var(--accent)}
   .agentpill.on{border-color:rgba(245,166,35,.6);color:var(--accent)}
   .agentpill.on::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-right:6px;animation:pulse 1.6s infinite}
@@ -116,28 +126,28 @@
   .ask input{width:100%;height:var(--ask-h);background:var(--s1);border:1px solid var(--line2);color:var(--fg);border-radius:var(--r-card);
     font:400 var(--fs-lead)/var(--lh-lead) var(--mono);padding:0 84px 0 44px;outline:none;transition:border-color var(--t-base) var(--ease), box-shadow var(--t-base) var(--ease)}
   .ask input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(245,166,35,.14)}
-  .ask .k{position:absolute;left:17px;top:50%;transform:translateY(-50%);color:var(--accent);font-family:var(--mono);font-size:15px}
+  .ask .k{position:absolute;left:17px;top:50%;transform:translateY(-50%);color:var(--accent);font-family:var(--mono);font-size:var(--fs-lead)}
   .ask .hint{position:absolute;right:12px;top:50%;transform:translateY(-50%);display:flex;gap:4px;align-items:center}
   /* chips WRAP — a hidden-scrollbar side-scroll reads as content amputated at the edge
      (no affordance that more exists), the exact "cut off in a box" complaint */
   .askchips{display:flex;flex-wrap:wrap;justify-content:flex-start;align-items:center;gap:8px;padding:12px 0 0}
-  .chiplbl{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut2)}
-  .chip{font-family:var(--mono);font-size:11px;color:var(--mut);border:1px solid var(--line);padding:4px 11px;border-radius:99px;cursor:pointer;transition:.15s;background:transparent}
+  .chiplbl{font-family:var(--mono);font-size:var(--fs-lbl);text-transform:uppercase;letter-spacing:.06em;color:var(--mut2)}
+  .chip{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);border:1px solid var(--line);padding:4px 11px;border-radius:99px;cursor:pointer;transition:.15s;background:transparent}
   .chip:hover{color:var(--accent);border-color:var(--accent)}
 
   /* zone 2 — the answer slot: one card, zero height when unused */
   .answer{margin:14px 0 0;background:var(--s1);border:1px solid var(--line2);border-radius:var(--r-card);padding:var(--card-pad);min-height:64px;animation:rise var(--t-base) var(--ease-out)}
   .answer[hidden]{display:none}
-  .answer .atext{font-size:15px;line-height:1.55;white-space:pre-wrap}
+  .answer .atext{font-size:var(--fs-lead);line-height:1.55;white-space:pre-wrap}
   .answer .achart{margin-top:14px;border-top:1px solid var(--line);padding-top:14px}
   .answer .arow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:12px}
   .proof{display:inline-flex;align-items:center;gap:5px;border:1px solid rgba(245,166,35,.5);color:var(--accent);
-    font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:99px;text-decoration:none}
+    font-family:var(--mono);font-size:var(--fs-lbl);text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:99px;text-decoration:none}
   .proof:hover{background:var(--accent);color:var(--bg)}
-  .amethod{font-family:var(--mono);font-size:11px;color:var(--mut2)}
+  .amethod{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2)}
   .amethod summary{cursor:pointer;list-style:none;display:inline}
   .amethod summary:hover{color:var(--accent)}
-  .abtn{margin-left:auto;background:transparent;border:1px solid var(--line);color:var(--mut);font-family:var(--mono);font-size:11px;padding:3px 10px;border-radius:4px;cursor:pointer}
+  .abtn{margin-left:auto;background:transparent;border:1px solid var(--line);color:var(--mut);font-family:var(--mono);font-size:var(--fs-lbl);padding:3px 10px;border-radius:4px;cursor:pointer}
   .abtn:hover{border-color:var(--accent);color:var(--accent)}
   .abtn.pinned{border-color:var(--accent);color:var(--accent)}
 
@@ -149,42 +159,44 @@
   .callout::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent)}
   .callout.warn::before{background:var(--warn)}
   .callout.warn{background:radial-gradient(130% 150% at 0% 0%,rgba(229,84,75,.07),transparent 52%),var(--s1)}
-  .co-tag{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--accent);font-weight:700;white-space:nowrap;padding-top:3px}
+  .co-tag{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:var(--fs-lbl);letter-spacing:.09em;text-transform:uppercase;color:var(--accent);font-weight:700;white-space:nowrap;padding-top:3px}
   .callout.warn .co-tag{color:var(--warn)}
-  .co-ic{width:15px;height:15px;border-radius:50%;border:1.5px solid currentColor;display:grid;place-items:center;font-size:10px;line-height:1;font-weight:700}
-  .co-title{font-size:16.5px;font-weight:600;line-height:1.3;letter-spacing:-.012em;color:var(--fg)}
-  .co-detail{margin-top:6px;color:var(--mut);font-size:13px;line-height:1.5}
-  .co-meta{margin-top:11px;display:flex;gap:8px 14px;flex-wrap:wrap;align-items:center;font-family:var(--mono);font-size:10.5px;color:var(--dis)}
+  /* the circle grows with the glyph: a 12px "!" inside a 15px ring with a 1.5px border has
+     12px of inner space and touches on both sides. 18px keeps the ring a ring. */
+  .co-ic{width:18px;height:18px;border-radius:50%;border:1.5px solid currentColor;display:grid;place-items:center;font-size:var(--fs-lbl);line-height:1;font-weight:700}
+  .co-title{font-size:var(--fs-lead);font-weight:600;line-height:1.3;letter-spacing:-.012em;color:var(--fg)}
+  .co-detail{margin-top:6px;color:var(--mut);font-size:var(--fs-body);line-height:1.5}
+  .co-meta{margin-top:11px;display:flex;gap:8px 14px;flex-wrap:wrap;align-items:center;font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2)}
   .co-meta .co-prov{color:var(--mut);border:1px solid var(--line);border-radius:4px;padding:3px 8px}
   /* The verdict now carries two actions: "Show me" opens the report (primary — the number is
      always the first move), "Fix with your agent" hands the computed evidence to the thing that
      will change the code (secondary weight, same control kit, so they read as one pair). */
   .co-act{align-self:center;display:flex;flex-direction:column;gap:7px}
-  .co-fix{display:inline-block;background:var(--s2);border:1px solid var(--line2);color:var(--mut);font-family:var(--mono);font-size:12px;font-weight:600;border-radius:var(--r-ctl);padding:7px 14px;text-decoration:none;white-space:nowrap;text-align:center;cursor:pointer;transition:border-color var(--t-fast),color var(--t-fast)}
+  .co-fix{display:inline-block;background:var(--s2);border:1px solid var(--line2);color:var(--mut);font-family:var(--mono);font-size:var(--fs-lbl);font-weight:600;border-radius:var(--r-ctl);padding:7px 14px;text-decoration:none;white-space:nowrap;text-align:center;cursor:pointer;transition:border-color var(--t-fast),color var(--t-fast)}
   .co-fix:hover,.co-fix:focus-visible{border-color:var(--accent);color:var(--accent)}
-  .vfix{margin-left:10px;font-family:var(--mono);font-size:11px;color:var(--mut2);cursor:pointer;white-space:nowrap}
+  .vfix{margin-left:10px;font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2);cursor:pointer;white-space:nowrap}
   .vfix:hover,.vfix:focus-visible{color:var(--accent)}
   /* the fix-brief sheet — same slide-over geometry as the visitor journey overlay, wider,
      because this one is read rather than scanned */
   .fxshade{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100;animation:fadein var(--t-base) var(--ease)}
   .fixsheet{position:fixed;top:0;right:0;bottom:0;width:min(600px,95vw);background:var(--s1);border-left:1px solid var(--line2);z-index:101;padding:var(--card-pad);overflow-y:auto;animation:slidein var(--t-slow) var(--ease-out)}
   .fixsheet .fxh{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:10px}
-  .fixsheet .fxtag{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:var(--track-lbl);color:var(--accent)}
-  .fixsheet .fxclose{color:var(--mut2);cursor:pointer;font-family:var(--mono);font-size:12px}
+  .fixsheet .fxtag{font-family:var(--mono);font-size:var(--fs-lbl);text-transform:uppercase;letter-spacing:var(--track-lbl);color:var(--accent)}
+  .fixsheet .fxclose{color:var(--mut2);cursor:pointer;font-family:var(--mono);font-size:var(--fs-lbl)}
   .fixsheet .fxclose:hover,.fixsheet .fxclose:focus-visible{color:var(--warn)}
-  .fixsheet .fxtitle{font-size:16px;font-weight:600;line-height:1.4}
-  .fixsheet .fxdetail{color:var(--mut);font-size:13px;line-height:1.7;margin-top:4px}
-  .fixsheet .fxnote{font-family:var(--mono);font-size:11px;color:var(--warn);margin-top:8px;line-height:1.7}
-  .fixsheet .fxsec{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:var(--track-lbl);color:var(--mut2);margin:20px 0 6px;border-top:1px solid var(--line);padding-top:12px}
+  .fixsheet .fxtitle{font-size:var(--fs-lead);font-weight:600;line-height:1.4}
+  .fixsheet .fxdetail{color:var(--mut);font-size:var(--fs-body);line-height:1.7;margin-top:4px}
+  .fixsheet .fxnote{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--warn);margin-top:8px;line-height:1.7}
+  .fixsheet .fxsec{font-family:var(--mono);font-size:var(--fs-lbl);text-transform:uppercase;letter-spacing:var(--track-lbl);color:var(--mut2);margin:20px 0 6px;border-top:1px solid var(--line);padding-top:12px}
   .fxrow{padding:8px 0;border-bottom:1px solid var(--s2)}
-  .fxrow .fxlbl{font-size:12px;color:var(--mut)}
-  .fxrow .fxval{font-size:13px;color:var(--fg);font-variant-numeric:tabular-nums;margin-top:2px}
-  .fxrow .fxn{font-family:var(--mono);font-size:11px;color:var(--mut2)}
-  .fxrow .fxsrc{display:inline-block;margin-top:3px;font-family:var(--mono);font-size:10px;color:var(--mut2);text-decoration:none;word-break:break-all}
+  .fxrow .fxlbl{font-size:var(--fs-lbl);color:var(--mut)}
+  .fxrow .fxval{font-size:var(--fs-body);color:var(--fg);font-variant-numeric:tabular-nums;margin-top:2px}
+  .fxrow .fxn{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2)}
+  .fxrow .fxsrc{display:inline-block;margin-top:3px;font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2);text-decoration:none;word-break:break-all}
   .fxrow .fxsrc:hover{color:var(--accent);text-decoration:underline}
-  .fixsheet ol.fxdo{margin:0;padding-left:18px;color:var(--mut);font-size:13px;line-height:1.75}
-  .fixsheet .fxaccept{font-size:13px;color:var(--fg);line-height:1.7}
-  .co-go{display:inline-block;background:var(--accent);color:var(--bg);font-family:var(--mono);font-size:12px;font-weight:700;border-radius:var(--r-ctl);padding:8px 14px;text-decoration:none;white-space:nowrap;cursor:pointer;transition:background var(--t-fast)}
+  .fixsheet ol.fxdo{margin:0;padding-left:18px;color:var(--mut);font-size:var(--fs-body);line-height:1.75}
+  .fixsheet .fxaccept{font-size:var(--fs-body);color:var(--fg);line-height:1.7}
+  .co-go{display:inline-block;background:var(--accent);color:var(--bg);font-family:var(--mono);font-size:var(--fs-lbl);font-weight:700;border-radius:var(--r-ctl);padding:8px 14px;text-decoration:none;white-space:nowrap;cursor:pointer;transition:background var(--t-fast)}
   .co-go:hover{background:var(--accent-hi)}
   .verdict-more{margin-top:2px}
   @media(max-width:720px){.callout{grid-template-columns:1fr;gap:12px}.co-act{justify-self:start}}
@@ -194,15 +206,15 @@
   .vline .vt{font-weight:600}
   .vline .vsep{color:var(--mut2);margin:0 8px}
   .vline .vd{color:var(--mut)}
-  .vline .vwhy{color:var(--accent);font-family:var(--mono);font-size:11px;text-decoration:none;white-space:nowrap;cursor:pointer;margin-left:8px}
+  .vline .vwhy{color:var(--accent);font-family:var(--mono);font-size:var(--fs-lbl);text-decoration:none;white-space:nowrap;cursor:pointer;margin-left:8px}
   .vline .vwhy:hover{text-decoration:underline}
-  .vcalm{color:var(--mut);font-size:15px;padding:5px 0}
+  .vcalm{color:var(--mut);font-size:var(--fs-lead);padding:5px 0}
   .weekline{margin-top:4px}
-  .weekline summary{cursor:pointer;list-style:none;font-family:var(--mono);font-size:11px;color:var(--mut2)}
+  .weekline summary{cursor:pointer;list-style:none;font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2)}
   .weekline summary:hover{color:var(--accent)}
   .weekline[open] summary{color:var(--mut)}
   .weekbody{padding:8px 0 0}
-  .weekbody .vrow{display:flex;gap:10px;padding:3px 0;font-size:13px;flex-wrap:wrap}
+  .weekbody .vrow{display:flex;gap:10px;padding:3px 0;font-size:var(--fs-body);flex-wrap:wrap}
   .weekbody .vrow .vt{font-weight:600;min-width:150px}
   .weekbody .vrow .vd{color:var(--mut)}
   .weekbody .vrow.warn .vt{color:var(--warn)}
@@ -211,12 +223,12 @@
   .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:var(--gap);margin:var(--zone) 0 0}
   .kpi{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:var(--r-card);background:var(--s1);padding:14px 15px 15px}
   .kpi:hover{border-color:var(--line2)}
-  .kpi .kk{font-family:var(--mono);font-size:11px;letter-spacing:.02em;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:capitalize}
-  .kpi .kv{font-family:var(--mono);font-size:27px;font-weight:600;letter-spacing:-.02em;margin-top:4px;line-height:1.14;color:var(--fg)}
+  .kpi .kk{font-family:var(--mono);font-size:var(--fs-lbl);letter-spacing:.02em;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:capitalize}
+  .kpi .kv{font-family:var(--mono);font-size:var(--fs-num);font-weight:600;letter-spacing:-.02em;margin-top:4px;line-height:1.14;color:var(--fg)}
   .kpi .kv.acc{color:var(--accent)}
-  .kpi .kd{font-size:11px;line-height:1.35;margin-top:8px;color:var(--mut);padding-right:78px;white-space:normal;overflow-wrap:break-word;min-height:2.7em}
+  .kpi .kd{font-size:var(--fs-lbl);line-height:1.35;margin-top:8px;color:var(--mut);padding-right:78px;white-space:normal;overflow-wrap:break-word;min-height:2.7em}
   .kpi .kd.up{color:var(--ok)} .kpi .kd.down{color:var(--warn)}
-  .kpi .kd .kvp{color:var(--dis)}
+  .kpi .kd .kvp{color:var(--mut2)}
   .kpi .spark{position:absolute;right:12px;bottom:13px;width:64px;height:26px;opacity:.85;pointer-events:none}
   .kpi .spark .spend.good{fill:var(--ok)} .kpi .spark .spend.warn{fill:var(--warn)}
 
@@ -229,17 +241,22 @@
   /* separates stacked sections inside one pane; the first heading in a pane keeps its
      own spacing so the card does not open with a stray rule under its title */
   .pane .zonelbl.zsep{border-top:1px solid var(--line);padding-top:20px;margin-top:26px}
-  .zonelbl{font-family:var(--mono);font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--sec);margin-bottom:10px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;max-width:100%;font-weight:600}
+  .zonelbl{font-family:var(--mono);font-size:var(--fs-body);text-transform:uppercase;letter-spacing:.08em;color:var(--sec);margin-bottom:10px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;max-width:100%;font-weight:600}
   /* dimmer AND smaller than the heading it explains. Same size and colour made the two
      read as one run-on line. */
-  .zonelbl .sub{flex-basis:100%;text-transform:none;letter-spacing:0;color:var(--mut);font-size:12px;font-weight:400;line-height:1.55;margin-top:4px}
-  .zonesel{background:var(--s1);border:1px solid var(--line);color:var(--fg);font-family:var(--mono);font-size:11px;padding:2px 6px;border-radius:4px;margin-right:6px}
+  .zonelbl .sub{flex-basis:100%;text-transform:none;letter-spacing:0;color:var(--mut);font-size:var(--fs-lbl);font-weight:400;line-height:1.55;margin-top:4px}
+  .zonesel{background:var(--s1);border:1px solid var(--line);color:var(--fg);font-family:var(--mono);font-size:var(--fs-lbl);padding:2px 6px;border-radius:4px;margin-right:6px}
   .charttable{margin-top:10px}
-  .charttable summary{cursor:pointer;list-style:none;font-family:var(--mono);font-size:11px;color:var(--mut2);padding:4px 0}
+  /* the text equivalent of a chart. A 90-day window is 90 rows, so it scrolls inside
+     itself rather than becoming the pane; saScrollables() gives the wrapper a tab stop
+     when — and only when — it actually overflows. */
+  .charteq{margin-top:0}
+  .charttable .tscroll{max-height:340px;overflow-y:auto}
+  .charttable summary{cursor:pointer;list-style:none;font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2);padding:4px 0}
   .charttable summary:hover{color:var(--accent)}
   .tscroll{overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch}
-  table.ctab{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:13px;margin-top:10px}
-  table.ctab th{color:var(--mut);font-weight:600;text-align:left;padding:6px 14px 6px 0;border-bottom:1px solid var(--line2);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+  table.ctab{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:var(--fs-body);margin-top:10px}
+  table.ctab th{color:var(--mut);font-weight:600;text-align:left;padding:6px 14px 6px 0;border-bottom:1px solid var(--line2);font-size:var(--fs-lbl);text-transform:uppercase;letter-spacing:.06em}
   table.ctab td{padding:8px 14px 8px 0;border-bottom:1px solid var(--line)}
   table.ctab .n{font-variant-numeric:tabular-nums}
   table.ctab .n{text-align:right}
@@ -250,7 +267,7 @@
   table.ctab .cbar{width:30%}
   table.ctab .cbar div{height:8px;background:rgba(245,166,35,.35);border-radius:2px}
   .chartwrap{display:flex;gap:10px}
-  .yaxis{display:flex;flex-direction:column;justify-content:space-between;text-align:right;color:var(--mut2);font-family:var(--mono);font-size:10px;padding:24px 0 0;height:174px;min-width:28px}
+  .yaxis{display:flex;flex-direction:column;justify-content:space-between;text-align:right;color:var(--mut2);font-family:var(--mono);font-size:var(--fs-lbl);padding:24px 0 0;height:174px;min-width:34px}
     /* min-width:0 is load-bearing, not tidying: a flex item defaults to min-width:auto, so
        .plot refuses to shrink below the min-content width of its bars. At a 90-day range
        that is 90 columns plus 89 3px gaps — wider than a phone — and the overflow pushes
@@ -272,10 +289,10 @@
   /* the first focusable element on the page: visually hidden until focused, so keyboard
      users can reach the numbers without tabbing the whole rail, and nobody else sees it. */
   .skiplink{position:absolute;left:8px;top:-48px;z-index:100;background:var(--accent);color:var(--bg);
-    font-family:var(--mono);font-size:12px;font-weight:700;padding:9px 14px;border-radius:var(--r-ctl);
+    font-family:var(--mono);font-size:var(--fs-lbl);font-weight:700;padding:9px 14px;border-radius:var(--r-ctl);
     text-decoration:none;transition:top var(--t-base) var(--ease)}
   .skiplink:focus{top:8px}
-  h1.logo{margin:0;font-size:15px}
+  h1.logo{margin:0;font-size:var(--fs-lead)}
   /* ---- one composed document --------------------------------------------------------
      The ?zone= router hid deck children with CSS while re-rendering the whole glance on
      every "subscreen" — navigation re-filing, not design. The page is ONE document again,
@@ -283,7 +300,7 @@
      deck's ranked sections. Depth is scroll or a rail click, never a page swap that
      resets your reading position. See DASHBOARD_REDESIGN.md for the research trail. */
   /* provenance: the quiet line that says the numbers were computed, not cached */
-  .prov{font-family:var(--mono);font-size:11px;color:var(--mut2);margin:6px 2px 0}
+  .prov{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2);margin:6px 2px 0}
   .prov b{color:var(--mut);font-weight:400}
   /* ask shortcuts, one scrollable row below the chart — prompts, not headlines */
   .chiprow{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;flex-wrap:nowrap;margin-top:14px}
@@ -305,18 +322,18 @@
   /* instant tooltip — pure css, zero native-title delay, readable size */
   .bars .col .tip{display:none;position:absolute;bottom:calc(100% + 4px);left:50%;transform:translateX(-50%);
     background:var(--s3);border:1px solid var(--line2);border-radius:var(--r-ctl);padding:3px 9px;
-    font-family:var(--mono);font-size:11px;color:var(--fg);white-space:nowrap;z-index:5}
+    font-family:var(--mono);font-size:var(--fs-lbl);color:var(--fg);white-space:nowrap;z-index:5}
   .bars .col:hover .tip{display:block}
   /* the peak is annotated permanently — the most important number needs no hover */
   .bars .col .peaklbl{position:absolute;bottom:calc(100% + 2px);left:50%;transform:translateX(-50%);
-    font-family:var(--mono);font-size:11px;color:var(--accent);white-space:nowrap}
+    font-family:var(--mono);font-size:var(--fs-lbl);color:var(--accent);white-space:nowrap}
   .bars .col:hover .peaklbl{display:none}
   .xaxis{display:flex;gap:3px;margin-top:6px;min-width:0}
   /* ticks are sparse — most .xt are empty and the labelled ones deliberately spill past
      their 1px box (that is how a 90-bucket axis stays readable). min-width:0 lets the
      boxes compress; the last child is right-aligned so its label spills INWARD, because
      spilling outward is what pushed the whole body into a horizontal scroll on a phone. */
-  .xaxis .xt{flex:1;min-width:0;color:var(--mut2);font-family:var(--mono);font-size:11px;white-space:nowrap;overflow:visible}
+  .xaxis .xt{flex:1;min-width:0;color:var(--mut2);font-family:var(--mono);font-size:var(--fs-lbl);white-space:nowrap;overflow:visible}
   .xaxis .xt:last-child{text-align:right}
 
   /* zone 7 — the board: pinned questions as live cards */
@@ -325,17 +342,17 @@
   @media(max-width:820px){.boardgrid{grid-template-columns:1fr}}
   .bcard{background:var(--s1);border:1px solid var(--line);border-radius:8px;padding:16px 18px}
   .bcard .bh{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:12px}
-  .bcard .bq{font-size:15px;font-weight:600}
-  .bcard .bx{color:var(--mut2);font-family:var(--mono);font-size:11px;cursor:pointer;white-space:nowrap}
+  .bcard .bq{font-size:var(--fs-lead);font-weight:600}
+  .bcard .bx{color:var(--mut2);font-family:var(--mono);font-size:var(--fs-lbl);cursor:pointer;white-space:nowrap}
   .bcard .bx:hover{color:var(--warn)}
   .bcard .bprov{margin-top:12px;display:flex;align-items:center;gap:8px}
 
   /* zone 8 — breakdowns: one tabbed panel */
   .breakdowns{margin:var(--zone) 0 0}
-  .pane h3{font-size:15px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.07em;color:var(--fg);margin:0 0 14px;font-weight:600}
+  .pane h3{font-size:var(--fs-lead);font-family:var(--mono);text-transform:uppercase;letter-spacing:.07em;color:var(--fg);margin:0 0 14px;font-weight:600}
   /* the subtitle is a full sentence and was being asked to sit inline after the title,
      where it wrapped into the title's own letter-spacing and uppercase rhythm */
-  .pane h3 .sub{display:block;margin:7px 0 0;font-size:12px;line-height:1.6;font-weight:400;
+  .pane h3 .sub{display:block;margin:7px 0 0;font-size:var(--fs-lbl);line-height:1.6;font-weight:400;
     text-transform:none;letter-spacing:0;color:var(--mut);max-width:80ch}
 
   /* rows with share-of-total bars behind them */
@@ -343,29 +360,29 @@
   .seg:hover{background:var(--s2)}
   .segbar{position:absolute;inset:0 auto 0 0;background:var(--a14);border-right:2px solid var(--a45)}
   .segmeta{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 12px}
-  .segname{font-size:13px}
+  .segname{font-size:var(--fs-body)}
   .segnums{font-family:var(--mono);font-size:var(--fs-body);color:var(--mut)}
   .webcols{display:grid;grid-template-columns:1fr 1fr;gap:22px}
   @media(max-width:820px){.webcols{grid-template-columns:1fr}}
 
   /* funnel */
   .fstep{margin-bottom:6px}
-  .fdrop{font-family:var(--mono);font-size:11px;color:var(--warn);margin:8px 0 4px 2px}
+  .fdrop{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--warn);margin:8px 0 4px 2px}
   .fbarwrap{position:relative;height:40px;background:var(--s1);border:1px solid var(--line);border-radius:5px;overflow:hidden}
   .fbar{position:absolute;inset:0 auto 0 0;background:linear-gradient(90deg,var(--a25),var(--a14));border-right:2px solid var(--accent)}
   .fmeta{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 13px}
-  .fname{font-weight:600;font-size:13px}
-  .fnums{font-family:var(--mono);font-size:12px}
+  .fname{font-weight:600;font-size:var(--fs-body)}
+  .fnums{font-family:var(--mono);font-size:var(--fs-lbl)}
   .fnums .c{color:var(--fg)} .fnums .p{color:var(--accent);margin-left:10px}
   .segconv .sc{margin-bottom:10px}
-  .sc-h{display:flex;justify-content:space-between;font-size:13px}
+  .sc-h{display:flex;justify-content:space-between;font-size:var(--fs-body)}
   .sc-h .sc-conv{font-family:var(--mono);color:var(--accent)}
   .sc-track{height:6px;background:var(--s2);border-radius:3px;margin:5px 0 3px;overflow:hidden}
   .sc-fill{height:100%;background:var(--accent);opacity:.6;border-radius:3px}
-  .sc-sub{font-family:var(--mono);font-size:11px;color:var(--mut2)}
+  .sc-sub{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2)}
 
   /* retention heat */
-  table.heat{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:11px}
+  table.heat{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:var(--fs-lbl)}
   table.heat th{color:var(--mut2);font-weight:500;text-align:center;padding:4px 0;border-bottom:1px solid var(--line)}
   table.heat th:first-child,table.heat td:first-child{text-align:left;color:var(--mut)}
   table.heat td{text-align:center;padding:0;height:28px;color:#0A0A0A;font-weight:600}
@@ -381,26 +398,26 @@
   .live .ev{color:var(--accent);min-width:130px}
   .live .who{color:var(--mut);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .live .ago{color:var(--mut2)}
-  .livemuted{color:var(--mut2);font-family:var(--mono);font-size:12px}
+  .livemuted{color:var(--mut2);font-family:var(--mono);font-size:var(--fs-lbl)}
 
   /* goals */
   .goalrow{display:flex;flex-wrap:wrap;gap:12px}
   .goalcard{border:1px solid var(--line);border-radius:6px;background:var(--s1);padding:12px 16px;min-width:150px}
-  .gname{font-size:12px;color:var(--mut)}
-  .gnum{font-family:var(--mono);font-size:22px;font-weight:700;margin-top:2px}
-  .gpct{font-size:12px;color:var(--accent)}
-  .gchan{font-family:var(--mono);font-size:11px;color:var(--mut2);margin-top:2px}
+  .gname{font-size:var(--fs-lbl);color:var(--mut)}
+  .gnum{font-family:var(--mono);font-size:var(--fs-num);font-weight:700;margin-top:2px}
+  .gpct{font-size:var(--fs-lbl);color:var(--accent)}
+  .gchan{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2);margin-top:2px}
 
   /* power tools (explore/cohorts/defined) — a sheet behind a quiet disclosure */
   .power{margin:26px 0 0}
   .power{margin:var(--zone) 0 0}
-  .power>summary{cursor:pointer;list-style:none;font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:var(--track-lbl);color:var(--mut2);padding:10px 0;border-top:1px solid var(--line)}
+  .power>summary{cursor:pointer;list-style:none;font-family:var(--mono);font-size:var(--fs-lbl);text-transform:uppercase;letter-spacing:var(--track-lbl);color:var(--mut2);padding:10px 0;border-top:1px solid var(--line)}
   .power>summary::-webkit-details-marker{display:none}
   .power>summary:hover{color:var(--accent)}
   .ptool{background:var(--s1);border:1px solid var(--line);border-radius:8px;padding:16px 18px;margin-bottom:12px}
-  .ptool h3{font-size:13px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.07em;color:var(--mut2);margin:0 0 12px;font-weight:500}
+  .ptool h3{font-size:var(--fs-body);font-family:var(--mono);text-transform:uppercase;letter-spacing:.07em;color:var(--mut2);margin:0 0 12px;font-weight:500}
   .exrow{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
-  .exrow input,.exrow select{background:var(--s2);border:1px solid var(--line);color:var(--fg);font-family:var(--mono);font-size:12px;padding:7px 10px;border-radius:5px;outline:none;min-width:0}
+  .exrow input,.exrow select{background:var(--s2);border:1px solid var(--line);color:var(--fg);font-family:var(--mono);font-size:var(--fs-lbl);padding:7px 10px;border-radius:5px;outline:none;min-width:0}
   .exrow input:focus,.exrow select:focus{border-color:var(--accent)}
   /* flex-BASIS, not min-width: a later global rule (the shared control styling for
      input[type=text]/.exrow input/...) sets min-width:0 so inputs can always shrink and
@@ -408,24 +425,24 @@
      A basis makes each input ask for 170px and WRAP (the row already sets flex-wrap)
      while still being allowed to shrink, so nothing overflows. */
   .exrow input{flex:1 1 170px}
-  .exrow button{background:var(--accent);border:1px solid var(--accent);color:var(--bg);font-family:var(--mono);font-size:12px;font-weight:700;padding:7px 14px;border-radius:5px;cursor:pointer}
+  .exrow button{background:var(--accent);border:1px solid var(--accent);color:var(--bg);font-family:var(--mono);font-size:var(--fs-lbl);font-weight:700;padding:7px 14px;border-radius:5px;cursor:pointer}
   .exrow button.btn2{background:transparent;color:var(--mut);border-color:var(--line)}
   .exrow button.btn2:hover{color:var(--accent);border-color:var(--accent)}
   .exout{margin-top:6px}
-  .exsummary{font-family:var(--mono);font-size:13px;line-height:1.65;color:var(--mut);margin:8px 0;max-width:80ch}
+  .exsummary{font-family:var(--mono);font-size:var(--fs-body);line-height:1.65;color:var(--mut);margin:8px 0;max-width:80ch}
   .exbar{position:relative;height:30px;margin-bottom:4px;background:var(--s2);border:1px solid var(--line);border-radius:5px;overflow:hidden}
   .exfill{position:absolute;inset:0 auto 0 0;background:rgba(245,166,35,.15);border-right:2px solid rgba(245,166,35,.5)}
-  .exmeta{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 11px;font-family:var(--mono);font-size:12px}
+  .exmeta{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 11px;font-family:var(--mono);font-size:var(--fs-lbl)}
   .exmeta .p{color:var(--accent);margin-left:8px}
-  table.lc{border-collapse:collapse;font-family:var(--mono);font-size:11px;margin-top:6px}
+  table.lc{border-collapse:collapse;font-family:var(--mono);font-size:var(--fs-lbl);margin-top:6px}
   table.lc th,table.lc td{padding:3px 10px;text-align:right;border-bottom:1px solid var(--s2)}
   table.lc th{color:var(--mut2);font-weight:500}
   table.lc .n{color:var(--ok)} table.lc .r{color:var(--accent)} table.lc .rs{color:var(--fg)} table.lc .dm{color:var(--mut2)}
   .stickrow{display:flex;gap:12px;flex-wrap:wrap;margin-top:6px}
   .sk{border:1px solid var(--line);border-radius:6px;background:var(--s2);padding:14px 20px;text-align:center}
-  .skv{font-family:var(--mono);font-size:26px;font-weight:700;line-height:1.2;font-variant-numeric:tabular-nums}
+  .skv{font-family:var(--mono);font-size:var(--fs-num);font-weight:700;line-height:1.2;font-variant-numeric:tabular-nums}
   .skv.acc{color:var(--accent)}
-  .skl{font-family:var(--mono);font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;margin-top:3px}
+  .skl{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);text-transform:uppercase;letter-spacing:.06em;margin-top:3px}
   .saved{display:flex;flex-wrap:wrap;gap:8px}
   .saved .chip{display:inline-flex;gap:8px;align-items:center;border-radius:6px}
   .saved .chip .t{color:var(--mut2)}
@@ -435,30 +452,30 @@
   /* connect-your-agent sheet */
   .connect{margin:26px 0 0}
   .connect{margin:var(--zone) 0 0}
-  .connect>summary{cursor:pointer;list-style:none;font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:var(--track-lbl);color:var(--mut2);padding:10px 0;border-top:1px solid var(--line)}
+  .connect>summary{cursor:pointer;list-style:none;font-family:var(--mono);font-size:var(--fs-lbl);text-transform:uppercase;letter-spacing:var(--track-lbl);color:var(--mut2);padding:10px 0;border-top:1px solid var(--line)}
   .connect>summary::-webkit-details-marker{display:none}
   .connect>summary:hover{color:var(--accent)}
   .crow{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--s2)}
-  .crow .cn{font-weight:600;font-size:13px;min-width:120px}
-  .cbtn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line2);border-radius:5px;background:var(--s2);color:var(--fg);font-family:var(--mono);font-size:11px;padding:5px 12px;cursor:pointer;text-decoration:none}
+  .crow .cn{font-weight:600;font-size:var(--fs-body);min-width:120px}
+  .cbtn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line2);border-radius:5px;background:var(--s2);color:var(--fg);font-family:var(--mono);font-size:var(--fs-lbl);padding:5px 12px;cursor:pointer;text-decoration:none}
   .cbtn:hover{border-color:var(--accent);color:var(--accent)}
   .cbtn.primary{border-color:var(--accent);color:var(--accent)}
-  .ccode{background:var(--well);border:1px solid var(--line);border-radius:var(--r-ctl);padding:6px 12px;font-family:var(--mono);font-size:11px;color:var(--mut);overflow:auto;white-space:nowrap;flex:1;min-width:200px}
-  .cnote{font-family:var(--mono);font-size:11px;color:var(--mut2);padding:10px 0 0;line-height:1.7}
+  .ccode{background:var(--well);border:1px solid var(--line);border-radius:var(--r-ctl);padding:6px 12px;font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);overflow:auto;white-space:nowrap;flex:1;min-width:200px}
+  .cnote{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2);padding:10px 0 0;line-height:1.7}
   .cnote em{color:var(--mut);font-style:normal}
 
   /* onboarding takeover (fresh install only) */
   .takeover{max-width:760px;margin:20px auto 0}
   .obcard{background:var(--s1);border:1px solid var(--line);border-radius:8px;padding:20px;margin-bottom:14px}
-  .obh{font-size:15px;font-weight:600;margin-bottom:10px}
-  .obsub{font-family:var(--mono);font-size:11px;color:var(--mut2);margin-bottom:10px}
-  pre.code{background:var(--well);border:1px solid var(--line);border-radius:var(--r-ctl);padding:13px;overflow:auto;font-family:var(--mono);font-size:12px;line-height:1.6;color:var(--fg);margin:0;white-space:pre-wrap;word-break:break-word}
-  .copy{margin-top:8px;background:transparent;border:1px solid var(--line);border-radius:4px;color:var(--mut);font-family:var(--mono);font-size:11px;padding:5px 12px;cursor:pointer}
+  .obh{font-size:var(--fs-lead);font-weight:600;margin-bottom:10px}
+  .obsub{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2);margin-bottom:10px}
+  pre.code{background:var(--well);border:1px solid var(--line);border-radius:var(--r-ctl);padding:13px;overflow:auto;font-family:var(--mono);font-size:var(--fs-lbl);line-height:1.6;color:var(--fg);margin:0;white-space:pre-wrap;word-break:break-word}
+  .copy{margin-top:8px;background:transparent;border:1px solid var(--line);border-radius:4px;color:var(--mut);font-family:var(--mono);font-size:var(--fs-lbl);padding:5px 12px;cursor:pointer}
   .copy:hover{border-color:var(--accent);color:var(--accent)}
-  .obstatus{font-family:var(--mono);font-size:12px;color:var(--mut2);padding-top:14px}
+  .obstatus{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2);padding-top:14px}
 
-  .devnote{margin:16px 0 0;padding:10px 14px;border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:0 6px 6px 0;background:var(--s1);color:var(--mut);font-size:13px}
-  .devnote a{color:var(--accent);text-decoration:none;font-family:var(--mono);font-size:12px;white-space:nowrap}
+  .devnote{margin:16px 0 0;padding:10px 14px;border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:0 6px 6px 0;background:var(--s1);color:var(--mut);font-size:var(--fs-body)}
+  .devnote a{color:var(--accent);text-decoration:none;font-family:var(--mono);font-size:var(--fs-lbl);white-space:nowrap}
   .devnote b{color:var(--fg);font-weight:600}
 
   /* the journey overlay: click any visitor to see what that one human actually did —
@@ -466,11 +483,11 @@
   .jshade{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100;animation:fadein var(--t-base) var(--ease)}
   .journey{position:fixed;top:0;right:0;bottom:0;width:min(440px,92vw);background:var(--s1);border-left:1px solid var(--line2);z-index:101;padding:var(--card-pad);overflow-y:auto;animation:slidein var(--t-slow) var(--ease-out)}
   .journey .jh{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:4px}
-  .journey .jid{font-family:var(--mono);font-size:13px;font-weight:700;word-break:break-all}
-  .journey .jclose{color:var(--mut2);cursor:pointer;font-family:var(--mono);font-size:12px;white-space:nowrap}
+  .journey .jid{font-family:var(--mono);font-size:var(--fs-body);font-weight:700;word-break:break-all}
+  .journey .jclose{color:var(--mut2);cursor:pointer;font-family:var(--mono);font-size:var(--fs-lbl);white-space:nowrap}
   .journey .jclose:hover{color:var(--warn)}
-  .journey .jmeta{font-family:var(--mono);font-size:11px;color:var(--mut2);margin-bottom:14px;line-height:1.8}
-  .journey .jrow{display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--s2);font-family:var(--mono);font-size:12px}
+  .journey .jmeta{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2);margin-bottom:14px;line-height:1.8}
+  .journey .jrow{display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--s2);font-family:var(--mono);font-size:var(--fs-lbl)}
   .journey .jrow .jt{color:var(--mut2);min-width:52px}
   .journey .jrow .je{color:var(--accent);min-width:110px}
   .journey .jrow .jp{color:var(--mut);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -487,7 +504,7 @@
   .live .who:hover{color:var(--accent);text-decoration:underline}
 
   /* zone 9 — the covenant */
-  .foot{color:var(--mut2);font-size:11px;text-align:left;padding:32px 0 40px;font-family:var(--mono);line-height:1.8;border-top:1px solid var(--line);margin-top:var(--zone)}
+  .foot{color:var(--mut2);font-size:var(--fs-lbl);text-align:left;padding:32px 0 40px;font-family:var(--mono);line-height:1.8;border-top:1px solid var(--line);margin-top:var(--zone)}
   .foot a{color:var(--mut2)}
   .foot a:hover{color:var(--accent)}
 
@@ -514,7 +531,7 @@
   /* AT EVERY WIDTH, not just inside the shell. These lived in the >=1081px block, so on a
      phone the note fell back to its default display and told the user "reports appear here as
      soon as your first events land" directly beneath a populated list of 22 reports. */
-  .railnote{font:400 11px/1.5 var(--mono);color:var(--dis);display:none}
+  .railnote{font-family:var(--mono);font-weight:400;font-size:var(--fs-lbl);line-height:1.5;color:var(--mut2);display:none}
   .deckindex:empty + .railnote{display:block}
   .sa-nav,#sa-top{display:flex;flex-direction:column;gap:14px;padding:14px 0}
   /* stacked, the topbar's children stretch to full width and #lastev (a long "seconds since
@@ -545,12 +562,13 @@
     .sa-inner{max-width:1560px}
     /* the deck index becomes the rail's spine: one report per line, grouped, always visible */
     .sa-nav .deckindex{display:flex;flex-direction:column;align-items:stretch;gap:1px;padding:0}
-    .sa-nav .deckindex .jsec{border-left:none;padding:10px 2px 4px;color:var(--dis)}
+    .sa-nav .deckindex .jsec{border-left:none;padding:10px 2px 4px;color:var(--mut2)}
     .sa-nav .deckindex .jsec:first-child{padding-top:2px}
     .sa-nav .deckindex a.jcard{padding:4px 6px;border-bottom:none;border-radius:4px;color:var(--mut)}
     .sa-nav .deckindex a.jcard:hover{color:var(--fg);background:var(--s2);border-bottom:none}
     .sa-nav .deckindex a.jcard.cur{color:var(--accent)}
-    .sa-lbl{font:400 10px/1 var(--mono);text-transform:uppercase;letter-spacing:.1em;color:var(--dis);margin-bottom:8px}
+    .sa-lbl{font-family:var(--mono);font-weight:400;font-size:var(--fs-lbl);line-height:1;
+      text-transform:uppercase;letter-spacing:.1em;color:var(--mut2);margin-bottom:8px}
     .sa-block{display:flex;flex-direction:column}
     .sa-brand .logo{margin:0 0 10px}
     .sa-nav .siteselect{width:100%}
@@ -596,10 +614,10 @@
   .deck>.stratum{grid-column:1/-1;display:flex;align-items:baseline;gap:10px;margin:var(--sec-pad) 0 2px;
     font-weight:400}
   .deck>.stratum:first-child{margin-top:4px}
-  .deck>.stratum .stitle{font:400 17px/1.2 var(--mono);color:var(--fg);letter-spacing:-.01em}
-  .deck>.stratum .ssub{font:400 11px/1 var(--mono);color:var(--dis);text-transform:uppercase;letter-spacing:.08em}
+  .deck>.stratum .stitle{font-family:var(--mono);font-weight:400;font-size:var(--fs-lead);line-height:1.2;color:var(--fg);letter-spacing:-.01em}
+  .deck>.stratum .ssub{font-family:var(--mono);font-weight:400;font-size:var(--fs-lbl);line-height:1;color:var(--mut2);text-transform:uppercase;letter-spacing:.08em}
   .deck>.stratum .srule{flex:1;height:1px;background:var(--line);position:relative;overflow:hidden}
-  .deck>.stratum .scount{font:400 11px/1 var(--mono);color:var(--dis);white-space:nowrap}
+  .deck>.stratum .scount{font-family:var(--mono);font-weight:400;font-size:var(--fs-lbl);line-height:1;color:var(--mut2);white-space:nowrap}
   /* a jumped-to SECTION runs its rule amber once. Flashing five card borders at once would
      read as an error state, so sections and cards get different acknowledgements. */
   @keyframes srun{0%{transform:scaleX(0);opacity:1}55%{transform:scaleX(1);opacity:1}100%{transform:scaleX(1);opacity:0}}
@@ -637,7 +655,7 @@
   /* card titles were 11px uppercase --mut2, the same weight as every caption on the page, so
      22 cards read as one undifferentiated field. Full contrast, sentence case, a touch larger:
      the title is now the second level of the hierarchy after the section heading. */
-  .deck .pane h3{margin:0 0 12px;font-size:12px;line-height:18px;text-transform:none;
+  .deck .pane h3{margin:0 0 12px;font-size:var(--fs-lbl);line-height:18px;text-transform:none;
     letter-spacing:0;color:var(--fg)}
   .deck .pane h3 .sub{color:var(--mut)}
   /* clears the sticky rail, or every jump lands underneath it. --rail-h is MEASURED at
@@ -657,7 +675,7 @@
      padding and no empty shells, never less width. */
   .deck>.pane.quiet{padding:12px var(--card-pad)}
   .deck>.pane.quiet h3{margin:0 0 6px}
-  .deck>.pane.quiet .exsummary,.deck>.pane.quiet .agmeta,.deck>.pane.quiet .inote{margin:0;font-size:11px;line-height:1.5}
+  .deck>.pane.quiet .exsummary,.deck>.pane.quiet .agmeta,.deck>.pane.quiet .inote{margin:0;font-size:var(--fs-lbl);line-height:1.5}
   /* the empty visual shells (an empty grid, an empty canvas, an axis with no series) carry
      no information at all, so they go while the words that teach stay.
      .exrow is deliberately NOT in this list: it holds the create-goal and create-flag
@@ -675,10 +693,11 @@
      duplicated it are gone. A scroll-spy marks the current section in the rail. ═══ */
   .deckindex{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;padding:10px 0 2px}
   .deckindex:empty{display:none}
-  .deckindex .jsec{font:400 10px/1 var(--mono);text-transform:uppercase;letter-spacing:.08em;
-    color:var(--dis);text-decoration:none;padding:4px 2px 4px 10px;border-left:1px solid var(--line)}
+  .deckindex .jsec{font-family:var(--mono);font-weight:400;font-size:var(--fs-lbl);line-height:1;
+    text-transform:uppercase;letter-spacing:.08em;
+    color:var(--mut2);text-decoration:none;padding:4px 2px 4px 10px;border-left:1px solid var(--line)}
   .deckindex .jsec:first-child{border-left:none;padding-left:2px}
-  .deckindex a.jcard{font:400 11px/1 var(--mono);color:var(--mut2);text-decoration:none;padding:4px 2px;
+  .deckindex a.jcard{font-family:var(--mono);font-weight:400;font-size:var(--fs-lbl);line-height:1;color:var(--mut2);text-decoration:none;padding:4px 2px;
     border-bottom:1px solid transparent}
   .deckindex a.jcard:hover{color:var(--fg);border-bottom-color:var(--accent)}
   @media(max-width:880px){.deckindex .jsec{flex-basis:100%;border-left:none;padding-left:2px}}
@@ -691,19 +710,22 @@
      Appended last so it wins the cascade over every legacy per-component rule. ═══ */
   select,.zonesel,.siteselect,.exrow select,.fbuilder select{
     height:var(--ctl-h);padding:0 26px 0 10px;background:var(--s1);border:1px solid var(--line2);
-    color:var(--fg);font:400 12px/1 var(--mono);border-radius:var(--r-ctl);cursor:pointer;
+    color:var(--fg);font-family:var(--mono);font-weight:400;font-size:var(--fs-lbl);line-height:1;border-radius:var(--r-ctl);cursor:pointer;
     appearance:none;-webkit-appearance:none;
-    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%237A7A7A'/%3E%3C/svg%3E");
+    /* a data-URI cannot read a custom property, so this fill is the one colour in the file
+       that will NOT follow --mut2 when the token moves. It is hand-synced to it; if you
+       change --mut2, change %238A8A8A here in the same edit. */
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%238A8A8A'/%3E%3C/svg%3E");
     background-repeat:no-repeat;background-position:right 9px center;transition:border-color var(--t-base) var(--ease)}
   select:hover,.zonesel:hover{border-color:var(--line3)}
   input[type="text"],input[type="date"],input:not([type]),.exrow input,.fbuilder input,.customrange input{
     height:var(--ctl-h);padding:0 10px;background:var(--s1);border:1px solid var(--line2);
-    color:var(--fg);font:400 12px/1 var(--mono);border-radius:var(--r-ctl);
+    color:var(--fg);font-family:var(--mono);font-weight:400;font-size:var(--fs-lbl);line-height:1;border-radius:var(--r-ctl);
     transition:border-color var(--t-base) var(--ease);color-scheme:dark;min-width:0}
   input:hover{border-color:var(--line3)}
   input::placeholder{color:var(--mut2)}
   .btn,.exrow button,.rangego,.copy,.cbtn,.abtn,.fbuilder .chip{
-    height:var(--ctl-h);padding:0 12px;border-radius:var(--r-ctl);font:500 12px/1 var(--mono);
+    height:var(--ctl-h);padding:0 12px;border-radius:var(--r-ctl);font-family:var(--mono);font-weight:500;font-size:var(--fs-lbl);line-height:1;
     cursor:pointer;transition:background var(--t-fast) var(--ease),border-color var(--t-base) var(--ease),color var(--t-base) var(--ease)}
   .exrow button,.rangego,.copy,.cbtn,.abtn{background:transparent;border:1px solid var(--line2);color:var(--mut)}
   .exrow button:hover,.rangego:hover,.copy:hover,.cbtn:hover,.abtn:hover{border-color:var(--accent);color:var(--accent)}
@@ -711,7 +733,7 @@
   .exrow button:not(.btn2):hover{background:var(--accent-hi);color:#0A0A0A}
   .exrow button:not(.btn2):active{background:var(--accent-dim)}
   .chip{display:inline-flex;align-items:center;height:var(--chip-h);padding:0 10px;border:1px solid var(--line);
-    border-radius:var(--r-pill);background:transparent;color:var(--mut);font:400 11px/1 var(--mono);cursor:pointer;
+    border-radius:var(--r-pill);background:transparent;color:var(--mut);font-family:var(--mono);font-weight:400;font-size:var(--fs-lbl);line-height:1;cursor:pointer;
     transition:color var(--t-base) var(--ease),border-color var(--t-base) var(--ease);white-space:nowrap}
   .chip:hover{color:var(--accent);border-color:var(--accent)}
   .zonelbl,.chiplbl,.gtile .l,.dcard h3,.pane h3{font-family:var(--mono);font-size:var(--fs-lbl);line-height:var(--lh-lbl);
@@ -733,14 +755,14 @@
     letter-spacing:var(--track-lbl);color:var(--mut2);white-space:nowrap}
   .inprompt input{flex:1;min-width:170px;background:var(--s1)}
   .inprompt button{height:var(--ctl-h);padding:0 12px;border:1px solid var(--accent);border-radius:var(--r-ctl);
-    background:var(--accent);color:#0A0A0A;font:600 12px/1 var(--mono);cursor:pointer;
+    background:var(--accent);color:#0A0A0A;font-family:var(--mono);font-weight:600;font-size:var(--fs-lbl);line-height:1;cursor:pointer;
     transition:background var(--t-fast) var(--ease),border-color var(--t-base) var(--ease),color var(--t-base) var(--ease)}
   .inprompt button:hover{background:var(--accent-hi)}
   .inprompt button:active{background:var(--accent-dim)}
   .inprompt button.ipx{background:transparent;border-color:var(--line2);color:var(--mut);font-weight:500}
   .inprompt button.ipx:hover{border-color:var(--accent);color:var(--accent)}
   .inprompt .iphint{flex-basis:100%;font-family:var(--mono);font-size:var(--fs-lbl);line-height:var(--lh-lbl);color:var(--mut2)}
-  .inote{margin:10px 0 0;font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--mut);max-width:80ch}
+  .inote{margin:10px 0 0;font-family:var(--mono);font-size:var(--fs-body);line-height:1.6;color:var(--mut);max-width:80ch}
   .inote.err{color:var(--warn)}
 
   /* ═══ AGENT OBSERVABILITY. two kinds of number share this card and they must never
@@ -750,17 +772,17 @@
      the row). the dashed/solid split is the whole visual argument. ═══ */
   .deck #pane-agent{overflow-x:auto}
   .agprov{display:inline-flex;align-items:center;gap:5px;border:1px solid rgba(245,166,35,.5);color:var(--accent);
-    font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:99px}
+    font-family:var(--mono);font-size:var(--fs-lbl);text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:99px}
   .aginf{display:inline-flex;align-items:center;gap:5px;border:1px dashed var(--line3);color:var(--mut2);
-    font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:99px}
-  .agmeta{font-family:var(--mono);font-size:13px;line-height:1.65;color:var(--mut);max-width:80ch}
+    font-family:var(--mono);font-size:var(--fs-lbl);text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:99px}
+  .agmeta{font-family:var(--mono);font-size:var(--fs-body);line-height:1.65;color:var(--mut);max-width:80ch}
   .agmeta b{color:var(--fg);font-weight:600}
   .agrow{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0 0 10px}
   .sk.agnull .skv{color:var(--dis)}
   table.ctab tr.agtool{cursor:pointer}
   table.ctab tr.agtool:hover td{background:var(--s2)}
   table.ctab tr.agtool td:first-child{color:var(--fg)}
-  .agcaret{display:inline-block;color:var(--mut2);font-size:9px;transition:transform var(--t-fast) var(--ease)}
+  .agcaret{display:inline-block;color:var(--mut2);font-size:var(--fs-lbl);transition:transform var(--t-fast) var(--ease)}
   table.ctab tr.agtool.on .agcaret{transform:rotate(90deg)}
   table.ctab tr.agerr td{background:var(--well);padding:9px 10px}
   /* the inferred half: dashed on every edge, so it is legible as a different kind of thing
@@ -769,7 +791,7 @@
   .agval{position:relative;height:var(--row-h);margin-bottom:4px;border-radius:var(--r-ctl);overflow:hidden}
   .agval .agvalbar{position:absolute;inset:0 auto 0 0;background:var(--s2);border-right:1px dashed var(--line3)}
   .agval .agvalmeta{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 12px}
-  .agval .agvalname{font-size:13px}
+  .agval .agvalname{font-size:var(--fs-body)}
   .agval .agvalnum{font-family:var(--mono);font-size:var(--fs-body);color:var(--mut)}
 
   /* ═══ SESSIONS + CLICK MAP. both read behaviour on one page, so they borrow the
@@ -781,7 +803,7 @@
   table.ctab tr.sesrow:hover td{background:var(--s2)}
   table.ctab tr.sesrow td:first-child{color:var(--fg)}
   .rage{display:inline-flex;align-items:center;gap:5px;border:1px solid rgba(229,84,75,.5);color:var(--warn);
-    font-family:var(--mono);font-size:10px;letter-spacing:.05em;padding:1px 7px;border-radius:99px;white-space:nowrap}
+    font-family:var(--mono);font-size:var(--fs-lbl);letter-spacing:.05em;padding:1px 7px;border-radius:99px;white-space:nowrap}
   .hmwrap{position:relative;background:var(--well);border:1px solid var(--line);border-radius:var(--r-ctl);
     overflow:auto;max-height:360px;margin-top:10px}
   .hmcanvas{position:relative;min-height:40px}
@@ -802,15 +824,15 @@
   table.ctab tr.xrow.on .agcaret{transform:rotate(90deg)}
   table.ctab tr.xbody td{background:var(--well);padding:12px 10px}
   .stpill{display:inline-flex;align-items:center;height:var(--chip-h);padding:0 10px;border:1px solid var(--line);
-    border-radius:var(--r-pill);background:transparent;color:var(--mut2);font:400 11px/1 var(--mono);cursor:pointer;
+    border-radius:var(--r-pill);background:transparent;color:var(--mut2);font-family:var(--mono);font-weight:400;font-size:var(--fs-lbl);line-height:1;cursor:pointer;
     white-space:nowrap;transition:color var(--t-base) var(--ease),border-color var(--t-base) var(--ease)}
   .stpill:hover{color:var(--accent);border-color:var(--accent)}
   .stpill.on{border-color:var(--a45);color:var(--accent)}
   .stpill.on::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-right:6px}
-  .rowx{color:var(--mut2);font-family:var(--mono);font-size:11px;cursor:pointer}
+  .rowx{color:var(--mut2);font-family:var(--mono);font-size:var(--fs-lbl);cursor:pointer}
   .rowx:hover{color:var(--warn)}
   /* the confirm row is the prompt row with a sentence where the input was */
-  .inprompt .ipq{flex:1;min-width:190px;font-family:var(--mono);font-size:12px;line-height:1.5;color:var(--fg)}
+  .inprompt .ipq{flex:1;min-width:190px;font-family:var(--mono);font-size:var(--fs-lbl);line-height:1.5;color:var(--fg)}
 
   /* AI VISIBILITY. Everything here is borrowed — .bars for the trend, .ctab for the engine
      rows, .seg for prompts/competitors/referrers, .sk for the tiles. The one new shape is
@@ -819,7 +841,7 @@
      date inline. Strip those and it is an unfalsifiable claim. */
   /* the share-of-voice chart. Fixed 0-100% y-axis: this is a SHARE, and rescaling to the
      window's max would make a brand holding steady at 20% look like it was climbing. */
-  .sovwrap{position:relative;margin:10px 0 4px;padding-left:26px}
+  .sovwrap{position:relative;margin:10px 0 4px;padding-left:34px}
   /* crawl trend: one column per day including the empty ones. A sparse series would draw
      a straight line across a week of silence, which is the exact thing being looked for. */
   .crawlbars{display:flex;align-items:flex-end;gap:2px;height:96px;min-width:0;
@@ -834,18 +856,18 @@
   .cseg-s{background:var(--accent-bar)}
   .cseg-t{background:var(--accent-bar-lo)}
   .crawlday.ctoday{outline:1px solid var(--line3);outline-offset:1px}
-  .crawlax{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;
+  .crawlax{display:flex;justify-content:space-between;font-family:var(--mono);font-size:var(--fs-lbl);
     color:var(--mut);margin-top:6px}
   /* a real y-axis: without labelled gridlines a share chart whose series all sit under 40%
      reads as a flat band near the floor, and the reader cannot tell 13% from 35% by eye */
   .sovax{position:absolute;left:0;top:0;height:190px;display:flex;flex-direction:column;
-    justify-content:space-between;font-family:var(--mono);font-size:9px;color:var(--mut2);
-    padding:4px 0 22px;text-align:right;width:22px}
+    justify-content:space-between;font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2);
+    padding:4px 0 22px;text-align:right;width:30px}
   .sovgrid line{stroke:var(--grid);stroke-width:1}
   .sovline{fill:none;stroke-width:2;vector-effect:non-scaling-stroke}
   .sovline.us{stroke-width:3}
   .sovleg{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:6px}
-  .sovleg span{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;color:var(--mut)}
+  .sovleg span{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut)}
   .sovleg i{width:12px;height:3px;border-radius:2px;display:inline-block}
   .sovleg b{color:var(--fg);font-weight:600}
   /* the sentiment bar: three segments of one 100% rail, so it reads as a composition
@@ -854,8 +876,12 @@
   .sentbar i{display:block;height:100%}
   .deck #pane-aivis,.deck #pane-aicrawl{overflow-x:auto}
   .gverb{margin:0 0 8px;padding:8px 12px;border-left:2px solid var(--a45);background:var(--well);
-    border-radius:0 var(--r-ctl) var(--r-ctl) 0;font:400 13px/1.5 var(--sans);color:var(--fg)}
-  .gverb .gvmeta{display:block;margin-top:5px;font:400 10px/1.4 var(--mono);color:var(--dis);
+    border-radius:0 var(--r-ctl) var(--r-ctl) 0;font-family:var(--sans);font-weight:400;font-size:var(--fs-lead);line-height:var(--lh-lead);color:var(--fg)}
+  /* the model id and the run date: the difference between a quote and an unfalsifiable
+     claim. Longhand on purpose — the `font:` shorthand silently resets the tabular-nums
+     declared on :root, and this line is mostly digits. */
+  .gverb .gvmeta{display:block;margin-top:8px;font-family:var(--mono);font-weight:400;
+    font-size:var(--fs-lbl);line-height:var(--lh-lbl);color:var(--mut2);
     text-transform:uppercase;letter-spacing:.06em}
 
 </style>
@@ -1007,7 +1033,7 @@
     </div>
     <div class="crow" style="align-items:flex-start">
       <span class="cn" style="padding-top:6px">any agent</span>
-      <pre class="code" id="fxprompt" style="flex:1;margin:0;font-size:11px;line-height:1.6;max-height:300px;overflow-y:auto"></pre>
+      <pre class="code" id="fxprompt" style="flex:1;margin:0;font-size:var(--fs-lbl);line-height:1.6;max-height:300px;overflow-y:auto"></pre>
       <button class="copy" data-c="fxprompt">copy</button>
     </div>
     <div class="cnote" id="fxprov"></div>
@@ -1039,7 +1065,7 @@
     {{else if .HasWeb}}
     <div class="kpi">
       <div class="kk">Bounce rate · engaged time</div>
-      <div class="kv" style="font-size:15px;color:var(--dis);margin-top:13px">not measured yet</div>
+      <div class="kv" style="font-size:var(--fs-lead);color:var(--mut2);margin-top:13px">not measured yet</div>
       <div class="kd"><span class="kvp">no $engagement events yet; sdk.js sends one as a visitor leaves a page</span></div>
     </div>
     {{end}}
@@ -1059,7 +1085,7 @@
         <option value="month" {{if eq .Gran "month"}}selected{{end}}>monthly</option>
       </select>
       <span class="sub">· last {{.RangeLabel}}{{if gt .GhostTotal 0}} · grey = prior {{.RangeLabel}}, same scale{{end}} · computed by /v1/trends</span>
-      <select id="chartBreak" style="margin-left:auto;background:var(--s1);border:1px solid var(--line);color:var(--mut);font-family:var(--mono);font-size:10px;padding:2px 6px;border-radius:4px" aria-label="break the chart down by a property">
+      <select id="chartBreak" style="margin-left:auto;background:var(--s1);border:1px solid var(--line);color:var(--mut);font-family:var(--mono);font-size:var(--fs-lbl);padding:2px 6px;border-radius:4px" aria-label="break the chart down by a property">
         <option value="">no breakdown</option>
         <option value="country">by country</option>
         <option value="device">by device</option>
@@ -1128,7 +1154,17 @@
     <div class="bars" style="height:44px;padding-top:18px">
       {{range .Hours}}<div class="col"><span class="tip">{{.Hour}}:00 UTC · {{.Count}}</span><div class="bar" style="height:{{.HeightPct}}%"></div></div>{{end}}
     </div>
-    <div class="axis" style="display:flex;justify-content:space-between;color:var(--mut2);font-family:var(--mono);font-size:10px;margin-top:4px"><span>00:00</span><span>12:00</span><span>23:00</span></div>
+    <div class="axis" style="display:flex;justify-content:space-between;color:var(--mut2);font-family:var(--mono);font-size:var(--fs-lbl);margin-top:4px"><span>00:00</span><span>12:00</span><span>23:00</span></div>
+    <!-- the bars' only reading lived in .tip, which is display:none until hover — removed
+         from the a11y tree entirely, and unreachable on touch. The numbers go here in text. -->
+    <div class="tscroll">
+    <table class="ctab charteq">
+      <thead><tr><th>hour · UTC</th><th class="n">events</th><th></th></tr></thead>
+      <tbody>
+      {{range .Hours}}<tr><td>{{printf "%02d" .Hour}}:00</td><td class="n">{{comma .Count}}</td><td class="cbar"><div style="width:{{.HeightPct}}%"></div></td></tr>{{end}}
+      </tbody>
+    </table>
+    </div>
   </details>
   {{end}}
 
@@ -1346,20 +1382,20 @@
     {{if .HasLifecycle}}
     <div class="pane wide" id="pane-lifecycle" style="order:520" data-stratum="return">
       <h3>lifecycle <span class="sub">· who's active each day: new vs loyal</span></h3>
-      <div style="display:flex;gap:14px;flex-wrap:wrap;font-family:var(--mono);font-size:10px;color:var(--mut);margin:2px 0 10px">
+      <div style="display:flex;gap:14px;flex-wrap:wrap;font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);margin:2px 0 10px">
         <span><i style="display:inline-block;width:8px;height:8px;background:var(--accent);vertical-align:middle;margin-right:5px"></i>new</span>
         <span><i style="display:inline-block;width:8px;height:8px;background:var(--ok);vertical-align:middle;margin-right:5px"></i>returning</span>
         <span><i style="display:inline-block;width:8px;height:8px;background:#5B8DEF;vertical-align:middle;margin-right:5px"></i>resurrected</span>
-        <span style="color:var(--dis)">dormant = churned out that day</span>
+        <span style="color:var(--mut2)">dormant = churned out that day</span>
       </div>
       {{range .Lifecycle}}<div style="display:flex;align-items:center;gap:8px;margin:3px 0">
-        <span style="width:42px;font-family:var(--mono);font-size:10px;color:var(--mut);flex:none">{{.Label}}</span>
+        <span style="width:50px;font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);flex:none">{{.Label}}</span>
         <div style="flex:1;display:flex;height:13px;border-radius:2px;overflow:hidden;background:var(--s2)">
           <div title="new {{.New}}" style="width:{{.NewPct}}%;background:var(--accent)"></div>
           <div title="returning {{.Returning}}" style="width:{{.RetPct}}%;background:var(--ok)"></div>
           <div title="resurrected {{.Resurrected}}" style="width:{{.ResPct}}%;background:#5B8DEF"></div>
         </div>
-        <span style="width:78px;font-family:var(--mono);font-size:10px;color:var(--dis);flex:none;text-align:right">{{if .Dormant}}-{{.Dormant}} dormant{{else}}none lost{{end}}</span>
+        <span style="width:92px;font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2);flex:none;text-align:right">{{if .Dormant}}-{{.Dormant}} dormant{{else}}none lost{{end}}</span>
       </div>{{end}}
     </div>
     {{end}}
@@ -1368,11 +1404,11 @@
     <div class="pane" id="pane-stickiness" style="order:530" data-stratum="return">
       <h3>stickiness <span class="sub">· do they come back?</span></h3>
       <div style="display:flex;align-items:baseline;gap:10px;margin:10px 0 2px">
-        <span style="font-size:34px;line-height:1.14;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums;letter-spacing:-.02em">{{.Ratio}}%</span>
-        <span style="font-family:var(--mono);font-size:11px;color:var(--mut)">DAU/MAU</span>
+        <span style="font-size:var(--fs-num);line-height:1.14;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums;letter-spacing:-.02em">{{.Ratio}}%</span>
+        <span style="font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut)">DAU/MAU</span>
       </div>
-      <div style="font-family:var(--mono);font-size:11px;color:var(--mut);margin-bottom:12px">{{.Verdict}}</div>
-      <div style="display:flex;gap:20px;font-family:var(--mono);font-size:12px;color:var(--fg);border-top:1px solid var(--line);padding-top:10px">
+      <div style="font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);margin-bottom:12px">{{.Verdict}}</div>
+      <div style="display:flex;gap:20px;font-family:var(--mono);font-size:var(--fs-lbl);color:var(--fg);border-top:1px solid var(--line);padding-top:10px">
         <span>DAU <b style="color:var(--accent)">{{comma .DAU}}</b></span>
         <span>WAU <b style="color:var(--accent)">{{comma .WAU}}</b></span>
         <span>MAU <b style="color:var(--accent)">{{comma .MAU}}</b></span>
@@ -1461,7 +1497,7 @@
             <circle cx="{{.Dot.X}}" cy="{{.Dot.Y}}" r="{{if .Us}}4{{else}}3{{end}}" fill="{{.Color}}"/>{{end}}
           </svg>
           <div class="sovax"><span>100</span><span>75</span><span>50</span><span>25</span><span>0</span></div>
-          <div style="display:flex;justify-content:space-between;color:var(--mut2);font-family:var(--mono);font-size:11px;margin-top:2px"><span>{{.SOV.First}}</span><span>share of every brand mention, %</span><span>{{.SOV.Last}}</span></div>
+          <div style="display:flex;justify-content:space-between;color:var(--mut2);font-family:var(--mono);font-size:var(--fs-lbl);margin-top:2px"><span>{{.SOV.First}}</span><span>share of every brand mention, %</span><span>{{.SOV.Last}}</span></div>
         </div>
         <div class="sovleg">{{range .SOV.Series}}<span><i style="background:{{.Color}}"></i>{{if .Us}}<b>you</b>{{else}}{{.Name}}{{end}} <b>{{.Last}}%</b> now &middot; {{.Share}}% overall</span>{{end}}</div>
         {{end}}
@@ -1496,7 +1532,21 @@
         <div class="bars" style="height:112px;padding-top:20px">
           {{range .Weeks}}<div class="col{{if .Thin}} part{{end}}"><span class="tip">{{.Tip}}</span><div class="bar" style="height:{{.MentPct}}%"></div><div class="ghost" style="height:{{.RecPct}}%"></div></div>{{end}}
         </div>
-        <div style="display:flex;justify-content:space-between;color:var(--mut2);font-family:var(--mono);font-size:11px;margin-top:4px"><span>{{.FirstWeek}}</span><span>y-axis 0&ndash;100%</span><span>{{.LastWeek}}</span></div>
+        <div style="display:flex;justify-content:space-between;color:var(--mut2);font-family:var(--mono);font-size:var(--fs-lbl);margin-top:4px"><span>{{.FirstWeek}}</span><span>y-axis 0&ndash;100%</span><span>{{.LastWeek}}</span></div>
+        <!-- the grey series IS "recommended as a pick", and the legend above names it in
+             words. Reading it off the chart requires seeing two greys apart; reading it
+             here does not. -->
+        <details class="charttable">
+          <summary>data table · mentioned and recommended per week &#9662;</summary>
+          <div class="tscroll">
+          <table class="ctab charteq">
+            <thead><tr><th>week</th><th class="n">mentioned</th><th class="n">recommended</th><th>settled?</th></tr></thead>
+            <tbody>
+            {{range .Weeks}}<tr><td>{{.Label}}</td><td class="n">{{.MentPct}}%</td><td class="n">{{.RecPct}}%</td><td class="mut">{{if .Thin}}under 3 runs{{else}}yes{{end}}</td></tr>{{end}}
+            </tbody>
+          </table>
+          </div>
+        </details>
         {{else}}
         <div class="agmeta" style="margin-top:14px">one week of checks in this window, so there is no trend to draw — a single bar is a reading, not a direction. <a href="{{.WidenURL}}">widen to 90 days</a>, or let another week of sampling land.</div>
         {{end}}
@@ -1562,7 +1612,7 @@
         {{else}}
         <div class="exsummary">Nothing has sampled the AI engines for this product yet. You&rsquo;re self-hosting, so the sampling is yours to run: post one <b>$geo_check</b> event per answer you sample and this card reads them — the same rows <b>/v1/ai-visibility</b> and the <b>ai_visibility</b> MCP tool read, so the three can never disagree.</div>
         <details style="margin-top:8px"><summary class="hlink">the event to post &rarr;</summary>
-        <pre class="code" style="font-size:11px;margin:8px 0 0">curl -X POST {{$.Base}}/v1/events \
+        <pre class="code" style="font-size:var(--fs-lbl);margin:8px 0 0">curl -X POST {{$.Base}}/v1/events \
   -H "Authorization: Bearer {{if $.WriteKey}}{{$.WriteKey}}{{else}}YOUR_WRITE_KEY{{end}}" \
   -H "User-Agent: my-geo-runner/1.0" \
   -d '{"name":"$geo_check","distinct_id":"geo-runner","properties":{
@@ -1609,6 +1659,19 @@
           <div class="crawlax"><span>{{.FirstDay}}</span><span>peak {{comma .Peak}}/day</span><span>{{.LastDay}}</span></div>
           <div class="sovleg"><span><i class="cseg-u"></i>answering someone now</span><span><i class="cseg-s"></i>indexing for answers</span><span><i class="cseg-t"></i>training</span></div>
         </div>
+        <!-- each column's split was only in a title= on a div with no role, so nothing but a
+             mouse could ever get at it. Same numbers, as text. -->
+        <details class="charttable">
+          <summary>data table · fetches per day by purpose &#9662;</summary>
+          <div class="tscroll">
+          <table class="ctab charteq">
+            <thead><tr><th>day</th><th class="n">fetches</th><th class="n">live</th><th class="n">search</th><th class="n">training</th></tr></thead>
+            <tbody>
+            {{range .Bars}}<tr><td>{{.Label}}{{if .Today}} <span class="mut">(today)</span>{{end}}</td><td class="n">{{comma .Hits}}</td><td class="n">{{comma .User}}</td><td class="n">{{comma .Search}}</td><td class="n">{{comma .Training}}</td></tr>{{end}}
+            </tbody>
+          </table>
+          </div>
+        </details>
         {{end}}
 
         <div class="tscroll">
@@ -1851,7 +1914,7 @@
     <div style="padding-top:8px">
       <div class="crow" style="align-items:flex-start">
         <span class="cn" style="padding-top:6px">any AI · one paste</span>
-        <pre class="code" id="cuni" style="flex:1;margin:0;white-space:pre-wrap;font-size:11px;line-height:1.6;max-height:150px;overflow-y:auto">{{.ConnectPrompt}}</pre>
+        <pre class="code" id="cuni" style="flex:1;margin:0;white-space:pre-wrap;font-size:var(--fs-lbl);line-height:1.6;max-height:150px;overflow-y:auto">{{.ConnectPrompt}}</pre>
         <button class="copy" data-c="cuni">copy</button>
       </div>
       <div class="cnote" style="padding:0 0 10px">copy once, paste into whatever you use: Claude Code, Cursor, Windsurf, Zed, Cline. the agent wires itself up (url + key included) and proves the connection by reading your visitor count. Claude Desktop can't edit its own config, so paste its JSON from below by hand. or pick your client manually:</div>
@@ -2195,7 +2258,14 @@
     }
     function trendBars(pts){
       var max=1;pts.forEach(function(p){if(p.count>max)max=p.count;});
-      return '<div class="bars" style="height:90px;padding-top:20px">'+pts.map(function(p){return '<div class="col"><span class="tip">'+esc(fmtPoint(p.date))+' · '+p.count+'</span><div class="bar" style="height:'+Math.round(p.count/max*100)+'%"></div></div>';}).join('')+'</div>';
+      // the bars, then the same series as text. .tip is display:none until hover, so on its
+      // own this chart has no reading for a keyboard, a screen reader, or a phone.
+      return '<div class="bars" style="height:90px;padding-top:20px">'+pts.map(function(p){return '<div class="col"><span class="tip">'+esc(fmtPoint(p.date))+' · '+p.count+'</span><div class="bar" style="height:'+Math.round(p.count/max*100)+'%"></div></div>';}).join('')+'</div>'+
+        '<details class="charttable"><summary>data table &#9662;</summary><div class="tscroll">'+
+        '<table class="ctab charteq"><thead><tr><th>bucket</th><th class="n">count</th><th></th></tr></thead><tbody>'+
+        pts.map(function(p){return '<tr><td>'+esc(fmtPoint(p.date))+'</td><td class="n">'+p.count+'</td>'+
+          '<td class="cbar"><div style="width:'+Math.round(p.count/max*100)+'%"></div></td></tr>';}).join('')+
+        '</tbody></table></div></details>';
     }
     function renderReport(t,j,el){
       if(j.error){el.innerHTML='<div class="exsummary">'+esc(j.error)+'</div>';return;}
@@ -2426,6 +2496,48 @@
     // load event so a slow report cannot leave a full card looking empty (or the reverse).
     setTimeout(saQuietEmptyCards,1200); setTimeout(saQuietEmptyCards,3000);
     window.addEventListener('load',function(){setTimeout(saQuietEmptyCards,600);});
+
+    // WCAG 2.1.1. A div that scrolls is operable with a mouse wheel and a trackpad and by
+    // nothing else: it takes no focus, so the arrow keys never reach it, and at 390px the
+    // columns past the fold of a seven-column table are simply unreachable. The fix is a tab
+    // stop plus a name, but ONLY while the thing actually overflows — a permanent tabindex
+    // on every wrapper would add a dozen dead stops on a wide screen, which is its own
+    // keyboard bug. So this is measured, not assumed, and re-measured when the width changes.
+    var SA_SCROLLERS='.tscroll,.deck .pane,.chiprow,.board';
+    function saScrollName(el){
+      var d=el.closest('details'); if(d){var s=d.querySelector('summary'); if(s)return (s.innerText||'').replace(/[▾▸]/g,'').trim();}
+      var p=el.closest('.pane'); if(p){var h=p.querySelector('h3'); if(h)return (h.childNodes[0]&&h.childNodes[0].nodeValue||h.innerText||'').trim();}
+      var z=el.previousElementSibling;
+      while(z){ if(z.classList&&z.classList.contains('zonelbl'))return (z.childNodes[0]&&z.childNodes[0].nodeValue||'').trim(); z=z.previousElementSibling; }
+      return 'scrollable data';
+    }
+    function saScrollables(){
+      document.querySelectorAll(SA_SCROLLERS).forEach(function(el){
+        var cs=getComputedStyle(el);
+        var canX=/auto|scroll/.test(cs.overflowX), canY=/auto|scroll/.test(cs.overflowY);
+        // 1px of tolerance: sub-pixel layout rounding reports a phantom overflow on
+        // perfectly-fitting tables, and that would hand out tab stops that scroll nowhere.
+        var over=(canX&&el.scrollWidth-el.clientWidth>1)||(canY&&el.scrollHeight-el.clientHeight>1);
+        if(over){
+          if(el.getAttribute('data-scrollfocus')==='1')return;
+          // never overwrite a role or a tab stop the markup already meant
+          if(!el.hasAttribute('tabindex'))el.setAttribute('tabindex','0');
+          if(!el.hasAttribute('role'))el.setAttribute('role','region');
+          if(!el.hasAttribute('aria-label'))el.setAttribute('aria-label',saScrollName(el)+' (scrollable)');
+          el.setAttribute('data-scrollfocus','1');
+        }else if(el.getAttribute('data-scrollfocus')==='1'){
+          el.removeAttribute('tabindex'); el.removeAttribute('role');
+          el.removeAttribute('aria-label'); el.removeAttribute('data-scrollfocus');
+        }
+      });
+    }
+    saScrollables();
+    // same reason as the quiet-card re-runs: the tables these wrap arrive async
+    setTimeout(saScrollables,1200); setTimeout(saScrollables,3000);
+    window.addEventListener('load',function(){setTimeout(saScrollables,600);});
+    var saScrollT; window.addEventListener('resize',function(){clearTimeout(saScrollT);saScrollT=setTimeout(saScrollables,150);});
+    // opening a <details> is when its table first has a size to measure
+    document.addEventListener('toggle',function(e){if(e.target&&e.target.tagName==='DETAILS')setTimeout(saScrollables,0);},true);
 
     // the engine's ask intent → the deck card holding the full interactive view of it.
     // The ask answers used to end "open the Heatmap tab", but the tab rail was replaced by
@@ -2949,7 +3061,7 @@
     function agMs(v){if(v==null)return 'not sent';return v<1000?Math.round(v)+'ms':(v/1000).toFixed(v<10000?1:0)+'s';}
     function agPct(v){var p=(v||0)*100;return (p>0&&p<10?p.toFixed(1):Math.round(p))+'%';}
     function agNum(v){return Math.round((v||0)*10)/10;}
-    function agCode(s){return '<pre class="code" style="font-size:11px;margin:8px 0 0;white-space:pre-wrap">'+esc(s)+'</pre>';}
+    function agCode(s){return '<pre class="code" style="font-size:var(--fs-lbl);margin:8px 0 0;white-space:pre-wrap">'+esc(s)+'</pre>';}
     function agErr(el,j){if(el)el.innerHTML='<div class="inote err">'+esc((j&&j.error)||'could not load this report')+'</div>';}
     function agTile(v,l,cls){return '<div class="sk'+(cls?' '+cls:'')+'"><div class="skv">'+v+'</div><div class="skl">'+l+'</div></div>';}
     function agNone(ev){return 'no <b>'+ev+'</b> events '+(SA_SCOPED?'match this window and the filters above. clear the filters to see all of them.':'in this window yet.');}
@@ -2973,7 +3085,7 @@
           agTile(agPct(j.abandon_rate),'abandon rate')+
           agTile(agMs(j.ttft_p50),'ttft p50 · p90 '+agMs(j.ttft_p90)+' · p99 '+agMs(j.ttft_p99));
         if(j.resolution_rate==null){
-          h+=agTile('<span style="font-size:15px">not sent</span>','resolution rate','agnull')+'</div>'+
+          h+=agTile('<span style="font-size:var(--fs-lead)">not sent</span>','resolution rate','agnull')+'</div>'+
             '<div class="agmeta" style="margin-top:8px">resolution rate stays blank because no turn carries a <b>resolved</b> bool. we never infer whether a conversation was resolved, so send it and the tile fills in: <b>{ conversation_id: "c_1042", role: "assistant", resolved: true }</b></div>';
         }else{
           h+=agTile(agPct(j.resolution_rate),'resolution rate')+'</div>'+
@@ -3691,9 +3803,9 @@
             .then(function(j){
               if(!j.path){shareRes.innerHTML='<div class="atext">'+esc(j.error||'could not create the link')+'</div>';return;}
               var url=location.origin+j.path;
-              shareRes.innerHTML='<div class="atext" style="font-size:13px">read-only traffic link for “'+esc(j.name)+'”. shown once, revoke any time in '+
+              shareRes.innerHTML='<div class="atext" style="font-size:var(--fs-body)">read-only traffic link for “'+esc(j.name)+'”. shown once, revoke any time in '+
                 '<a href="/settings/shares" style="color:var(--accent)">settings → share links</a>:<br>'+
-                '<span style="font-family:var(--mono);font-size:12px;word-break:break-all">'+esc(url)+'</span> '+
+                '<span style="font-family:var(--mono);font-size:var(--fs-lbl);word-break:break-all">'+esc(url)+'</span> '+
                 '<button class="copy" id="shareCopy" style="margin-left:8px">copy</button></div>';
               document.getElementById('shareCopy').onclick=function(){
                 var b=this;
