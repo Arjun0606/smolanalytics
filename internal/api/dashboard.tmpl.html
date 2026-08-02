@@ -240,11 +240,13 @@
   .tscroll{overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch}
   table.ctab{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:13px;margin-top:10px}
   table.ctab th{color:var(--mut);font-weight:600;text-align:left;padding:6px 14px 6px 0;border-bottom:1px solid var(--line2);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
-  table.ctab td{padding:8px 14px 8px 0;border-bottom:1px solid var(--s2)}
+  table.ctab td{padding:8px 14px 8px 0;border-bottom:1px solid var(--line)}
   table.ctab .n{font-variant-numeric:tabular-nums}
   table.ctab .n{text-align:right}
   table.ctab .mut{color:var(--mut2)}
   table.ctab .up{color:var(--ok)} table.ctab .down{color:var(--warn)}
+  table.ctab .acc{color:var(--accent)}
+  table.ctab .nw{white-space:nowrap}
   table.ctab .cbar{width:30%}
   table.ctab .cbar div{height:8px;background:rgba(245,166,35,.35);border-radius:2px}
   .chartwrap{display:flex;gap:10px}
@@ -314,7 +316,7 @@
      their 1px box (that is how a 90-bucket axis stays readable). min-width:0 lets the
      boxes compress; the last child is right-aligned so its label spills INWARD, because
      spilling outward is what pushed the whole body into a horizontal scroll on a phone. */
-  .xaxis .xt{flex:1;min-width:0;color:var(--mut2);font-family:var(--mono);font-size:10px;white-space:nowrap;overflow:visible}
+  .xaxis .xt{flex:1;min-width:0;color:var(--mut2);font-family:var(--mono);font-size:11px;white-space:nowrap;overflow:visible}
   .xaxis .xt:last-child{text-align:right}
 
   /* zone 7 — the board: pinned questions as live cards */
@@ -1459,7 +1461,7 @@
             <circle cx="{{.Dot.X}}" cy="{{.Dot.Y}}" r="{{if .Us}}4{{else}}3{{end}}" fill="{{.Color}}"/>{{end}}
           </svg>
           <div class="sovax"><span>100</span><span>75</span><span>50</span><span>25</span><span>0</span></div>
-          <div style="display:flex;justify-content:space-between;color:var(--mut2);font-family:var(--mono);font-size:10px;margin-top:2px"><span>{{.SOV.First}}</span><span>share of every brand mention, %</span><span>{{.SOV.Last}}</span></div>
+          <div style="display:flex;justify-content:space-between;color:var(--mut2);font-family:var(--mono);font-size:11px;margin-top:2px"><span>{{.SOV.First}}</span><span>share of every brand mention, %</span><span>{{.SOV.Last}}</span></div>
         </div>
         <div class="sovleg">{{range .SOV.Series}}<span><i style="background:{{.Color}}"></i>{{if .Us}}<b>you</b>{{else}}{{.Name}}{{end}} <b>{{.Last}}%</b> now &middot; {{.Share}}% overall</span>{{end}}</div>
         {{end}}
@@ -1494,7 +1496,7 @@
         <div class="bars" style="height:112px;padding-top:20px">
           {{range .Weeks}}<div class="col{{if .Thin}} part{{end}}"><span class="tip">{{.Tip}}</span><div class="bar" style="height:{{.MentPct}}%"></div><div class="ghost" style="height:{{.RecPct}}%"></div></div>{{end}}
         </div>
-        <div style="display:flex;justify-content:space-between;color:var(--mut2);font-family:var(--mono);font-size:10px;margin-top:4px"><span>{{.FirstWeek}}</span><span>y-axis 0&ndash;100%</span><span>{{.LastWeek}}</span></div>
+        <div style="display:flex;justify-content:space-between;color:var(--mut2);font-family:var(--mono);font-size:11px;margin-top:4px"><span>{{.FirstWeek}}</span><span>y-axis 0&ndash;100%</span><span>{{.LastWeek}}</span></div>
         {{else}}
         <div class="agmeta" style="margin-top:14px">one week of checks in this window, so there is no trend to draw — a single bar is a reading, not a direction. <a href="{{.WidenURL}}">widen to 90 days</a>, or let another week of sampling land.</div>
         {{end}}
@@ -1616,7 +1618,7 @@
           <tr>
             <td><b>{{.Crawler}}</b></td>
             <td>{{.Operator}}</td>
-            <td>{{if eq .Purpose "user"}}<span class="acc">answering someone now</span>{{else if eq .Purpose "search"}}indexing for answers{{else}}training{{end}}</td>
+            <td class="nw">{{if eq .Purpose "user"}}<span class="acc">answering someone now</span>{{else if eq .Purpose "search"}}indexing for answers{{else}}training{{end}}</td>
             <td class="n">{{comma .Hits}}</td>
             <td class="n">{{comma .Pages}}</td>
             <td class="n">{{if .Errors}}<span style="color:var(--warn)">{{comma .Errors}}</span>{{else}}0{{end}}</td>
