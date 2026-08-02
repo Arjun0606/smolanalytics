@@ -37,6 +37,9 @@
     /* space — 4px base */
     --sp1:4px; --sp2:8px; --sp3:12px; --sp4:16px; --sp6:24px; --sp8:32px;
     --zone:24px; --card-pad:18px; --gap:14px; --sec-pad:34px;
+    /* the value column on a share-of-total row; the bar's track ends here (see .segtrack).
+       Widest value measured is "2283 · 96%" at 83px, plus .segmeta's 12px right padding. */
+    --seg-num:100px;
     /* peek heights. A stream pane shows a readable window and scrolls inside itself; it
        never becomes the page. The px value is the fallback for browsers without dvh, and
        nothing on the deck is allowed to exceed roughly a third of the viewport. */
@@ -358,8 +361,18 @@
   /* rows with share-of-total bars behind them */
   .seg{position:relative;height:var(--row-h);margin-bottom:4px;background:transparent;border:none;border-radius:var(--r-ctl);overflow:hidden;transition:background var(--t-fast) var(--ease)}
   .seg:hover{background:var(--s2)}
+  /* The bar's track stops before the value column. It used to span the whole row, so the
+     2px end-marker landed inside the digits on any bar over ~90% — measured at 8 of 55 rows,
+     cutting up to 18.7px into the number. Reserving the column is not a compromise for the
+     chart: a bar whose track includes the space its own value is printed in was never
+     showing a true 100% of the row anyway. Every bar shrinks by the same amount, so the
+     proportions between them are untouched. */
+  .segtrack{position:absolute;inset:0 var(--seg-num) 0 0;overflow:hidden}
   .segbar{position:absolute;inset:0 auto 0 0;background:var(--a14);border-right:2px solid var(--a45)}
-  .segmeta{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 12px}
+  .segmeta{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 12px;gap:12px}
+  /* the value column is the track's own width, minus .segmeta's padding, so the two agree */
+  .segmeta .segnums{flex:none;min-width:calc(var(--seg-num) - 24px);text-align:right}
+  .segmeta .segname{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .segname{font-size:var(--fs-body)}
   .segnums{font-family:var(--mono);font-size:var(--fs-body);color:var(--mut)}
   .webcols{display:grid;grid-template-columns:1fr 1fr;gap:22px}
@@ -385,7 +398,7 @@
   table.heat{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:var(--fs-lbl)}
   table.heat th{color:var(--mut2);font-weight:500;text-align:center;padding:4px 0;border-bottom:1px solid var(--line)}
   table.heat th:first-child,table.heat td:first-child{text-align:left;color:var(--mut)}
-  table.heat td{text-align:center;padding:0;height:28px;color:#0A0A0A;font-weight:600}
+  table.heat td{text-align:center;padding:0;height:28px;color:var(--fg);font-weight:600}
   table.heat td.lab{color:var(--mut);font-weight:400;padding-right:8px}
   table.heat td.empty{background:var(--s1)}
   table.heat .cell{display:flex;align-items:center;justify-content:center;height:28px}
@@ -1229,11 +1242,11 @@
       <div class="webcols">
         <div>
           <h3>top pages</h3>
-          {{range .TopPages}}<div class="seg" data-fp="path" data-fv="{{.Value}}" title="click to filter every zone to this page"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">no pageviews in this window. sdk.js sends a $pageview on load and on every route change, so the first visit fills this in. every path is listed as itself, nothing is folded into "(other)".</div>{{end}}
+          {{range .TopPages}}<div class="seg" data-fp="path" data-fv="{{.Value}}" title="click to filter every zone to this page"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">no pageviews in this window. sdk.js sends a $pageview on load and on every route change, so the first visit fills this in. every path is listed as itself, nothing is folded into "(other)".</div>{{end}}
         </div>
         <div>
           <h3>entry pages · where sessions land</h3>
-          {{range .EntryPages}}<div class="seg" data-fp="path" data-fv="{{.Value}}"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">appears once sessions carry a landing page</div>{{end}}
+          {{range .EntryPages}}<div class="seg" data-fp="path" data-fv="{{.Value}}"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">appears once sessions carry a landing page</div>{{end}}
         </div>
       </div>
     </div>
@@ -1261,7 +1274,7 @@
     </div>
     <div class="pane" id="pane-referrers" style="order:320" data-stratum="acquire">
       <h3>referrers</h3>
-      {{range .Referrers}}<div class="seg"{{if and (ne .Value "direct") (ne .Value "(none)")}} data-fp="referrer" data-fv="{{.Value}}" title="click to filter every zone to this referrer"{{end}}><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">no referrers in this window. a referrer is read from the Referer header the browser sends, so visits typed straight into the address bar count as direct and land here as soon as anyone arrives from a link.</div>{{end}}
+      {{range .Referrers}}<div class="seg"{{if and (ne .Value "direct") (ne .Value "(none)")}} data-fp="referrer" data-fv="{{.Value}}" title="click to filter every zone to this referrer"{{end}}><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">no referrers in this window. a referrer is read from the Referer header the browser sends, so visits typed straight into the address bar count as direct and land here as soon as anyone arrives from a link.</div>{{end}}
     </div>
     {{else}}
     <!-- no $pageview has ever landed: teach the web side rather than dropping four
@@ -1276,7 +1289,7 @@
     <div class="pane" id="pane-geo" style="order:340" data-stratum="acquire">
       <h3>countries · geo by <a href="https://db-ip.com" target="_blank" rel="noopener" style="color:var(--mut2)">db-ip.com</a></h3>
       <div class="exsummary" style="margin-bottom:10px">countries stamp at ingest from the moment geo is enabled (the IP is used for one lookup and never stored, so no backfill). your own visits count too: open your site once with ?sa_optout=1 to exclude this browser, ?sa_optout=0 to undo</div>
-      {{range .Countries}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}
+      {{range .Countries}}<div class="seg"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}
     </div>
     {{else}}
     <!-- geo off, or every IP unresolved. a proud "Unknown 100%" bar would be worse than
@@ -1291,13 +1304,13 @@
       <div class="webcols">
         <div>
           <h3>device</h3>
-          {{range .DeviceRows}}<div class="seg" data-fp="device" data-fv="{{.Value}}"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{else}}<div class="exsummary">no device data yet</div>{{end}}
+          {{range .DeviceRows}}<div class="seg" data-fp="device" data-fv="{{.Value}}"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{else}}<div class="exsummary">no device data yet</div>{{end}}
           <h3 style="margin-top:16px">os</h3>
-          {{range .OSes}}<div class="seg" data-fp="os" data-fv="{{.Value}}"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">appears as visitors arrive (parsed from the user agent, nothing stored)</div>{{end}}
+          {{range .OSes}}<div class="seg" data-fp="os" data-fv="{{.Value}}"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">appears as visitors arrive (parsed from the user agent, nothing stored)</div>{{end}}
         </div>
         <div>
           <h3>browser</h3>
-          {{range .Browsers}}<div class="seg" data-fp="browser" data-fv="{{.Value}}"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">appears as visitors arrive</div>{{end}}
+          {{range .Browsers}}<div class="seg" data-fp="browser" data-fv="{{.Value}}"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">appears as visitors arrive</div>{{end}}
         </div>
       </div>
     </div>
@@ -1307,13 +1320,13 @@
       <div class="webcols">
         <div>
           <h3>utm source</h3>
-          {{range .UTMSources}}<div class="seg" data-fp="utm_source" data-fv="{{.Value}}"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
+          {{range .UTMSources}}<div class="seg" data-fp="utm_source" data-fv="{{.Value}}"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
           {{if .UTMMediums}}<h3 style="margin-top:16px">utm medium</h3>
-          {{range .UTMMediums}}<div class="seg" data-fp="utm_medium" data-fv="{{.Value}}"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}{{end}}
+          {{range .UTMMediums}}<div class="seg" data-fp="utm_medium" data-fv="{{.Value}}"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}{{end}}
         </div>
         <div>
           <h3>utm campaign</h3>
-          {{range .UTMCampaigns}}<div class="seg" data-fp="utm_campaign" data-fv="{{.Value}}"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">tag links with utm_campaign to see them here</div>{{end}}
+          {{range .UTMCampaigns}}<div class="seg" data-fp="utm_campaign" data-fv="{{.Value}}"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">tag links with utm_campaign to see them here</div>{{end}}
         </div>
       </div>
     </div>
@@ -1354,7 +1367,7 @@
     {{if .HasSource}}
     <div class="pane" id="pane-sources" style="order:310" data-stratum="acquire">
       <h3>{{.SourceTitle}}</h3>
-      {{range .BySource}}<div class="seg"{{if .FilterProp}} data-fp="{{.FilterProp}}" data-fv="{{.FilterVal}}" title="click to filter every zone to this channel"{{end}}><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}
+      {{range .BySource}}<div class="seg"{{if .FilterProp}} data-fp="{{.FilterProp}}" data-fv="{{.FilterVal}}" title="click to filter every zone to this channel"{{end}}><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}
     </div>
     {{end}}
 
@@ -1365,7 +1378,7 @@
         {{range .PathLevels}}
         <div style="min-width:170px;flex:1">
           <div class="zonelbl" style="margin:0 0 6px">then ({{.Depth}})</div>
-          {{range .Steps}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}
+          {{range .Steps}}<div class="seg"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}
         </div>
         {{end}}
       </div>
@@ -1419,7 +1432,7 @@
     {{if .HasSearch}}
     <div class="pane" id="pane-search" style="order:350" data-stratum="acquire">
       <h3>google search queries · 28d clicks</h3>
-      {{range .SearchRows}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
+      {{range .SearchRows}}<div class="seg"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
     </div>
     {{end}}
 
@@ -1516,7 +1529,7 @@
         {{if .RankRows}}
         <div class="zonelbl zsep" style="margin:0 0 8px">where you land when they rank
           <span class="sub">position among the tools an answer listed, over the runs that ranked you</span></div>
-        {{range .RankRows}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}
+        {{range .RankRows}}<div class="seg"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}
         {{end}}
 
         {{if .GroundRuns}}
@@ -1577,12 +1590,12 @@
         <div class="webcols" style="margin-top:18px">
           <div>
             <h3>prompts tracked</h3>
-            {{range .Prompts}}<div class="seg" title="{{.Prompt}}"><div class="segbar" style="width:{{.MentionedPct}}%"></div><div class="segmeta"><span class="segname">{{.Prompt}}</span><span class="segnums">{{.Mentioned}}/{{.Runs}}</span></div></div>{{else}}<div class="exsummary">no prompt text came back on these checks. the runner sends the question it asked as <b>prompt</b>.</div>{{end}}
+            {{range .Prompts}}<div class="seg" title="{{.Prompt}}"><div class="segtrack"><div class="segbar" style="width:{{.MentionedPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Prompt}}</span><span class="segnums">{{.Mentioned}}/{{.Runs}}</span></div></div>{{else}}<div class="exsummary">no prompt text came back on these checks. the runner sends the question it asked as <b>prompt</b>.</div>{{end}}
             <div class="agmeta">bar = the share of that prompt's own runs that mentioned you; the number is mentioned-over-runs.</div>
           </div>
           <div>
             <h3>competitors named alongside you</h3>
-            {{range .Comps}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">no competitor names in these answers. the runner sends them as a comma-separated <b>competitors</b> property; nothing is read out of the verbatim here.</div>{{end}}
+            {{range .Comps}}<div class="seg"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">no competitor names in these answers. the runner sends them as a comma-separated <b>competitors</b> property; nothing is read out of the verbatim here.</div>{{end}}
             <div class="agmeta">counts, not rates: how many sampled answers named them at all. these rows are deliberately not click-to-filter — <b>competitors</b> is a property only check events carry, so filtering the page to it would empty every other card.</div>
           </div>
         </div>
@@ -1590,7 +1603,7 @@
         <div class="zonelbl zsep" style="margin:0 0 8px">what they actually sent you
           <span class="sub">the other half: real visitors who arrived from an AI assistant, same window</span></div>
         {{if $.HasWeb}}
-        {{range $.AIRefs}}<div class="seg"><div class="segbar" style="width:{{.BarPct}}%"></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{else}}<div class="exsummary">no visitor arrived from an AI assistant in this window. the host is read off each visitor's first pageview, so this fills in the moment someone clicks through from one.</div>{{end}}
+        {{range $.AIRefs}}<div class="seg"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{else}}<div class="exsummary">no visitor arrived from an AI assistant in this window. the host is read off each visitor's first pageview, so this fills in the moment someone clicks through from one.</div>{{end}}
         {{else}}
         <div class="exsummary">this instance has no <b>$pageview</b>, so the traffic half is not measurable here. what the engines say is above; what they send is only knowable once the page they link to is tracked.</div>
         {{end}}

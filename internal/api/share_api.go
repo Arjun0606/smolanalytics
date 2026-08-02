@@ -68,8 +68,9 @@ var shareTmpl = template.Must(template.New("share").Parse(`<!doctype html>
 <meta name="robots" content="noindex">
 <title>{{.Project}} · traffic</title>
 <style>
-:root{--bg:#0A0A0A;--surface:#161616;--surface2:#1C1C1C;--line:#262626;--fg:#FAFAFA;--mut:#8E8E8E;--mut2:#6A6A6A;--accent:#F5A623;
---mono:ui-monospace,"JetBrains Mono",Menlo,monospace;--sans:Inter,-apple-system,"Segoe UI",sans-serif}
+:root{--bg:#0A0A0A;--surface:#161616;--surface2:#1C1C1C;--line:#262626;--fg:#FAFAFA;--mut:#9A9A9A;--mut2:#8A8A8A;--accent:#F5A623;
+--mono:ui-monospace,"JetBrains Mono",Menlo,monospace;--sans:Inter,-apple-system,"Segoe UI",sans-serif;
+--num-col:64px}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;line-height:1.5}
 .wrap{max-width:860px;margin:0 auto;padding:28px 24px}
 .head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:22px}
@@ -77,16 +78,20 @@ var shareTmpl = template.Must(template.New("share").Parse(`<!doctype html>
 .proj{color:var(--mut);font-family:var(--mono);font-size:12px}
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px}
 .stat{background:var(--surface);border:1px solid var(--line);padding:16px}
-.stat .l{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--mut)}
+.stat .l{font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--mut)}
 .stat .v{font-family:var(--mono);font-size:26px;font-weight:700;margin-top:4px}.stat .v.acc{color:var(--accent)}
 .cols{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .card{background:var(--surface);border:1px solid var(--line);padding:16px}
 .card h2{font-size:12px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.1em;color:var(--mut);margin:0 0 12px}
 .row{position:relative;height:30px;margin-bottom:4px;background:var(--surface2);border:1px solid var(--line);overflow:hidden}
+/* the bar's track stops before the value column — spanning the whole row put the 2px
+   end-marker inside the digits on any bar over ~90%. Same fix as the dashboard's .segtrack. */
+.track{position:absolute;inset:0 var(--num-col) 0 0;overflow:hidden}
 .bar{position:absolute;inset:0 auto 0 0;background:rgba(245,166,35,.16);border-right:2px solid rgba(245,166,35,.5)}
-.meta{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 10px;font-size:12px}
-.meta .n{font-family:var(--mono);color:var(--mut)}
-.foot{margin-top:22px;color:var(--mut2);font-family:var(--mono);font-size:11px;text-align:center}
+.meta{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 10px;font-size:12px;gap:10px}
+.meta>span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.meta .n{font-family:var(--mono);color:var(--mut);flex:none;min-width:calc(var(--num-col) - 20px);text-align:right}
+.foot{margin-top:22px;color:var(--mut2);font-family:var(--mono);font-size:12px;text-align:center}
 .foot a{color:var(--accent);text-decoration:none}
 @media(max-width:700px){.cols,.stats{grid-template-columns:1fr}}
 </style></head><body><div class="wrap">
@@ -98,10 +103,10 @@ var shareTmpl = template.Must(template.New("share").Parse(`<!doctype html>
 </div>
 <div class="cols">
   <div class="card"><h2>top pages</h2>
-    {{range .Pages}}<div class="row"><div class="bar" style="width:{{.BarPct}}%"></div><div class="meta"><span>{{.Value}}</span><span class="n">{{.Count}}</span></div></div>{{else}}<div class="proj">no pageviews yet</div>{{end}}
+    {{range .Pages}}<div class="row"><div class="track"><div class="bar" style="width:{{.BarPct}}%"></div></div><div class="meta"><span>{{.Value}}</span><span class="n">{{.Count}}</span></div></div>{{else}}<div class="proj">no pageviews yet</div>{{end}}
   </div>
   <div class="card"><h2>referrers</h2>
-    {{range .Refs}}<div class="row"><div class="bar" style="width:{{.BarPct}}%"></div><div class="meta"><span>{{.Value}}</span><span class="n">{{.Count}}</span></div></div>{{else}}<div class="proj">no referrers yet</div>{{end}}
+    {{range .Refs}}<div class="row"><div class="track"><div class="bar" style="width:{{.BarPct}}%"></div></div><div class="meta"><span>{{.Value}}</span><span class="n">{{.Count}}</span></div></div>{{else}}<div class="proj">no referrers yet</div>{{end}}
   </div>
 </div>
 <div class="foot">shared via <a href="https://github.com/Arjun0606/smolanalytics">smolanalytics</a> — open-source analytics in one binary</div>

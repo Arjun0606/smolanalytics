@@ -152,6 +152,61 @@ func TestScrollContainersGetMeasuredForFocus(t *testing.T) {
 	}
 }
 
+// The dashboard is not the only page we serve. Login, settings and the public share page
+// each carried their OWN copy of the palette, all three with --mut2 at #6A6A6A — 3.15:1 on
+// their darkest surface, worse than the dashboard's was, on the page a customer sends to
+// someone else. Three palettes drifting apart is how one of them ends up illegible without
+// anyone touching it, so all four now hold the same measured values.
+func TestEveryServedPageSharesTheMeasuredLadder(t *testing.T) {
+	for _, f := range []string{"login.tmpl.html", "settings.tmpl.html", "share_api.go", "dashboard.tmpl.html"} {
+		src, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatalf("read %s: %v", f, err)
+		}
+		s := string(src)
+		if !strings.Contains(s, "--mut:#9A9A9A") {
+			t.Errorf("%s: --mut is not #9A9A9A (6.06:1 worst case)", f)
+		}
+		if !strings.Contains(s, "--mut2:#8A8A8A") {
+			t.Errorf("%s: --mut2 is not #8A8A8A (4.94:1 worst case)", f)
+		}
+		// 12px floor, product-wide. The dashboard reads it from a token; these three still
+		// carry literals, so the floor is asserted on the number itself.
+		if m := regexp.MustCompile(`font-size:(?:[0-9]|1[01])(?:\.[0-9]+)?px`).FindAllString(s, -1); len(m) > 0 {
+			t.Errorf("%s: text below the 12px floor: %v", f, m)
+		}
+	}
+}
+
+// Share-of-total rows draw the bar as an absolutely-positioned box across the whole row and
+// print the value on top of it. Any bar over ~90% therefore put its 2px end-marker inside
+// the digits — measured at 8 of 55 rows on the dashboard, cutting up to 18.7px into the
+// number, and on every high referrer on the public share page. Nothing catches this: it is
+// not a contrast failure, not clipped text, and not an overflow. The bar needs a track that
+// ends where the value column begins.
+func TestBarsCannotDrawThroughTheirOwnValue(t *testing.T) {
+	tpl := dashboardTemplateSource(t)
+	bars := strings.Count(tpl, `class="segbar"`)
+	tracks := strings.Count(tpl, `class="segtrack"`)
+	if bars != tracks {
+		t.Errorf("%d segbars but %d segtracks — an untracked bar spans the value column", bars, tracks)
+	}
+	if !strings.Contains(tpl, "--seg-num:") || !strings.Contains(tpl, "inset:0 var(--seg-num) 0 0") {
+		t.Error("the value-column reservation is gone; the bar's end-marker will land on the digits again")
+	}
+	share, err := os.ReadFile("share_api.go")
+	if err != nil {
+		t.Fatalf("read share_api.go: %v", err)
+	}
+	s := string(share)
+	if strings.Count(s, `class="bar"`) != strings.Count(s, `class="track"`) {
+		t.Error("share page: a bar is not inside a track")
+	}
+	if !strings.Contains(s, "--num-col:") {
+		t.Error("share page lost its value-column reservation")
+	}
+}
+
 func min(a, b int) int {
 	if a < b {
 		return a
