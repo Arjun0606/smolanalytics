@@ -41,6 +41,31 @@ jobs:
           d['packages'][0]['identifier'] = f'ghcr.io/arjun0606/smolanalytics:v{ver}'
           json.dump(d, open('server.json', 'w'), indent=2)
           EOF
+      # docker.yml triggers on the SAME tag push and runs alongside this job, so for the
+      # first few minutes of a release the tag exists and the image does not. The registry
+      # validates that the OCI reference resolves, so publishing immediately loses the race
+      # and 400s — which it did on every release from v0.20.1 to v0.20.5, silently, because
+      # a failed listing update does not break anything a user can see. Wait for the image
+      # rather than guessing at a sleep.
+      - name: wait for the image docker.yml is pushing
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          case "$TAG" in v*) ;; *) TAG="$(git describe --tags --abbrev=0)";; esac
+          REPO="arjun0606/smolanalytics"
+          # the package is public, so an anonymous pull token is enough — no secret needed
+          TOKEN=$(curl -fsSL "https://ghcr.io/token?scope=repository:${REPO}:pull&service=ghcr.io" | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
+          for i in $(seq 1 60); do
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+              -H "Authorization: Bearer ${TOKEN}" \
+              -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json' \
+              "https://ghcr.io/v2/${REPO}/manifests/${TAG}")
+            if [ "$CODE" = "200" ]; then echo "ghcr.io/${REPO}:${TAG} is live after $((i*15))s"; exit 0; fi
+            echo "waiting for ghcr.io/${REPO}:${TAG} (HTTP ${CODE}), attempt ${i}/60"
+            sleep 15
+          done
+          echo "::error::ghcr.io/${REPO}:${TAG} never appeared — check the docker workflow for this tag; publishing now would 400 on registry validation"
+          exit 1
+
       - name: publish
         run: |
           ./mcp-publisher login github-oidc
