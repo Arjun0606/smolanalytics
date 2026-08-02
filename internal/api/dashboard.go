@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/agent"
+	"github.com/Arjun0606/smolanalytics/internal/aicrawl"
 	"github.com/Arjun0606/smolanalytics/internal/aivis"
 	"github.com/Arjun0606/smolanalytics/internal/engagement"
 	"github.com/Arjun0606/smolanalytics/internal/event"
@@ -763,6 +764,11 @@ type aivisVM struct {
 	// already do for them reads as "this feature is not finished".
 	Managed  bool
 	CloudURL string
+	// Ships is the join no other tool can make: each release compared against the AI
+	// visibility either side of it. Populated at the call site because it needs the deploy
+	// store, which this builder deliberately does not take — it keeps the pure computation
+	// pure and testable without a store.
+	Ships []aivis.DeployShift
 }
 
 // buildKPIs assembles the headline metric cards from the already-computed numbers, each
@@ -1854,6 +1860,13 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	// carries no site or path, so any web-property chip hides every one of them.
 	buildAIVis(&vm, evs, names, rangeDays, rangeAsof,
 		len(chips) > 0 || site != "" || showDev, mkRange(90).URL, s.cloudURL)
+
+	// which ship moved it. Correlation, gated hard on run counts inside ByDeploy — the
+	// window is the SAME one the card above is reporting, so a reader can never be looking
+	// at a 7-day comparison under a 90-day headline.
+	if s.deploys != nil {
+		vm.AIVis.Ships = aivis.ByDeploy(evs, s.deploys.List(), 7, rangeAsof, aicrawl.CrawlEvent)
+	}
 
 	// and the retrieval half, over the same window. Ordered next to it on the page: "was
 	// it fetched" and "what did the model then say" are one story read in that direction.

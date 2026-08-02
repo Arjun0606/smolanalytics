@@ -1409,6 +1409,22 @@
         {{if .LatestLabel}}<div class="agmeta" style="margin-top:6px">the three rate tiles are the week of {{.LatestLabel}} alone, over the run count beside them — the table below is the whole {{.Days}}-day window.</div>{{end}}
         {{if .Note}}<div class="inote err">{{.Note}}</div>{{end}}
 
+        {{if .Ships}}
+        <div class="agmeta" style="margin-top:16px"><b>Which ship moved it.</b> Each release compared against the seven days of sampled answers either side of it. This is correlation, not proof, which is why the run counts are printed and why a row only reads as a change when both sides carry enough runs to tell one from sampling noise.</div>
+        <table class="tbl">
+          <tr><th>shipped</th><th>commit</th><th class="num">recommended</th><th class="num">runs</th><th>read</th></tr>
+          {{range .Ships}}
+          <tr>
+            <td class="mut">{{.At.Format "Jan 2"}}</td>
+            <td>{{if .ShortSHA}}<code>{{.ShortSHA}}</code> {{end}}{{.Message}}</td>
+            <td class="num">{{.RecommendedBefore}}% &rarr; {{.RecommendedAfter}}%</td>
+            <td class="num mut">{{.RunsBefore}} / {{.RunsAfter}}</td>
+            <td>{{if .Significant}}{{if eq .Direction "improvement"}}<span class="acc">{{.RecommendedDelta}}pp better</span>{{else}}<span style="color:var(--warn)">{{.RecommendedDelta}}pp worse</span>{{end}}{{else}}<span class="mut">{{.Why}}</span>{{end}}</td>
+          </tr>
+          {{end}}
+        </table>
+        {{end}}
+
         {{if .BrandCount}}
         <div class="stickrow" style="margin-top:14px">
           {{if .BrandRank}}<div class="sk"><div class="skv{{if gt .BrandRank 3}}{{else}} acc{{end}}">#{{.BrandRank}}</div><div class="skl">of {{.BrandCount}} brands named</div></div>
