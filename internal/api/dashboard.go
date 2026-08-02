@@ -97,6 +97,12 @@ type segRow struct {
 	Count  int
 	Pct    int
 	BarPct int // width relative to the top group
+	// Flag/Code are set only for country rows. They are separate fields rather than baked
+	// into Value because Value is what the reader sees AND what a click-to-filter would send;
+	// gluing an emoji onto it makes the display string and the property value the same
+	// mangled thing, and the first feature that needs the real code has to unpick it.
+	Flag string
+	Code string
 	// FilterProp/FilterVal drive click-to-filter for rows whose displayed value isn't a
 	// raw property (e.g. a first-touch CHANNEL, which may come from source, referrer host,
 	// or utm). Empty FilterProp = not click-filterable (e.g. "direct" = absence of a
@@ -129,6 +135,10 @@ type segConv struct {
 	Value string
 	Users int
 	Conv  int // overall funnel conversion %, this segment
+	// Same as segRow: set only when the segment property is `country`, so the card can show
+	// a flag and hand the browser a code to expand into a full country name.
+	Flag string
+	Code string
 }
 
 // funnelBySegment runs the funnel separately for each value of a property — segmentation
@@ -345,10 +355,44 @@ type hourBar struct {
 	HeightPct int
 }
 
+// decorateCountrySegs gives country rows a flag and keeps the raw code alongside the label.
+//
+// A country row is two letters and nothing else, and "MD 0%" beside "US 3%" is a row most
+// readers cannot decode — MD is Moldova to roughly nobody. The flag is computed here because
+// it is pure arithmetic on the two letters; the FULL NAME is deliberately not, and is expanded
+// in the browser instead (saCountryNames). Every modern browser already ships the whole ISO
+// register via Intl.DisplayNames, maintained against CLDR and localised to the reader's own
+// language, so shipping a 250-row table in the binary would be worse data, staler, in one
+// language, for something that is presentation only — it never enters a filter, the API, or an
+// MCP answer.
+//
+// MaxMind's "ZZ"/"XX" mean anonymous-proxy and unresolved. They get no flag and no code,
+// because a wrong flag beside a real number is worse than no flag at all.
+func decorateCountrySegs(rows []segConv) {
+	for i := range rows {
+		code := rows[i].Value
+		if code == "ZZ" || code == "XX" || code == "" {
+			rows[i].Value = "Unknown"
+			continue
+		}
+		rows[i].Flag = flagOf(code)
+		rows[i].Code = code
+	}
+}
+
 // flagOf turns an ISO 3166-1 alpha-2 code into its flag emoji (regional indicators).
 func flagOf(cc string) string {
 	if len(cc) != 2 {
 		return ""
+	}
+	// The arithmetic below is only meaningful for A-Z. Without this check a lowercase code,
+	// a digit, or any of MaxMind's non-country markers maps to some arbitrary codepoint pair
+	// and renders as two unrelated glyphs — a wrong flag beside a real number, which is worse
+	// than no flag at all.
+	for i := 0; i < 2; i++ {
+		if cc[i] < 'A' || cc[i] > 'Z' {
+			return ""
+		}
 	}
 	r1 := 0x1F1E6 + rune(cc[0]) - 'A'
 	r2 := 0x1F1E6 + rune(cc[1]) - 'A'
@@ -1852,6 +1896,9 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 
 	if segProp != "" {
 		vm.ConvBySeg = funnelBySegment(evs, segProp, fsteps)
+		if segProp == "country" {
+			decorateCountrySegs(vm.ConvBySeg)
+		}
 	}
 	// Show the card only when it has renderable rows — a property that exists but sits
 	// off the funnel-entry step (so every segment is "(none)", filtered out) otherwise
@@ -2009,9 +2056,8 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			realGeo = true
-			if fl := flagOf(code); fl != "" {
-				vm.Countries[i].Value = fl + " " + code
-			}
+			vm.Countries[i].Flag = flagOf(code)
+			vm.Countries[i].Code = code
 		}
 		vm.HasGeo = realGeo
 		maxH, totalH := 1, 0

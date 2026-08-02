@@ -273,6 +273,12 @@
      read as one run-on line. */
   .zonelbl .sub{flex-basis:100%;text-transform:none;letter-spacing:0;color:var(--mut);font-size:var(--fs-lbl);font-weight:400;line-height:1.55;margin-top:4px}
   .zonesel{background:var(--s1);border:1px solid var(--line);color:var(--fg);font-family:var(--mono);font-size:var(--fs-lbl);padding:2px 6px;border-radius:4px;margin-right:6px}
+  /* A flag is an icon, not a word: it sits on the label's own line at label size, with a
+     fixed gutter so a two-letter code and a longer name still start at the same x. */
+  .cflag{display:inline-block;width:1.5em;margin-right:3px;line-height:1;
+    font-family:"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif}
+  /* a country code with a name behind it is worth signalling as hoverable, quietly */
+  [data-cc]{cursor:help}
   .charttable{margin-top:10px}
   /* the text equivalent of a chart. A 90-day window is 90 rows, so it scrolls inside
      itself rather than becoming the pane; saScrollables() gives the wrapper a tab stop
@@ -1323,7 +1329,7 @@
     <div class="pane" id="pane-geo" style="order:340" data-stratum="acquire">
       <h3>countries · geo by <a href="https://db-ip.com" target="_blank" rel="noopener" style="color:var(--mut2)">db-ip.com</a></h3>
       <div class="exsummary" style="margin-bottom:10px">countries stamp at ingest from the moment geo is enabled (the IP is used for one lookup and never stored, so no backfill). your own visits count too: open your site once with ?sa_optout=1 to exclude this browser, ?sa_optout=0 to undo</div>
-      {{range .Countries}}<div class="seg"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}
+      {{range .Countries}}<div class="seg"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname"{{if .Code}} data-cc="{{.Code}}"{{end}}>{{if .Flag}}<span class="cflag" aria-hidden="true">{{.Flag}}</span>{{end}}{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}
     </div>
     {{else}}
     <!-- geo off, or every IP unresolved. a proud "Unknown 100%" bar would be worse than
@@ -1393,7 +1399,7 @@
     <div class="pane" id="pane-conversion" style="order:220" data-stratum="convert">
       <h3>conversion by {{.ConvByTitle}}</h3>
       <div class="segconv">
-        {{range .ConvBySeg}}<div class="sc"><div class="sc-h"><span class="sc-name">{{.Value}}</span><span class="sc-conv">{{.Conv}}%</span></div><div class="sc-track"><div class="sc-fill" style="width:{{.Conv}}%"></div></div><div class="sc-sub">{{.Users}} users</div></div>{{end}}
+        {{range .ConvBySeg}}<div class="sc"><div class="sc-h"><span class="sc-name"{{if .Code}} data-cc="{{.Code}}"{{end}}>{{if .Flag}}<span class="cflag" aria-hidden="true">{{.Flag}}</span>{{end}}{{.Value}}</span><span class="sc-conv">{{.Conv}}%</span></div><div class="sc-track"><div class="sc-fill" style="width:{{.Conv}}%"></div></div><div class="sc-sub">{{.Users}} user{{if ne .Users 1}}s{{end}}</div></div>{{end}}
       </div>
     </div>
     {{end}}
@@ -2594,6 +2600,33 @@
         }
       });
     }
+    // "MD" is Moldova to roughly nobody, and "MD 0%" beside "US 3%" is a row you cannot read.
+    // The full name is presentation only — it never enters a filter, the API or an MCP answer —
+    // so it does not belong in the Go binary as a 250-row table that goes stale the next time a
+    // country renames itself. Every modern browser already ships the whole ISO register via
+    // Intl.DisplayNames, maintained against CLDR and localised to the reader's own language.
+    // Progressive enhancement: where it is missing, the code stays exactly as it renders now.
+    function saCountryNames(){
+      if(typeof Intl==='undefined'||typeof Intl.DisplayNames!=='function')return;
+      var names;
+      try{ names=new Intl.DisplayNames(navigator.languages||['en'],{type:'region'}); }catch(e){ return; }
+      document.querySelectorAll('[data-cc]:not([data-cc-done])').forEach(function(el){
+        var cc=el.getAttribute('data-cc');
+        el.setAttribute('data-cc-done','1');
+        var full;
+        try{ full=names.of(cc); }catch(e){ return; }
+        // .of() hands back the input unchanged for a code it does not know, and a tooltip
+        // that repeats the thing you are hovering is worse than no tooltip.
+        if(!full||full===cc)return;
+        el.setAttribute('title',full);
+        // the name is the accessible label; the code alone is not something a screen reader
+        // can pronounce usefully, and the flag is already aria-hidden
+        el.setAttribute('aria-label',full);
+      });
+    }
+    saCountryNames();
+    setTimeout(saCountryNames,1200); setTimeout(saCountryNames,3000);
+
     saScrollables();
     // same reason as the quiet-card re-runs: the tables these wrap arrive async
     setTimeout(saScrollables,1200); setTimeout(saScrollables,3000);
