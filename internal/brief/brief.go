@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/aicrawl"
 	"github.com/Arjun0606/smolanalytics/internal/aivis"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/insight"
@@ -68,7 +69,7 @@ func Build(evs []event.Event, days int, now time.Time) Brief {
 		// daily would show up as a visitor and its volume as growth. The verdict engine
 		// already excludes them; the pulse above the verdict must agree, or the digest
 		// contradicts itself in its own first line.
-		if e.Name == aivis.CheckEvent || e.Name == insight.ReadableEvent {
+		if e.Name == aivis.CheckEvent || e.Name == insight.ReadableEvent || e.Name == aicrawl.CrawlEvent {
 			continue
 		}
 		site, _ := e.Properties["site"].(string)

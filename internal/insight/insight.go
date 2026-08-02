@@ -30,6 +30,7 @@ const (
 	KindRetention = "retention"
 	KindAIVis     = "ai_visibility"
 	KindReadable  = "site_readable"
+	KindCrawl     = "ai_crawl"
 )
 
 // Finding is one notable thing, ranked by severity ("warn" before "info").
@@ -126,6 +127,10 @@ func GenerateForFunnel(evs []event.Event, pageSteps []funnel.Step) []Finding {
 	// before anything about what the engines SAY: if they cannot read the page, every
 	// visibility number below is a symptom and this is the cause
 	readable := siteReadability(all, now)
+	// the retrieval half: what the crawlers actually did on the customer's own server.
+	// Upstream of every "what does the model say" number for the same reason readability
+	// is — an answer can only quote a page something fetched.
+	crawl := aiCrawlFindings(all, now)
 	geo := aiVisibilityShift(all, now)
 	// the retrieval-vs-reputation split: read but not picked is a different problem from never
 	// being read, and only this instance holds both halves of the evidence
@@ -136,6 +141,7 @@ func GenerateForFunnel(evs []event.Event, pageSteps []funnel.Step) []Finding {
 		if readable != nil {
 			out = append(out, *readable)
 		}
+		out = append(out, crawl...)
 		if geo != nil {
 			out = append(out, *geo)
 		}
@@ -171,6 +177,7 @@ func GenerateForFunnel(evs []event.Event, pageSteps []funnel.Step) []Finding {
 	if readable != nil {
 		out = append(out, *readable)
 	}
+	out = append(out, crawl...)
 	if geo != nil {
 		out = append(out, *geo)
 	}

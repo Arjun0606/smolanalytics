@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/aicrawl"
 	"github.com/Arjun0606/smolanalytics/internal/aivis"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/web"
@@ -277,7 +278,9 @@ func rateOf(part, n int) float64 {
 // whose name has no reader-facing wording at all. Returns the input untouched when
 // there are none, which is every instance that never turned GEO on.
 func withoutGeoChecks(evs []event.Event) []event.Event {
-	ours := func(name string) bool { return name == aivis.CheckEvent || name == ReadableEvent }
+	ours := func(name string) bool {
+		return name == aivis.CheckEvent || name == ReadableEvent || name == aicrawl.CrawlEvent
+	}
 	n := 0
 	for _, e := range evs {
 		if ours(e.Name) {

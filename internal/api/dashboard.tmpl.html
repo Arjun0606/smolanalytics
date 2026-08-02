@@ -808,6 +808,22 @@
   /* the share-of-voice chart. Fixed 0-100% y-axis: this is a SHARE, and rescaling to the
      window's max would make a brand holding steady at 20% look like it was climbing. */
   .sovwrap{position:relative;margin:10px 0 4px;padding-left:26px}
+  /* crawl trend: one column per day including the empty ones. A sparse series would draw
+     a straight line across a week of silence, which is the exact thing being looked for. */
+  .crawlbars{display:flex;align-items:flex-end;gap:2px;height:96px;min-width:0;
+    border-bottom:1px solid var(--line)}
+  /* column-reverse so the segments stack up from the axis in the order written */
+  .crawlday{flex:1 1 0;min-width:0;height:100%;display:flex;flex-direction:column-reverse;
+    justify-content:flex-start}
+  .crawlday i{display:block;width:100%;min-height:0}
+  /* one amber ladder, brightest for the segment that matters most: a live assistant
+     fetching the page to answer a person right now */
+  .cseg-u{background:var(--accent-hi)}
+  .cseg-s{background:var(--accent-bar)}
+  .cseg-t{background:var(--accent-bar-lo)}
+  .crawlday.ctoday{outline:1px solid var(--line3);outline-offset:1px}
+  .crawlax{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;
+    color:var(--mut);margin-top:6px}
   /* a real y-axis: without labelled gridlines a share chart whose series all sit under 40%
      reads as a flat band near the floor, and the reader cannot tell 13% from 35% by eye */
   .sovax{position:absolute;left:0;top:0;height:190px;display:flex;flex-direction:column;
@@ -824,7 +840,7 @@
      rather than three unrelated numbers */
   .sentbar{display:flex;height:10px;border-radius:3px;overflow:hidden;background:var(--s2);margin:6px 0 4px}
   .sentbar i{display:block;height:100%}
-  .deck #pane-aivis{overflow-x:auto}
+  .deck #pane-aivis,.deck #pane-aicrawl{overflow-x:auto}
   .gverb{margin:0 0 8px;padding:8px 12px;border-left:2px solid var(--a45);background:var(--well);
     border-radius:0 var(--r-ctl) var(--r-ctl) 0;font:400 13px/1.5 var(--sans);color:var(--fg)}
   .gverb .gvmeta{display:block;margin-top:5px;font:400 10px/1.4 var(--mono);color:var(--dis);
@@ -1526,6 +1542,85 @@
         "model_version":"claude-sonnet-4-6"}}'</pre>
         <div class="agmeta">One POST per sampled answer. <b>rank</b> is the 1-based position among the tools that answer named (0 = named but not ranked), <b>competitors</b> is comma-separated, <b>verbatim</b> is one line of how it described you, and <b>model_version</b> is the exact model id — a quote with no model and date is not evidence. Put the mode in the engine name (<b>claude</b> vs <b>claude-grounded</b>): a model that knows you and a live web search that surfaces you are different claims. Sample each prompt several times a week and let the rates settle. <b>Send a User-Agent header</b> — $-prefixed events arriving without one are dropped at ingest as crawler traffic, silently.</div>
         </details>
+        {{end}}
+        {{end}}
+      </div>
+      {{end}}
+      {{end}}
+    </div>
+
+    <div class="pane wide" id="pane-aicrawl" style="order:361" data-stratum="acquire">
+      <h3>AI crawlers
+        <span class="sub">· who actually fetched your pages, from your own server · a JavaScript pixel cannot see any of this · computed by /v1/ai-crawlers</span></h3>
+      {{with .AICrawl}}
+      {{if .Hits}}
+      <div data-empty="0">
+        <div class="agrow">
+          <span class="agprov">computed · {{comma .Hits}} fetch{{if ne .Hits 1}}es{{end}}</span>
+          <span class="agmeta">{{len .Crawlers}} crawler{{if ne (len .Crawlers) 1}}s{{end}} · {{comma .Pages}} page{{if ne .Pages 1}}s{{end}} read · last {{.Days}} days</span>
+        </div>
+        <div class="stickrow">
+          <div class="sk"><div class="skv acc">{{comma .User}}</div><div class="skl">live assistant fetches</div></div>
+          <div class="sk"><div class="skv">{{comma .Search}}</div><div class="skl">search indexing</div></div>
+          <div class="sk"><div class="skv">{{comma .Training}}</div><div class="skl">training</div></div>
+          {{if .Errors}}<div class="sk"><div class="skv" style="color:var(--warn)">{{comma .Errors}}</div><div class="skl">served an error</div></div>{{end}}
+        </div>
+        <div class="agmeta" style="margin-top:6px">A <b>live assistant fetch</b> is a person asking ChatGPT, Claude or Perplexity something right now and it pulling your page to answer them{{if .UserPct}} — {{.UserPct}}% of the fetches here{{end}}. That is a human intent signal, not a robot, and it is the reason these three are counted apart instead of lumped into "bot traffic".</div>
+
+        {{if .Bars}}
+        <div class="sovwrap" style="margin-top:14px">
+          <div class="crawlbars">
+            {{range .Bars}}<div class="crawlday{{if .Today}} ctoday{{end}}" title="{{.Label}} · {{.Hits}} fetch{{if ne .Hits 1}}es{{end}} · {{.User}} live, {{.Search}} search, {{.Training}} training"><i class="cseg-t" style="height:{{.TrainingPct}}%"></i><i class="cseg-s" style="height:{{.SearchPct}}%"></i><i class="cseg-u" style="height:{{.UserPct}}%"></i></div>{{end}}
+          </div>
+          <div class="crawlax"><span>{{.FirstDay}}</span><span>peak {{comma .Peak}}/day</span><span>{{.LastDay}}</span></div>
+          <div class="sovleg"><span><i class="cseg-u"></i>answering someone now</span><span><i class="cseg-s"></i>indexing for answers</span><span><i class="cseg-t"></i>training</span></div>
+        </div>
+        {{end}}
+
+        <table class="tbl" style="margin-top:14px">
+          <tr><th>crawler</th><th>run by</th><th>why</th><th class="num">fetches</th><th class="num">pages</th><th class="num">errors</th><th>last seen</th></tr>
+          {{range .Crawlers}}
+          <tr>
+            <td><b>{{.Crawler}}</b></td>
+            <td>{{.Operator}}</td>
+            <td>{{if eq .Purpose "user"}}<span class="acc">answering someone now</span>{{else if eq .Purpose "search"}}indexing for answers{{else}}training{{end}}</td>
+            <td class="num">{{comma .Hits}}</td>
+            <td class="num">{{comma .Pages}}</td>
+            <td class="num">{{if .Errors}}<span style="color:var(--warn)">{{comma .Errors}}</span>{{else}}0{{end}}</td>
+            <td class="mut">{{.LastPath}}</td>
+          </tr>
+          {{end}}
+        </table>
+
+        {{if .Gaps}}
+        <div class="agmeta" style="margin-top:14px"><b>Read by people, never read by an assistant.</b> No AI can cite a page it has never fetched, and these have proven human demand. Link to them from a page the crawlers do reach, or list them in your sitemap.</div>
+        <table class="tbl">
+          <tr><th>page</th><th class="num">human views</th><th class="num">visitors</th></tr>
+          {{range .Gaps}}<tr><td>{{.Path}}</td><td class="num">{{comma .Views}}</td><td class="num">{{comma .Visitors}}</td></tr>{{end}}
+        </table>
+        {{end}}
+      </div>
+      {{else}}
+      <div data-empty="1">
+        {{if .Ever}}
+        <div class="agmeta">Your server has reported AI-crawler visits before, but none landed in this window{{if .Scoped}} under the filters currently applied{{end}}. {{if .Scoped}}<a href="{{.WidenURL}}">Widen to 90 days with no filters</a> to check.{{else}}Either the crawlers have not come back, or the reporter stopped running.{{end}}</div>
+        {{else}}
+        <div class="agmeta">GPTBot, ClaudeBot and PerplexityBot run no JavaScript, so the tracking snippet on your pages is invisible to them and every analytics tool you have — ours included — reports zero AI crawlers. The only way to see them is from the server that answered the request.</div>
+        {{if .Managed}}
+        <div class="agmeta" style="margin-top:8px">Turn it on from <a href="{{.CloudURL}}">your project settings</a>: we open a pull request that adds the reporter to your repo, or hand you the snippet to paste. Six lines, no dependency, and it never delays a response.</div>
+        {{else}}
+        <div class="agmeta" style="margin-top:8px">Self-hosting? Report each hit from your own middleware — match the user agent, then fire and forget:</div>
+        <pre class="code">curl -s -X POST {{$.Base}}/v1/events \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer {{if $.WriteKey}}{{$.WriteKey}}{{else}}YOUR_WRITE_KEY{{end}}" \
+  -d '{"name":"$ai_crawl","distinct_id":"$crawler","properties":{
+        "crawler":"GPTBot",
+        "operator":"OpenAI",
+        "purpose":"training",
+        "path":"/pricing",
+        "status":200,
+        "site":"your-product.com"}}'</pre>
+        <div class="agmeta"><b>purpose</b> is <b>training</b>, <b>search</b> or <b>user</b> — keep them apart, a live fetch answering a person is worth more than a training sweep and averaging them hides it. This is the one $-prefixed event that survives the bot filter, precisely because it is reported from inside a crawler's request.</div>
         {{end}}
         {{end}}
       </div>

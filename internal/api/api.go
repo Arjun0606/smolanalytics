@@ -25,6 +25,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/aicrawl"
 	"github.com/Arjun0606/smolanalytics/internal/alert"
 	"github.com/Arjun0606/smolanalytics/internal/alias"
 	"github.com/Arjun0606/smolanalytics/internal/audit"
@@ -722,7 +723,12 @@ func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 		kept := batch[:0:0]
 		dropped := 0
 		for _, e := range batch {
-			if strings.HasPrefix(e.Name, "$") {
+			// $ai_crawl is the one $-event that MUST survive this filter: it is a report
+			// ABOUT a crawler hit, written by the customer's own server from inside that
+			// request. The reporter usually carries the crawler's UA (that is what it is
+			// reporting), and an edge runtime that sends no UA at all reads as a bot too —
+			// either way the filter would silently eat every event the feature produces.
+			if strings.HasPrefix(e.Name, "$") && e.Name != aicrawl.CrawlEvent {
 				dropped++
 				continue
 			}

@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/aicrawl"
 	"github.com/Arjun0606/smolanalytics/internal/aivis"
 	"github.com/Arjun0606/smolanalytics/internal/brief"
 	"github.com/Arjun0606/smolanalytics/internal/event"
@@ -93,7 +94,7 @@ func (s *Server) usage(w http.ResponseWriter, r *http.Request) {
 		// the checks we chose to run on their behalf — and inflate the visitor count with
 		// one synthetic id. Excluded from every counter here for the same reason the
 		// verdict excludes them: they are not product activity.
-		if e.Name == aivis.CheckEvent || e.Name == insight.ReadableEvent {
+		if e.Name == aivis.CheckEvent || e.Name == insight.ReadableEvent || e.Name == aicrawl.CrawlEvent {
 			return nil
 		}
 		total++

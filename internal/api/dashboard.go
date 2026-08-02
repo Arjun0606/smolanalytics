@@ -233,6 +233,11 @@ type dashVM struct {
 	// aggregated from $geo_check sampling events. It sits beside AIVisitors/AIRefs on
 	// purpose — nobody else holds both halves, so nobody else can put them side by side.
 	AIVis aivisVM
+
+	// AICrawl is the retrieval half of the same story: which AI crawlers actually FETCHED
+	// this site, reported by the customer's own server. A JS pixel cannot see any of them,
+	// which is why no other analytics product has this number.
+	AICrawl aicrawlVM
 	// search console (when the operator connected it)
 	HasSearch  bool
 	SearchRows []segRow // query → clicks, bar-scaled
@@ -1848,6 +1853,11 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	// separates "nothing sampled yet" from "your filters exclude the checks" — $geo_check
 	// carries no site or path, so any web-property chip hides every one of them.
 	buildAIVis(&vm, evs, names, rangeDays, rangeAsof,
+		len(chips) > 0 || site != "" || showDev, mkRange(90).URL, s.cloudURL)
+
+	// and the retrieval half, over the same window. Ordered next to it on the page: "was
+	// it fetched" and "what did the model then say" are one story read in that direction.
+	buildAICrawl(&vm, evs, names, rangeDays, rangeAsof,
 		len(chips) > 0 || site != "" || showDev, mkRange(90).URL, s.cloudURL)
 
 	if s.goals != nil {
