@@ -19,16 +19,32 @@ That disqualifies, structurally and permanently:
 - **PostHog Cloud (US)** — and PostHog's own docs say all paid-plan features are Cloud-only,
   so self-hosting them costs you the product
 
-The EU-safe survivors are Matomo and Plausible. **Both are web analytics.** No funnels, no
-retention, no cohorts.
+**CORRECTED 2026-08-03.** The original version of this file said the EU-safe survivors were
+Matomo and Plausible and that both were web analytics with no funnels or retention. That is
+false, and a prospect disproves it in ten minutes, so it is worth being exact:
 
-So the open door is: **self-hostable PRODUCT analytics for a company that cannot legally use
-a US cloud.** That is not a cheaper Amplitude, it is the only thing in the category. It is
-also exactly what this product is, which is luck rather than strategy, but it is the position
-worth defending.
+- **Umami** — MIT, free, self-hostable — ships funnels, retention, journeys, cohorts, segments,
+  attribution, goals, revenue, heatmaps **and session replay**. It is a real competitor.
+- **Plausible CE** genuinely has no funnels. That narrower claim survives and is citable.
+- **Matomo** has funnels and cohorts as paid plugins: **€275/month** for 4 users self-hosted.
+  The honest framing is "costs €275/mo", not "can't do it" — a price argument we win at $49.
+- **Swetrix** — EU-hosted, AGPL, funnels + replay + flags + A/B at **$19-39/mo**. We are not
+  the cheapest EU-hosted option and must stop implying it.
+- **OpenPanel**, **TelemetryDeck** (already ships an MCP), **Rybbit** are all live in this space.
+
+So the door is narrower than first written. It is **not** "the only product analytics an EU
+company can self-host". It is: self-hostable product analytics with **native mobile SDKs**, a
+**B2B group model**, and an **MCP that verifies its own instrumentation** — the three things
+the EU-safe field does not have. Smaller claim, but it survives contact.
+
+There is also a qualification problem with the wedge itself. EU directories gate on **company
+domicile**, not data residency, and the hosted cloud runs on Fly.io and Neon — both US-owned,
+both reachable by the CLOUD Act. The argument cuts against us too. Either offer a
+Hetzner/Scaleway target or lead EU prospects with self-hosting, where domicile is irrelevant.
+Pick one before writing EU copy or the pitch collapses on the first technical question.
 
 Price is a supporting argument, not the lead. Leading with cheap invites a race you lose to
-whoever is next.
+whoever is next — and against Swetrix at $19 you lose it immediately.
 
 ## why teams actually switch (verified)
 
@@ -95,10 +111,21 @@ self-identified as your buyer, and the reply is an answer rather than a pitch.
 
 ## the honest read
 
-The sovereignty wedge is real, verified and structural, and no US competitor can follow you
-into it. Nobody is serving self-hostable product analytics for EU sovereignty, which is a
-genuine gap rather than a positioning exercise.
+The sovereignty pressure is real, verified and structural — no US competitor can follow into
+it, and PostHog's own EU carve-out on AI training proves they know it. The web-analytics
+category on european-alternatives.eu grew over 2,700% in unique visitors during 2025.
 
-But it is a 3-6 month enterprise motion with a compliance review in the middle, and it is not
+But "nobody is serving self-hostable product analytics for EU sovereignty" was wrong. Umami,
+Swetrix, OpenPanel and TelemetryDeck are all in this space, and Swetrix undercuts us on price
+while shipping session replay. The gap is narrower and more specific than this file first
+claimed: mobile SDKs, B2B groups, and instrumentation that verifies itself.
+
+It is also a 3-6 month enterprise motion with a compliance review in the middle, and it is not
 the answer to needing $10k in 3 months. Run it as the product's long game. Fund the quarter
 some other way.
+
+The faster path, from the same research, is the **migration refugees**: June.so users after the
+Amplitude acquisition, Highlight.io users being handed ~$75K LaunchDarkly contracts as of
+2026-02-28, Aptabase users who hit a permanent architectural wall the moment they need
+retention, and the PostHog users publicly leaving over the AI-training change. Those are people
+already looking, in public, today. See COMPETITIVE.md §5 for the named threads.
