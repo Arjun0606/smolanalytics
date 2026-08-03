@@ -198,3 +198,101 @@ with specifics rather than pitches.
 - don't reply to your own post to bump it
 - don't DM anyone who comments
 - don't say "we" if it's just you, people can always tell
+
+---
+
+# more subreddits
+
+**Spacing matters more than the copy.** One post every 3-4 days, different subreddit, different
+angle. Posting three the same week is the pattern that gets an account flagged, whatever the
+text says.
+
+Suggested order: coolgithubprojects → golang → opensource, with SideProject/webdev/ClaudeAI
+interleaved from above. r/selfhosted still held to 2026-09-25.
+
+---
+
+## post 4 — r/coolgithubprojects
+
+Best odds of the lot. The sub exists to share repos, 27k weekly visitors, and a direct
+competitor (Pug) posted the same category three days ago and did fine. Format is short: what
+it is, the repo, one screenshot.
+
+**Title:** smolanalytics — self-hosted product analytics as a single Go binary, no database
+
+**Body:**
+
+https://github.com/Arjun0606/smolanalytics
+
+web + product analytics from one snippet. funnels, retention, paths, cohorts, plus feature
+flags, a/b tests, heatmaps and surveys, all computed from one append-only event log.
+
+the constraint i set myself: one binary, one data file, no external database, no cgo. it
+runs in 256mb. the whole thing is stdlib go, zero dependencies, no go.sum.
+
+it's also an mcp server, so your coding agent can query your real analytics from the editor.
+it can only call fixed reports, never write sql, so an answer is either a real computed
+number or a refusal.
+
+mit, self-host free forever, no paid edition holding features back.
+
+try it without installing anything:
+```
+docker run -p 8080:8080 ghcr.io/arjun0606/smolanalytics demo
+```
+
+## post 5 — r/golang
+
+This sub will fact-check you and dislikes anything that reads as marketing. Lead with the
+engineering decision, let the product be context. Every number below is verified.
+
+**Title:** wrote a full analytics product in stdlib Go, zero dependencies, no go.sum
+
+**Body:**
+
+49k lines, no external modules at all. `go list -m all` returns just the module. it started
+as a constraint i set for fun and turned out to be the most useful decision in the project.
+
+it's an analytics server: ingest, an append-only event log, a columnar cold tier, funnels,
+retention, cohorts, feature flags, a/b tests, an http api and an mcp server. all of it on
+net/http, encoding/json, database-free.
+
+what i'd actually flag as interesting:
+
+- storage is a hot append-only log that seals into compressed columnar segments every 50k
+  events. RAM stays flat as history grows, which is what lets it sit in 256mb.
+- no cgo, so cross-compiling is real and the docker image is scratch-adjacent.
+- the honest cost: no clickhouse means i wrote the columnar layer, the query engine and the
+  time bucketing myself. that is real work and would be a bad trade for a team that already
+  runs a database.
+
+the reason for zero deps is not purity, it's that this is software other people self-host.
+every dependency is an upgrade and a supply-chain surface for the person running it, not for me.
+
+repo: https://github.com/Arjun0606/smolanalytics (mit). happy to be told what i did wrong.
+
+## post 6 — r/opensource
+
+Angle is the licence and the absence of a crippled edition. This sub cares about open-core
+bait, so the "no paid tier holding features back" point is the post.
+
+**Title:** analytics tool where the self-hosted build is the whole product, not the free tier
+
+**Body:**
+
+the pattern that annoyed me into building this: most "open source" analytics ships an open
+core where the features you actually want are cloud-only. posthog's own docs say all
+paid-plan features are cloud-only, so the thing you self-host is their free tier, and you're
+running clickhouse + kafka + a bunch more to get it.
+
+so smolanalytics is mit and the binary is everything: funnels, retention, cohorts, feature
+flags, a/b tests, heatmaps, surveys, an mcp server. there is no edition that unlocks more.
+there is a hosted version because some people would rather not run a server, and it runs the
+same binary.
+
+one go binary, one data file, no external database, zero dependencies. 256mb.
+
+https://github.com/Arjun0606/smolanalytics
+
+genuinely interested whether the "no crippled edition" thing matters to people here or if
+it's just my own hang-up.
