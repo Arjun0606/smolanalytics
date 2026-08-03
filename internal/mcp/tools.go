@@ -320,6 +320,7 @@ var toolList = []map[string]any{
 			"filters": filtersSchema,
 		}, []string{"label"}),
 	},
+	sqlToolDef,
 }
 
 func obj(props map[string]any, required []string) map[string]any {

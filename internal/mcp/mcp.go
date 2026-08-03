@@ -282,6 +282,13 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 	if s.readOnly && mutatingTools[name] {
 		return "", fmt.Errorf("%s is not available here: this is the public demo, which serves every report read-only", name)
 	}
+	// run_sql is handled before the shared load because it streams. Every other tool computes
+	// over a materialized slice, and paying for that here would throw away the whole reason the
+	// query engine aggregates as events go past: a GROUP BY over ten million events is meant to
+	// hold a few thousand accumulators, not ten million events plus a few thousand accumulators.
+	if name == "run_sql" {
+		return s.toolRunSQL(args)
+	}
 	evs, err := s.all()
 	if err != nil {
 		return "", err
