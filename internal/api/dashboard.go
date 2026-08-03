@@ -1150,11 +1150,6 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		s.notFound(w, r)
 		return
 	}
-	evsAll, err := s.store.Range(time.Time{}, time.Time{})
-	if err != nil {
-		serverError(w, "dashboard store.Range", err)
-		return
-	}
 	// Production scope hides env=development. The browser SDK stamps every localhost
 	// load as development (sdk.js), so a developer testing locally sends events that
 	// are ingested but invisible here — "I sent events and the dashboard shows nothing"
@@ -1165,17 +1160,37 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	// see by default nor ask for is traffic you have quietly lost.
 	wantEnv := r.URL.Query().Get("env")
 	showDev := wantEnv != "" && query.NonProduction[wantEnv]
-	devHidden := 0
-	for _, e := range evsAll {
+	var scopeFilters []query.Filter
+	if showDev {
+		scopeFilters = []query.Filter{{Property: "env", Op: query.Eq, Value: wantEnv}}
+	}
+	// ONE pass over storage instead of loading all history and then filtering a second
+	// full copy out of it. Scan streams and never materializes, so the only slice that
+	// exists is the one the reports actually read. Everything else the page needed from
+	// the raw set — the total, the hidden-env count, the newest timestamp — is a counter
+	// computed on the way past, not a reason to keep 500k events alive.
+	keep := query.Keeper(scopeFilters)
+	var evs []event.Event
+	totalAll, devHidden := 0, 0
+	var newestTS time.Time
+	if err := s.store.Scan(time.Time{}, time.Time{}, func(e event.Event) error {
+		totalAll++
 		if v, _ := e.Properties["env"].(string); query.NonProduction[v] {
 			devHidden++
 		}
-	}
-	var evs []event.Event
-	if showDev {
-		evs = query.Apply(evsAll, []query.Filter{{Property: "env", Op: query.Eq, Value: wantEnv}})
-	} else {
-		evs = query.Apply(evsAll, nil) // production scope: non-production envs excluded by default
+		// Scan yields in storage order, which is ascending by timestamp, so the last one
+		// past is the newest. Compared rather than assumed: a backfilled import lands out
+		// of order, and "last event 3 days ago" on a live site reads as an outage.
+		if e.Timestamp.After(newestTS) {
+			newestTS = e.Timestamp
+		}
+		if keep(e) {
+			evs = append(evs, e)
+		}
+		return nil
+	}); err != nil {
+		serverError(w, "dashboard store.Scan", err)
+		return
 	}
 
 	// multi-site: every event carries `site` (the SDK stamps hostname). One global
@@ -1578,10 +1593,10 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 			vm.AgentAgo = fmt.Sprintf("%dh ago", int(since.Hours()))
 		}
 	}
-	if n := len(evsAll); n > 0 {
-		// events append in arrival order, so the tail is the newest — this powers the
-		// header's "last event Ns ago" liveness stamp
-		vm.LastEventSecs = int(nowT.Sub(evsAll[n-1].Timestamp).Seconds())
+	if totalAll > 0 {
+		// newest timestamp seen during the scan — this powers the header's "last event
+		// Ns ago" liveness stamp
+		vm.LastEventSecs = int(nowT.Sub(newestTS).Seconds())
 		if vm.LastEventSecs < 0 {
 			vm.LastEventSecs = 0
 		}

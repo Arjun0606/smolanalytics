@@ -108,10 +108,26 @@ func segmentBlame(evs []event.Event, from, to string) *Finding {
 	// Step 1: first-touch-stamp KNOWN acquisition attributes (device, source, country, …).
 	// These live on the LANDING event, which is often BEFORE the funnel's `from` step — without
 	// stamping they never reach `from`, so the verdict couldn't segment by them at all.
-	stamped := evs
+	// Two things used to be fused here and are now separated, because they have very
+	// different costs. Finding a user's first touch must LOOK at every event — the country
+	// is on the landing pageview, long before the funnel step being blamed. But stamping
+	// COPIES a property map per event, and nothing below this line ever reads an event that
+	// is not named `from` or `to`: usableBlameProps skips them, the value scan skips them,
+	// and stepRate runs a plain two-step funnel that ignores every other name.
+	//
+	// So: scan everything to build the index (allocates nothing per event), then stamp only
+	// the two names that matter. This was chaining eight full copies of history, measured at
+	// 47% of everything the dashboard allocated.
+	acq := []string{"source", "channel", "device", "country", "browser", "platform", "os", "referrer"}
+	relevant := make([]event.Event, 0, len(evs)/4)
+	for _, e := range evs {
+		if e.Name == from || e.Name == to {
+			relevant = append(relevant, e)
+		}
+	}
+	stamped := query.BuildFirstTouch(evs, acq).Stamp(relevant)
 	stampedProp := map[string]bool{}
-	for _, p := range []string{"source", "channel", "device", "country", "browser", "platform", "os", "referrer"} {
-		stamped = query.StampFirstTouch(stamped, p)
+	for _, p := range acq {
 		stampedProp[p] = true
 	}
 	// Step 2: discover every property worth segmenting `from`→`to` by (now including the
@@ -130,12 +146,16 @@ func segmentBlame(evs []event.Event, from, to string) *Finding {
 			}
 		}
 	}
+	var alsoStamp []string
 	for _, p := range props {
 		if !toProps[p] && !stampedProp[p] {
-			stamped = query.StampFirstTouch(stamped, p)
+			alsoStamp = append(alsoStamp, p)
 			stampedProp[p] = true
 		}
 	}
+	// Index off the FULL history again (these properties live on the landing event too), but
+	// apply to the already-narrowed slice.
+	stamped = query.BuildFirstTouch(evs, alsoStamp).Stamp(stamped)
 	overall := stepRate(stamped, from, to, nil)
 	if overall.entered < minSample || overall.rate() <= 0 {
 		return nil // too thin to blame anyone

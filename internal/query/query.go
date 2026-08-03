@@ -225,7 +225,16 @@ var NonProduction = map[string]bool{
 	"ci":          true,
 }
 
-func Apply(events []event.Event, filters []Filter) []event.Event {
+// Keeper returns the per-event predicate Apply uses, so a caller streaming through
+// Store.Scan can filter as events arrive instead of materializing everything first and
+// filtering after. The dashboard used to hold two full copies of history — one raw, one
+// filtered — which is most of why memory tracked total events rather than the query.
+//
+// This exists so there is exactly ONE definition of "does this event belong in a
+// default-scoped query". Apply is written in terms of it. A second hand-rolled copy of
+// the env rule in a streaming caller would drift the moment either changed, and the
+// symptom would be two screens quietly disagreeing about the same number.
+func Keeper(filters []Filter) func(event.Event) bool {
 	filtersTouchEnv := false
 	for _, f := range filters {
 		if f.Property == "env" {
@@ -233,21 +242,29 @@ func Apply(events []event.Event, filters []Filter) []event.Event {
 			break
 		}
 	}
-	out := make([]event.Event, 0, len(events))
-	for _, e := range events {
+	return func(e event.Event) bool {
+		// An explicit env filter means the caller asked for that env on purpose, so the
+		// default "hide non-production" rule steps out of the way rather than ANDing with
+		// it and returning nothing.
 		if !filtersTouchEnv {
 			if v, ok := e.Properties["env"].(string); ok && NonProduction[v] {
-				continue
+				return false
 			}
 		}
-		keep := true
 		for _, f := range filters {
 			if !f.match(e) {
-				keep = false
-				break
+				return false
 			}
 		}
-		if keep {
+		return true
+	}
+}
+
+func Apply(events []event.Event, filters []Filter) []event.Event {
+	keep := Keeper(filters)
+	out := make([]event.Event, 0, len(events))
+	for _, e := range events {
+		if keep(e) {
 			out = append(out, e)
 		}
 	}
@@ -368,51 +385,130 @@ var acquisitionProps = map[string]bool{
 // amount) are left untouched; they're set at the step itself, so an event-level filter is right.
 // Both GET /v1 and the MCP tools call this before applying filters, so all four surfaces agree.
 func StampForFilters(evs []event.Event, filters []Filter) []event.Event {
-	stamped := evs
-	done := map[string]bool{}
+	var want []string
 	for _, f := range filters {
-		if acquisitionProps[f.Property] && !done[f.Property] {
-			stamped = StampFirstTouch(stamped, f.Property)
-			done[f.Property] = true
+		if acquisitionProps[f.Property] {
+			want = append(want, f.Property) // StampFirstTouchAll deduplicates
 		}
 	}
-	return stamped
+	return StampFirstTouchAll(evs, want)
 }
 
 func StampFirstTouch(events []event.Event, prop string) []event.Event {
-	type ft struct {
-		t   int64
-		val string
+	return StampFirstTouchAll(events, []string{prop})
+}
+
+// StampFirstTouchAll is StampFirstTouch for several properties in ONE pass.
+//
+// Callers used to chain it: `for _, p := range eightProps { evs = StampFirstTouch(evs, p) }`.
+// Because stamping copies every event's property map, that is eight full copies of history
+// and eight fresh maps per event — 1.6M map allocations for 200k events, and measured as 47%
+// of everything the dashboard allocated. Stamping N properties at once allocates one map per
+// event instead of N, because each pass only ever ADDED a key.
+//
+// Batching is safe precisely because the properties are distinct: stamping "device" never
+// changes any event's "country" value, so the first-touch lookup for a later property reads
+// the same input either way and the result is identical. The parity test in query_test.go
+// pins that equivalence against the chained implementation rather than trusting the argument.
+func StampFirstTouchAll(events []event.Event, props []string) []event.Event {
+	return BuildFirstTouch(events, props).Stamp(events)
+}
+
+// FirstTouch holds each user's earliest value for a set of properties. Building it is a scan
+// that allocates nothing per event; applying it is what costs, because stamping has to copy
+// a property map.
+//
+// Separating the two matters because the population you must LOOK AT to find a user's first
+// touch (all of history — the country is on the landing pageview) is much larger than the
+// population you need to STAMP (in segmentBlame, only the two event names in the funnel step
+// being blamed). Fused together, every caller paid to copy history.
+type FirstTouch struct {
+	props []string
+	first []map[string]string // one user→value map per property, parallel to props
+}
+
+// BuildFirstTouch scans every event once and records, per property, each user's value from
+// their earliest event carrying it. Nothing is copied.
+func BuildFirstTouch(events []event.Event, props []string) *FirstTouch {
+	// Deduplicate: callers assemble these lists from several sources (known acquisition
+	// attributes plus whatever the blame scan discovered), and a repeat would otherwise pay
+	// for a second lookup to write the identical value.
+	uniq := make([]string, 0, len(props))
+	seenProp := make(map[string]bool, len(props))
+	for _, p := range props {
+		if p != "" && !seenProp[p] {
+			seenProp[p] = true
+			uniq = append(uniq, p)
+		}
 	}
-	first := map[string]ft{}
+	f := &FirstTouch{props: uniq}
+	if len(uniq) == 0 {
+		return f
+	}
+	at := make([]map[string]int64, len(uniq))
+	f.first = make([]map[string]string, len(uniq))
+	for i := range uniq {
+		at[i] = map[string]int64{}
+		f.first[i] = map[string]string{}
+	}
 	for _, e := range events {
-		v, ok := e.Properties[prop]
-		if !ok {
+		if len(e.Properties) == 0 {
 			continue
-		}
-		val := toStr(v)
-		if val == "" {
-			continue
-		}
-		if prop == "referrer" {
-			val = hostOfURL(val)
 		}
 		ts := e.Timestamp.UnixNano()
-		if cur, seen := first[e.DistinctID]; !seen || ts < cur.t {
-			first[e.DistinctID] = ft{ts, val}
+		for i, prop := range uniq {
+			v, ok := e.Properties[prop]
+			if !ok {
+				continue
+			}
+			val := toStr(v)
+			if val == "" {
+				continue // an empty value is not a first touch, it is a missing one
+			}
+			if prop == "referrer" {
+				val = hostOfURL(val)
+			}
+			if cur, seen := at[i][e.DistinctID]; !seen || ts < cur {
+				at[i][e.DistinctID] = ts
+				f.first[i][e.DistinctID] = val
+			}
 		}
+	}
+	return f
+}
+
+// Stamp returns a copy of events carrying each user's first-touch values. The input is never
+// mutated: callers re-read the original events to decide what a conversion event natively
+// carries, and stamped values leaking back into that check would silently skip properties
+// that must be stamped.
+func (f *FirstTouch) Stamp(events []event.Event) []event.Event {
+	if f == nil || len(f.props) == 0 {
+		return events
 	}
 	out := make([]event.Event, len(events))
 	for i, e := range events {
 		out[i] = e
-		if f, ok := first[e.DistinctID]; ok {
-			np := make(map[string]any, len(e.Properties)+1)
-			for k, v := range e.Properties {
-				np[k] = v
+		// Count first, so a user with no first-touch value for any of these properties keeps
+		// sharing the caller's map instead of paying for a copy that would change nothing.
+		extra := 0
+		for j := range f.props {
+			if _, ok := f.first[j][e.DistinctID]; ok {
+				extra++
 			}
-			np[prop] = f.val
-			out[i].Properties = np
 		}
+		if extra == 0 {
+			continue
+		}
+		np := make(map[string]any, len(e.Properties)+extra)
+		for k, v := range e.Properties {
+			np[k] = v
+		}
+		for j, prop := range f.props {
+			if val, ok := f.first[j][e.DistinctID]; ok {
+				np[prop] = val
+			}
+		}
+		out[i].Properties = np
 	}
 	return out
 }
