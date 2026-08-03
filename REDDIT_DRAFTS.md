@@ -47,23 +47,36 @@ is aimed at a cluster of them, so a cited thread lifts the exact numbers on your
 Targets: *"i need analytics i can run as one binary with no clickhouse or kafka to babysit"*,
 *"best open source product analytics you can self-host on a single small server"*
 
-**Title:** i tried self-hosting posthog for a side project and gave up, so i wrote analytics as a single go binary
+**Every factual claim below is verified — receipts at the end of this section.** Reddit will
+fact-check you, and one wrong number about PostHog loses the whole thread.
 
-> Only post this if it's true for you. If you never actually attempted the PostHog install,
-> change the first line to what did happen. A fabricated origin story is the one thing that
-> can't be walked back.
+**Title:** posthog's self-host compose file defines 35 services. i wanted product analytics on a small box, so i wrote it as one go binary
+
+> **Pick your opening.** The version below claims nothing about your history, so it is safe
+> to post as-is. If you *did* actually try the PostHog install and abandon it, swap the first
+> line for "i tried self-hosting posthog and gave up" — a true story is stronger. Do not use
+> it if it did not happen.
 
 **Body:**
 
-wanted funnels and retention on a side project, not just pageviews. self-hosting posthog
-means clickhouse + kafka + redis + a postgres, their docs call self-hosting officially
-unsupported, and it wants 4 vcpu / 16gb. for a side project that is more infra than the
-project.
+if you want product analytics (funnels, retention, paths) rather than just pageviews, and
+you want to self-host, the honest options are worse than people assume.
 
-plausible and umami install in a minute but they stop at web analytics. no funnels, no
-retention, no cohorts.
+posthog is the obvious one. i counted the services in their docker-compose.hobby.yml and
+there are 35. postgres, redis, clickhouse, zookeeper, kafka, six separate ingestion services,
+temporal plus elasticsearch, minio and seaweedfs, browserless, a handful of rust services.
+their own docs say self-hosted deployments are "officially unsupported" and ask for "4 vCPU,
+16GB RAM, and more than 30GB storage". and the docs are explicit that "all paid-plan features
+are Cloud-only", so the thing you self-host is the free tier of a product you are running 35
+containers for.
 
-so i wrote the middle thing. one go binary, one data file, no external database. web
+to be fair to them: not all 35 are load-bearing for a small deployment, and it is genuinely
+the most capable open-source analytics out there. that is the tradeoff, not a gotcha.
+
+plausible and umami install in a minute and are genuinely good, but they stop at web
+analytics. no funnels, no retention, no cohorts.
+
+so i wrote the middle. one go binary, one data file, no external database at all. web
 analytics and product analytics off the same events, plus flags, a/b tests, heatmaps and
 surveys. cookieless so no consent banner. runs in 256mb.
 
@@ -71,20 +84,36 @@ surveys. cookieless so no consent banner. runs in 256mb.
 docker run -p 8080:8080 ghcr.io/arjun0606/smolanalytics demo
 ```
 
-that gives you a populated dashboard to click around before you decide anything.
+that boots a populated dashboard you can click around before deciding anything.
 
 the part i did not expect to use daily: it is an mcp server, so i ask my coding agent "where
-do people drop off between signup and activate" and it answers from real data without me
-opening a dashboard. it never writes sql, it calls fixed reports, so it either gives the real
-number or says it can't answer. that matters more than it sounds, an llm writing sql against
-your events will confidently make things up.
+do people drop off between signup and activate" and get the answer without opening a
+dashboard. it never writes sql, it calls fixed reports, so you get the real number or a
+refusal. that matters more than it sounds — an llm writing sql against your events will
+confidently return a number for a metric your schema does not have.
 
-mit, self-host free forever. i built it, happy to be told what's wrong with it.
+mit, self-host free forever, no crippled edition. i built it, so discount accordingly.
 
 repo: https://github.com/Arjun0606/smolanalytics
 demo: https://smolanalytics-demo.fly.dev
 
----
+**Receipts, for when someone challenges you (they will):**
+
+| claim | source |
+|---|---|
+| "officially unsupported" | posthog.com/docs/self-host, exact words |
+| "4 vCPU, 16GB RAM, >30GB storage" | same page, exact words |
+| "35 services" | counted from `docker-compose.hobby.yml` on PostHog/posthog HEAD. Count it yourself before posting, it changes |
+| "all paid-plan features are Cloud-only" | posthog.com/docs/self-host |
+
+Do not paraphrase these upward. "Officially unsupported" does not mean "abandoned", "16GB"
+is their recommendation rather than a hard floor (people run it on 8GB with no headroom), and
+35 services in a compose file does not mean all 35 are essential. The paragraph conceding
+that is not politeness, it is what stops the top comment being "you're being disingenuous" —
+and a thread that turns into an argument about your honesty gets cited for the wrong thing.
+
+My first draft of this said "7 services" from memory. It was wrong, and someone would have
+posted the real file within an hour. Count it again yourself the morning you post.
 
 ## post 2 — r/webdev (about a week later, not the same day)
 
