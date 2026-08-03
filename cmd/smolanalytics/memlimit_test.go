@@ -43,3 +43,44 @@ func TestNoCgroupMeansNoLimit(t *testing.T) {
 		t.Errorf("missing cgroup file produced limit %d, want 0", n)
 	}
 }
+
+// MemTotal is the fallback that makes this work on Fly, where a Firecracker microVM has no
+// cgroup ceiling. It is reported in kibibytes; reading it as bytes would set a limit 1024x too
+// small and drive the process into permanent GC, so the unit is asserted rather than assumed.
+func TestParseMemTotal(t *testing.T) {
+	cases := []struct {
+		name    string
+		content string
+		want    int64
+	}{
+		{"fly 256MB machine", "MemTotal:         246964 kB\nMemFree:  100 kB\n", 246964 * 1024},
+		{"MemTotal not first", "SwapTotal: 0 kB\nMemTotal: 1024 kB\n", 1024 * 1024},
+		{"unexpected unit is rejected", "MemTotal: 1024 MB\n", 0},
+		{"missing entirely", "MemFree: 100 kB\n", 0},
+		{"unparseable", "MemTotal: lots kB\n", 0},
+		{"zero", "MemTotal: 0 kB\n", 0},
+		{"empty file", "", 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := filepath.Join(t.TempDir(), "meminfo")
+			if err := os.WriteFile(p, []byte(tc.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if got := parseMemTotal(p); got != tc.want {
+				t.Errorf("parseMemTotal(%q) = %d, want %d", tc.content, got, tc.want)
+			}
+		})
+	}
+}
+
+// On the machine running this test there is real memory, so a limit must be derivable. A zero
+// here means every deployment target silently falls back to Go's default — the exact failure
+// that shipped once already.
+func TestAvailableMemoryResolvesSomewhere(t *testing.T) {
+	n, source := availableMemory()
+	if n <= 0 {
+		t.Skip("no cgroup and no /proc/meminfo on this platform (macOS) — covered by the parser tests")
+	}
+	t.Logf("available memory: %d MB from %s", n>>20, source)
+}
