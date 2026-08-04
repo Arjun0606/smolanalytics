@@ -3,6 +3,7 @@ package aicrawl
 import (
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -267,6 +268,7 @@ func mainEvents() []event.Event {
 		view("/gap-one", "v2", base.Add(time.Minute)),
 		view("/gap-one", "v3", base.Add(2*time.Minute)),
 		view("/gap-two", "v1", base.Add(3*time.Minute)),
+		view("/gap-two", "v2", base.Add(4*time.Minute)),
 	}
 }
 
@@ -572,7 +574,7 @@ func TestGapsRankPagesHumansReadThatNoCrawlerFetched(t *testing.T) {
 
 	want := []GapRow{
 		{Path: "/gap-one", Views: 3, Visitors: 3},
-		{Path: "/gap-two", Views: 1, Visitors: 1},
+		{Path: "/gap-two", Views: 2, Visitors: 2},
 	}
 	if !reflect.DeepEqual(r.Gaps, want) {
 		t.Fatalf("gaps =\n%+v\nwant\n%+v", r.Gaps, want)
@@ -591,7 +593,9 @@ func TestGapsUseTheSameWindowAsTheCrawls(t *testing.T) {
 	evs := []event.Event{
 		crawl("GPTBot", "OpenAI", PurposeTraining, "/a", 200, base),
 		view("/stale", "v1", base.AddDate(0, 0, -60)),
+		view("/stale", "v2", base.AddDate(0, 0, -60)),
 		view("/fresh", "v1", base.Add(-time.Hour)),
+		view("/fresh", "v2", base.Add(-time.Hour)),
 	}
 	r := Compute(evs, 30, base.Add(time.Hour))
 	if len(r.Gaps) != 1 || r.Gaps[0].Path != "/fresh" {
@@ -606,9 +610,11 @@ func TestGapsReadPathFromUrlWhenPathMissing(t *testing.T) {
 		crawl("GPTBot", "OpenAI", PurposeTraining, "/a", 200, base),
 		{Name: "$pageview", DistinctID: "v1", Timestamp: base,
 			Properties: map[string]any{"url": "https://example.com/docs/install?utm=1"}},
+		{Name: "$pageview", DistinctID: "v2", Timestamp: base,
+			Properties: map[string]any{"url": "https://example.com/docs/install?utm=2"}},
 	}
 	r := Compute(evs, 30, base.Add(time.Hour))
-	want := []GapRow{{Path: "/docs/install", Views: 1, Visitors: 1}}
+	want := []GapRow{{Path: "/docs/install", Views: 2, Visitors: 2}}
 	if !reflect.DeepEqual(r.Gaps, want) {
 		t.Fatalf("gaps = %+v, want %+v", r.Gaps, want)
 	}
@@ -643,9 +649,12 @@ func TestPageviewWithNoLocationIsDroppedNotFiledAsHomepage(t *testing.T) {
 
 func TestGapsAreCappedAndTieBrokenByPath(t *testing.T) {
 	evs := []event.Event{crawl("GPTBot", "OpenAI", PurposeTraining, "/crawled", 200, base)}
-	// 30 uncrawled pages, all on the same view count so only the tie-break decides order
+	// 30 uncrawled pages, all on the same view count so only the tie-break decides order.
+	// Two DISTINCT visitors each: a page one person reloads is not proven demand and the
+	// gap list now refuses to report it, so a single-visitor fixture would test nothing.
 	for i := 0; i < 30; i++ {
 		evs = append(evs, view(fmt.Sprintf("/p%02d", i), "v1", base))
+		evs = append(evs, view(fmt.Sprintf("/p%02d", i), "v2", base))
 	}
 	r := Compute(evs, 30, base.Add(time.Hour))
 
@@ -819,5 +828,78 @@ func TestTiesOrderAlphabetically(t *testing.T) {
 		if r.Paths[0].Path != "/a" || r.Paths[1].Path != "/m" || r.Paths[2].Path != "/z" {
 			t.Fatalf("path tie order = %+v", r.Paths)
 		}
+	}
+}
+
+// --- Gap guards -------------------------------------------------------------
+//
+// Two rules keep the gap list from recommending pages nobody should be indexing. Both were added
+// because the report was leading with logged-in app routes and telling the reader to get them
+// into a sitemap, which is wrong advice and a privacy problem in the same sentence.
+
+// A page one person looked at is not proven demand — it is usually the owner reloading their own
+// dashboard. The rest of this module refuses to speak on thin samples and the gap list has to as
+// well, or it fills with private pages that one account happens to visit a lot.
+func TestGapsIgnorePagesWithASingleVisitor(t *testing.T) {
+	evs := []event.Event{
+		crawl("GPTBot", "OpenAI", PurposeTraining, "/a", 200, base),
+		view("/dashboard", "owner", base),
+		view("/dashboard", "owner", base.Add(time.Minute)),
+		view("/dashboard", "owner", base.Add(2*time.Minute)), // three views, ONE person
+		view("/pricing", "v1", base),
+		view("/pricing", "v2", base.Add(time.Minute)),
+	}
+	r := Compute(evs, 30, base.Add(time.Hour))
+	for _, g := range r.Gaps {
+		if g.Path == "/dashboard" {
+			t.Errorf("a page with one visitor was reported as a coverage gap: %+v", g)
+		}
+	}
+	if len(r.Gaps) != 1 || r.Gaps[0].Path != "/pricing" {
+		t.Fatalf("gaps = %+v, want only /pricing", r.Gaps)
+	}
+}
+
+// A page the site's own robots.txt keeps crawlers out of is not a gap, it is compliance working.
+// Telling someone to fix it would be telling them to undo a decision they made deliberately.
+func TestGapsRespectRobotsDisallow(t *testing.T) {
+	scan := func(disallow string, ts time.Time) event.Event {
+		return event.Event{Name: "$site_readable", DistinctID: "scanner", Timestamp: ts,
+			Properties: map[string]any{"robots_disallow": disallow}}
+	}
+	evs := []event.Event{
+		crawl("GPTBot", "OpenAI", PurposeTraining, "/a", 200, base),
+		scan("/app,/settings", base),
+		view("/app/home", "v1", base), view("/app/home", "v2", base),
+		view("/settings", "v1", base), view("/settings", "v2", base),
+		view("/blog/post", "v1", base), view("/blog/post", "v2", base),
+	}
+	r := Compute(evs, 30, base.Add(time.Hour))
+	for _, g := range r.Gaps {
+		if strings.HasPrefix(g.Path, "/app") || strings.HasPrefix(g.Path, "/settings") {
+			t.Errorf("a robots.txt-disallowed path was reported as a gap: %+v", g)
+		}
+	}
+	if len(r.Gaps) != 1 || r.Gaps[0].Path != "/blog/post" {
+		t.Fatalf("gaps = %+v, want only /blog/post", r.Gaps)
+	}
+}
+
+// Only the NEWEST scan counts. A site that used to block /app and no longer does must not keep
+// having those pages suppressed by a stale reading of its robots.txt.
+func TestGapsUseTheNewestRobotsScan(t *testing.T) {
+	scan := func(disallow string, ts time.Time) event.Event {
+		return event.Event{Name: "$site_readable", DistinctID: "scanner", Timestamp: ts,
+			Properties: map[string]any{"robots_disallow": disallow}}
+	}
+	evs := []event.Event{
+		crawl("GPTBot", "OpenAI", PurposeTraining, "/a", 200, base),
+		scan("/app", base.Add(-2*time.Hour)), // older: blocked
+		scan("", base.Add(-time.Hour)),       // newer: no longer blocked
+		view("/app/home", "v1", base), view("/app/home", "v2", base),
+	}
+	r := Compute(evs, 30, base.Add(time.Hour))
+	if len(r.Gaps) != 1 || r.Gaps[0].Path != "/app/home" {
+		t.Fatalf("gaps = %+v — a stale robots scan is still suppressing a page", r.Gaps)
 	}
 }

@@ -37,6 +37,11 @@ import (
 // exclude it so a crawl wave never reads as a traffic spike or an invoice.
 const CrawlEvent = "$ai_crawl"
 
+// readableEvent is the cloud's site scan. aicrawl reads one property off it — the robots.txt
+// disallow list — rather than importing the insight package, which would be a cycle. The
+// literal is duplicated deliberately and both sides say so.
+const readableEvent = "$site_readable"
+
 // The three reasons an AI company fetches a page, kept apart because they mean
 // completely different things to the person reading the report:
 //
@@ -240,6 +245,9 @@ func Compute(evs []event.Event, days int, asof time.Time) Result {
 	// stopped getting visitors months ago doesn't demand crawler attention today.
 	views := map[string]int{}
 	viewers := map[string]map[string]bool{}
+	// robots.txt disallow prefixes, off the newest site scan
+	var blocked []string
+	var blockedAt time.Time
 
 	for _, e := range evs {
 		if e.Timestamp.After(asof) {
@@ -346,6 +354,18 @@ func Compute(evs []event.Event, days int, asof time.Time) Result {
 				d.User++
 			}
 
+		case readableEvent:
+			if e.Timestamp.Before(blockedAt) {
+				continue
+			}
+			blockedAt = e.Timestamp
+			blocked = blocked[:0]
+			for _, p := range strings.Split(asStr(e.Properties["robots_disallow"]), ",") {
+				if p = strings.TrimSpace(p); p != "" {
+					blocked = append(blocked, p)
+				}
+			}
+
 		case "$pageview":
 			if e.Timestamp.Before(cut) {
 				continue
@@ -413,6 +433,19 @@ func Compute(evs []event.Event, days int, asof time.Time) Result {
 	if r.Reporting && r.Hits > 0 {
 		for path, n := range views {
 			if paths[path] != nil {
+				continue
+			}
+			// A page the site's own robots.txt keeps crawlers out of is not a coverage gap,
+			// it is compliance. Without this the report led with /dashboard and /projects/…
+			// and told the reader to put their logged-in app routes in a sitemap, which is
+			// wrong advice and a privacy problem in the same sentence.
+			if disallowed(path, blocked) {
+				continue
+			}
+			// One person reloading their own page is not proven demand. The rest of this
+			// module refuses to speak on thin samples; the gap list has to as well, or it
+			// fills with private pages that happen to be viewed a lot by one account.
+			if len(viewers[path]) < 2 {
 				continue
 			}
 			r.Gaps = append(r.Gaps, GapRow{Path: path, Views: n, Visitors: len(viewers[path])})
@@ -501,4 +534,16 @@ func asNum(v any) float64 {
 		return float64(x)
 	}
 	return 0
+}
+
+// disallowed reports whether path sits under one of robots.txt's Disallow prefixes. Prefix
+// match, because that is what a robots rule means: "Disallow: /projects" covers every page
+// beneath it.
+func disallowed(path string, prefixes []string) bool {
+	for _, p := range prefixes {
+		if path == p || strings.HasPrefix(path, p) {
+			return true
+		}
+	}
+	return false
 }
