@@ -323,6 +323,7 @@ var toolList = []map[string]any{
 	sqlToolDef,
 	provenanceToolDef,
 	explainChangeToolDef,
+	coverageToolDef,
 }
 
 func obj(props map[string]any, required []string) map[string]any {

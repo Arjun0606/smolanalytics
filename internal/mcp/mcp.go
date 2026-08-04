@@ -297,6 +297,10 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 	if name == "explain_change" {
 		return s.toolExplainChange(args)
 	}
+	// Reads the repo only; it never touches the event store, so it skips the shared load too.
+	if name == "instrumentation_coverage" {
+		return s.toolCoverage(args)
+	}
 	evs, err := s.all()
 	if err != nil {
 		return "", err
