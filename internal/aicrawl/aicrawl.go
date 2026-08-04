@@ -439,7 +439,7 @@ func Compute(evs []event.Event, days int, asof time.Time) Result {
 			// it is compliance. Without this the report led with /dashboard and /projects/…
 			// and told the reader to put their logged-in app routes in a sitemap, which is
 			// wrong advice and a privacy problem in the same sentence.
-			if disallowed(path, blocked) {
+			if disallowed(path, blocked) || privateRoute(path) {
 				continue
 			}
 			// One person reloading their own page is not proven demand. The rest of this
@@ -539,6 +539,30 @@ func asNum(v any) float64 {
 // disallowed reports whether path sits under one of robots.txt's Disallow prefixes. Prefix
 // match, because that is what a robots rule means: "Disallow: /projects" covers every page
 // beneath it.
+// privateRoute reports whether a path is almost certainly behind a login.
+//
+// robots.txt is not enough on its own. Hardly anyone disallows their own dashboard — there is no
+// reason to, since it is unreachable without a session — so a signed-in route sails past the
+// robots check and lands at the top of a report telling the owner to put it in their sitemap.
+// That happened on our own instance: "No AI crawler has read /dashboard … list it in your
+// sitemap", which is wrong advice and a privacy problem in one sentence.
+//
+// Matched on the FIRST segment only. A blog post at /app-store-analytics is public and must not
+// be suppressed just because it starts with the letters "app"; /app/settings is not.
+func privateRoute(path string) bool {
+	seg := strings.TrimPrefix(path, "/")
+	if i := strings.IndexByte(seg, '/'); i >= 0 {
+		seg = seg[:i]
+	}
+	switch strings.ToLower(seg) {
+	case "dashboard", "app", "admin", "account", "settings", "billing", "profile",
+		"projects", "project", "workspace", "team", "teams", "org", "orgs",
+		"onboarding", "logout", "signout", "auth", "internal", "portal", "console":
+		return true
+	}
+	return false
+}
+
 func disallowed(path string, prefixes []string) bool {
 	for _, p := range prefixes {
 		if path == p || strings.HasPrefix(path, p) {

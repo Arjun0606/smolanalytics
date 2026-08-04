@@ -869,14 +869,14 @@ func TestGapsRespectRobotsDisallow(t *testing.T) {
 	}
 	evs := []event.Event{
 		crawl("GPTBot", "OpenAI", PurposeTraining, "/a", 200, base),
-		scan("/app,/settings", base),
-		view("/app/home", "v1", base), view("/app/home", "v2", base),
-		view("/settings", "v1", base), view("/settings", "v2", base),
+		scan("/guides,/private-docs", base),
+		view("/guides/intro", "v1", base), view("/guides/intro", "v2", base),
+		view("/private-docs/x", "v1", base), view("/private-docs/x", "v2", base),
 		view("/blog/post", "v1", base), view("/blog/post", "v2", base),
 	}
 	r := Compute(evs, 30, base.Add(time.Hour))
 	for _, g := range r.Gaps {
-		if strings.HasPrefix(g.Path, "/app") || strings.HasPrefix(g.Path, "/settings") {
+		if strings.HasPrefix(g.Path, "/guides") || strings.HasPrefix(g.Path, "/private-docs") {
 			t.Errorf("a robots.txt-disallowed path was reported as a gap: %+v", g)
 		}
 	}
@@ -894,12 +894,51 @@ func TestGapsUseTheNewestRobotsScan(t *testing.T) {
 	}
 	evs := []event.Event{
 		crawl("GPTBot", "OpenAI", PurposeTraining, "/a", 200, base),
-		scan("/app", base.Add(-2*time.Hour)), // older: blocked
-		scan("", base.Add(-time.Hour)),       // newer: no longer blocked
-		view("/app/home", "v1", base), view("/app/home", "v2", base),
+		scan("/guides", base.Add(-2*time.Hour)), // older: blocked
+		scan("", base.Add(-time.Hour)),          // newer: no longer blocked
+		view("/guides/intro", "v1", base), view("/guides/intro", "v2", base),
 	}
 	r := Compute(evs, 30, base.Add(time.Hour))
-	if len(r.Gaps) != 1 || r.Gaps[0].Path != "/app/home" {
+	if len(r.Gaps) != 1 || r.Gaps[0].Path != "/guides/intro" {
 		t.Fatalf("gaps = %+v — a stale robots scan is still suppressing a page", r.Gaps)
+	}
+}
+
+// robots.txt alone does not protect signed-in routes, because almost nobody disallows their own
+// dashboard — there is no reason to, since it needs a session. So it sailed past the robots check
+// and led the report on our own instance: "No AI crawler has read /dashboard … list it in your
+// sitemap." Wrong advice and a privacy problem in one sentence.
+func TestGapsNeverRecommendIndexingSignedInRoutes(t *testing.T) {
+	evs := []event.Event{
+		crawl("GPTBot", "OpenAI", PurposeTraining, "/a", 200, base),
+	}
+	for _, p := range []string{"/dashboard", "/settings/team", "/admin", "/billing", "/projects/abc", "/account"} {
+		evs = append(evs, view(p, "v1", base), view(p, "v2", base.Add(time.Minute)))
+	}
+	evs = append(evs, view("/pricing", "v1", base), view("/pricing", "v2", base.Add(time.Minute)))
+
+	r := Compute(evs, 30, base.Add(time.Hour))
+	for _, g := range r.Gaps {
+		if g.Path != "/pricing" {
+			t.Errorf("recommended indexing a signed-in route: %+v", g)
+		}
+	}
+	if len(r.Gaps) != 1 {
+		t.Fatalf("gaps = %+v, want only /pricing", r.Gaps)
+	}
+}
+
+// The heuristic matches the FIRST SEGMENT, so a public page whose name merely starts with those
+// letters is not suppressed. /app-store-analytics is a blog post; /app/settings is not.
+func TestPrivateRouteMatchesWholeSegmentsOnly(t *testing.T) {
+	for _, p := range []string{"/app-store-analytics", "/dashboards-compared", "/accounting", "/teamwork"} {
+		if privateRoute(p) {
+			t.Errorf("%s is a public page but was treated as signed-in", p)
+		}
+	}
+	for _, p := range []string{"/app", "/app/settings", "/dashboard", "/admin/users", "/projects/abc"} {
+		if !privateRoute(p) {
+			t.Errorf("%s is a signed-in route but was not caught", p)
+		}
 	}
 }

@@ -449,9 +449,22 @@ func parseChip(raw string) (prop string, op query.Op, val string, ok bool) {
 
 // deltaStr renders a signed percent vs the prior window. A zero baseline returns ""
 // (no prior period = say nothing) — never a fabricated percentage or filler copy.
+// deltaStr formats a change against the prior window.
+//
+// Above 10x it stops using a percentage. "+6875%" is arithmetically correct off a prior of 8 and
+// reads as a broken number — nobody parses four figures as a ratio, and a reader who thinks one
+// tile is broken discounts every tile beside it. "70x" is the same fact, instantly legible, and
+// honest about the fact that the prior window was tiny.
+//
+// A prior of zero returns nothing at all rather than "+100%" or "∞": there is no percentage
+// change from nothing, and inventing one is the kind of number someone screenshots.
 func deltaStr(cur, prior int) string {
 	if prior == 0 {
 		return ""
+	}
+	ratio := float64(cur) / float64(prior)
+	if ratio >= 10 {
+		return fmt.Sprintf("%.0fx", ratio)
 	}
 	d := int(math.Round(float64(cur-prior) / float64(prior) * 100))
 	switch {
