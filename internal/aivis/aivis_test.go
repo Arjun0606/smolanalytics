@@ -181,3 +181,40 @@ func TestCitedButNotRecommendedIsItsOwnNumber(t *testing.T) {
 			r.CitedRuns, r.CitedRecommended, r.CitedNotRecommended)
 	}
 }
+
+// A share-of-voice chart with 58 series is not a chart. Real data rendered as 58 overlapping
+// lines flat against zero, under a 58-item legend, reads as broken or invented — which is worse
+// than showing less, because it makes a user distrust every other number on the page.
+func TestSharePlotIsCappedButShareStaysComplete(t *testing.T) {
+	var all []BrandSeries
+	for i := 0; i < 40; i++ {
+		all = append(all, BrandSeries{Name: string(rune('a'+i%26)) + "brand", Total: 40 - i, Weekly: []int{40 - i}})
+	}
+	capped := capSeries(all, sharePlotMax)
+	if len(capped) != sharePlotMax+1 {
+		t.Fatalf("plotted %d series, want %d named plus one aggregate", len(capped), sharePlotMax+1)
+	}
+	// Nothing may be silently discarded: the tail's mentions have to survive in the aggregate.
+	wantTotal, gotTotal := 0, 0
+	for _, b := range all {
+		wantTotal += b.Total
+	}
+	for _, b := range capped {
+		gotTotal += b.Total
+	}
+	if gotTotal != wantTotal {
+		t.Errorf("capping lost mentions: %d of %d survived", gotTotal, wantTotal)
+	}
+	last := capped[len(capped)-1]
+	if last.Name != "32 others" {
+		t.Errorf("aggregate should say how many it stands for, got %q", last.Name)
+	}
+}
+
+// A small brand set must pass through untouched rather than gaining a pointless "0 others" line.
+func TestSharePlotLeavesSmallSetsAlone(t *testing.T) {
+	all := []BrandSeries{{Name: "us", Us: true, Total: 3}, {Name: "them", Total: 2}}
+	if got := capSeries(all, sharePlotMax); len(got) != 2 {
+		t.Errorf("a two-brand set became %d series", len(got))
+	}
+}

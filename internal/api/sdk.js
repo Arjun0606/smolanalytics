@@ -56,6 +56,7 @@
   var flagListeners = [];
   var surveyShownThisLoad = false; // at most one survey popover per page load
   var captured = false; // autocapture wired once, even if the snippet loads twice
+  var inited = false; // init() is idempotent: a second call would double every number
   var warnedAuth = false; // warn once on a bad key, don't spam the console
   var lifecycleBound = false; // flush-on-unload listeners bound once, even on re-init
   // engagement: accumulate time the page is visible AND focused, reported as a
@@ -610,6 +611,20 @@
   var smol = {
     init: function (writeKey, opts) {
       if (optedOut) return; // excluded browser: the SDK is a complete no-op
+      // Calling init twice DOUBLES every number. It happens easily and silently: the snippet in
+      // a layout plus a framework <Script> tag, a tag manager firing alongside a hard-coded
+      // include, or a hot reload. Both copies bind their own listeners, so every pageview,
+      // click and engagement is recorded twice and the dashboard reports exactly 2x reality with
+      // nothing anywhere to indicate it.
+      //
+      // Found on our own site, where a Next.js layout rendered two loaders and every number was
+      // double. Guarding here rather than telling people not to do it, because a silent 2x is
+      // the single most damaging failure this SDK can have — every downstream report inherits it.
+      if (inited) {
+        if (window.console) console.warn("smolanalytics: init() called more than once — ignoring the repeat. Include the snippet in exactly one place, or every event is recorded twice.");
+        return;
+      }
+      inited = true;
       opts = opts || {};
       key = writeKey || "";
       host = (opts.host || "").replace(/\/$/, "");

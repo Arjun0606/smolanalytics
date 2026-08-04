@@ -23,6 +23,7 @@
 package aivis
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -67,6 +68,45 @@ type PromptRow struct {
 	Recommended    int    `json:"recommended"`
 	MentionedPct   int    `json:"mentioned_pct"`
 	RecommendedPct int    `json:"recommended_pct"`
+}
+
+// sharePlotMax is how many named series a share-of-voice chart can carry before it stops being
+// readable. Eight lines plus an aggregate is about the limit for distinguishable colours and a
+// legend someone will actually read.
+const sharePlotMax = 8
+
+// capSeries keeps us and the loudest competitors as their own lines and folds the rest into a
+// single "everyone else" series. Nothing is dropped — the tail's mentions are summed, so the
+// percentages still total what they did before.
+func capSeries(all []BrandSeries, max int) []BrandSeries {
+	if len(all) <= max+1 {
+		return all
+	}
+	out := make([]BrandSeries, 0, max+1)
+	var rest BrandSeries
+	restCount := 0
+	for _, b := range all {
+		if len(out) < max {
+			out = append(out, b)
+			continue
+		}
+		restCount++
+		if rest.Weekly == nil {
+			rest.Weekly = make([]int, len(b.Weekly))
+		}
+		for i, n := range b.Weekly {
+			if i < len(rest.Weekly) {
+				rest.Weekly[i] += n
+			}
+		}
+		rest.Total += b.Total
+		rest.SharePct += b.SharePct
+	}
+	if restCount > 0 {
+		rest.Name = fmt.Sprintf("%d others", restCount)
+		out = append(out, rest)
+	}
+	return out
 }
 
 // CompetitorRow counts how often a competitor shows up in sampled answers.
@@ -124,8 +164,11 @@ type Result struct {
 	Trend       []WeekPoint     `json:"trend"`
 	// Weeks is the shared x-axis every series below is aligned to, so a chart can plot
 	// them together without re-deriving buckets and drifting from Trend.
-	Weeks     []string      `json:"weeks"`
-	Share     []BrandSeries `json:"share"`
+	Weeks []string      `json:"weeks"`
+	Share []BrandSeries `json:"share"`
+	// SharePlot is Share reduced to something a chart can actually show: us, the loudest few
+	// competitors, and everyone else as one line. Share stays complete for the table.
+	SharePlot []BrandSeries `json:"share_plot"`
 	Sentiment SentimentRoll `json:"sentiment"`
 	RankDist  []RankBucket  `json:"rank_dist"`
 	// CitedRate is how often an answer cited THIS product's own domain — content earning
@@ -369,6 +412,12 @@ func Compute(evs []event.Event, days int, asof time.Time) Result {
 		}
 		return res.Share[i].Name < res.Share[j].Name
 	})
+	// Cap what the CHART draws. Every brand the engines named stays in res.Share for the table,
+	// because dropping one would be hiding a competitor — but plotting all of them drew 58
+	// overlapping lines flat against zero with a 58-item legend, which reads as broken or
+	// invented rather than as data. The tail is rolled into one aggregate series so the total
+	// still adds up and nothing is silently discarded.
+	res.SharePlot = capSeries(res.Share, sharePlotMax)
 	res.Sentiment = sent
 	for _, b := range []struct {
 		label string

@@ -1027,7 +1027,15 @@ func buildAIVis(vm *dashVM, evs []event.Event, names []string, days int, asof ti
 				}
 			}
 			ci := 0
-			for _, b := range av.Share {
+			// The CHART draws the capped set (us, the loudest few, and the rest as one line).
+			// av.Share stays complete for the table below it. Plotting all of them drew 58
+			// overlapping lines flat against zero under a 58-item legend, which reads as broken
+			// or invented rather than as data.
+			plot := av.SharePlot
+			if len(plot) == 0 {
+				plot = av.Share
+			}
+			for _, b := range plot {
 				if len(b.Weekly) != n {
 					continue
 				}
