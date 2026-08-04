@@ -321,6 +321,7 @@ var toolList = []map[string]any{
 		}, []string{"label"}),
 	},
 	sqlToolDef,
+	provenanceToolDef,
 }
 
 func obj(props map[string]any, required []string) map[string]any {

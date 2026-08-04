@@ -289,6 +289,11 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 	if name == "run_sql" {
 		return s.toolRunSQL(args)
 	}
+	// event_source reads the repo and streams the store; it needs neither the shared materialized
+	// slice nor the default scope, so it is dispatched here for the same reason run_sql is.
+	if name == "event_source" {
+		return s.toolEventSource(args)
+	}
 	evs, err := s.all()
 	if err != nil {
 		return "", err
