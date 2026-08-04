@@ -58,10 +58,10 @@ else, badly-named events stay bad forever.
 | **SRM culprit segment** | ✅ names the skewed segment | ⚠️ | ⚠️ |
 | flag → deploy marker | ✅ auto-recorded | ❌ | ❌ |
 | bucket granularity | ⚠️ 1% floor | ✅ 100,000 | ✅ 10,000 |
-| device-id bucketing across login | ❌ **next** | ✅ | ⚠️ |
+| device-id bucketing across login | ✅ **shipped v0.24.0** | ✅ | ⚠️ |
 | local/zero-latency evaluation | ❌ server-side | ✅ SSE | ⚠️ |
 | bootstrap (no first-paint flicker) | ❌ | ✅ | ⚠️ |
-| confidence intervals | ❌ boolean only | ✅ | ✅ |
+| confidence intervals | ✅ **Wilson + lift, v0.24.0** | ✅ | ✅ |
 | sequential / always-valid testing | ❌ | ✅ | ✅ |
 | CUPED variance reduction | ❌ | ✅ | ✅ |
 | sample-size calculator | ❌ | ✅ | ✅ |
@@ -197,8 +197,8 @@ flips as automatic deploy markers · retroactive defined events · SRM with a na
 segment · unlimited alerts and webhooks · no seats.
 
 **Genuinely behind:** error tracking · warehouse/CDP · session replay video · scroll maps ·
-one-click API-key import · local flag evaluation and bootstrap · confidence intervals ·
-sequential testing · CUPED · sample-size calculator · SOC 2 · **price below 2M events**.
+one-click API-key import · local flag evaluation and bootstrap · sequential testing · CUPED ·
+sample-size calculator · SOC 2 · **price below 2M events**.
 
 **Where we are quietly ahead and never say it:** experiments included where Mixpanel needs
 ~$20k/year Enterprise · groups included where Mixpanel adds 40% · cohorts included where
@@ -217,6 +217,6 @@ Ranked by effect on someone deciding whether to pay, not by engineering interest
 3. **Collect-but-lock on overage.** Keep ingesting when the quota or trial ends and gate only
    *viewing*. It cannot break the customer's app, it creates upgrade pressure exactly when they
    care most, and their history has no gap on upgrade.
-4. **Confidence intervals and raw counts** instead of a significant yes/no boolean. Showing the
-   numerator and denominator next to every rate *is* the "computed, not guessed" claim made
-   visible — and it is the cheapest trust we can buy.
+4. ~~**Confidence intervals and raw counts**~~ **SHIPPED v0.24.0.** Every rate now carries its
+   numerator, denominator and a 95% Wilson interval, and each arm gets a sentence — an interval
+   spanning zero reads as *"no clear difference yet"* rather than as a result.

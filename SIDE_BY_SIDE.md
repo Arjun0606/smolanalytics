@@ -57,7 +57,7 @@ The sharpest wedge in the whole comparison, and the one we have never used.
 | ≥10k bucket granularity | ⚠️ 1% floor | ✅ 100,000 | ✅ 10,000 |
 | local/zero-latency evaluation | ❌ server-side | ✅ SSE + polling | ⚠️ |
 | bootstrap (no flicker on first paint) | ❌ | ✅ | ⚠️ |
-| device-id bucketing across login | ❌ | ✅ documented default | ⚠️ |
+| device-id bucketing across login | ✅ **shipped v0.24.0** | ✅ documented default | ⚠️ |
 | SRM detection | ✅ `experiment_health` **(shipped v0.23.0)** | ✅ | ✅ |
 | sequential / always-valid testing | ❌ | ✅ | ✅ |
 | CUPED variance reduction | ❌ | ✅ | ✅ |
@@ -97,12 +97,12 @@ Items 1-3 are about a week and take experiments from *silently wrong* to *trustw
    vs 40 test."* The chi-square tail needed a hand-written incomplete gamma function (the stdlib
    has none), validated against published critical values at 15 points across 5 degrees of
    freedom.
-2. **Device-id bucketing.** Anonymous → identified changes `distinct_id` → changes the hash →
-   changes the variant. PostHog calls this data corruption in their own docs. Persist an
-   `sa_bucket_id` on first visit and bucket on that. ~15 lines of SDK. Do **not** build
-   DB-pinned experience continuity — it breaks local evaluation.
-3. **Confidence intervals + raw numerator/denominator**, replacing today's significant-yes/no
-   boolean. Showing the raw counts *is* "computed, not guessed" made visible.
+2. ~~**Device-id bucketing.**~~ **SHIPPED v0.24.0.** Measured before the fix: **50% of users
+   were reassigned to the other arm at login.** Now zero. DB-pinned experience continuity
+   deliberately not built — it costs a round trip per evaluation and forecloses local evaluation.
+3. ~~**Confidence intervals + raw counts.**~~ **SHIPPED v0.24.0.** Wilson intervals so a small
+   arm never reports a negative rate, lift on the log ratio, and withheld entirely when the
+   control rate is too near zero — which is what stops "+4000%" from eleven conversions.
 4. **`experiment_sample_size` as an MCP tool.** `N = 16 × variance / d²`. Four lines. The moat
    is the delivery: asking Claude Code *"how long do I need to run this?"* and getting a number
    computed from **your actual current exposure rate**. No competitor can do that in-editor.
@@ -273,7 +273,7 @@ rigged and the whole page loses credibility.
 
 1. ~~`run_sql`~~ **shipped v0.22.0** — the largest capability gap in the matrix, closed.
 2. ~~SRM detection~~ **shipped v0.23.0** as `experiment_health`, culprit segment included.
-3. **Device-id bucketing.** ~15 lines of SDK, prevents the next silent corruption. **Next up.**
+3. ~~Device-id bucketing~~ **shipped v0.24.0** — 50% login reassignment, measured, now zero.
 4. **Collect-but-lock on overage** (from dub.co). When quota or trial ends: keep ingesting,
    never 429 the SDK, never drop a row — gate *viewing*. Can't break the customer's app,
    maximum upgrade pressure exactly when they care, and no gap in history on upgrade.
