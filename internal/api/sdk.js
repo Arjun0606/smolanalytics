@@ -15,6 +15,7 @@
   var key = "";
   var queue = [];
   var did = null;
+  var bid = null; // stable bucketing key for flags/experiments; identify() never touches it
   var anon = false; // cookieless mode: nothing stored on the device, no banner needed
   var envName = "production"; // see detectEnv, or whatever init({env}) says
 
@@ -67,6 +68,27 @@
 
   function uid() {
     return "a-" + Math.random().toString(36).slice(2) + Date.now().toString(36);
+  }
+
+  // The bucketing key for feature flags and experiments. Written once per browser and NEVER
+  // rewritten by identify(), which is the entire point: distinct_id changes at login, and
+  // bucketing on something that changes at login silently reassigns people mid-experiment —
+  // they see one variant before signing up and the other after. Kept under its own key so the
+  // two can never be confused.
+  function bucketId() {
+    if (bid) return bid;
+    try {
+      bid = localStorage.getItem("smol_bucket_id");
+      if (!bid) {
+        bid = uid();
+        localStorage.setItem("smol_bucket_id", bid);
+      }
+    } catch (e) {
+      // Private mode or storage disabled. Fall back to the distinct id: assignment is then only
+      // as stable as that is, which is worse, but never wrong within a single page view.
+      bid = bid || distinctId();
+    }
+    return bid;
   }
 
   function distinctId() {
@@ -486,7 +508,8 @@
   function fetchFlags() {
     if (!host || !key || !did) return;
     try {
-      fetch(host + "/v1/flags/evaluate?distinct_id=" + encodeURIComponent(did), {
+      fetch(host + "/v1/flags/evaluate?distinct_id=" + encodeURIComponent(did) +
+        "&bucket_id=" + encodeURIComponent(bucketId()), {
         headers: { Authorization: "Bearer " + key },
       })
         .then(function (r) { return r && r.ok ? r.json() : null; })

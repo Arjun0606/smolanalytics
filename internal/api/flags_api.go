@@ -78,6 +78,20 @@ func (s *Server) evaluateFlags(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "distinct_id is required")
 		return
 	}
+	// Bucket on a STABLE key, not on distinct_id.
+	//
+	// distinct_id changes the moment a visitor logs in — identify() replaces the anonymous id
+	// with the account id. Bucketing on it means the hash input changes, so the variant changes:
+	// the same person sees A before signing up and B afterwards, and their pre-login behaviour
+	// stays credited to whichever arm they left. Nothing errors. The experiment quietly reports
+	// a mixture of two populations, and signup is usually the exact moment it cares about.
+	//
+	// bucket_id is written once per browser and never rewritten by identify, so assignment
+	// survives login. Falling back to distinct_id keeps older SDKs working unchanged.
+	bucketKey := r.URL.Query().Get("bucket_id")
+	if bucketKey == "" {
+		bucketKey = did
+	}
 	var ctx map[string]any
 	if c := r.URL.Query().Get("context"); c != "" {
 		_ = json.Unmarshal([]byte(c), &ctx) // best-effort; bad context just means no rule matches
@@ -85,7 +99,7 @@ func (s *Server) evaluateFlags(w http.ResponseWriter, r *http.Request) {
 	out := map[string]string{}
 	measured := []string{}
 	for _, f := range s.flags.List() {
-		if variant, on := f.Evaluate(did, ctx); on {
+		if variant, on := f.Evaluate(bucketKey, ctx); on {
 			out[f.Key] = variant
 			if f.Measured {
 				measured = append(measured, f.Key)
