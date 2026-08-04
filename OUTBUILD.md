@@ -166,6 +166,86 @@ payout and tax infrastructure, vanity domains, a paid docs platform, a founding 
 
 ---
 
+## the commercial case: why anyone pays, and why they choose us
+
+The product moat above is worth nothing if the buyer files us under "analytics", because that
+category is price-anchored to free. PostHog gives away 1M events a month and Mixpanel gives away
+1M with unlimited seats. Nobody wins a fight against free by being a slightly better free.
+
+**So do not sell analytics.** Sell the thing only we can do, and let the analytics come with it.
+
+### the category to be in
+
+Reports are a commodity. Funnels, retention and paths are table stakes everywhere, and a buyer
+comparing report-for-report is running a spreadsheet we lose on volume pricing.
+
+*"Which commit broke this number"* is not a report. It is the same job Sentry does — telling an
+engineer what their own deploy did — and that market is priced completely differently. Sentry
+starts at $26/month for error tracking and teams pay it without a procurement conversation,
+because the pain is acute, the value is legible, and nobody is giving it away to win the bottom
+of the market.
+
+That is the reframe: **not cheaper analytics, but shipping confidence that happens to include
+analytics.** The buyer is the same solo builder or small team; the budget line is different and
+the free-tier comparison never happens, because nothing free does this.
+
+### the moment someone becomes a customer
+
+Not "I need analytics" — that thought leads to a free tier. It is one of these:
+
+1. **A number moved and nobody knows why.** The most common, most urgent, and the only one where
+   we are the only possible answer. `explain_change` is the demo.
+2. **A number went to zero and nobody noticed for a week.** Broken tracking is invisible in event
+   data by definition. `event_source` finds it; nothing else can.
+3. **"We should be tracking that."** Weeks of engineering, by the incumbent's own published
+   estimate. `propose_instrumentation` plus `verify_instrumentation` is an afternoon.
+4. **A bill that grew without the business growing.** The classic switching trigger, and the one
+   place flat pricing wins outright.
+
+Every one of those is a *breakage*, not a *want*. Breakages get paid for. Wants get a trial that
+never finishes.
+
+### where we have pricing power, and where we do not
+
+**No power at all** on events per dollar below ~2M/month. Do not build the calculator, do not
+open with price, do not let the conversation start there.
+
+**Real power** on the loop, because there is no substitute at any price. A team that has been
+burned once by a silent tracking break will pay to never repeat it, and there is nothing else
+they can buy that prevents it. The right anchor is Sentry, not Mixpanel.
+
+**Structural cost advantage** underneath both: one binary against thirty-five services means the
+same revenue carries a fraction of the COGS. That is what makes a flat price survivable for us
+and impossible for them.
+
+### the proof to lead with
+
+We have no customers, so every claim has to be checkable by the reader:
+
+- **Mixpanel's own number.** They publish ~30 minutes per event, 10-30 engineer hours for a
+  20-60 event product, most customers finishing around **day 40**. Time our agentic onboarding
+  end to end and publish the measured figure against theirs. If 40 events go in under an hour,
+  that single comparison *is* the marketing, and it is their number, not ours.
+- **PostHog's own disclaimer.** Self-hosting is officially unsupported and drops group analytics,
+  lifecycle, correlation and advanced paths. Quote it verbatim next to one binary and a real
+  cold-start benchmark.
+- **Our own instance.** Run smolanalytics on smolanalytics end to end and publish the funnel. It
+  is the only proof available to a product with no logos, and it is more honest than logos.
+
+### the mechanics that convert, from dub.co
+
+Detailed below, but ranked by revenue effect: **collect-but-lock** (never lose a customer's data
+at the moment they are deciding to pay), **a paywall styled as a product state**, **empty states
+that preview the filled report** (day-one churn), then the changelog and migration pages.
+
+### what this is not
+
+Not enterprise. No SOC 2, no seats, no sales motion, no SSO — those cost capital and headcount we
+do not have, and the ICP does not ask for them. A company small enough to buy from a one-person
+product mostly will not run a procurement process, and the one that does is not the customer.
+
+---
+
 ## what this makes us
 
 Not a cheaper Mixpanel. That comparison is lost before it starts — they give away 1M events a
