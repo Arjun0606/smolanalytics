@@ -63,6 +63,17 @@ func init() {
 				"days":  map[string]any{"type": "integer", "description": "window in days, default 30"},
 			}, []string{"key", "event"}),
 		},
+		map[string]any{
+			"name": "experiment_health",
+			"description": "Check whether an experiment's traffic actually split the way it was configured, BEFORE trusting any result from it. " +
+				"Runs a chi-square sample-ratio-mismatch test at p<0.001 comparing exposures per variant against the flag's weights, and when it fails, names the segment most responsible. " +
+				"A mismatch means the randomization broke, so the arms differ by whatever broke it rather than by the change being tested, and the conversion numbers cannot be read. " +
+				"Call this whenever you are about to report or act on an A/B result, and any time a result looks surprisingly large.",
+			"inputSchema": obj(map[string]any{
+				"key":  map[string]any{"type": "string", "description": "the flag key"},
+				"days": map[string]any{"type": "integer", "description": "window in days, default 30 (0 = all time)"},
+			}, []string{"key"}),
+		},
 	)
 }
 
@@ -182,6 +193,35 @@ func (s *Server) callFlags(name string, args json.RawMessage) (bool, string, err
 		}
 		evs = applyDefaultScope(evs)
 		return true, jsonStr(flag.Measure(evs, p.Key, p.Event, p.Days)), nil
+	case "experiment_health":
+		if s.flags == nil {
+			return true, "", fmt.Errorf(noStore, "flag")
+		}
+		var p struct {
+			Key  string `json:"key"`
+			Days int    `json:"days"`
+		}
+		if err := unmarshalArgs(args, &p); err != nil {
+			return true, "", err
+		}
+		if p.Key == "" {
+			return true, "", fmt.Errorf("key (the flag to check) is required")
+		}
+		f, ok := s.flags.Get(p.Key)
+		if !ok {
+			return true, "", fmt.Errorf("no flag named %q", p.Key)
+		}
+		if p.Days == 0 {
+			p.Days = 30
+		}
+		evs, err := s.all()
+		if err != nil {
+			return true, "", err
+		}
+		// Deliberately NOT default-scoped. The split check counts who was actually bucketed, and
+		// filtering the population before checking it is how a real mismatch gets hidden behind
+		// the filter that caused it.
+		return true, jsonStr(flag.CheckSRM(evs, f, p.Days)), nil
 	}
 	return false, "", nil
 }
