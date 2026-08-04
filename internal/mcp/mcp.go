@@ -294,6 +294,9 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 	if name == "event_source" {
 		return s.toolEventSource(args)
 	}
+	if name == "explain_change" {
+		return s.toolExplainChange(args)
+	}
 	evs, err := s.all()
 	if err != nil {
 		return "", err
