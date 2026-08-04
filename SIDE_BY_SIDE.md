@@ -11,7 +11,7 @@ the ones that failed a second-pass refutation check were removed rather than sof
 
 We are **ahead** on: self-hosting the whole product, experiments without an Enterprise gate,
 surveys, public dashboards, groups at no surcharge, unlimited alerts, native mobile SDKs, and
-instrumentation that verifies itself. We are **behind** on: SQL access, error tracking,
+instrumentation that verifies itself. We are **behind** on: error tracking,
 warehouse sync, session replay, and price below 2M events. We are **level** on core reports and
 on having an MCP at all — which stopped being a differentiator this week.
 
@@ -31,15 +31,16 @@ on having an MCP at all — which stopped being a differentiator this week.
 | sequence cohorts | ✅ | ✅ | ✅ |
 | groups / B2B accounts | ✅ **included** | 💰 | 💰 **+40% on the bill** |
 | correlation analysis | ❌ | ❌ not in self-host | 🏢 "Signal" |
-| **SQL / arbitrary query** | ❌ | ✅ HogQL + 33 MCP query tools | ✅ |
+| **SQL / arbitrary query** | ✅ `run_sql` **(shipped v0.22.0)** | ✅ HogQL + 33 MCP query tools | ✅ |
 
 **Mixpanel gates cohorts on Free and charges +40% for groups.** Both are included here. Neither
 fact is on our pricing page.
 
-**Getting better:** ship **one** MCP tool — `run_sql(query)`, read-only, row cap, timeout. It is
-the single highest-leverage thing in this document. It closes correlation analysis, custom
-metrics and every "can it answer X" objection at once, because the agent writes the SQL. It
-converts *"we answer the twenty questions we pre-built"* into *"ask anything."*
+**SHIPPED (v0.22.0):** `run_sql` — read-only SQL over the event stream, streaming so memory is
+O(groups) not O(events) (measured: 5 KB retained after 20k events, 9 KB after 400k). Closes
+correlation analysis, custom metrics and every "can it answer X" objection at once, because the
+agent writes the SQL. Hand-written rather than embedding SQLite, which keeps the zero-dependency
+binary and avoids materializing rows into a table.
 
 ---
 
@@ -57,7 +58,7 @@ The sharpest wedge in the whole comparison, and the one we have never used.
 | local/zero-latency evaluation | ❌ server-side | ✅ SSE + polling | ⚠️ |
 | bootstrap (no flicker on first paint) | ❌ | ✅ | ⚠️ |
 | device-id bucketing across login | ❌ | ✅ documented default | ⚠️ |
-| SRM detection | ❌ | ✅ | ✅ |
+| SRM detection | ✅ `experiment_health` **(shipped v0.23.0)** | ✅ | ✅ |
 | sequential / always-valid testing | ❌ | ✅ | ✅ |
 | CUPED variance reduction | ❌ | ✅ | ✅ |
 | sample-size / MDE calculator | ❌ | ✅ | ✅ |
@@ -91,11 +92,11 @@ Now SHA-256 into a fixed [0,1) space with cumulative ranges. phi measures **-0.0
 
 Items 1-3 are about a week and take experiments from *silently wrong* to *trustworthy*.
 
-1. **SRM detection.** Chi-square goodness-of-fit against configured weights, fire at p < 0.001.
-   ~25 lines. The **highest trust-per-line-of-code in the product**: it tells the user their
-   experiment is broken instead of handing them a confident wrong number. When it fires, run
-   the breakdown we already have across device/browser/country and name the worst dimension —
-   *"broken, and it's iOS: 340 control vs 91 test."*
+1. ~~**SRM detection.**~~ **SHIPPED (v0.23.0)** as `experiment_health`. Chi-square at p < 0.001,
+   and when it fires it names the segment most responsible — *"broken, and it's iOS: 400 control
+   vs 40 test."* The chi-square tail needed a hand-written incomplete gamma function (the stdlib
+   has none), validated against published critical values at 15 points across 5 degrees of
+   freedom.
 2. **Device-id bucketing.** Anonymous → identified changes `distinct_id` → changes the hash →
    changes the variant. PostHog calls this data corruption in their own docs. Persist an
    `sa_bucket_id` on first visit and bucket on that. ~15 lines of SDK. Do **not** build
@@ -148,7 +149,7 @@ A week, not a quarter.
 
 | | us | PostHog | Mixpanel |
 |---|---|---|---|
-| MCP server | ✅ 95 tools | ✅ (CLI-mode wrapper) | ✅ 50+ tools |
+| MCP server | ✅ 85 tools | ✅ (CLI-mode wrapper) | ✅ 50+ tools |
 | on by default for new accounts | ❌ | ❌ | ✅ **since 2026-08-01** |
 | agent writes instrumentation | ✅ | ✅ `@posthog/wizard`, 22+ frameworks | ✅ Implementation Skill |
 | **verifies the events arrived** | ✅ **only one** | ❌ | ❌ |
@@ -270,9 +271,9 @@ rigged and the whole page loses credibility.
 
 **Efficiency wins — most value per hour, in order**
 
-1. **`run_sql` MCP tool.** One tool, closes the largest capability gap in the matrix.
-2. **SRM detection + Health tab.** ~25 lines for the highest trust-per-line in the product.
-3. **Device-id bucketing.** ~15 lines of SDK, prevents the next silent corruption.
+1. ~~`run_sql`~~ **shipped v0.22.0** — the largest capability gap in the matrix, closed.
+2. ~~SRM detection~~ **shipped v0.23.0** as `experiment_health`, culprit segment included.
+3. **Device-id bucketing.** ~15 lines of SDK, prevents the next silent corruption. **Next up.**
 4. **Collect-but-lock on overage** (from dub.co). When quota or trial ends: keep ingesting,
    never 429 the SDK, never drop a row — gate *viewing*. Can't break the customer's app,
    maximum upgrade pressure exactly when they care, and no gap in history on upgrade.

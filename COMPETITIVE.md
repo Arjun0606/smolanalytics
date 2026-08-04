@@ -62,8 +62,8 @@ Two answers, and one must be picked before writing any EU copy: offer a **Hetzne
 | **session replay (video)** | ❌ **deliberate** | ✅ 💰 the bill-shock line | ✅ 💰 |
 | **error tracking** | ❌ | ✅ Sentry-class | ❌ |
 | **data warehouse / CDP** | ❌ | ✅ 💰 | ✅ 💰 Mirror |
-| **SQL access** | ❌ **biggest real gap** | ✅ HogQL + 33 query MCP tools | ✅ |
-| MCP server | ✅ 95 tools | ✅ (CLI-mode wrapper) | ✅ ~50 tools |
+| **SQL access** | ✅ `run_sql` **(shipped)** | ✅ HogQL + 33 query MCP tools | ✅ |
+| MCP server | ✅ 85 tools | ✅ (CLI-mode wrapper) | ✅ ~50 tools |
 | agent writes instrumentation | ✅ | ✅ wizard | ✅ skill |
 | **verifies instrumentation worked** | ✅ **only one** | ❌ | ❌ |
 | AI answers | **computed, never LLM** | LLM, $0.01/credit | LLM (Claude) |
@@ -108,7 +108,7 @@ Now SHA-256 into a fixed [0,1) space with cumulative ranges. phi measures **-0.0
 
 Items 1-3 are about a week and convert experiments from "silently wrong" to "trustworthy".
 
-1. **SRM detection** — chi-square goodness-of-fit against configured weights, fire at p < 0.001 (GrowthBook's threshold; Microsoft uses 0.0005). ~25 lines. **Highest trust-per-line in the product**: it tells the user their experiment is broken instead of handing them a confident wrong answer. When it fires, auto-run the breakdown we already have across device/browser/country and name the worst dimension.
+1. ~~**SRM detection**~~ — **SHIPPED v0.23.0** as `experiment_health`. Chi-square at p < 0.001 (GrowthBook's threshold), and it names the most skewed segment when it fires.
 2. **Device-id bucketing.** Anonymous → identified changes `distinct_id`, which changes the hash, which changes the variant. PostHog calls this data corruption in their own docs. Fix: persist an `sa_bucket_id` in localStorage on first visit and bucket on that. ~15 lines of SDK. Explicitly do **not** build experience-continuity/DB-pinning — it breaks local evaluation.
 3. **Confidence intervals + raw numerator/denominator** instead of today's significant-yes/no boolean. Showing the raw counts *is* the "computed, not guessed" claim made visible.
 4. **Sample-size as an MCP tool** — `N = 16 × variance / d²`. Four lines of Go, and the agent-native angle is the moat: asking Claude Code "how long do I need to run this?" and getting a number computed from *your actual current exposure rate*. No competitor can do that from inside the editor.
@@ -176,8 +176,8 @@ Channels: **only-eu.eu** is self-serve, no email, and its analytics category lis
 ## 6. what to build, ordered
 
 **This week**
-1. SRM detection + Health tab *(highest trust-per-line in the product)*
-2. Device-id bucketing in the SDK *(prevents the next silent corruption)*
+1. ~~SRM detection~~ **shipped v0.23.0**
+2. Device-id bucketing in the SDK *(prevents the next silent corruption)* — **next**
 3. Collect-but-lock overage + the `<LockedState>` component
 
 **This month**
