@@ -81,14 +81,22 @@ var eventPattern = []struct {
 	confidence string
 	re         *regexp.Regexp
 }{
+	// These require CALL SYNTAX, for the same reason the coverage patterns do.
+	//
+	// They used to match bare words — `\bcheckout\b`, `\bactivate\b`, `authenticate\b` — and
+	// running the two tools against the same repository showed them disagreeing: coverage found
+	// 64 real actions while this proposed adding checkout tracking to Funnel.tsx and Flags.tsx,
+	// which are dashboard chart components where "checkout" appears as a funnel STEP NAME. An
+	// agent that applies that edit instruments a chart, and the person reviewing the PR stops
+	// trusting every other suggestion in it.
 	{"checkout", "payment or subscription completed", []string{"plan", "amount"}, "high",
-		regexp.MustCompile(`(?i)(checkout\.session|createcheckoutsession|stripe\.\w+\.create|createsubscription|\.subscriptions?\.create|payment_?intent|\.charges?\.create|\bcheckout\b|\bsubscribe\b|\bpurchase\b)`)},
+		regexp.MustCompile(`(?i)(checkout\.sessions?\.create\s*\(|\bcreateCheckoutSession\s*\(|stripe\.\w+\.\w*create\s*\(|\bcreateSubscription\s*\(|\.subscriptions?\.create\s*\(|\bpaymentIntents?\.create\s*\(|\.charges?\.create\s*\()`)},
 	{"signup", "account created", []string{"plan", "source"}, "high",
-		regexp.MustCompile(`(?i)(sign[_-]?up|createuserwith|signupwith|auth\.signup|\.users\.create|createuser\b|register(user|account)?\b|users?\.insert)`)},
+		regexp.MustCompile(`(?i)(\b(auth\.)?sign[_-]?up(\.\w+)?\s*\(|\bsignUpWith\w*\s*\(|\bcreateUserWith\w*\s*\(|\bcreateUser\s*\(|\bregisterUser\s*\(|\bregisterAccount\s*\(|\.users\.create\s*\(|users?\.insert\s*\()`)},
 	{"login", "user signed in", []string{"method"}, "medium",
-		regexp.MustCompile(`(?i)(sign[_-]?in|signinwith|auth\.signin|log[_-]?in\b|authenticate\b)`)},
+		regexp.MustCompile(`(?i)(\b(auth\.)?sign[_-]?in(\.\w+)?\s*\(|\bsignInWith\w*\s*\(|\blog[_-]?in\s*\(|\bauthenticate\s*\()`)},
 	{"activate", "activation / onboarding milestone", []string{}, "medium",
-		regexp.MustCompile(`(?i)(\bactivate\b|onboard(ing|ed)?\b|complete[_-]?setup|first[_-]?run|getting[_-]?started|\bactivation\b)`)},
+		regexp.MustCompile(`(?i)(\bactivateAccount\s*\(|\bcompleteOnboarding\s*\(|complete[_-]?setup\s*\(|\bfinishOnboarding\s*\(|\bmarkActivated\s*\()`)},
 }
 
 // nonAppFile reports whether a path is test / story / mock / fixture code. A "signup" in
@@ -102,6 +110,12 @@ func nonAppFile(rel string) bool {
 		if strings.Contains(base, m) {
 			return true
 		}
+	}
+	// Go names test files foo_test.go, which none of the dotted suffixes above catch. Without
+	// this, running the scanner on this very repository proposes instrumenting its own test
+	// fixtures — the tracking calls inside them are examples, not a product.
+	if strings.HasSuffix(base, "_test.go") {
+		return true
 	}
 	for _, seg := range segs[:len(segs)-1] {
 		switch seg {
@@ -295,7 +309,7 @@ func ScanCallSites(root, host, key string, fw Framework) []CallSite {
 				if perEvent[ep.event] >= maxPerEvent {
 					continue
 				}
-				if ep.re.MatchString(line) {
+				if ep.re.MatchString(line) && !skipAsNonAction(line, ep.event) {
 					sites = append(sites, CallSite{
 						Event:      ep.event,
 						File:       filepath.ToSlash(rel),

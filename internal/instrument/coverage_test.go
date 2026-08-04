@@ -273,3 +273,53 @@ export default function SignOutButton() {
 		t.Errorf("mentions were reported as actions: %+v", r.Actions)
 	}
 }
+
+// Running the scanner against this very repository proposed instrumenting its own test
+// fixtures, because Go names test files foo_test.go and none of the dotted suffixes caught it.
+// The tracking calls in a fixture are examples, not a product.
+func TestSkipsGoTestFiles(t *testing.T) {
+	repo := writeRepo(t, map[string]string{
+		"internal/x/thing_test.go": "func TestX(t *testing.T) {\n  auth.signUp(email)\n}",
+		"internal/x/thing.go":      "func Real() {\n  auth.signUp(email)\n}",
+	})
+	for _, a := range Report(repo).Actions {
+		if a.File != "internal/x/thing.go" {
+			t.Errorf("flagged a Go test file: %s", a.File)
+		}
+	}
+}
+
+// Modern auth clients namespace the call — signIn.social(...), signUp.email(...). Requiring a
+// bare signIn( found nothing at all in a real better-auth codebase.
+func TestMatchesNamespacedAuthCalls(t *testing.T) {
+	repo := writeRepo(t, map[string]string{
+		"src/AuthForm.tsx": `export function F() {
+  const a = await signIn.magicLink({ email });
+  const b = await signUp.email({ name, email });
+  const c = await signIn.social({ provider: "github" });
+  return null;
+}`,
+	})
+	kinds := map[string]int{}
+	for _, a := range Report(repo).Actions {
+		kinds[a.Kind]++
+	}
+	if kinds["login"] < 2 || kinds["signup"] < 1 {
+		t.Errorf("namespaced auth calls not detected: %v", kinds)
+	}
+}
+
+// A pattern must not match the TAIL of a longer identifier. instanceLogin() is our own
+// server-to-server call, not a user signing in, and it was proposed three times before this.
+func TestDoesNotMatchInsideLongerIdentifiers(t *testing.T) {
+	repo := writeRepo(t, map[string]string{
+		"src/x.ts": `export async function go() {
+  const cookie = await instanceLogin(p);
+  const other = await fetchUserLogin(p);
+  return cookie;
+}`,
+	})
+	for _, a := range Report(repo).Actions {
+		t.Errorf("matched the tail of a longer identifier: %+v", a)
+	}
+}

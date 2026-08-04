@@ -67,15 +67,15 @@ type actionPattern struct {
 // dismissed once and never opened again, which is worse than not shipping it, so every pattern
 // below has to match something being INVOKED.
 var actionPatterns = []actionPattern{
-	{"payment", "checkout", regexp.MustCompile(`(?i)(stripe\.\w+\.\w*create\s*\(|checkout\.sessions?\.create\s*\(|createCheckoutSession\s*\(|createSubscription\s*\(|\.subscriptions?\.create\s*\(|paymentIntents?\.create\s*\(|\.charges?\.create\s*\()`)},
-	{"signup", "signup", regexp.MustCompile(`(?i)((auth\.)?sign[_-]?up\s*\(|signUpWith\w*\s*\(|createUserWith\w*\s*\(|createUser\s*\(|registerUser\s*\(|registerAccount\s*\(|\.users\.create\s*\()`)},
-	{"login", "login", regexp.MustCompile(`(?i)((auth\.)?sign[_-]?in\s*\(|signInWith\w*\s*\(|log[_-]?in\s*\(|authenticate\s*\()`)},
-	{"logout", "logout", regexp.MustCompile(`(?i)((auth\.)?sign[_-]?out\s*\(|log[_-]?out\s*\()`)},
-	{"form submit", "form_submitted", regexp.MustCompile(`(?i)(onsubmit\s*=|handleSubmit\s*\(|<form\b)`)},
-	{"invite", "invite_sent", regexp.MustCompile(`(?i)(send[_-]?invite\w*\s*\(|inviteUser\s*\(|inviteMember\s*\(|createInvit\w*\s*\()`)},
-	{"upload", "file_uploaded", regexp.MustCompile(`(?i)(uploadFile\s*\(|handleUpload\s*\(|\.upload\s*\()`)},
-	{"share", "shared", regexp.MustCompile(`(?i)(createShareLink\s*\(|handleShare\s*\(|shareLink\s*\()`)},
-	{"delete account", "account_deleted", regexp.MustCompile(`(?i)(deleteAccount\s*\(|deleteUser\s*\(|closeAccount\s*\()`)},
+	{"payment", "checkout", regexp.MustCompile(`(?i)(stripe\.\w+\.\w*create\s*\(|checkout\.sessions?\.create\s*\(|\bcreateCheckoutSession\s*\(|\bcreateSubscription\s*\(|\.subscriptions?\.create\s*\(|\bpaymentIntents?\.create\s*\(|\.charges?\.create\s*\()`)},
+	{"signup", "signup", regexp.MustCompile(`(?i)(\b(auth\.)?sign[_-]?up(\.\w+)?\s*\(|\bsignUpWith\w*\s*\(|\bcreateUserWith\w*\s*\(|\bcreateUser\s*\(|\bregisterUser\s*\(|\bregisterAccount\s*\(|\.users\.create\s*\()`)},
+	{"login", "login", regexp.MustCompile(`(?i)(\b(auth\.)?sign[_-]?in(\.\w+)?\s*\(|\bsignInWith\w*\s*\(|\blog[_-]?in\s*\(|\bauthenticate\s*\()`)},
+	{"logout", "logout", regexp.MustCompile(`(?i)(\b(auth\.)?sign[_-]?out\s*\(|\blog[_-]?out\s*\()`)},
+	{"form submit", "form_submitted", regexp.MustCompile(`(?i)(onsubmit\s*=|\bhandleSubmit\s*\(|<form\b)`)},
+	{"invite", "invite_sent", regexp.MustCompile(`(?i)(send[_-]?invite\w*\s*\(|\binviteUser\s*\(|\binviteMember\s*\(|createInvit\w*\s*\()`)},
+	{"upload", "file_uploaded", regexp.MustCompile(`(?i)(\buploadFile\s*\(|\bhandleUpload\s*\(|\.upload\s*\()`)},
+	{"share", "shared", regexp.MustCompile(`(?i)(\bcreateShareLink\s*\(|\bhandleShare\s*\(|\bshareLink\s*\()`)},
+	{"delete account", "account_deleted", regexp.MustCompile(`(?i)(\bdeleteAccount\s*\(|\bdeleteUser\s*\(|\bcloseAccount\s*\()`)},
 	{"api mutation", "api_called", regexp.MustCompile(`^\s*export\s+(async\s+)?function\s+(POST|PUT|PATCH|DELETE)\s*\(`)},
 	{"api mutation", "api_called", regexp.MustCompile(`(?i)\b(router|app)\.(post|put|patch|delete)\s*\(`)},
 }
