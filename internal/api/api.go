@@ -320,6 +320,9 @@ func (s *Server) Handler() http.Handler {
 	// person profiles, derived from the log on every request rather than stored, so they can
 	// never drift from the events the way a person table does
 	mux.HandleFunc("GET /v1/people", s.apiPeople)
+	// derived metrics: one series over another, computed by the same engine as the chart so a
+	// ratio can never disagree with the two lines it came from
+	mux.HandleFunc("GET /v1/formula", s.apiFormula)
 	mux.HandleFunc("GET /v1/agent-status", s.apiAgentStatus)
 	// agent observability (computed over agent_tool_call / agent_turn events) — distinct
 	// from /v1/agent-status above (that's the MCP-client presence badge).

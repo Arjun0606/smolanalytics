@@ -28,7 +28,17 @@ func (s *Server) apiPeople(w http.ResponseWriter, r *http.Request) {
 	if v, err := strconv.Atoi(q.Get("limit")); err == nil && v > 0 {
 		limit = v
 	}
-	out := map[string]any{"people": len(profiles), "traits": person.Traits(profiles)}
+	traits := person.Traits(profiles)
+	out := map[string]any{"people": len(profiles), "traits": traits}
+	// "no traits" and "traits are broken" look identical in an empty array, and the reader has no
+	// way to tell which. Say which, and say how to populate it — an instance can have thousands of
+	// people and no traits simply because nobody has called identify() yet, which is not a fault.
+	if len(traits) == 0 {
+		out["note"] = "no person traits recorded yet. Traits come from $identify events, or from a " +
+			"$set bag on any ordinary event ({\"$set\":{\"plan\":\"pro\"}}). Event properties are NOT " +
+			"promoted automatically: a property describes the event, and a profile full of paths and " +
+			"session ids is one nobody can segment on."
+	}
 
 	if trait := q.Get("trait"); trait != "" {
 		if val := q.Get("value"); val != "" {

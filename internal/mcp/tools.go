@@ -164,6 +164,25 @@ var toolList = []map[string]any{
 		}, nil),
 	},
 	{
+		"name": "formula",
+		"description": "A DERIVED metric: arithmetic across event series. Name each series with a " +
+			"single letter and refer to it in the expression — {\"expr\":\"A/B*100\",\"A\":\"signup\"," +
+			"\"B\":\"$pageview\"} is signup rate per pageview as a percentage. Use for 'per', 'rate', " +
+			"'ratio', 'share of' and 'X per Y' questions. Buckets where the denominator is zero come " +
+			"back defined:false with a reason — report those as undefined, NEVER as zero, because " +
+			"'nobody visited' and 'nobody converted out of the people who visited' are different facts.",
+		"inputSchema": obj(map[string]any{
+			"expr":     map[string]any{"type": "string", "description": "Arithmetic over the named series: + - * / and parentheses, e.g. A/B*100."},
+			"A":        map[string]any{"type": "string", "description": "Event name for series A."},
+			"B":        map[string]any{"type": "string", "description": "Event name for series B."},
+			"C":        map[string]any{"type": "string", "description": "Event name for series C."},
+			"days":     map[string]any{"type": "number", "description": "Window in days (default 30)."},
+			"interval": map[string]any{"type": "string", "description": "hour | day | week | month. Default day."},
+			"unique":   map[string]any{"type": "boolean", "description": "Count distinct people per bucket rather than events."},
+			"filters":  filtersSchema,
+		}, []string{"expr"}),
+	},
+	{
 		"name": "people",
 		"description": "Person profiles: every user's last-known traits, derived from the event log " +
 			"rather than stored in a person table. Call with no arguments for the trait keys that " +

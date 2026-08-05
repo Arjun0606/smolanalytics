@@ -35,6 +35,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/exportlink"
 	"github.com/Arjun0606/smolanalytics/internal/fixbrief"
 	"github.com/Arjun0606/smolanalytics/internal/flag"
+	"github.com/Arjun0606/smolanalytics/internal/formula"
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
 	"github.com/Arjun0606/smolanalytics/internal/goal"
 	"github.com/Arjun0606/smolanalytics/internal/groups"
@@ -149,7 +150,7 @@ var mutatingTools = map[string]bool{
 // that a tool is one or the other — an unclassified tool is callable on the unauthenticated
 // public demo, which is precisely the hole this pair of maps closes.
 var readOnlyTools = map[string]bool{
-	"rows_behind": true, "errors": true, "plan_experiment": true, "people": true,
+	"rows_behind": true, "errors": true, "plan_experiment": true, "people": true, "formula": true,
 	"overview": true, "trends": true, "funnel": true, "retention": true, "breakdown": true,
 	"paths": true, "lifecycle": true, "stickiness": true, "groups": true, "web_overview": true,
 	"heatmap": true, "user_activity": true, "recent_events": true, "list_events": true,
@@ -831,6 +832,61 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		return s.toolPlanExperiment(args, evs)
 	case "experiment_plan":
 		return s.toolExperimentPlan(args, evs)
+	case "formula":
+		var a struct {
+			Expr     string    `json:"expr"`
+			A        string    `json:"A"`
+			B        string    `json:"B"`
+			C        string    `json:"C"`
+			Days     float64   `json:"days"`
+			Interval string    `json:"interval"`
+			Unique   bool      `json:"unique"`
+			Filters  FilterSet `json:"filters"`
+		}
+		if err := unmarshalArgs(args, &a); err != nil {
+			return "", err
+		}
+		if a.Expr == "" {
+			return "", fmt.Errorf("expr is required, e.g. A/B*100 with A and B naming events")
+		}
+		if err := query.Validate(a.Filters); err != nil {
+			return "", err
+		}
+		days := int(a.Days)
+		if days <= 0 {
+			days = 30
+		}
+		scoped := query.Apply(query.StampForFilters(evs, a.Filters), a.Filters)
+		to := time.Now().UTC()
+		from := to.AddDate(0, 0, -days)
+		var inputs []formula.Series
+		names := map[string]string{}
+		for key, ev := range map[string]string{"A": a.A, "B": a.B, "C": a.C} {
+			if ev == "" {
+				continue
+			}
+			// an unknown event is an error, never a silent zero series that renders a flat line
+			if err := s.checkEvents(ev); err != nil {
+				return "", err
+			}
+			res := trends.ComputeInterval(scoped, ev, from, to, a.Unique, trends.Interval(a.Interval))
+			ser := formula.Series{Name: key}
+			for _, p := range res.Points {
+				ser.Dates = append(ser.Dates, p.Date)
+				ser.Values = append(ser.Values, float64(p.Count))
+			}
+			inputs = append(inputs, ser)
+			names[key] = ev
+		}
+		out, ferr := formula.Evaluate(a.Expr, inputs)
+		if ferr != nil {
+			return "", ferr
+		}
+		return jsonText(map[string]any{
+			"expression": out.Expression, "series": names, "points": out.Points,
+			"defined": out.Defined, "undefined": out.Undefined, "note": out.Note,
+			"from": from.Format(time.RFC3339), "to": to.Format(time.RFC3339),
+		})
 	case "people":
 		var a struct {
 			Trait   string    `json:"trait"`
