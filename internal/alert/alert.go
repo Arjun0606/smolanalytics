@@ -16,9 +16,15 @@ import (
 
 // Alert is one rule plus its last-evaluation state.
 type Alert struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Event       string    `json:"event"`
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Event string `json:"event"`
+	// KindName is the alert shape; empty means the original count alert, so every alert stored
+	// before kinds existed keeps watching exactly what it watched. Read it through Kind().
+	KindName string `json:"kind,omitempty"`
+	// Against is the denominator for a ratio alert ("$exception per $pageview"). Ignored by
+	// every other kind.
+	Against     string    `json:"against,omitempty"`
 	Op          string    `json:"op"` // "gt" | "lt"
 	Threshold   float64   `json:"threshold"`
 	WindowHours int       `json:"window_hours"`

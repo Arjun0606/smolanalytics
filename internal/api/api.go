@@ -223,19 +223,15 @@ func (s *Server) EvaluateAlerts() {
 			window = 24 * time.Hour
 		}
 		cutoff := now.Add(-window)
-		var count float64
-		for _, e := range evs {
-			if e.Name == a.Event && !e.Timestamp.Before(cutoff) { // inclusive window, consistent
-				count++
-			}
-		}
-		met := (a.Op == "gt" && count > a.Threshold) || (a.Op == "lt" && count < a.Threshold)
+		count, met, detail := evalAlert(a, evs, now, cutoff, window)
+		_ = detail
 		fired := false
 		if met && (a.LastFired.IsZero() || now.Sub(a.LastFired) >= window) {
 			fired = true
 			payload := map[string]any{
 				"type": "alert", "alert": a.Name, "event": a.Event,
-				"op": a.Op, "threshold": a.Threshold, "value": count,
+				"kind": a.Kind(), "rule": a.Describe(),
+				"op": a.Op, "threshold": a.Threshold, "value": count, "detail": detail,
 				"window_hours": a.WindowHours, "fired_at": now,
 			}
 			if s.webhooks != nil {
@@ -245,8 +241,10 @@ func (s *Server) EvaluateAlerts() {
 				if a.Op == "lt" {
 					verb = "below"
 				}
-				text := fmt.Sprintf("⚠ %s — %s: %g events in the last %dh, %s threshold %g",
-					a.Name, a.Event, count, a.WindowHours, verb, a.Threshold)
+				_ = verb
+				// The RULE in words, not "gt 40". An alert is read months after it was written,
+				// usually by someone at 3am deciding whether the page was worth it.
+				text := fmt.Sprintf("⚠ %s — %s. Rule: %s", a.Name, detail, a.Describe())
 				s.webhooks.DeliverAll(payload, text)
 			}
 			s.rec("alert.fired", fmt.Sprintf("%s — %s %s %g (value %g)", a.Name, a.Event, a.Op, a.Threshold, count))
