@@ -590,12 +590,22 @@ func (s *Server) apiRetention(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, fmt.Sprintf("unknown bucket %q (want day, week or month)", q.Get("bucket")))
 		return
 	}
+	// group_by=company measures ACCOUNT retention: an account is retained when anyone in it
+	// comes back, which is the renewal question and is invisible at user grain — a customer can
+	// churn seats for months while the account stays perfectly retained, and vice versa.
+	evs, grain, ok := s.groupGrain(w, r, evs)
+	if !ok {
+		return
+	}
 	rr := retention.ComputeBucketed(evs, days, q.Get("event"), q.Get("bucket"), boolParam(q.Get("rolling")))
 	// the honest headline summaries come from retention.Summarize — the SAME function the MCP
 	// tool serializes, so the two surfaces can't drift (agreement_test locks it).
 	now := time.Now().UTC()
 	out := retention.Summarize(rr, now)
 	out["cohorts"] = retention.SerializeCohorts(rr, now)
+	if grain != nil {
+		out["unit"], out["group_grain"] = "accounts", grain
+	}
 	writeJSON(w, http.StatusOK, out)
 }
 

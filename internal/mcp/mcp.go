@@ -376,6 +376,7 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 			Order          string              `json:"order"`
 			Exclude        []string            `json:"exclude"`
 			StepFilters    []map[string]string `json:"step_filters"`
+			GroupBy        string              `json:"group_by"`
 		}
 		if err := unmarshalArgs(args, &a); err != nil {
 			return "", err
@@ -425,21 +426,32 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 
 		// breakdown: conversion by a property (segment by the user's first step-0 value) —
 		// same shape as GET /v1/funnel?breakdown=, locked by agreement_test.
+		// group_by=company counts ACCOUNTS instead of people: the share of CUSTOMERS who
+		// converted, which is the number a B2B product is paid on and which the user-grain
+		// funnel cannot express — one admin converting at a fifty-seat account is a converted
+		// account and forty-nine unconverted users.
+		scoped, grain, gerr := regroup(query.ScopeUsers(evs, a.Filters, false), a.GroupBy)
+		if gerr != nil {
+			return "", gerr
+		}
 		if a.Breakdown != "" {
-			segs := funnel.ComputeBreakdownOpts(query.StampFirstTouch(query.ScopeUsers(evs, a.Filters, false), a.Breakdown), steps, window, a.Breakdown, opts)
+			segs := funnel.ComputeBreakdownOpts(query.StampFirstTouch(scoped, a.Breakdown), steps, window, a.Breakdown, opts)
 			limit := a.BreakdownLimit
 			if limit <= 0 {
 				limit = 10 // same default as GET /v1/funnel — surfaces must agree
 			}
 			kept, omitted := funnel.CapSegments(segs, limit)
 			out := map[string]any{"steps": a.Steps, "breakdown": a.Breakdown, "segments": kept}
+			if grain != nil {
+				out["unit"], out["group_grain"] = "accounts", grain
+			}
 			if omitted > 0 {
 				out["omitted_segments"] = omitted
 				out["note"] = fmt.Sprintf("showing the %d largest segments by entry users; %d smaller omitted — raise breakdown_limit to see more", limit, omitted)
 			}
 			return jsonText(out)
 		}
-		return jsonText(funnel.ComputeOpts(query.ScopeUsers(evs, a.Filters, false), steps, window, opts))
+		return jsonText(withGrain(funnel.ComputeOpts(scoped, steps, window, opts), grain))
 	case "retention":
 		var a struct {
 			Event   string    `json:"event"`
@@ -447,6 +459,7 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 			Bucket  string    `json:"bucket"`
 			Rolling bool      `json:"rolling"`
 			Filters FilterSet `json:"filters"`
+			GroupBy string    `json:"group_by"`
 		}
 		if err := unmarshalArgs(args, &a); err != nil {
 			return "", err
@@ -480,7 +493,14 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		if err := guardFilters(evs, a.Filters); err != nil {
 			return "", err
 		}
-		return jsonText(summarizeRetention(retention.ComputeBucketed(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters), a.Days, a.Event, a.Bucket, a.Rolling)))
+		// group_by=company is ACCOUNT retention: an account is retained when anyone in it comes
+		// back, which is the renewal question. Seats can churn for months while the account
+		// stays perfectly retained, and the user-grain curve shows the opposite of the truth.
+		rscoped, rgrain, rgerr := regroup(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters), a.GroupBy)
+		if rgerr != nil {
+			return "", rgerr
+		}
+		return jsonText(withGrain(summarizeRetention(retention.ComputeBucketed(rscoped, a.Days, a.Event, a.Bucket, a.Rolling)), rgrain))
 	case "trends":
 		var a struct {
 			Event     string    `json:"event"`

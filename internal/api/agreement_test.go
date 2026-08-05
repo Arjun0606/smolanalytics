@@ -37,7 +37,11 @@ func agreementServer(t *testing.T) *httptest.Server {
 		age := time.Duration(i%14) * 24 * time.Hour // spread across two weeks
 		batch = append(batch, map[string]any{
 			"name": "signup", "distinct_id": u, "timestamp": now.Add(-age).Format(time.RFC3339),
-			"properties": map[string]any{"plan": map[bool]string{true: "pro", false: "free"}[i%3 == 0], "path": "/"},
+			// company: 40 people spread over 7 accounts, so group grain and user grain give
+			// genuinely different numbers and an agreement failure here means something real
+			// rather than two surfaces agreeing that 40 users are 40 accounts.
+			"properties": map[string]any{"plan": map[bool]string{true: "pro", false: "free"}[i%3 == 0], "path": "/",
+				"company": fmt.Sprintf("acct%d", i%7)},
 		})
 		if i%2 == 0 {
 			batch = append(batch, map[string]any{
@@ -182,6 +186,11 @@ func TestMCPAPIAgreement(t *testing.T) {
 		{"funnel filtered", "/v1/funnel?steps=signup,activate&filters=" + urlEnc(filters), "funnel", `{"steps":["signup","activate"],"filters":` + filters + `}`, false},
 		{"funnel filtered in-list", "/v1/funnel?steps=signup,activate&filters=" + urlEnc(inFilters), "funnel", `{"steps":["signup","activate"],"filters":` + inFilters + `}`, false},
 		{"funnel breakdown by property", "/v1/funnel?steps=signup,activate&breakdown=plan", "funnel", `{"steps":["signup","activate"],"breakdown":"plan"}`, false},
+		// Group grain: same funnel, counted by ACCOUNT. Both surfaces must not only agree on the
+		// number but on the coverage note travelling with it, since that note is what tells a
+		// reader the report excluded traffic it could not attribute.
+		{"funnel by account", "/v1/funnel?steps=signup,activate&group_by=company", "funnel", `{"steps":["signup","activate"],"group_by":"company"}`, false},
+		{"funnel by account with breakdown", "/v1/funnel?steps=signup,activate&group_by=company&breakdown=plan", "funnel", `{"steps":["signup","activate"],"group_by":"company","breakdown":"plan"}`, false},
 		{"trends", "/v1/trends?event=signup", "trends", `{"event":"signup"}`, false},
 		// days=N is the windowed path: MCP once used a rolling from=now-N*24h while /v1
 		// used calendar-day alignment, so MCP prepended a phantom leading day. Lock the
@@ -193,6 +202,7 @@ func TestMCPAPIAgreement(t *testing.T) {
 		{"retention", "/v1/retention?days=7&event=signup", "retention", `{"days":7,"event":"signup"}`, true},
 		{"retention weekly bucket", "/v1/retention?days=4&event=signup&bucket=week", "retention", `{"days":4,"event":"signup","bucket":"week"}`, true},
 		{"retention rolling", "/v1/retention?days=7&event=signup&rolling=true", "retention", `{"days":7,"event":"signup","rolling":true}`, true},
+		{"retention by account", "/v1/retention?days=7&event=signup&group_by=company", "retention", `{"days":7,"event":"signup","group_by":"company"}`, true},
 		{"retention capped at 90 both sides", "/v1/retention?days=500&event=signup", "retention", `{"days":500,"event":"signup"}`, true},
 		{"web overview", "/v1/web?days=30", "web_overview", `{"days":30}`, false},
 		{"lifecycle capped at 180 both sides", "/v1/lifecycle?days=500", "lifecycle", `{"days":500}`, false},

@@ -1466,7 +1466,7 @@
           <option value="strict" {{if eq .FunnelOrder "strict"}}selected{{end}}>strictly consecutive</option>
           <option value="unordered" {{if eq .FunnelOrder "unordered"}}selected{{end}}>any order</option>
         </select>
-        <span style="text-transform:none;letter-spacing:0">· each step counts users who reached it along this path, so a step can read below that event's raw total in the chart · computed by /v1/funnel</span></h3>
+        <span style="text-transform:none;letter-spacing:0">· each step counts {{if .GrainProp}}<b>accounts</b> (by {{.GrainProp}}) that reached it — an account counts once anyone in it does{{else}}users who reached it{{end}} along this path, so a step can read below that event's raw total in the chart · computed by /v1/funnel</span>{{if .GrainProp}}<a class="hlink" style="margin-left:8px" href="{{.GrainOffHref}}" title="count individual people again, keeping this window and these filters">count people instead</a>{{end}}</h3>
       {{range .Funnel}}
         {{if not .First}}<div class="fdrop">↓ {{.PctPrev}}% continue · {{.Dropped}} dropped</div>{{end}}
         <div class="fstep"><div class="fbarwrap" data-whostep="{{.Event}}" title="click: the people who reached this step"><div class="fbar" style="width:{{.PctTop}}%"></div><div class="fmeta"><span class="fname">{{.Event}}</span><span class="fnums"><span class="c">{{.Count}}</span><span class="p">{{.PctTop}}%</span></span></div></div></div>
@@ -1896,7 +1896,7 @@
     </div>
 
     <div class="pane wide" id="pane-retention" style="order:510" data-stratum="return">
-      <h3>returning users
+      <h3>returning {{if .GrainProp}}accounts{{else}}users{{end}}
         <select id="retDays" class="zonesel" style="margin-left:8px" aria-label="how many periods of retention to show">
           <option value="7" {{if eq .RetDays 7}}selected{{end}}>7 periods</option>
           <option value="30" {{if eq .RetDays 30}}selected{{end}}>30 periods</option>
@@ -1964,6 +1964,68 @@
     <div class="pane wide" id="pane-errors" style="order:625" data-stratum="ship">
       <h3>errors<span class="sub"> · what broke, ranked by how many people it hit · computed by /v1/errors</span></h3>
       <div id="errOut"><div class="exsummary">…</div></div>
+    </div>
+
+    <!-- ══ EXPERIMENTS ══════════════════════════════════════════════════════════════════
+         The A/B machinery — sequential inference, SRM, guardrails, CUPED, layers, power —
+         has existed for versions and rendered NOWHERE unless a flag already had a running
+         experiment. That is the wrong way round: the design is the part people skip, and
+         hiding the tool behind having already used it guarantees they keep skipping it.
+         This pane exists at zero experiments and says what one would give you. ══════════ -->
+    <div class="pane wide" id="pane-experiments" style="order:615" data-stratum="ship">
+      <h3>experiments
+        <span class="sub">· always-valid A/B reads you can check daily without inflating your false-positive rate · computed by /v1/flags/{key}/measure + /health</span></h3>
+      <div id="expOut"><div class="exsummary">…</div></div>
+    </div>
+
+    <!-- ══ ACCOUNTS ═════════════════════════════════════════════════════════════════════
+         B2B grain. An account converts when ANYONE in it converts, which is the number a
+         B2B product is paid on and which the user funnel cannot express — one admin buying
+         at a fifty-seat customer is 100% account conversion and 2% user conversion. ═════ -->
+    <div class="pane wide" id="pane-accounts" style="order:240" data-stratum="convert">
+      <h3>accounts
+        <span class="sub">· your customers as companies, not seats — and the funnel + retention recounted per account · computed by /v1/groups</span></h3>
+      <div id="acctOut"><div class="exsummary">…</div></div>
+    </div>
+
+    <!-- ══ PEOPLE ═══════════════════════════════════════════════════════════════════════
+         Profiles derived at query time, never stored. "Why does the profile say pro when
+         the events say free" is a question that cannot be asked here, because there is no
+         profile table for the events to disagree with. ═══════════════════════════════════ -->
+    <div class="pane wide" id="pane-people" style="order:460" data-stratum="behave">
+      <h3>people
+        <span class="sub">· last-known traits, derived from your events at query time — nothing stored, so a profile can never disagree with the log it came from · computed by /v1/people</span></h3>
+      <div id="pplOut"><div class="exsummary">…</div></div>
+    </div>
+
+    <!-- ══ DERIVED METRICS ══════════════════════════════════════════════════════════════
+         One series over another. Without it the answer to "signups per visitor" is export
+         two charts and open a spreadsheet, which is the moment someone stops using this. -->
+    <div class="pane wide" id="pane-formula" style="order:235" data-stratum="convert">
+      <h3>derived metrics
+        <span class="sub">· one series divided by another — signups per visitor, revenue per active user · aligned by DATE, and an undefined bucket says so instead of drawing a zero · computed by /v1/formula</span></h3>
+      <div class="exrow" style="margin-bottom:10px">
+        <input id="fmA" autocomplete="off" placeholder="numerator event (signup)" aria-label="numerator event">
+        <select id="fmOp" class="zonesel" aria-label="operator">
+          <option value="/">÷ per</option>
+          <option value="-">− minus</option>
+          <option value="+">+ plus</option>
+          <option value="*">× times</option>
+        </select>
+        <input id="fmB" autocomplete="off" placeholder="denominator event ($pageview)" aria-label="denominator event">
+        <button id="fmRun">Compute</button>
+      </div>
+      <div id="fmOut"><div class="agmeta">pick two events. the result is computed bucket-by-bucket from your raw events, and any bucket where the denominator is zero is drawn as a gap, never as a zero — "nobody visited" and "nobody converted" are different facts.</div></div>
+    </div>
+
+    <!-- ══ ALERTS ═══════════════════════════════════════════════════════════════════════
+         Every alert kind except `count` asks nothing of you: relative compares against the
+         previous window, anomaly wires the detector that already powers the verdict card,
+         ratio watches a share. A threshold you have to keep current is one you won't. ══ -->
+    <div class="pane wide" id="pane-alerts" style="order:640" data-stratum="ship">
+      <h3>alerts
+        <span class="sub">· get told when a number moves, without having to already know what the number should be · computed by /v1/alerts</span></h3>
+      <div id="alOut"><div class="exsummary">…</div></div>
     </div>
 
     <div class="pane wide" id="pane-surveys" style="order:630" data-stratum="ship">
@@ -3569,12 +3631,222 @@
     // header states the window it actually answered over instead of implying the
     // toolbar's. Nothing here is a recording: a step is an event that was captured.
     var SA_DAYS="{{.RangeDays}}";
+    // ---- account grain: which group property the funnel + retention panes are counting by.
+    // Server-rendered rather than sniffed from the URL, because the server is what decided
+    // whether the requested property was usable — a ?grain= that nothing carries falls back to
+    // user grain, and the page must show the grain it ACTUALLY computed, not the one asked for.
+    var SA_GRAIN="{{.GrainProp}}", SA_GRAIN_OPTS=[{{range $i, $p := .GrainOptions}}{{if $i}},{{end}}"{{$p}}"{{end}}];
+    // saGrainHref preserves every other analysis parameter. Losing the window and filters on a
+    // grain switch would silently answer a different question than the one on screen.
+    function saGrainHref(prop){
+      var u=new URL(window.location.href);
+      if(prop)u.searchParams.set('grain',prop); else u.searchParams.delete('grain');
+      return u.pathname+u.search+'#pane-accounts';
+    }
 
     // ---- errors: the report those $exception events were always worth ------------------
     //
     // Placed AFTER SA_DAYS is assigned, deliberately. `var` hoists the declaration but not the
     // value, so running this earlier in the same scope fetched days=undefined and rendered the
     // server's 400 — which reads as a broken endpoint rather than a mis-ordered script.
+    // ══ EXPERIMENTS ═══════════════════════════════════════════════════════════════════
+    // The pane renders at ZERO experiments on purpose. Everything below — sequential
+    // inference, SRM, guardrails, layers, the power calculator — used to appear only once
+    // a flag already had a running experiment, so the tool that helps you DESIGN a test was
+    // reachable only after you had designed one without it.
+    var expOut=document.getElementById('expOut');
+    if(expOut){
+      shipGet('/v1/flags').then(function(r){
+        if(shipOff(expOut,r,'feature flags are not enabled on this instance, so there are no experiments to read. they persist to a <b>.flags.json</b> beside your event data.'))return;
+        var flags=(r.j&&r.j.flags)||[];
+        var runs=flags.filter(function(f){return f.experiment&&f.experiment.goal;});
+        if(!runs.length){
+          // The teaching empty state. Naming the exact MCP call matters: this instance's own
+          // rail is how someone learns the capability exists, and "you can do experiments"
+          // without the command is the same as not shipping it.
+          var mv=flags.filter(function(f){return (f.variants||[]).length>1;}).length;
+          expOut.innerHTML='<div class="agmeta">no experiment is running. '+
+            (flags.length?('you have <b>'+flags.length+'</b> flag'+(flags.length===1?'':'s')+', '+
+              (mv?('<b>'+mv+'</b> of them multivariate. '):'all boolean — an A/B read needs at least two arms. ')):'')+
+            'an experiment is a flag plus a <b>pre-registered plan</b>: which arm is control, what counts as a win, '+
+            'and what must not get worse. locking it before data arrives is what makes the result mean anything — '+
+            'a plan chosen after seeing the numbers is not a plan.</div>'+
+            '<div class="agrow" style="margin-top:12px"><span class="proof">what you get</span></div>'+
+            '<table class="ctab" style="margin-top:8px"><tbody>'+
+            '<tr><td><b>always-valid inference</b></td><td class="mut">check the result every day without inflating your false-positive rate. peeking daily at a fixed-horizon test runs ~43% false positives; the sequential read holds ~1.5%.</td></tr>'+
+            '<tr><td><b>SRM detection</b></td><td class="mut">tells you the randomisation itself broke, so the arms differ by whatever broke rather than by what you shipped. the most valuable check in A/B testing and the one most tools bury.</td></tr>'+
+            '<tr><td><b>guardrails</b></td><td class="mut">events that must not get worse, tested for non-inferiority — so "no significant harm" is a measured claim, not the absence of one.</td></tr>'+
+            '<tr><td><b>power, from your own traffic</b></td><td class="mut">how long until you know, estimated off this instance\'s real baseline. if the answer is months, it says months.</td></tr>'+
+            '<tr><td><b>layers + holdouts</b></td><td class="mut">mutually-exclusive experiments that cannot contaminate each other, and a slice held back so you can measure everything you shipped, together.</td></tr>'+
+            '</tbody></table>'+
+            '<div class="agmeta" style="margin-top:12px">start one from your editor: ask your agent to '+
+            '<b>plan_experiment</b> (how long until we know) then <b>experiment_plan</b> with <b>start: true</b> to lock it. '+
+            'or create a multivariate flag above and it becomes measurable as soon as it has a plan.</div>';
+          return;
+        }
+        // Real experiments: one row each, and the row leads with whether it is DECIDABLE yet,
+        // not with a p-value. "not yet" is the honest and most common answer, and a number
+        // rendered without it is how a test gets called three days early.
+        var h='<table class="ctab"><thead><tr><th>experiment</th><th>goal</th><th>mode</th><th class="n">exposed</th><th>read</th></tr></thead><tbody>';
+        runs.forEach(function(f){
+          var e=f.experiment||{};
+          h+='<tr><td><b>'+esc(f.key)+'</b>'+(e.locked?' <span class="proof">locked</span>':' <span class="mut" title="the plan can still be edited after seeing data, which is what pre-registration exists to prevent">not locked</span>')+'</td>'+
+            '<td>'+esc(e.goal||'—')+'</td>'+
+            '<td class="mut">'+esc(e.mode||'sequential')+(e.alpha?' · α '+e.alpha:'')+'</td>'+
+            '<td class="n" id="expn-'+esc(f.key)+'"><span class="mut">…</span></td>'+
+            '<td id="expr-'+esc(f.key)+'"><span class="mut">reading…</span></td></tr>';
+        });
+        expOut.innerHTML=h+'</tbody></table><div class="agmeta" style="margin-top:10px">each read is always-valid: safe to check as often as you like. the health check next to it is SRM — if that fires, stop reading the result and fix the split first.</div>';
+        // Per-experiment reads, fired after the table exists so a slow one cannot hold up the
+        // rest. SRM is fetched ALONGSIDE the result and shown first when it fires, because a
+        // broken split makes the lift meaningless and reading it anyway is the failure mode.
+        runs.forEach(function(f){
+          var e=f.experiment||{},cell=document.getElementById('expr-'+f.key),nc=document.getElementById('expn-'+f.key);
+          if(!cell)return;
+          Promise.all([
+            shipGet('/v1/flags/'+encodeURIComponent(f.key)+'/measure?event='+encodeURIComponent(e.goal)+'&days='+encodeURIComponent(SA_DAYS)),
+            shipGet('/v1/flags/'+encodeURIComponent(f.key)+'/health?days='+encodeURIComponent(SA_DAYS))
+          ]).then(function(res){
+            var m=res[0].j||{},hh=res[1].j||{};
+            if(nc)nc.textContent=(m.exposed!=null?m.exposed:(m.total_exposed!=null?m.total_exposed:'—'));
+            if(hh&&hh.srm&&hh.srm.failed){
+              cell.innerHTML='<span class="inote err" title="'+esc(hh.srm.read||'')+'">SRM — the split is broken, do not read the result</span>';
+              return;
+            }
+            if(m.error){cell.innerHTML='<span class="mut">'+esc(m.error)+'</span>';return;}
+            var read=m.read||m.verdict||m.summary;
+            cell.innerHTML=read?esc(String(read)):'<span class="mut">no read yet</span>';
+          });
+        });
+      });
+    }
+
+    // ══ ACCOUNTS ══════════════════════════════════════════════════════════════════════
+    var acctOut=document.getElementById('acctOut');
+    if(acctOut){
+      var acctProp=(SA_GRAIN_OPTS&&SA_GRAIN_OPTS[0])||'';
+      if(!acctProp){
+        // No group property anywhere. This is an instrumentation gap, not an empty product,
+        // and the two need opposite reactions — so say which one it is and how to close it.
+        acctOut.innerHTML='<div class="agmeta">no event carries a group property, so there are no accounts to count. '+
+          'send one on signup or on an identify call — <b>company</b>, <b>workspace_id</b>, <b>org</b>, <b>account_id</b> and '+
+          '<b>team</b> are all recognised — and it will follow each user through the rest of their events automatically. '+
+          'then the funnel and retention panes can be recounted per ACCOUNT: a fifty-seat customer where one admin buys is '+
+          '100% account conversion and 2% user conversion, and only one of those is the number you are paid on.</div>';
+      } else {
+        shipGet('/v1/groups?property='+encodeURIComponent(acctProp)+'&limit=25').then(function(r){
+          if(shipOff(acctOut,r,'group reporting is unavailable on this instance.'))return;
+          var j=r.j||{},gs=j.groups||[];
+          if(!gs.length){acctOut.innerHTML='<div class="agmeta">no events carry <b>'+esc(acctProp)+'</b> in this window.</div>';return;}
+          var cur=SA_GRAIN||'';
+          var h='<div class="agrow"><span class="proof">'+j.total_groups+' account'+(j.total_groups===1?'':'s')+'</span>'+
+            '<span class="agmeta">'+j.active_groups_7d+' active in 7d · '+j.active_groups_30d+' in 30d · grouped by <b>'+esc(acctProp)+'</b></span></div>'+
+            '<div class="agmeta" style="margin:10px 0">'+
+              (cur?('the funnel and retention panes are currently counting <b>accounts</b>. '+
+                    '<a class="hlink" href="'+saGrainHref('')+'">count people instead</a>')
+                  :('the funnel and retention panes are counting <b>people</b>. '+
+                    '<a class="hlink" href="'+saGrainHref(acctProp)+'">recount them by account</a>'+
+                    ' — an account converts, or is retained, when anyone in it does'))+
+            '</div>'+
+            '<table class="ctab"><thead><tr><th>account</th><th class="n">people</th><th class="n">events</th><th>last seen</th></tr></thead><tbody>';
+          gs.forEach(function(g){
+            h+='<tr><td><b>'+esc(g.value)+'</b></td><td class="n">'+g.users+'</td><td class="n">'+g.events+'</td>'+
+               '<td class="mut">'+esc(String(g.last_seen||'').slice(0,10))+'</td></tr>';
+          });
+          acctOut.innerHTML=h+'</tbody></table>';
+        });
+      }
+    }
+
+    // ══ PEOPLE ════════════════════════════════════════════════════════════════════════
+    var pplOut=document.getElementById('pplOut');
+    if(pplOut){
+      shipGet('/v1/people?limit=25').then(function(r){
+        if(shipOff(pplOut,r,'person profiles are unavailable on this instance.'))return;
+        // `people` is the COUNT; `recent` is the list. Reading j.people as an array renders an
+        // empty pane on an instance with 120 profiles — the failure looks like no data.
+        var j=r.j||{},people=j.recent||[],traits=j.traits||[];
+        if(!people.length){pplOut.innerHTML='<div class="agmeta">no people yet — a profile appears as soon as any event carries a <b>distinct_id</b>.</div>';return;}
+        var h='<div class="agrow"><span class="proof">'+(j.people!=null?j.people:people.length)+' people</span>'+
+          '<span class="agmeta">'+(traits.length?(traits.length+' trait'+(traits.length===1?'':'s')+' seen: '+traits.slice(0,6).map(function(t){return esc(t.value)+' ('+t.people+')';}).join(' · ')):
+            'no traits yet — send <b>$identify</b>, or ride one along on any event with <b>{"$set": {"plan": "pro"}}</b>')+'</span></div>';
+        // Trait columns are chosen from what people ACTUALLY carry, most widely held first, so
+        // the table is useful on an instance nobody configured.
+        var cols=traits.slice(0,3).map(function(t){return t.value;});
+        h+='<table class="ctab" style="margin-top:10px"><thead><tr><th>person</th>'+
+          cols.map(function(c){return '<th>'+esc(c)+'</th>';}).join('')+
+          '<th class="n">events</th><th>last seen</th></tr></thead><tbody>';
+        people.forEach(function(p){
+          var tr=p.traits||{};
+          h+='<tr><td><a class="hlink" href="#" data-user="'+esc(p.distinct_id)+'">'+esc(p.distinct_id)+'</a></td>'+
+            cols.map(function(c){return '<td class="mut">'+(tr[c]!=null?esc(String(tr[c])):'—')+'</td>';}).join('')+
+            '<td class="n">'+p.events+'</td><td class="mut">'+esc(String(p.last_seen||'').slice(0,10))+'</td></tr>';
+        });
+        pplOut.innerHTML=h+'</tbody></table><div class="agmeta" style="margin-top:10px">every value here is the LAST-KNOWN one, decided by timestamp and not by arrival order — a week-old event syncing late from an offline phone cannot overwrite today\'s. nothing is stored: these are recomputed from your events on every load, which is why a profile can never disagree with the log.</div>';
+      });
+    }
+
+    // ══ DERIVED METRICS ═══════════════════════════════════════════════════════════════
+    var fmRun=document.getElementById('fmRun'),fmOut=document.getElementById('fmOut');
+    if(fmRun&&fmOut){
+      fmRun.addEventListener('click',function(){
+        var a=(document.getElementById('fmA').value||'').trim(),
+            b=(document.getElementById('fmB').value||'').trim(),
+            op=document.getElementById('fmOp').value;
+        if(!a||!b){fmOut.innerHTML='<div class="inote err">name both events — the numerator and the denominator.</div>';return;}
+        fmOut.innerHTML='<div class="exsummary">computing…</div>';
+        // Series are named params A..Z and REFERRED TO by letter in expr. Event names contain
+        // dots and dollars, so putting them in the expression itself would need quoting rules
+        // nobody would guess; the letters keep the parser small and the input unambiguous.
+        shipGet('/v1/formula?A='+encodeURIComponent(a)+'&B='+encodeURIComponent(b)+
+                '&expr='+encodeURIComponent('A '+op+' B')+'&days='+encodeURIComponent(SA_DAYS)).then(function(r){
+          if(shipOff(fmOut,r,'derived metrics are unavailable on this instance.'))return;
+          var j=r.j||{},pts=j.points||[];
+          if(!pts.length){fmOut.innerHTML='<div class="agmeta">no overlapping buckets — the two series cover different windows, so there is nothing to combine.</div>';return;}
+          var def=pts.filter(function(p){return p.defined;});
+          var h='<div class="agrow"><span class="proof">'+esc(j.expression||(a+' '+op+' '+b))+'</span>'+
+            '<span class="agmeta">'+def.length+' of '+pts.length+' buckets defined'+
+            (j.undefined?(' · '+j.undefined+' undefined and drawn as gaps, never as zero'):'')+'</span></div>';
+          if(j.note)h+='<div class="agmeta" style="margin-top:6px">'+esc(j.note)+'</div>';
+          h+='<table class="ctab" style="margin-top:10px"><thead><tr><th>date</th><th class="n">value</th><th>note</th></tr></thead><tbody>';
+          pts.slice(-14).forEach(function(p){
+            h+='<tr><td class="mut">'+esc(String(p.date||'').slice(0,10))+'</td>'+
+              '<td class="n">'+(p.defined?(Math.round(p.value*1000)/1000):'<span class="mut">—</span>')+'</td>'+
+              '<td class="mut">'+(p.defined?'':esc(p.why||'undefined'))+'</td></tr>';
+          });
+          fmOut.innerHTML=h+'</tbody></table>';
+        });
+      });
+    }
+
+    // ══ ALERTS ════════════════════════════════════════════════════════════════════════
+    var alOut=document.getElementById('alOut');
+    if(alOut){
+      shipGet('/v1/alerts').then(function(r){
+        if(shipOff(alOut,r,'alerts are not enabled on this instance. they persist to a <b>.alerts.json</b> beside your event data.'))return;
+        var as=(r.j&&r.j.alerts)||[];
+        if(!as.length){
+          alOut.innerHTML='<div class="agmeta">no alerts yet. three of the four kinds ask nothing of you — you do not have to already know what the number should be:</div>'+
+            '<table class="ctab" style="margin-top:10px"><tbody>'+
+            '<tr><td><b>relative</b></td><td class="mut">"signups fall 30% against the previous window" — no threshold to keep current as the product grows.</td></tr>'+
+            '<tr><td><b>anomaly</b></td><td class="mut">the same detector behind the verdict card at the top of this page, pushed to you. only warnings fire — nobody should be paged because signups doubled.</td></tr>'+
+            '<tr><td><b>ratio</b></td><td class="mut">the share rather than the count: not how many errors, but what fraction of sessions hit one.</td></tr>'+
+            '<tr><td><b>count</b></td><td class="mut">a fixed threshold, when you genuinely do know the number.</td></tr>'+
+            '</tbody></table>'+
+            '<div class="agmeta" style="margin-top:12px">create one from your editor with <b>create_alert</b>, and add a webhook so it has somewhere to land. an event firing for the first time never pages anyone — there is no percentage change from nothing.</div>';
+          return;
+        }
+        var h='<table class="ctab"><thead><tr><th>alert</th><th>kind</th><th>fires when</th><th>last fired</th></tr></thead><tbody>';
+        as.forEach(function(a){
+          h+='<tr><td><b>'+esc(a.name||a.event||a.id)+'</b>'+(a.enabled===false?' <span class="mut">paused</span>':'')+'</td>'+
+            '<td class="mut">'+esc(a.kind||'count')+'</td>'+
+            '<td>'+esc(a.describe||a.description||'—')+'</td>'+
+            '<td class="mut">'+(a.last_fired?esc(String(a.last_fired).slice(0,16).replace('T',' ')):'never')+'</td></tr>';
+        });
+        alOut.innerHTML=h+'</tbody></table>';
+      });
+    }
+
     var errOut=document.getElementById('errOut');
     if(errOut){
       shipGet('/v1/errors?days='+encodeURIComponent(SA_DAYS)).then(function(r){

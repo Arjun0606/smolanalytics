@@ -24,6 +24,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/fixbrief"
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
 	"github.com/Arjun0606/smolanalytics/internal/goal"
+	"github.com/Arjun0606/smolanalytics/internal/groups"
 	"github.com/Arjun0606/smolanalytics/internal/insight"
 	"github.com/Arjun0606/smolanalytics/internal/paths"
 	"github.com/Arjun0606/smolanalytics/internal/query"
@@ -371,8 +372,19 @@ type dashVM struct {
 	// 31 days under a headline covering 60, with nothing on the page admitting the two spans
 	// differ. /v1/trends and the MCP tool already ship `truncated` in their JSON; this is the
 	// dashboard saying the same thing.
-	ChartTrunc   string
-	FunnelOrder  string // the funnel discipline (?forder=): ordered|strict|unordered
+	ChartTrunc  string
+	FunnelOrder string // the funnel discipline (?forder=): ordered|strict|unordered
+	// Account grain (?grain=company): the funnel + retention panes count ACCOUNTS, not people.
+	GrainProp    string   // the group property in effect, "" = user grain
+	GrainOptions []string // group properties this instance actually has, for the picker
+	GrainGroups  int      // how many accounts the re-keyed slice covers
+	GrainNote    string   // coverage note when traffic could not be attributed to an account
+	GrainMiss    string   // a requested property nothing carries — shown, never silently ignored
+	// GrainOffHref returns to user grain while KEEPING the window, filters and every other
+	// analysis parameter. A bare "?grain=" would silently reset the whole page to defaults, so
+	// switching the unit would also change the question — the reader would see two numbers move
+	// and attribute both to the grain.
+	GrainOffHref string
 	RetDays      int    // retention horizon (?rdays=): 7|30|90
 	RetBucket    string // retention bucket (?rbucket=): day|week|month
 	RetRolling   bool   // on-or-after mode (?rroll=1)
@@ -1781,8 +1793,34 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	// One Options value for BOTH the funnel pane and the "conversion by X" pane below it, so the
 	// two cannot drift into rendering different funnel definitions on the same page.
 	fopts := funnel.Options{Order: forder}
-	fr := funnel.ComputeOpts(evs, fsteps, 7*24*time.Hour, fopts)
-	rr := retention.ComputeBucketed(evs, rdays, retEvent, rbucket, rroll)
+	// ?grain=company switches the funnel and retention panes to ACCOUNT grain — the B2B
+	// question, where an account converts if anyone in it converts.
+	//
+	// Scoped to a LOCAL variable on purpose. Re-keying `evs` itself would silently turn every
+	// other number on this page — the headline, the chart, the verdict, the segment table —
+	// into an account number under a label that still said users, which is a worse bug than not
+	// having the feature. Only the two panes that say "accounts" are computed from grainEvs.
+	grainProp, grainMiss := r.URL.Query().Get("grain"), ""
+	grainEvs := evs
+	var grainInfo *groups.Grain
+	if grainProp != "" {
+		if re, g := groups.Regroup(evs, grainProp); g.Kept > 0 {
+			grainEvs, grainInfo = re, &g
+		} else {
+			// Nothing carries it. Fall back to user grain rather than render two empty panes,
+			// and SAY so — a silent fallback would show user numbers under an accounts label.
+			grainMiss = grainProp
+			grainProp = ""
+		}
+	}
+	grainOptions := groupProps(evs)
+	grainOff := *r.URL
+	gq := grainOff.Query()
+	gq.Del("grain")
+	grainOff.RawQuery = gq.Encode()
+	grainOffHref := grainOff.RequestURI()
+	fr := funnel.ComputeOpts(grainEvs, fsteps, 7*24*time.Hour, fopts)
+	rr := retention.ComputeBucketed(grainEvs, rdays, retEvent, rbucket, rroll)
 	// the chart and the headline stat both follow the selected range, and the stat
 	// carries a delta vs the prior equal window so movement is visible at a glance
 	if chartMetric != "" {
@@ -1899,6 +1937,10 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		RangeLabel:     rangeWindowLabel(rangeDays, rangeHours),
 		GhostTotal:     trPrior.Total,
 		FunnelOrder:    string(forder),
+		GrainProp:      grainProp,
+		GrainOptions:   grainOptions,
+		GrainMiss:      grainMiss,
+		GrainOffHref:   grainOffHref,
 		RetDays:        rdays,
 		RetBucket:      map[bool]string{true: rbucket, false: "day"}[rbucket != ""],
 		RetRolling:     rroll,
@@ -1912,6 +1954,9 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		ConvByProp:     segProp,
 		SignupsDelta:   deltaStr(sig30, sigPrior),
 		LastEventSecs:  -1,
+	}
+	if grainInfo != nil {
+		vm.GrainGroups, vm.GrainNote = grainInfo.Groups, grainInfo.Note
 	}
 	if ags := s.agentStatus(); len(ags) > 0 {
 		a := ags[0]
@@ -2585,6 +2630,36 @@ func orderByJourney(evs []event.Event, want []string) []string {
 }
 
 // detectProp returns the preferred property if present, else the most common one.
+// groupProps finds the properties on this instance that look like ACCOUNT identifiers, so the
+// grain picker offers real options instead of asking someone to remember what they instrumented.
+//
+// Name-matched against the conventional set rather than inferred from cardinality. Cardinality
+// cannot tell an account id from a session id or a timestamp, and offering "session_id" as a way
+// to group customers would produce a report that is confidently, unfalsifiably wrong — every
+// "account" would have exactly one member. A short honest list beats a long guessed one.
+func groupProps(evs []event.Event) []string {
+	known := map[string]bool{
+		"company": true, "company_id": true, "org": true, "org_id": true, "organization": true,
+		"organisation": true, "account": true, "account_id": true, "workspace": true,
+		"workspace_id": true, "team": true, "team_id": true, "tenant": true, "tenant_id": true,
+		"group": true, "group_id": true, "customer": true, "customer_id": true,
+	}
+	seen := map[string]bool{}
+	for _, e := range evs {
+		for k := range e.Properties {
+			if known[k] {
+				seen[k] = true
+			}
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for k := range seen {
+		out = append(out, k)
+	}
+	sort.Strings(out) // map order is random; a picker that reshuffles is a picker nobody trusts
+	return out
+}
+
 func detectProp(evs []event.Event, preferred string) string {
 	c := map[string]int{}
 	for _, e := range evs {

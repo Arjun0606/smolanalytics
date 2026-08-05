@@ -94,6 +94,10 @@ var toolList = []map[string]any{
 				"items":       map[string]any{"type": "string"},
 				"description": "Disqualifying event names: a user who fires one between entering the funnel and converting is dropped for that attempt (a later clean attempt still counts).",
 			},
+			"group_by": map[string]any{
+				"type":        "string",
+				"description": "Count ACCOUNTS instead of people, using this group property (e.g. \"company\", \"workspace_id\", \"org\"). An account counts as converted/retained if ANYONE in it did, which is the number a B2B product is actually paid on and is often wildly different from the user number: one admin buying at a fifty-seat customer is 100% account conversion and 2% user conversion. Call groups first to see which group properties exist. When set, every count in the response is a count of accounts and the response says so.",
+			},
 			"step_filters": map[string]any{
 				"type":        "array",
 				"items":       map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}},
@@ -117,6 +121,10 @@ var toolList = []map[string]any{
 			"bucket": map[string]any{
 				"type":        "string",
 				"description": "Period size: \"day\" (default), \"week\" (7-day blocks), or \"month\" (30-day blocks). Use week/month for a weekly/monthly product.",
+			},
+			"group_by": map[string]any{
+				"type":        "string",
+				"description": "Count ACCOUNTS instead of people, using this group property (e.g. \"company\", \"workspace_id\", \"org\"). An account counts as converted/retained if ANYONE in it did, which is the number a B2B product is actually paid on and is often wildly different from the user number: one admin buying at a fifty-seat customer is 100% account conversion and 2% user conversion. Call groups first to see which group properties exist. When set, every count in the response is a count of accounts and the response says so.",
 			},
 			"rolling": map[string]any{
 				"type":        "boolean",

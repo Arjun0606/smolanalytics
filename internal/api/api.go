@@ -933,6 +933,13 @@ func (s *Server) apiFunnel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	evs = scopeToWindow(evs, fFrom, fTo)
+	// group_by=company answers "what share of ACCOUNTS converted", which is a different number
+	// from the share of users and the one a B2B product is actually paid on. Applied after
+	// filters and the window so an account funnel is the same funnel, only counted by account.
+	evs, grain, ok := s.groupGrain(w, r, evs)
+	if !ok {
+		return
+	}
 	// breakdown=source runs the funnel per segment (conversion by property) — the same
 	// shape the MCP funnel tool returns, so agreement_test locks the two together.
 	if bd := q.Get("breakdown"); bd != "" {
@@ -955,6 +962,9 @@ func (s *Server) apiFunnel(w http.ResponseWriter, r *http.Request) {
 		}
 		kept, omitted := funnel.CapSegments(segs, limit)
 		out := map[string]any{"steps": names, "breakdown": bd, "segments": kept}
+		if grain != nil {
+			out["unit"], out["group_grain"] = "accounts", grain
+		}
 		if omitted > 0 {
 			out["omitted_segments"] = omitted
 			out["note"] = fmt.Sprintf("showing the %d largest segments by entry users; %d smaller omitted — raise breakdown_limit to see more", limit, omitted)
@@ -962,7 +972,7 @@ func (s *Server) apiFunnel(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, out)
 		return
 	}
-	writeJSON(w, http.StatusOK, funnel.ComputeOpts(evs, steps, window, opts))
+	writeJSON(w, http.StatusOK, withGrain(funnel.ComputeOpts(evs, steps, window, opts), grain))
 }
 
 // scopeToWindow keeps events in [from, to); a zero bound is unbounded on that side,
