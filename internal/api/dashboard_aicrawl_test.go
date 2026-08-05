@@ -58,9 +58,43 @@ func TestAICrawlPaneRendersWithData(t *testing.T) {
 		}
 	}
 	// the three purposes are counted apart on purpose; a single "bot traffic" number
-	// would bury the one that means a human is asking about you right now
+	// would bury the one that means a human is asking about you
+	if !strings.Contains(body, "answers when someone asks") {
+		t.Error("the user-initiated purpose was not distinguished in the table")
+	}
+	// ...but the seed's newest ChatGPT-User fetch is hours old, so the PRESENT TENSE must not
+	// appear. This assertion used to be the opposite way round, which is how the pane came to
+	// read "answering someone now" for a fetch from the previous day, indefinitely.
+	if strings.Contains(body, "answering someone now") {
+		t.Error("the table claims an assistant is answering someone RIGHT NOW off a fetch that is " +
+			"hours old — present tense has to be earned by a recent timestamp")
+	}
+	// and the column headed "last seen" has to contain a time
+	if !strings.Contains(body, "h ago") && !strings.Contains(body, "d ago") {
+		t.Error("the last-seen column renders no timestamp, so a stale row is indistinguishable from a live one")
+	}
+}
+
+// The other half of the rule: a genuinely fresh user-initiated fetch DOES earn the present
+// tense. A guard that never lets the live case through is just a different wrong answer.
+func TestAICrawlSaysNowOnlyForAFreshUserFetch(t *testing.T) {
+	t.Setenv("SMOLANALYTICS_PASSWORD", "op-pass-1234")
+	st := memory.New()
+	s := New(st)
+	now := time.Now().UTC()
+	// one ChatGPT-User fetch two minutes ago — a person is genuinely waiting on an answer
+	if err := st.Ingest(event.Event{
+		Name: aicrawl.CrawlEvent, DistinctID: "$crawler", Timestamp: now.Add(-2 * time.Minute),
+		Properties: map[string]any{
+			"crawler": "ChatGPT-User", "operator": "OpenAI", "purpose": aicrawl.PurposeUser,
+			"path": "/", "status": float64(200), "site": "example.com",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	body := renderDash(t, s, "op-pass-1234")
 	if !strings.Contains(body, "answering someone now") {
-		t.Error("the live-assistant purpose was not distinguished in the table")
+		t.Error("a fetch from two minutes ago is exactly the case the live copy exists for, and it did not fire")
 	}
 }
 

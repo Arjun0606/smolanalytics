@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/cohort"
@@ -57,5 +58,20 @@ func (s *Server) cohortUsers(w http.ResponseWriter, r *http.Request) {
 	for id := range members {
 		ids = append(ids, id)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"cohort": d.Name, "count": len(ids), "users": ids})
+	// cohort.Resolve returns a map, and this ranged it straight into the response: two identical
+	// requests over the same immutable event log returned the same count in a DIFFERENT order
+	// every time (measured: 5 of 5 repeats differed on a 30-member cohort), so no diff, cached
+	// snapshot or byte-comparison agreement test could rely on the one property this product
+	// sells — ask twice, get the same answer. Sorted, and capped like every other user list here
+	// (apiWho caps at 200) so a large cohort cannot serialize every distinct_id into one body;
+	// `count` stays the TRUE size and `truncated` says so out loud rather than letting a reader
+	// assume len(users) is the whole cohort.
+	sort.Strings(ids)
+	total := len(ids)
+	if len(ids) > 200 {
+		ids = ids[:200]
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"cohort": d.Name, "count": total, "users": ids, "truncated": total > len(ids),
+	})
 }

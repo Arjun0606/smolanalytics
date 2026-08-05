@@ -114,7 +114,10 @@ func (s *Server) answerToolkit(intent askIntent, q string, evs []event.Event, no
 		if goalEv == "" {
 			return fmt.Sprintf("Flag %q is measured, but I couldn't tell which goal event to score it on. Ask e.g. \"how is %s doing on checkout?\".", fl.Key, fl.Key), tkReceipt("the A/B flag-impact report", "feature flags"), true
 		}
-		rep := flag.Measure(evs, fl.Key, goalEv, 30)
+		// fl is the Flag itself, so the control arm is the declared one and a dead arm shows
+		to := time.Now().UTC()
+		rep := flag.MeasureRange(evs, fl, goalEv, to.AddDate(0, 0, -30), to)
+		rep.Days = 30
 		return tkFlagImpactAnswer(fl.Key, goalEv, rep), tkReceipt(fmt.Sprintf("the A/B flag-impact report for %q on %q", fl.Key, goalEv), "feature flags"), true
 
 	case intentSessions, intentSessionTimeline:
@@ -438,6 +441,19 @@ func tkFlagImpactAnswer(key, goal string, rep flag.Report) string {
 	}
 	if best.Key == rep.Control {
 		return fmt.Sprintf("For %q on %q, the control arm %q still leads at %.1f%%. No variant beats it yet (%s). %d exposed.", key, goal, rep.Control, best.RatePct, sig, best.Exposed)
+	}
+	if !best.DeltaDefined {
+		// A control that converted nobody makes relative lift undefined, not zero. Printing
+		// "+0.0% lift" next to "significant at 95%" is the exact contradiction DeltaDefined exists
+		// to stop, so say what the control actually did instead of inventing a percentage.
+		var ctrlConv, ctrlExp int
+		for _, v := range rep.Variants {
+			if v.Key == rep.Control {
+				ctrlConv, ctrlExp = v.Converted, v.Exposed
+			}
+		}
+		return fmt.Sprintf("For %q on %q: %q leads at %.1f%% vs control %q, but the lift is undefined - the control converted %d of %d, so there is no baseline to divide by (%s). %d exposed in that arm.",
+			key, goal, best.Key, best.RatePct, rep.Control, ctrlConv, ctrlExp, sig, best.Exposed)
 	}
 	return fmt.Sprintf("For %q on %q: %q leads at %.1f%% vs control %q, a %+.1f%% lift (%s). %d exposed in that arm.",
 		key, goal, best.Key, best.RatePct, rep.Control, best.DeltaPct, sig, best.Exposed)

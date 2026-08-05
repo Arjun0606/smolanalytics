@@ -42,6 +42,13 @@ func (s *Server) ask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	evs = query.Apply(evs, nil) // production scope: dev-env events excluded by default
+	// ...and this tool's own writes. The ask bar answers "what did USERS do", and the GEO
+	// runner's daily $geo_check under one synthetic distinct_id is a user who never misses a
+	// day. Without this the bar answered "Day-1 retention is 6% ... of 119 users" while the
+	// verdict card rendered inches above it on the same page said 4% of 114 — the verdict was
+	// the only surface in the product that excluded them. The AI-visibility answers below take
+	// the unfiltered slice explicitly, because those events are their input.
+	evs = query.WithoutSampler(evs)
 
 	now := time.Now().UTC()
 	// every answer ships with its receipt: which deterministic report produced it, over
@@ -582,8 +589,17 @@ func answer(q string, evs []event.Event, now time.Time) string {
 				" (That's visitor→" + ev + "; ask \"where do people drop off\" for the full funnel after that.)"
 		}
 	}
-	// "social traffic trend over the last 30 days" wants a SERIES, not one scalar
-	if hasAny(q, "trend", "over time", "trajectory") && (len(segs) == 1 || m.kind == "event") {
+	// "social traffic trend over the last 30 days" wants a SERIES, not one scalar.
+	// Two segments only reach the trend when they INTERSECT ("pro signups on mobile over
+	// time" = plan AND device). A comparison shape ("android vs ios signups over time",
+	// "pro vs free") must not be ANDed — that intersection is empty, and the trend would
+	// answer a confident zero; the segment-vs-segment branch below reports both instead.
+	trendable := len(segs) == 1 || m.kind == "event"
+	if len(segs) == 2 && (segs[0].prop == segs[1].prop ||
+		hasAny(q, " vs ", "versus", "compared to", " or ", " against ")) {
+		trendable = false
+	}
+	if hasAny(q, "trend", "over time", "trajectory") && trendable {
 		return answerTrendText(evs, m, segs, win, now)
 	}
 	if intent != intentConvBy && intent != intentSplit {
@@ -724,7 +740,10 @@ func answerScopedIntent(intent askIntent, evs []event.Event, scoped []event.Even
 	case intentEntryPages:
 		return answerEntryPages(evs, win)
 	case intentPeakDay:
-		return answerPeakDay(evs, resolveMetric(q, volAll), win, now)
+		// the question itself decides peak vs trough: "best day" and "worst day" land on the
+		// same intent, and answerPeakDay used to compute only the maximum, so "what was our
+		// worst day last month" answered with the BIGGEST day — the exact opposite fact.
+		return answerPeakDay(evs, resolveMetric(q, volAll), win, now, q)
 	case intentSplit:
 		return answerSplit(evs, q, win)
 	case intentAI:
@@ -1100,6 +1119,8 @@ func windowClause(w askWindow) string {
 }
 
 var lastNDaysRe = regexp.MustCompile(`(?:last|past)\s+(\d+)\s+days?`)
+var lastNWeeksRe = regexp.MustCompile(`(?:last|past)\s+(\d+)\s+weeks?`)
+var lastNMonthsRe = regexp.MustCompile(`(?:last|past)\s+(\d+)\s+months?`)
 var lastNHoursRe = regexp.MustCompile(`(?:last|past)\s+(\d+)\s+hours?`)
 var lastNMinutesRe = regexp.MustCompile(`(?:last|past)\s+(\d+)\s+min(?:ute)?s?`)
 
@@ -1167,6 +1188,28 @@ func parseWindow(q string, now time.Time) (win askWindow, unsupported string) {
 				label: fmt.Sprintf("the last %d days (UTC)", n)}, ""
 		}
 	}
+	// "last 2 weeks" / "last 6 months" used to match NOTHING: the regexes covered only
+	// days/hours/minutes, and unsupportedTimePhrase couldn't refuse them either because it
+	// matches whole words and the question says "weeks", not "week". So the window silently
+	// widened to ALL TIME — 60 days of data answered "60 pageviews from 60 visitors" for a
+	// question about 14 days, with a receipt that said "over all recorded events" under a
+	// question that named two weeks. Neither the number nor the refusal was there.
+	if m := lastNWeeksRe.FindStringSubmatch(q); m != nil {
+		if n, err := strconv.Atoi(m[1]); err == nil && n > 0 && n <= 520 {
+			// 7n whole calendar days ending today, the same shape "last N days" resolves to,
+			// so "last 2 weeks" and "last 14 days" are one number.
+			return askWindow{from: today.AddDate(0, 0, -(7*n - 1)), to: now,
+				label: fmt.Sprintf("the last %d weeks (UTC)", n)}, ""
+		}
+	}
+	if m := lastNMonthsRe.FindStringSubmatch(q); m != nil {
+		if n, err := strconv.Atoi(m[1]); err == nil && n > 0 && n <= 120 {
+			// calendar months back from today (Aug 4 - 3 months = May 4), not 30n days —
+			// "the last 3 months" means the calendar span people read off a calendar.
+			return askWindow{from: today.AddDate(0, -n, 0), to: now,
+				label: fmt.Sprintf("the last %d months (UTC)", n)}, ""
+		}
+	}
 	if tok := unsupportedTimePhrase(q); tok != "" {
 		return askWindow{}, tok
 	}
@@ -1180,7 +1223,12 @@ func mondayOffset(t time.Time) int { return (int(t.Weekday()) + 6) % 7 }
 // unsupportedTimePhrase returns the first time-shaped token the parser does NOT
 // support, so the answer can name it instead of quietly widening the window.
 func unsupportedTimePhrase(q string) string {
-	for _, tok := range []string{"quarter", "year", "month", "week", "hour", "minute",
+	// the PLURALS matter: containsWord is whole-word, so "in the last 3 weeks" (a shape the
+	// parser above only handles for digit forms) used to match neither "week" nor any regex
+	// and fell through to the all-time window with no refusal. Anything still unhandled must
+	// be refused BY NAME rather than quietly answered over every event ever recorded.
+	for _, tok := range []string{"quarter", "quarters", "year", "years", "month", "months",
+		"week", "weeks", "hour", "minute",
 		"q1", "q2", "q3", "q4", "january", "february", "march", "april", "june", "july",
 		"august", "september", "october", "november", "december",
 		"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"} {
@@ -1774,7 +1822,13 @@ func answerWebDim(evs []event.Event, q string, win askWindow) string {
 		for v, n := range counts {
 			rows = append(rows, kv{v, n})
 		}
-		sort.Slice(rows, func(i, j int) bool { return rows[i].n > rows[j].n })
+		// name breaks the tie, or the top-5 cut is decided by MAP ITERATION ORDER: with 8
+		// browsers on 3 visitors each, "what browsers do my visitors use" returned a
+		// different five every single call (30/30 distinct answers measured). A report the
+		// user can re-run and get a different answer from is not a report.
+		sort.Slice(rows, func(i, j int) bool {
+			return rows[i].n > rows[j].n || (rows[i].n == rows[j].n && rows[i].v < rows[j].v)
+		})
 		out := make([]struct {
 			v string
 			n int
@@ -2295,7 +2349,14 @@ func answerGeo(scoped, all []event.Event, win askWindow) string {
 	for cc, a := range byCC {
 		rows = append(rows, row{cc, len(a.visitors)})
 	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].visitors > rows[j].visitors })
+	// the country code breaks the tie: rows come out of a map, and sort.Slice is not stable,
+	// so eight countries with 3 visitors each named a DIFFERENT top five on every call
+	// ("JP, BR, CA, US, IN and 3 more" vs "US, IN, DE, FR, GB and 3 more" — 7 distinct
+	// answers in 12 runs of the same question over the same data). Same rule the top-pages
+	// and property-breakdown answers already follow.
+	sort.Slice(rows, func(i, j int) bool {
+		return rows[i].visitors > rows[j].visitors || (rows[i].visitors == rows[j].visitors && rows[i].cc < rows[j].cc)
+	})
 	parts := make([]string, 0, 5)
 	for i, r := range rows {
 		if i == 5 {

@@ -109,10 +109,8 @@ func (s *Server) filtered(r *http.Request) ([]event.Event, error) {
 	// "signups where device=mobile" means "signups by mobile-acquired users" — matching the
 	// dashboard + ask bar — instead of a silent 0 because signup carries no device property.
 	evs := query.ApplyMode(query.StampForFilters(all, fs), fs, anyMode)
-	if cid := r.URL.Query().Get("cohort"); cid != "" && s.cohorts != nil {
-		if d, ok := s.cohorts.Get(cid); ok {
-			evs = cohort.FilterToUsers(evs, cohort.Resolve(all, d))
-		}
+	if err := applyCohort(r, s, all, &evs); err != nil {
+		return nil, err
 	}
 	return evs, nil
 }
@@ -137,10 +135,8 @@ func (s *Server) funnelScoped(r *http.Request) ([]event.Event, error) {
 		return nil, badRequestError{fmt.Sprintf("no events carry the property %q, so this filter can only ever match 0 — check the spelling. Properties seen: %s", bad, strings.Join(known, ", "))}
 	}
 	evs := query.ScopeUsers(all, fs, anyMode)
-	if cid := r.URL.Query().Get("cohort"); cid != "" && s.cohorts != nil {
-		if d, ok := s.cohorts.Get(cid); ok {
-			evs = cohort.FilterToUsers(evs, cohort.Resolve(all, d))
-		}
+	if err := applyCohort(r, s, all, &evs); err != nil {
+		return nil, err
 	}
 	return evs, nil
 }
@@ -430,6 +426,48 @@ func parseTrendWindow(r *http.Request) (from, to time.Time, err error) {
 	return from, to, nil
 }
 
+// posIntParam reads a count-shaped query param (days, limit, depth, breakdown_limit).
+//
+// Every report used to parse these inline with `if v, err := strconv.Atoi(x); err == nil && v > 0`,
+// which treats "abc", "-5", "0" and "1.5" as ABSENT: GET /v1/web?days=abc answered over the default
+// 30 days with a 200 and nothing in the body to reveal that the window was not the one asked for,
+// /v1/retention?days=abc silently returned the 7-day grid, /v1/paths?depth=abc returned depth 3.
+// Meanwhile /v1/trends?days=abc correctly 400s — the same typo was honest on one report and a
+// quietly different window on six others. Missing/empty keeps the default; anything PRESENT but
+// unusable is a 400. Over-max values are clamped rather than rejected because the caps are shared
+// with the MCP tools (days=500 → 90) and the two surfaces have to keep agreeing.
+func posIntParam(r *http.Request, key string, def, max int) (int, error) {
+	v := r.URL.Query().Get(key)
+	if v == "" {
+		return def, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return 0, badRequestError{fmt.Sprintf("%s must be a positive integer (got %q)", key, v)}
+	}
+	if max > 0 && n > max {
+		n = max
+	}
+	return n, nil
+}
+
+// rejectWindowParams 400s when a report is handed a time-scope parameter it cannot honor.
+//
+// These handlers window by whole days (or not at all) and never read from/to/hours, so
+// GET /v1/web?from=2020-01-01&to=2020-02-01 returned the LAST 30 DAYS with a 200: a 2020 question
+// answered with this month's numbers, with no provenance in the response to expose the swap. The
+// same silence hid ?hours=6 on /v1/web and ?days= on /v1/stickiness. Naming the parameter we cannot
+// honor is the honest half of the covenant — an answer computed over a window nobody asked for is
+// worse than an error.
+func rejectWindowParams(r *http.Request, windows string, keys ...string) error {
+	for _, k := range keys {
+		if r.URL.Query().Get(k) != "" {
+			return badRequestError{fmt.Sprintf("this report does not take %s= — %s, so a %s= scope would be silently ignored. /v1/trends and /v1/funnel take days, hours and from/to.", k, windows, k)}
+		}
+	}
+	return nil
+}
+
 // GET /v1/breakdown?event=signup&property=source&filters=...
 func (s *Server) apiBreakdown(w http.ResponseWriter, r *http.Request) {
 	property := r.URL.Query().Get("property")
@@ -522,12 +560,14 @@ func (s *Server) apiBreakdown(w http.ResponseWriter, r *http.Request) {
 
 // GET /v1/retention?event=open&days=7&filters=...
 func (s *Server) apiRetention(w http.ResponseWriter, r *http.Request) {
-	days := 7
-	if v, err := strconv.Atoi(r.URL.Query().Get("days")); err == nil && v > 0 {
-		days = v
+	days, derr := posIntParam(r, "days", 7, 90)
+	if derr != nil {
+		writeQueryErr(w, derr)
+		return
 	}
-	if days > 90 {
-		days = 90
+	if derr := rejectWindowParams(r, "retention windows by whole days (days=N)", "from", "to", "hours"); derr != nil {
+		writeQueryErr(w, derr)
+		return
 	}
 	evs, err := s.filtered(r)
 	if err != nil {
@@ -560,12 +600,14 @@ func (s *Server) apiRetention(w http.ResponseWriter, r *http.Request) {
 
 // GET /v1/lifecycle?days=30&filters=... — new/returning/resurrected/dormant per day
 func (s *Server) apiLifecycle(w http.ResponseWriter, r *http.Request) {
-	days := 30
-	if v, err := strconv.Atoi(r.URL.Query().Get("days")); err == nil && v > 0 {
-		days = v
+	days, derr := posIntParam(r, "days", 30, 180)
+	if derr != nil {
+		writeQueryErr(w, derr)
+		return
 	}
-	if days > 180 {
-		days = 180
+	if derr := rejectWindowParams(r, "lifecycle windows by whole days (days=N)", "from", "to", "hours"); derr != nil {
+		writeQueryErr(w, derr)
+		return
 	}
 	evs, err := s.filtered(r)
 	if err != nil {
@@ -577,6 +619,13 @@ func (s *Server) apiLifecycle(w http.ResponseWriter, r *http.Request) {
 
 // GET /v1/stickiness?filters=... — DAU/WAU/MAU + ratio
 func (s *Server) apiStickiness(w http.ResponseWriter, r *http.Request) {
+	// DAU/WAU/MAU are fixed 1/7/30-day windows by definition, so this report reads no time
+	// parameter at all — ?days=90 used to be accepted and thrown away, handing back the
+	// 30-day MAU as if it were the answer to a 90-day question.
+	if derr := rejectWindowParams(r, "stickiness is always DAU/WAU/MAU (fixed 1-, 7- and 30-day windows)", "days", "from", "to", "hours"); derr != nil {
+		writeQueryErr(w, derr)
+		return
+	}
 	evs, err := s.filtered(r)
 	if err != nil {
 		writeQueryErr(w, err)
@@ -596,12 +645,16 @@ func (s *Server) apiAIVisibility(w http.ResponseWriter, r *http.Request) {
 		writeQueryErr(w, err)
 		return
 	}
-	days := 0 // 0 → aivis default (90; visibility moves slowly)
-	if v, err := strconv.Atoi(r.URL.Query().Get("days")); err == nil && v > 0 {
-		days = v
+	// 0 → aivis default (90; visibility moves slowly). 365 is the same cap the MCP tool
+	// applies — surfaces must agree.
+	days, derr := posIntParam(r, "days", 0, 365)
+	if derr != nil {
+		writeQueryErr(w, derr)
+		return
 	}
-	if days > 365 {
-		days = 365 // same cap as the MCP tool — surfaces must agree
+	if derr := rejectWindowParams(r, "AI visibility windows by trailing days (days=N)", "from", "to", "hours"); derr != nil {
+		writeQueryErr(w, derr)
+		return
 	}
 	writeJSON(w, http.StatusOK, aivis.Compute(evs, days, time.Time{}))
 }
@@ -649,12 +702,10 @@ func (s *Server) apiPaths(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "start is required: an event name, or a page path beginning with \"/\" (e.g. /pricing) to follow page-to-page navigation")
 		return
 	}
-	depth := 3
-	if v, err := strconv.Atoi(r.URL.Query().Get("depth")); err == nil && v > 0 {
-		depth = v
-	}
-	if depth > 10 {
-		depth = 10
+	depth, derr := posIntParam(r, "depth", 3, 10) // 10 = the MCP paths cap; surfaces must agree
+	if derr != nil {
+		writeQueryErr(w, derr)
+		return
 	}
 	evs, err := s.filtered(r)
 	if err != nil {
@@ -679,12 +730,14 @@ func (s *Server) apiPaths(w http.ResponseWriter, r *http.Request) {
 // GET /v1/web?days=30&filters=... — the web-analytics overview (visitors, pageviews,
 // live-now, top pages, referrers, UTM sources, device split) from $pageview events.
 func (s *Server) apiWeb(w http.ResponseWriter, r *http.Request) {
-	days := 30
-	if v, err := strconv.Atoi(r.URL.Query().Get("days")); err == nil && v > 0 {
-		days = v
+	days, derr := posIntParam(r, "days", 30, 365)
+	if derr != nil {
+		writeQueryErr(w, derr)
+		return
 	}
-	if days > 365 {
-		days = 365
+	if derr := rejectWindowParams(r, "the web overview windows by whole days (days=N)", "from", "to", "hours"); derr != nil {
+		writeQueryErr(w, derr)
+		return
 	}
 	evs, err := s.filtered(r)
 	if err != nil {
@@ -701,9 +754,16 @@ func (s *Server) apiGroups(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "property is required (the group key, e.g. company)")
 		return
 	}
-	limit := 50
-	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 {
-		limit = v
+	limit, derr := posIntParam(r, "limit", 50, 0)
+	if derr != nil {
+		writeQueryErr(w, derr)
+		return
+	}
+	// the account roll-up is computed over the whole recorded history (groups.Compute takes
+	// no window), so a days=/from= scope here was accepted and dropped on the floor.
+	if derr := rejectWindowParams(r, "the account roll-up is computed over all recorded history", "days", "from", "to", "hours"); derr != nil {
+		writeQueryErr(w, derr)
+		return
 	}
 	evs, err := s.filtered(r)
 	if err != nil {
@@ -724,7 +784,20 @@ func (s *Server) apiGroups(w http.ResponseWriter, r *http.Request) {
 // Response: {mode, total, users:[{distinct_id, events, last_seen}]}, capped at 200.
 func (s *Server) apiWho(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	evs, err := s.filtered(r)
+	// The microscope has to load its events through the SAME scope function that produced the
+	// number it is explaining. Funnel mode used s.filtered (EVENT-level) while /v1/funnel, the
+	// dashboard and MCP all use s.funnelScoped (USER-level), so a funnel filtered by a property
+	// only the first step carries — ?steps=signup,checkout&f=plan:eq:pro, where signup has `plan`
+	// and checkout does not — charted "2 converted" while clicking that bar listed NOBODY
+	// (total_users 0): every checkout event was dropped before funnel.Users ever saw it. Which
+	// loader to use is decided before the read so the store is still scanned exactly once.
+	var evs []event.Event
+	var err error
+	if q.Get("steps") != "" {
+		evs, err = s.funnelScoped(r)
+	} else {
+		evs, err = s.filtered(r)
+	}
 	if err != nil {
 		writeQueryErr(w, err)
 		return
@@ -864,4 +937,40 @@ func (s *Server) apiWho(w http.ResponseWriter, r *http.Request) {
 	respond("event", collect(func(e event.Event) bool {
 		return (eventName == "" || e.Name == eventName) && inWindow(e)
 	}))
+}
+
+// applyCohort narrows evs to a saved cohort's members, and ERRORS when the id does not resolve.
+//
+// It used to swallow the miss: `if d, ok := s.cohorts.Get(cid); ok { ... }` with no else, so a
+// deleted, mistyped or foreign cohort id left `evs` at the FULL population and the report came
+// back 200 with every user in it, labelled as that cohort. A dashboard link kept after someone
+// deleted the cohort, or an agent passing an id it half-remembered, gets a confident answer about
+// a group that does not exist — the loudest possible version of the fabrication this codebase
+// refuses everywhere else. `?cohort=` is also silently ignored when no cohort store is configured,
+// which is the same lie with a different cause, so that is an error too.
+func applyCohort(r *http.Request, s *Server, all []event.Event, evs *[]event.Event) error {
+	cid := r.URL.Query().Get("cohort")
+	if cid == "" {
+		return nil
+	}
+	if s.cohorts == nil {
+		return badRequestError{"this instance has no cohort storage configured, so ?cohort= cannot be honored — run `smolanalytics serve` with a data directory"}
+	}
+	d, ok := s.cohorts.Get(cid)
+	if !ok {
+		known := s.cohorts.List()
+		names := make([]string, 0, len(known))
+		for _, c := range known {
+			names = append(names, c.ID+" ("+c.Name+")")
+		}
+		msg := "no cohort with id " + cid
+		if len(names) > 0 {
+			msg += " — this instance has: " + strings.Join(names, ", ")
+		} else {
+			msg += " — this instance has no saved cohorts"
+		}
+		return badRequestError{msg}
+	}
+	*evs = cohort.FilterToUsers(*evs, cohort.Resolve(all, d))
+	return nil
 }

@@ -177,7 +177,7 @@
   .co-act{align-self:center;display:flex;flex-direction:column;gap:7px}
   .co-fix{display:inline-block;background:var(--s2);border:1px solid var(--line2);color:var(--mut);font-family:var(--mono);font-size:var(--fs-lbl);font-weight:600;border-radius:var(--r-ctl);padding:7px 14px;text-decoration:none;white-space:nowrap;text-align:center;cursor:pointer;transition:border-color var(--t-fast),color var(--t-fast)}
   .co-fix:hover,.co-fix:focus-visible{border-color:var(--accent);color:var(--accent)}
-  .vfix{margin-left:10px;font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2);cursor:pointer;white-space:nowrap}
+  .vfix{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2);cursor:pointer;white-space:nowrap}
   .vfix:hover,.vfix:focus-visible{color:var(--accent)}
   /* the fix-brief sheet — same slide-over geometry as the visitor journey overlay, wider,
      because this one is read rather than scanned */
@@ -197,20 +197,43 @@
   .fxrow .fxn{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2)}
   .fxrow .fxsrc{display:inline-block;margin-top:3px;font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2);text-decoration:none;word-break:break-all}
   .fxrow .fxsrc:hover{color:var(--accent);text-decoration:underline}
+  /* the section-level reason for the "where it shows up" rows — said once, above them */
+  .fixsheet .fxwhy{color:var(--mut);font-size:var(--fs-body);line-height:1.6;padding:2px 0 8px}
   .fixsheet ol.fxdo{margin:0;padding-left:18px;color:var(--mut);font-size:var(--fs-body);line-height:1.75}
   .fixsheet .fxaccept{font-size:var(--fs-body);color:var(--fg);line-height:1.7}
   .co-go{display:inline-block;background:var(--accent);color:var(--bg);font-family:var(--mono);font-size:var(--fs-lbl);font-weight:700;border-radius:var(--r-ctl);padding:8px 14px;text-decoration:none;white-space:nowrap;cursor:pointer;transition:background var(--t-fast)}
   .co-go:hover{background:var(--accent-hi)}
-  .verdict-more{margin-top:2px}
+  .verdict-more{margin-top:8px;border-top:1px solid var(--line)}
   @media(max-width:720px){.callout{grid-template-columns:1fr;gap:12px}.co-act{justify-self:start}}
-  .vline{padding:4px 0;font-size:var(--fs-lead);line-height:var(--lh-lead)}
-  .vline .vdot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-right:9px;position:relative;top:-2px;animation:pulse 1.6s infinite}
-  .vline.warn .vdot{background:var(--warn);animation:none}
-  .vline .vt{font-weight:600}
-  .vline .vsep{color:var(--mut2);margin:0 8px}
-  .vline .vd{color:var(--mut)}
-  .vline .vwhy{color:var(--accent);font-family:var(--mono);font-size:var(--fs-lbl);text-decoration:none;white-space:nowrap;cursor:pointer;margin-left:8px}
-  .vline .vwhy:hover{text-decoration:underline}
+  /* ---- the findings block ------------------------------------------------------------
+     A triage list has to RANK, and four bullets of prose in one weight cannot: "day-1
+     retention 4%" and "page views up 249%" were rendered identically, one of them three
+     lines long, every line ending in the same two links so the eye had nothing to fix on.
+     Four columns now, in scanning order: the rank, the finding, its one figure, the two
+     actions — with the actions pushed to a right rail so they stop competing with content.
+     Severity is a CHARACTER (! / ✦) before it is a colour, and it is a word in the a11y
+     tree, so the rank survives greyscale, a colour-blind reader and a screen reader. */
+  .vline{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:baseline;gap:0 10px;
+    padding:7px 2px;font-size:var(--fs-lead);line-height:var(--lh-lead);border-bottom:1px solid var(--line)}
+  .vline:last-child{border-bottom:none}
+  .vline .vmk{font-family:var(--mono);font-size:var(--fs-lbl);font-weight:700;color:var(--mut2);width:1ch;text-align:center}
+  .vline.warn .vmk{color:var(--warn)}
+  /* the rank as text for anything that cannot see the glyph — clipped, never display:none,
+     because display:none takes it out of the a11y tree too */
+  .vsr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+  .vmid{display:grid;grid-template-columns:minmax(0,auto) minmax(0,1fr);align-items:baseline;gap:0 10px;min-width:0}
+  .vline .vt{color:var(--sec);font-weight:500;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .vline.warn .vt{color:var(--fg);font-weight:600}
+  /* one line per finding, always: the detail is its first sentence and even that clips before
+     the title does. The whole prose is still on the row in title= and in the fix brief. */
+  .vline .vd{color:var(--mut);font-size:var(--fs-body);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* the promoted figure — the one thing on the row the eye should find without reading it */
+  .vline .vn{font-family:var(--mono);font-weight:600;color:var(--fg);font-variant-numeric:tabular-nums}
+  .vline.warn .vn{color:var(--warn)}
+  .vact{display:flex;gap:14px;white-space:nowrap}
+  .vline .vwhy{color:var(--mut2);font-family:var(--mono);font-size:var(--fs-lbl);text-decoration:none;white-space:nowrap;cursor:pointer}
+  .vline .vwhy:hover,.vline .vwhy:focus-visible{color:var(--accent);text-decoration:underline}
+  @media(max-width:720px){.vmid{grid-template-columns:minmax(0,1fr)}.vline .vt{white-space:normal}}
   .vcalm{color:var(--mut);font-size:var(--fs-lead);padding:5px 0}
   .weekline{margin-top:4px}
   .weekline summary{cursor:pointer;list-style:none;font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2)}
@@ -242,7 +265,13 @@
   .kpi{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:var(--r-card);background:var(--s1);padding:14px 15px 15px;
     display:flex;flex-direction:column}
   .kpi:hover{border-color:var(--line2)}
-  .kpi .kk{font-family:var(--mono);font-size:var(--fs-lbl);letter-spacing:.02em;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:capitalize}
+  /* NO text-transform here. It used to be `capitalize`, which does not know the difference
+     between a word and an identifier: the headline tile carries the EVENT NAME, so "$pageview"
+     rendered as "$Pageview" and the conversion tile read "$Pageview → $Click". Those are the
+     literal strings the operator wrote in their tracking code and types into filters, the API
+     and MCP arguments — human.go refuses to dress custom event names up for exactly this
+     reason, and then CSS did it anyway. Labels are now authored in the case they render in. */
+  .kpi .kk{font-family:var(--mono);font-size:var(--fs-lbl);letter-spacing:.02em;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .kpi .kv{font-family:var(--mono);font-size:var(--fs-num);font-weight:600;letter-spacing:-.02em;margin-top:4px;line-height:1.14;color:var(--fg)}
   .kpi .kv.acc{color:var(--accent)}
   /* margin-top:auto puts this on the floor of the card, so a card with no delta line has its
@@ -251,6 +280,16 @@
   .kpi .kd{font-size:var(--fs-lbl);line-height:1.35;margin-top:auto;padding-top:8px;color:var(--mut);white-space:normal;overflow-wrap:break-word;min-height:2.2em}
   .kpi .kd.up{color:var(--ok)} .kpi .kd.down{color:var(--warn)}
   .kpi .kd .kvp{color:var(--mut2)}
+  /* Every other tile puts a COMPARISON under its number. Two put a DEFINITION there instead —
+     "Bounce rate 44% / 1 pageview, <10s" — in the same slot and the same style, so it read as a
+     value and parsed as nonsense. A definition is a thing you ask for once, so it lives next to
+     the label it defines and the delta slot stays empty until there is something to compare. */
+  .kpi .khead{display:flex;align-items:center;gap:5px;min-width:0}
+  .kpi .khead .kk{min-width:0}
+  .kpi .kwhy{flex:0 0 auto;width:15px;height:15px;display:inline-flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:var(--fs-lbl);line-height:1;color:var(--mut2);
+    border:1px solid var(--line2);border-radius:50%;cursor:help}
+  .kpi .kwhy:hover{color:var(--accent);border-color:var(--accent)}
   /* The sparkline was a 64px thumbnail pinned to the bottom-right corner, which meant two
      things fought over the same space: .kd carried a 78px right padding purely to dodge it, so
      the supporting sentence wrapped early in a card that had room. As a full-width footer the
@@ -294,6 +333,12 @@
   table.ctab .n{font-variant-numeric:tabular-nums}
   table.ctab .n{text-align:right}
   table.ctab .mut{color:var(--mut2)}
+  /* "we never measured this" is not "this was zero". Kept on --mut2 rather than --dis: --dis
+     is below AA and this dash is the cell's only content, so it has to be readable. */
+  table.ctab .nodata{color:var(--mut2);cursor:help}
+  /* the path a crawler last fetched, under the time it fetched it — secondary to the answer
+     the column header actually promises */
+  table.ctab .cpath{display:block;color:var(--mut2);font-size:var(--fs-lbl);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:24ch}
   table.ctab .up{color:var(--ok)} table.ctab .down{color:var(--warn)}
   table.ctab .acc{color:var(--accent)}
   table.ctab .nw{white-space:nowrap}
@@ -417,7 +462,20 @@
   .fname{font-weight:600;font-size:var(--fs-body)}
   .fnums{font-family:var(--mono);font-size:var(--fs-lbl)}
   .fnums .c{color:var(--fg)} .fnums .p{color:var(--accent);margin-left:10px}
+  /* the board switcher — one row of named screens, the active one carrying the accent underline
+     the rest of the page uses for "you are here" */
+  .boardtabs{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 10px}
+  .boardtabs .btab{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:var(--fs-lbl);
+    color:var(--mut);background:var(--s1);border:1px solid var(--line);border-radius:var(--r-ctl);
+    padding:5px 11px;cursor:pointer;white-space:nowrap}
+  .boardtabs .btab:hover,.boardtabs .btab:focus-visible{color:var(--fg);border-color:var(--line2)}
+  .boardtabs .btab.on{color:var(--bg);background:var(--accent);border-color:var(--accent);font-weight:700}
+  .boardtabs .btab .bn{color:inherit;opacity:.7;font-variant-numeric:tabular-nums}
+  .boardtabs .btab.add{color:var(--mut2);border-style:dashed}
   .segconv .sc{margin-bottom:10px}
+  /* what was held back, and why — a card that quietly truncates reads as one that covered
+     everything, which is the more expensive of the two mistakes */
+  .segconv .sc-thin{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);padding-top:4px;border-top:1px solid var(--line)}
   .sc-h{display:flex;justify-content:space-between;font-size:var(--fs-body)}
   .sc-h .sc-conv{font-family:var(--mono);color:var(--accent)}
   .sc-track{height:6px;background:var(--s2);border-radius:3px;margin:5px 0 3px;overflow:hidden}
@@ -527,7 +585,7 @@
   .copy:hover{border-color:var(--accent);color:var(--accent)}
   .obstatus{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2);padding-top:14px}
 
-  .devnote{margin:16px 0 0;padding:10px 14px;border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:0 6px 6px 0;background:var(--s1);color:var(--mut);font-size:var(--fs-body)}
+  .devnote{margin:var(--zone) 0 0;padding:10px 14px;border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:0 6px 6px 0;background:var(--s1);color:var(--mut);font-size:var(--fs-body)}
   .devnote a{color:var(--accent);text-decoration:none;font-family:var(--mono);font-size:var(--fs-lbl);white-space:nowrap}
   .devnote b{color:var(--fg);font-weight:600}
 
@@ -683,7 +741,15 @@
      the card still acknowledges you. Border stays transparent rather than absent so nothing
      reflows by 1px when it appears. */
   .deck .pane{display:block;background:var(--s2);border:1px solid transparent;border-radius:var(--r-card);
-    padding:var(--card-pad);min-width:0;transition:border-color var(--t-base) var(--ease),background var(--t-base) var(--ease)}
+    padding:var(--card-pad);min-width:0;overflow-x:auto;transition:border-color var(--t-base) var(--ease),background var(--t-base) var(--ease)}
+  /* Overflow is contained BY THE PANE, always — the line above.
+     This used to be an allowlist: five separate rules naming the ids that happened to hold a
+     wide table. #pane-heatmap was never added to it, and the click-target table it writes is
+     generated in JavaScript, so no amount of reading the template would have shown you. At
+     390px that one table pushed the whole DOCUMENT 37px wider than the viewport — every zone on
+     the page side-scrolling because of a table three screens down. Every pane already carries
+     min-width:0, so making containment the default costs nothing and means the next wide table
+     cannot leak, whoever adds it and whichever pane they add it to. */
   .deck .pane:hover{border-color:var(--line);background:var(--s3)}
   /* .wide is KEPT and redefined: two tracks, not the whole plane */
   .deck>.pane.wide{grid-column:span 2}
@@ -704,7 +770,6 @@
     .deck>#pane-agent,.deck>#pane-sessions,.deck>#pane-retention,
     .deck>#pane-events,.deck>#pane-paths{grid-column:1/-1}
   }
-  .deck #pane-retention{overflow-x:auto}
   /* card titles were 11px uppercase --mut2, the same weight as every caption on the page, so
      22 cards read as one undifferentiated field. Full contrast, sentence case, a touch larger:
      the title is now the second level of the hierarchy after the section heading. */
@@ -823,7 +888,6 @@
      punctuation, the same table/stat idioms as every other zone) and what a MODEL
      INFERRED (dashed hairline, no amber anywhere, and the labelling model named on
      the row). the dashed/solid split is the whole visual argument. ═══ */
-  .deck #pane-agent{overflow-x:auto}
   .agprov{display:inline-flex;align-items:center;gap:5px;border:1px solid rgba(245,166,35,.5);color:var(--accent);
     font-family:var(--mono);font-size:var(--fs-lbl);text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:99px}
   .aginf{display:inline-flex;align-items:center;gap:5px;border:1px dashed var(--line3);color:var(--mut2);
@@ -851,7 +915,6 @@
      table and slide-over idioms already above; the only genuinely new shapes are the
      density canvas (absolutely-placed cells over a scrollable page-height strip) and
      the rage badge, which is the one place warn red is allowed in a table row. ═══ */
-  .deck #pane-sessions{overflow-x:auto}
   table.ctab tr.sesrow{cursor:pointer}
   table.ctab tr.sesrow:hover td{background:var(--s2)}
   table.ctab tr.sesrow td:first-child{color:var(--fg)}
@@ -870,7 +933,6 @@
      agent panel's expandable-row idiom and its caret verbatim rather than inventing
      a third one. the only new shapes are the state pill (chip metrics + the live
      dot) and the row's remove affordance, which is the board card's. ═══ */
-  .deck #pane-deploys,.deck #pane-flags,.deck #pane-surveys{overflow-x:auto}
   table.ctab tr.xrow{cursor:pointer}
   table.ctab tr.xrow:hover td{background:var(--s2)}
   table.ctab tr.xrow td:first-child{color:var(--fg)}
@@ -927,7 +989,6 @@
      rather than three unrelated numbers */
   .sentbar{display:flex;height:10px;border-radius:3px;overflow:hidden;background:var(--s2);margin:6px 0 4px}
   .sentbar i{display:block;height:100%}
-  .deck #pane-aivis,.deck #pane-aicrawl{overflow-x:auto}
   .gverb{margin:0 0 8px;padding:8px 12px;border-left:2px solid var(--a45);background:var(--well);
     border-radius:0 var(--r-ctl) var(--r-ctl) 0;font-family:var(--sans);font-weight:400;font-size:var(--fs-lead);line-height:var(--lh-lead);color:var(--fg)}
   /* the model id and the run date: the difference between a quote and an unfalsifiable
@@ -1021,7 +1082,11 @@
 </div>
 
 <main class="sa-main"><div class="sa-inner">
-  {{if .ShowingDev}}<div class="devnote">Showing <b>development</b> data (localhost / 127.0.0.1), the traffic production reports hide. <a href="/{{if .Site}}?site={{.Site}}{{end}}">← back to production</a></div>{{else if gt .DevHidden 0}}<div class="devnote">{{.DevHidden}} event{{if ne .DevHidden 1}}s{{end}} from localhost/development {{if eq .DevHidden 1}}is{{else}}are{{end}} hidden from these production reports. <a href="/?env=development{{if .Site}}&site={{.Site}}{{end}}">view dev data →</a></div>{{end}}
+  <!-- the dev-data footnote. It is true and worth saying, and it used to say it ABOVE the
+       verdict — a footnote holding the most valuable space on the page, in front of the one
+       thing the page exists to tell you. It renders under the verdict now (see below), and
+       only takes the top when there is no verdict to come second to. -->
+  {{if not .HasData}}{{template "devnote" .}}{{end}}
 
   <!-- the answer slot — an artifact, not a chat. Renders only when you ask; the ask
        shortcuts live below the chart (they are prompts, not the page's headline). -->
@@ -1049,11 +1114,13 @@
           <a class="co-fix" data-fix="{{$first.Fingerprint}}" role="button" tabindex="0">Fix with your agent &rarr;</a>
         </div>
       </div>
-      {{if gt (len .Verdict) 1}}<div class="verdict-more">{{range slice .Verdict 1}}<div class="vline{{if eq .Severity "warn"}} warn{{end}}"><span class="vdot"></span><span class="vt">{{.Title}}</span><span class="vsep">&middot;</span><span class="vd">{{.Detail}}</span><a class="vwhy" data-q="{{.Title}}" role="button" tabindex="0">why? &rarr;</a><a class="vfix" data-fix="{{.Fingerprint}}" role="button" tabindex="0">brief &rarr;</a></div>{{end}}</div>{{end}}
+      {{if .Findings}}<div class="verdict-more">{{range .Findings}}<div class="vline{{if .Warn}} warn{{end}}"><span class="vmk" aria-hidden="true">{{.Mark}}</span><span class="vsr">{{.MarkLabel}}</span><span class="vmid"><span class="vt">{{.Title}}</span><span class="vd" title="{{.Detail}}">{{.Lead}}</span></span><span class="vact"><a class="vwhy" data-q="{{.Q}}" role="button" tabindex="0">why? &rarr;</a><a class="vfix" data-fix="{{.Fingerprint}}" role="button" tabindex="0">brief &rarr;</a></span></div>{{end}}</div>{{end}}
       {{else}}<div class="vcalm">nothing unusual right now: traffic and conversion look within normal range.</div>{{end}}
     </div>
     <details class="weekline"><summary>this week &rarr;</summary><div class="weekbody" id="brief"><div class="exsummary">&hellip;</div></div></details>
   </div>
+
+  {{template "devnote" .}}
 
   <div class="fxshade" id="fxshade" hidden></div>
   <aside class="fixsheet" id="fixsheet" hidden role="dialog" aria-modal="true" aria-labelledby="fxtitle">
@@ -1104,22 +1171,24 @@
     <!-- engagement: only ever rendered when $engagement events exist, because both
          numbers are undefined without them and a 0% bounce rate would be a lie -->
     <div class="kpi">
-      <div class="kk">Bounce rate · {{.RangeLabel}}</div>
+      <div class="khead"><span class="kk">Bounce rate · {{.RangeLabel}}</span><span class="kwhy" role="note" aria-label="Bounce rate: visitors who saw exactly one page in this whole window and were engaged under 10 seconds. Measured per visitor over the window, not per session, so it reads lower than a session-based bounce rate." title="visitors who saw exactly one page in this whole window and were engaged under 10s — per visitor over the window, not per session, so it reads lower than a session-based bounce rate">?</span></div>
       <div class="kv">{{.BouncePct}}%</div>
-      <div class="kd"><span class="kvp">1 pageview, &lt;10s</span></div>
+      <div class="kd"><span class="kvp">&nbsp;</span></div>
       {{with .SparkBounce}}<svg class="spark" viewBox="0 0 64 26" fill="none" preserveAspectRatio="none" aria-hidden="true"><polygon points="{{.Area}}" fill="var(--accent)" opacity=".12"/><polyline pathLength="1" points="{{.Line}}" stroke="var(--spark)" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>{{end}}
     </div>
     <div class="kpi">
-      <div class="kk">Avg engaged time · {{.RangeLabel}}</div>
+      <div class="khead"><span class="kk">Avg engaged time · {{.RangeLabel}}</span><span class="kwhy" role="note" aria-label="Average engaged time: all of a visitor's focused time across this whole window, divided by the visitors who had any. Per visitor over the window, not per session — it is not comparable to GA4's per-session engagement time." title="all of a visitor's focused time across this whole window, divided by the visitors who had any — per visitor over the window, not per session, so it is not GA4's per-session number">?</span></div>
       <div class="kv">{{.EngagedHuman}}</div>
-      <div class="kd"><span class="kvp">focused, per visitor</span></div>
+      <div class="kd"><span class="kvp">&nbsp;</span></div>
       {{with .SparkEngaged}}<svg class="spark" viewBox="0 0 64 26" fill="none" preserveAspectRatio="none" aria-hidden="true"><polygon points="{{.Area}}" fill="var(--accent)" opacity=".12"/><polyline pathLength="1" points="{{.Line}}" stroke="var(--spark)" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>{{end}}
     </div>
     {{else if .HasWeb}}
     <div class="kpi">
       <div class="kk">Bounce rate · engaged time</div>
-      <div class="kv" style="font-size:var(--fs-lead);color:var(--mut2);margin-top:13px">not measured yet</div>
-      <div class="kd"><span class="kvp">no $engagement events yet; sdk.js sends one as a visitor leaves a page</span></div>
+      <div class="kv" style="font-size:var(--fs-lead);color:var(--mut2);margin-top:13px">{{if .WebWindowEmpty}}no traffic in this window{{else}}not measured yet{{end}}</div>
+      <!-- "you never installed it" and "nothing happened in the six hours you picked" are
+           different problems. The card used to give the install instruction for both. -->
+      <div class="kd"><span class="kvp">{{if .WebWindowEmpty}}no pageviews landed in the last {{.RangeLabel}} — widen the range{{else}}no $engagement events yet; sdk.js sends one as a visitor leaves a page{{end}}</span></div>
     </div>
     {{end}}
   </div>
@@ -1148,6 +1217,7 @@
       </select>
       <span class="sub">· last {{.RangeLabel}}{{if gt .GhostTotal 0}} · grey = prior {{.RangeLabel}}, same scale{{end}} · computed by /v1/trends</span>
     </div>
+    {{if .ChartTrunc}}<div class="inote">{{.ChartTrunc}}</div>{{end}}
     <div id="chartAlt" hidden></div>
     <div id="chartMain">
     <div class="chartwrap">
@@ -1171,9 +1241,12 @@
         <thead><tr><th>bucket</th><th class="n">{{.ChartMetric}}</th>{{if gt .GhostTotal 0}}<th class="n">prior</th><th class="n">change</th>{{end}}<th></th></tr></thead>
         <tbody>
         {{range .ChartTable}}<tr>
-          <td>{{.Label}}</td><td class="n">{{.Count}}</td>
-          {{if gt $.GhostTotal 0}}<td class="n mut">{{if ge .Prior 0}}{{.Prior}}{{end}}</td>
-          <td class="n {{if .Delta}}{{if eq (slice .Delta 0 1) "+"}}up{{else if eq (slice .Delta 0 1) "-"}}down{{end}}{{end}}">{{.Delta}}</td>{{end}}
+          <td>{{.Label}}{{if .Partial}} <span class="mut">· so far</span>{{end}}</td><td class="n">{{.Count}}</td>
+          {{if gt $.GhostTotal 0}}<td class="n mut">{{if ge .Prior 0}}{{.Prior}}{{else}}<span class="nodata" title="no data — this bucket ends before your first recorded event, so there is nothing to compare against">&mdash;</span>{{end}}</td>
+          <!-- the still-running bucket gets no change figure. Part of today against a whole prior
+               day is arithmetic about the clock, and it rendered as a red -85% crash at 09:00. -->
+          {{if .Partial}}<td class="n mut"><span class="nodata" title="this bucket is still filling — a part-period against a whole one would read as a crash, so there is no change figure until it closes">&mdash;</span></td>
+          {{else}}<td class="n {{deltadir .Delta}}">{{.Delta}}</td>{{end}}{{end}}
           <td class="cbar"><div style="width:{{.Bar}}%"></div></td>
         </tr>{{end}}
         </tbody>
@@ -1224,6 +1297,9 @@
   <!-- the board — grows only from questions you pinned; empty = invisible -->
   <div class="board" id="board" hidden>
     <div class="zonelbl">pinned · your questions</div>
+    <!-- the board switcher. Renders only once there is more than one screen to switch between,
+         so a single-board instance is not asked to think about boards at all. -->
+    <div class="boardtabs" id="boardtabs"></div>
     <div class="boardgrid" id="boardgrid"></div>
   </div>
 
@@ -1336,7 +1412,11 @@
          nothing, so the pane says what to turn on instead of ranking a single Unknown. -->
     <div class="pane" id="pane-geo" style="order:340" data-stratum="acquire">
       <h3>countries</h3>
+      <!-- a quiet window is not a broken geo table: the setup instruction below is the wrong
+           answer to "why is this empty" when the answer is "you picked six hours at night". -->
+      {{if .WebWindowEmpty}}<div class="exsummary">no visitor landed in the last {{.RangeLabel}}, so there is nothing to place. widen the range.</div>{{else}}
       <div class="exsummary">no country resolved yet. geo is on unless you set <b>SMOLANALYTICS_GEO=off</b>: the free <a href="https://db-ip.com" target="_blank" rel="noopener" style="color:var(--mut2)">db-ip.com</a> table downloads on first boot and loads in the background, then every <em>new</em> event is stamped at ingest. the IP is used for that one lookup and never stored, so nothing already on disk is backfilled. an IPv6-only visitor stays unplaced rather than being guessed into a country, and so does anything the table cannot resolve.</div>
+      {{end}}
     </div>
     {{end}}
 
@@ -1400,6 +1480,7 @@
       <h3>conversion by {{.ConvByTitle}}</h3>
       <div class="segconv">
         {{range .ConvBySeg}}<div class="sc"><div class="sc-h"><span class="sc-name"{{if .Code}} data-cc="{{.Code}}"{{end}}>{{if .Flag}}<span class="cflag" aria-hidden="true">{{.Flag}}</span>{{end}}{{.Value}}</span><span class="sc-conv">{{.Conv}}%</span></div><div class="sc-track"><div class="sc-fill" style="width:{{.Conv}}%"></div></div><div class="sc-sub">{{.Users}} user{{if ne .Users 1}}s{{end}}</div></div>{{end}}
+        {{if .ConvByThin}}<div class="sc-thin">{{.ConvByThin}} more with fewer than 10 users &mdash; too few to rate</div>{{end}}
       </div>
     </div>
     {{end}}
@@ -1710,7 +1791,7 @@
             {{range .Bars}}<div class="crawlday{{if .Today}} ctoday{{end}}" title="{{.Label}} · {{.Hits}} fetch{{if ne .Hits 1}}es{{end}} · {{.User}} live, {{.Search}} search, {{.Training}} training"><i class="cseg-t" style="height:{{.TrainingPct}}%"></i><i class="cseg-s" style="height:{{.SearchPct}}%"></i><i class="cseg-u" style="height:{{.UserPct}}%"></i></div>{{end}}
           </div>
           <div class="crawlax"><span>{{.FirstDay}}</span><span>peak {{comma .Peak}}/day</span><span>{{.LastDay}}</span></div>
-          <div class="sovleg"><span><i class="cseg-u"></i>answering someone now</span><span><i class="cseg-s"></i>indexing for answers</span><span><i class="cseg-t"></i>training</span></div>
+          <div class="sovleg"><span><i class="cseg-u"></i>answering a person</span><span><i class="cseg-s"></i>indexing for answers</span><span><i class="cseg-t"></i>training</span></div>
         </div>
         <!-- each column's split was only in a title= on a div with no role, so nothing but a
              mouse could ever get at it. Same numbers, as text. -->
@@ -1734,11 +1815,18 @@
           <tr>
             <td><b>{{.Crawler}}</b></td>
             <td>{{.Operator}}</td>
-            <td class="nw">{{if eq .Purpose "user"}}<span class="acc">answering someone now</span>{{else if eq .Purpose "search"}}indexing for answers{{else}}training{{end}}</td>
+            <!-- accent ONLY when Live: present tense has to be earned. This said "answering
+                 someone now" for every user-purpose crawler forever, so a fetch from last
+                 Tuesday read as an assistant mid-answer. -->
+            <td class="nw">{{if .Live}}<span class="acc">{{.PurposeText}}</span>{{else}}{{.PurposeText}}{{end}}</td>
             <td class="n">{{comma .Hits}}</td>
             <td class="n">{{comma .Pages}}</td>
             <td class="n">{{if .Errors}}<span style="color:var(--warn)">{{comma .Errors}}</span>{{else}}0{{end}}</td>
-            <td class="mut">{{.LastPath}}</td>
+            <!-- the TIME, which is what "last seen" means. This column rendered LastPath — a
+                 path, under a header promising a time — so the table carried no timestamp at
+                 all and a stale row was indistinguishable from a live one. Path kept, demoted
+                 to where it belongs: the thing it last fetched. -->
+            <td class="nw">{{if .LastAgo}}{{.LastAgo}}{{if .LastPath}}<span class="cpath">{{.LastPath}}</span>{{end}}{{else}}<span class="nodata">never</span>{{end}}</td>
           </tr>
           {{end}}
         </table>
@@ -2065,6 +2153,9 @@
     // the SAME struct GET /v1/fix-brief and the fix_brief MCP tool return, so the button, the
     // endpoint and the editor cannot tell three different stories about one finding.
     var SA_FIX = {{.FixBriefs}};
+    // the same fingerprints in SEVERITY order — SA_FIX is an object, and object key order is not
+    // severity order, so "the first one" over SA_FIX means "the smallest sha1"
+    var SA_FIX_ORDER = {{.FixOrder}};
 
     // Cursor's documented prompt deeplink caps at 8,000 URL-ENCODED characters. Over that it
     // silently does nothing, so hand it the short "pull it yourself over MCP" ask instead of a
@@ -2083,13 +2174,50 @@
         '<div class="fxval">'+esc(value)+(n?' <span class="fxn">n='+n+'</span>':'')+'</div>'+
         (report?'<a class="fxsrc" href="'+esc(report)+'" target="_blank" rel="noopener">re-run: '+esc(report)+'</a>':'')+'</div>';
     }
+    // fxMiss is the honest answer to "#fix=<fingerprint> names a finding that is not in today's
+    // verdict" — an email from last week outliving the leak it reported is the NORMAL case, and
+    // the right outcome, not an error.
+    //
+    // It used to walk `for(var k in SA_FIX)` and open whatever came out first. SA_FIX is a Go map
+    // serialised to a JSON object, so that is the lexicographically smallest sha1: an unrelated
+    // finding, opened silently, under a title the reader will read as the one they clicked
+    // through for — then hand to an agent. fixbrief.go states the invariant this broke: "Never
+    // substitute a different finding for the one that was asked for."
+    function fxMiss(fp){
+      document.getElementById('fxtitle').textContent='that finding is no longer in today’s verdict';
+      var lead=SA_FIX_ORDER&&SA_FIX_ORDER.length?SA_FIX[SA_FIX_ORDER[0]]:null;
+      document.getElementById('fxdetail').textContent=
+        'the link named finding '+(fp||'(none)')+', and today’s verdict does not contain it. '+
+        (lead?'either it was fixed, or the window moved past it. today’s lead finding is “'+lead.finding.title+'” — open it from the verdict card above.'
+             :'the verdict is empty right now, so there is nothing to open.');
+      var note=document.getElementById('fxnote');
+      note.textContent='nothing was substituted for it on purpose: a brief you did not ask for, opened under a link you did, is worse than no brief.';
+      note.hidden=false;
+      // blank every evidence-bearing region rather than leave the previously opened brief's
+      // numbers under the new title
+      document.getElementById('fxevidence').innerHTML='';
+      document.getElementById('fxwhere').innerHTML='';
+      document.getElementById('fxwherelbl').hidden=true;
+      document.getElementById('fxdo').innerHTML='';
+      document.getElementById('fxaccept').textContent='';
+      document.getElementById('fxprompt').textContent='';
+      document.getElementById('fxcc').textContent='';
+      document.getElementById('fxcursor').removeAttribute('href');
+      document.getElementById('fxprov').textContent='';
+      document.getElementById('fxshade').hidden=false;
+      var sheet=document.getElementById('fixsheet');
+      sheet.hidden=false;sheet.scrollTop=0;
+      document.getElementById('fxclose').focus();
+    }
     function fxOpen(fp){
-      var b=SA_FIX&&SA_FIX[fp];
+      var b=SA_FIX&&Object.prototype.hasOwnProperty.call(SA_FIX,fp)?SA_FIX[fp]:null;
       if(!b){
-        // a link from an old email can outlive the finding it named — fall back to today's lead
-        // and say so, rather than opening an empty sheet
-        for(var k in SA_FIX){if(Object.prototype.hasOwnProperty.call(SA_FIX,k)){b=SA_FIX[k];break;}}
-        if(!b)return;
+        // the deep link allows a SHORT prefix, so resolve one — but only when it is unambiguous.
+        // two matches is not a near miss, it is a guess.
+        var hits=[];
+        if(fp)for(var i=0;i<SA_FIX_ORDER.length;i++){if(SA_FIX_ORDER[i].indexOf(fp)===0)hits.push(SA_FIX_ORDER[i]);}
+        if(hits.length!==1){fxMiss(fp);return;}
+        b=SA_FIX[hits[0]];
       }
       document.getElementById('fxtitle').textContent=b.finding.title;
       document.getElementById('fxdetail').textContent=b.finding.detail;
@@ -2098,11 +2226,19 @@
       document.getElementById('fxevidence').innerHTML=(b.evidence||[]).map(function(e){
         return fxRow(e.label,e.value,e.n,e.report);
       }).join('')||'<div class="fxrow"><div class="fxlbl">no numeric evidence rows for this finding</div></div>';
+      // The reason these particular pages are listed is a property of the SECTION, not of each
+      // row — the engine stamps the identical `why` on all five. Printing it per row rendered
+      // "— where visits START, retention is won or lost in the first session" five times in a
+      // column whose job was to be read as five paths and five numbers. Say it once, above the
+      // rows; only fall back to per-row when the reasons genuinely differ.
       var wl=document.getElementById('fxwherelbl'),wh=document.getElementById('fxwhere');
-      wh.innerHTML=(b.where||[]).map(function(w){
-        return fxRow(w.path,w.users+' — '+w.why,0,'');
+      var where=b.where||[];
+      var whys=where.map(function(w){return w.why||'';});
+      var oneWhy=whys.length>0&&whys.every(function(x){return x===whys[0];})?whys[0]:'';
+      wh.innerHTML=(oneWhy?'<div class="fxwhy">'+esc(oneWhy)+'</div>':'')+where.map(function(w){
+        return fxRow(w.path,oneWhy?String(w.users):w.users+' — '+w.why,0,'');
       }).join('');
-      wl.hidden=!(b.where&&b.where.length);
+      wl.hidden=!where.length;
       document.getElementById('fxdo').innerHTML=(b.do||[]).map(function(d){return '<li>'+esc(d)+'</li>';}).join('');
       var a=b.acceptance||{};
       document.getElementById('fxaccept').innerHTML=
@@ -2142,6 +2278,29 @@
     })();
 
     function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
+
+    // saPoll — every repeating job on this page goes through here.
+    //
+    // There were four bare setIntervals: the live feed every 4s, the agent pill every 10s, the
+    // onboarding check every 4s and the "last event" tick every second. None of them looked at
+    // whether anyone was WATCHING. A dashboard is a tab people leave open for days, and each of
+    // those live-feed calls recomputes from the raw event log — that is the whole product, and
+    // it is also why an abandoned background tab is not a free request. Measured on a real
+    // instance: ~15 requests a minute, forever, per open tab, with the window minimised.
+    //
+    // So: skip the tick while the document is hidden, and run ONCE immediately on the way back,
+    // because a stale number on a tab you just returned to is worse than one extra request.
+    function saPoll(fn, ms){
+      var timer=null;
+      function tick(){ if(!document.hidden) fn(); }
+      function start(){ if(timer===null) timer=setInterval(tick, ms); }
+      document.addEventListener('visibilitychange', function(){
+        if(document.hidden){ if(timer!==null){ clearInterval(timer); timer=null; } }
+        else { fn(); start(); }
+      });
+      fn(); start();
+      return { stop: function(){ if(timer!==null){ clearInterval(timer); timer=null; } } };
+    }
 
     // ── ask + tell: the two mechanisms that stand in for the browser dialogs ──
     // one inline prompt row (label + input + confirm/cancel, enter confirms,
@@ -2286,7 +2445,7 @@
       var s=Math.max(0,Math.round((Date.now()-lastTs)/1000));
       lastev.textContent='last event '+(s<60?s+'s':s<3600?Math.floor(s/60)+'m':Math.floor(s/3600)+'h')+' ago';
     }
-    tickLast(); setInterval(tickLast,1000);
+    saPoll(tickLast, 1000);
 
     // ---- reports-as-answers plumbing: one URL builder + one renderer, shared by the
     // answer slot, the pinned board, and the explore sheet, so a report renders
@@ -2702,12 +2861,67 @@
 
     // ---- the board: saved reports rendered as live cards titled by your questions
     var boardEl=document.getElementById('board'),boardGrid=document.getElementById('boardgrid');
+    // saBoard is which named board is on screen. Persisted per browser so the board you work on
+    // is the one that opens, and read back from ?board= so a specific screen is a shareable URL.
+    var saBoard=(/[?&]board=([\w-]+)/.exec(location.search)||[])[1]
+      ||(function(){try{return localStorage.getItem('smol_board')||'';}catch(e){return '';}})();
+
+    // The SWITCHER. Until now the product had exactly one flat pinned list, which is the artifact
+    // a PostHog or Mixpanel user opens every morning and the first gap an evaluator notices. A
+    // board that exists only in the API is a board nobody has: it renders here or it is not built.
+    function renderBoardTabs(boards,counts,active){
+      var bar=document.getElementById('boardtabs');
+      if(!bar)return;
+      if(!boards||boards.length<=1&&!counts){bar.innerHTML='';return;}
+      var h='';
+      boards.forEach(function(b){
+        var n=(counts&&counts[b.id])||0;
+        h+='<span class="btab'+(b.id===active?' on':'')+'" data-board="'+esc(b.id)+'" role="button" tabindex="0">'+
+          esc(b.name)+(n?'<span class="bn">'+n+'</span>':'')+'</span>';
+      });
+      h+='<span class="btab add" id="boardadd" role="button" tabindex="0" title="a board is a named screen with its own reports">+ board</span>';
+      bar.innerHTML=h;
+      Array.prototype.forEach.call(bar.querySelectorAll('.btab[data-board]'),function(el){
+        el.onclick=function(){
+          saBoard=el.getAttribute('data-board');
+          try{localStorage.setItem('smol_board',saBoard);}catch(e){}
+          loadBoard();
+        };
+      });
+      var add=document.getElementById('boardadd');
+      if(add)add.onclick=function(){
+        saPrompt(bar,add,'name the board','create',function(name){
+          if(!name)return;
+          fetch('/v1/boards',{method:'POST',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({name:name})}).then(function(r){return r.json()}).then(function(b){
+              if(b&&b.id){saBoard=b.id;try{localStorage.setItem('smol_board',saBoard);}catch(e){}}
+              loadBoard();
+            }).catch(function(){});
+        });
+      };
+    }
+
     function loadBoard(){
       if(!boardEl)return;
-      fetch('/v1/insights').then(function(r){return r.json()}).then(function(j){
-        var items=j.insights||[];
-        if(!items.length){boardEl.hidden=true;return;}
+      Promise.all([
+        fetch('/v1/insights').then(function(r){return r.json()}).catch(function(){return {};}),
+        fetch('/v1/boards').then(function(r){return r.json()}).catch(function(){return {};})
+      ]).then(function(res){
+        var j=res[0]||{},bj=res[1]||{};
+        var boards=bj.boards||[];
+        // an unknown ?board= must not render an empty screen and call it your dashboard
+        var known=false;boards.forEach(function(b){if(b.id===saBoard)known=true;});
+        if(!known)saBoard=boards.length?boards[0].id:'';
+        renderBoardTabs(boards,bj.counts,saBoard);
+
+        var all=j.insights||[];
+        var items=saBoard?all.filter(function(it){return (it.board_id||'')===saBoard;}):all;
+        if(!all.length){boardEl.hidden=true;return;}
         boardEl.hidden=false;boardGrid.innerHTML='';
+        if(!items.length){
+          boardGrid.innerHTML='<div class="agmeta">nothing pinned to this board yet — pin a report from an answer above, or switch boards.</div>';
+          return;
+        }
         items.forEach(function(it){
           var card=document.createElement('div');card.className='bcard';
           card.innerHTML='<div class="bh"><span class="bq">'+esc(it.name)+'</span><span class="bx" title="unpin">unpin ×</span></div>'+
@@ -2743,7 +2957,7 @@
         apill.classList.toggle('on',s2<300);
       }).catch(function(){});
     }
-    pollAgent(); setInterval(pollAgent,10000);
+    saPoll(pollAgent, 10000);
 
     var el=document.getElementById('exploreLink'),pw=document.querySelector('.power');
     if(el&&pw)el.onclick=function(e){e.preventDefault();pw.open=true;pw.scrollIntoView({behavior:'smooth',block:'start'});};
@@ -2813,7 +3027,7 @@
         live.innerHTML='<div class="livemuted">the live feed could not reach /v1/events/recent. it keeps retrying every 4 seconds, and the numbers above are still the ones the server computed for this window.</div>';
       });
     }
-    pollLive(); setInterval(pollLive, 4000);
+    saPoll(pollLive, 4000);
 
     // the filter builder: property/op/value -> a ?f chip; typeahead from /v1/meta
     var fadd=document.getElementById('fadd'),fbuilder=document.getElementById('fbuilder');
@@ -3031,14 +3245,14 @@
     fetch('/v1/meta').then(function(r){return r.json()}).then(function(j){
       exEvents.innerHTML=(j.events||[]).map(function(n){return '<option value="'+esc(n)+'">';}).join('');
     }).catch(function(){});
-    function loadCohorts(){
-      fetch('/v1/cohorts').then(function(r){return r.json()}).then(function(j){
-        var o='<option value="">all users</option>';
-        (j.cohorts||[]).forEach(function(c){o+='<option value="'+esc(c.id)+'">'+esc(c.name)+'</option>';});
-        exCohort.innerHTML=o;
-      }).catch(function(){});
+    // renderer only — refreshCohorts() below is the single place that FETCHES the list, and it
+    // hands the same array to both consumers. Two functions that each fetched the same endpoint
+    // is how one load became three identical requests.
+    function fillCohortSelect(cs){
+      var o='<option value="">all users</option>';
+      (cs||[]).forEach(function(c){o+='<option value="'+esc(c.id)+'">'+esc(c.name)+'</option>';});
+      exCohort.innerHTML=o;
     }
-    loadCohorts();
     function syncEx(){
       var t=exType.value,a=true,b=true,pa='',pb='';
       if(t==='funnel'){pa='signup,activate,checkout';b=false;}
@@ -3101,8 +3315,16 @@
         coList.appendChild(chip);
       });
     }
+    // ONE fetch, both consumers. This used to call loadCohorts() from inside its own .then,
+    // and loadCohorts fetches /v1/cohorts again — so every cohort refresh, including the one on
+    // page load, hit the endpoint twice for the identical list. Three /v1/cohorts requests were
+    // measurable in the network panel on a cold load.
     function refreshCohorts(){
-      fetch('/v1/cohorts').then(function(r){return r.json()}).then(function(j){renderCohorts(j.cohorts||[]); loadCohorts();}).catch(function(){});
+      fetch('/v1/cohorts').then(function(r){return r.json()}).then(function(j){
+        var cs=j.cohorts||[];
+        renderCohorts(cs);
+        fillCohortSelect(cs);
+      }).catch(function(){});
     }
     coCreate.onclick=function(){
       var name=coName.value.trim(); if(!name)return;
@@ -3641,6 +3863,31 @@
     }
     // the A/B read. It needs a goal event, and it answers over whole days in production
     // scope, so it does NOT inherit the toolbar's range or filters and says so.
+    // flDesign renders the inference regime under the A/B table.
+    //
+    // The engine now draws ALWAYS-VALID intervals by default, and that choice is not cosmetic: a
+    // fixed-horizon 1.96 z-test behind a page built to be checked daily reports a false winner
+    // about 43% of the time under repeated peeking (measured, 2000 A/A experiments, 199 looks
+    // each — internal/flag/sequential_test.go). The always-valid interval is wider on purpose and
+    // that width is the price of being allowed to look whenever you want. Printing the price is
+    // the difference between a method and a claim.
+    function flDesign(j,vs){
+      if(!j||!j.mode)return '';
+      var k=null;
+      for(var i=0;i<vs.length;i++){ if(vs[i].sequential&&vs[i].sequential.k){k=vs[i].sequential.k;break;} }
+      var bits=[];
+      bits.push(j.mode==='sequential'
+        ? 'always-valid intervals (safe to check whenever you like)'
+        : 'fixed-horizon intervals at the pre-registered sample size');
+      if(k&&k>1) bits.push(shipPct((k-1)*100)+' wider than a fixed-horizon test — the cost of peeking');
+      bits.push('alpha '+esc(String(j.alpha)));
+      bits.push('N* '+esc(String(j.n_tune))+' ('+esc(String(j.n_tune_source||'default'))+')');
+      bits.push('randomised by '+esc(String(j.randomisation_unit||'distinct_id')));
+      bits.push(j.pre_registered?'pre-registered design':'no pre-registered design — defaults applied');
+      var reason=j.mode_reason?'<div class="agmeta" style="margin-top:4px">'+esc(j.mode_reason)+'</div>':'';
+      return '<div class="agmeta" style="margin-top:8px">'+bits.join(' · ')+'</div>'+reason;
+    }
+
     function flMeasureBody(td,key){
       var f=flFind(key);
       if(f&&!f.measured){
@@ -3665,26 +3912,61 @@
         var goal=(inp.value||'').trim();
         if(!goal){out.innerHTML='<div class="agmeta">name the event that counts as success and the arms get compared on it.</div>';inp.focus();return;}
         out.innerHTML='<div class="exsummary">…</div>';
-        shipGet('/v1/flags/'+encodeURIComponent(key)+'/measure?event='+encodeURIComponent(goal)+
+        // The SPLIT CHECK runs first, and its verdict gates how the table below may be read.
+        // A sample-ratio mismatch means the randomisation broke, so the arms differ by whatever
+        // broke it rather than by the change being tested — every conversion number under it is
+        // unreadable. flag.CheckSRM has been correct for a long time and had no route at all, so
+        // this pane could not show it while the report's own note told the reader to go check it.
+        var srm=null;
+        shipGet('/v1/flags/'+encodeURIComponent(key)+'/health?days='+encodeURIComponent(SA_DAYS))
+          .then(function(hr){ if(hr&&hr.j&&!hr.j.error) srm=hr.j; })
+          .catch(function(){})
+          .then(function(){
+        return shipGet('/v1/flags/'+encodeURIComponent(key)+'/measure?event='+encodeURIComponent(goal)+
                 '&days='+encodeURIComponent(SA_DAYS))
           .then(function(r){
             if(r.j&&r.j.error){out.innerHTML='<div class="inote err">'+esc(r.j.error)+'</div>';return;}
             var j=r.j,vs=j.variants||[];
             if(!vs.length){out.innerHTML='<div class="agmeta">'+esc(j.note||'no exposures for this flag yet')+'</div>';return;}
-            var h='<table class="ctab"><thead><tr><th>variant</th><th class="n">exposed</th><th class="n">converted</th>'+
+            var broken=!!(srm&&srm.detected);
+            var h='';
+            if(broken){
+              h+='<div class="inote err" style="margin-bottom:10px"><b>The traffic did not split the way this flag is configured.</b> '+
+                esc(srm.read||'A sample-ratio mismatch means the randomisation broke, so the arms differ by whatever broke it rather than by the change you are testing.')+
+                ' The lift column below is greyed out on purpose: fix the split before reading any of it.</div>';
+            }
+            h+='<table class="ctab"><thead><tr><th>variant</th><th class="n">exposed</th><th class="n">converted</th>'+
               '<th class="n">rate</th><th class="n">vs control</th><th>read</th></tr></thead><tbody>';
+            var ctrlRow=null;vs.forEach(function(v){if(v.key===j.control)ctrlRow=v;});
             vs.forEach(function(v){
               var ctrl=(v.key===j.control);
+              // prefer the server's own sentence: it is the one that knows about degenerate arms
+              // and zero-conversion controls. the locally-built string is only a fallback for an
+              // older payload that predates v.read.
               var read=ctrl?'control arm'
+                :v.read?v.read
                 :v.small_sample?'fewer than 30 exposed, too few to call'
                 :v.significant?'significant at 95% against '+j.control
                 :'not significant at 95% against '+j.control;
+              // delta_pct==0 meant BOTH "flat" and "undefined" before delta_defined existed, so a
+              // control that converted nobody painted a neutral 0 next to a significant result.
               var lift=ctrl?'<span class="mut">n/a</span>'
+                :!v.delta_defined?'<span class="mut" title="relative lift needs a non-zero control rate to divide by">n/a - control converted '+
+                  (ctrlRow?ctrlRow.converted+' of '+ctrlRow.exposed:'nobody')+'</span>'
                 :'<span class="'+(v.delta_pct>0?'up':v.delta_pct<0?'down':'mut')+'">'+
                   (v.delta_pct>0?'+':'')+shipPct(v.delta_pct)+'</span>';
-              h+='<tr><td>'+esc(v.key||'(blank)')+'</td><td class="n">'+v.exposed+'</td>'+
-                '<td class="n">'+v.converted+'</td><td class="n">'+shipPct(v.rate_pct)+'</td>'+
-                '<td class="n">'+lift+'</td><td class="mut">'+esc(read)+'</td></tr>';
+              // The INTERVALS the server already computed and this table used to throw away.
+              // interval.go's own comment calls them "the 'computed, not guessed' claim made
+              // visible"; the headline claim never reached a human because the renderer dropped
+              // rate_ci and delta_ci on the floor. A bare percentage asks to be trusted — 43 of
+              // 512, somewhere between 6.3% and 11.1%, can be checked.
+              var ci=function(x){return x?'<span class="cpath">'+shipPct(x.lo)+' – '+shipPct(x.hi)+'</span>':'';};
+              var lift2=broken?'<span class="mut" title="the split is broken; a lift computed over it is not a measurement">—</span>':lift+ci(v.delta_ci);
+              // an arm nobody was exposed to is the loudest thing this table can say
+              var dead=(v.exposed===0)?' <span class="mut" title="the code path that reads this flag has probably never run for this arm">· never served</span>':'';
+              h+='<tr><td>'+esc(v.key||'(blank)')+dead+'</td><td class="n">'+v.exposed+'</td>'+
+                '<td class="n">'+v.converted+'</td><td class="n">'+shipPct(v.rate_pct)+ci(v.rate_ci)+'</td>'+
+                '<td class="n">'+lift2+'</td><td class="mut">'+esc(read)+'</td></tr>';
             });
             // every arm at zero usually means the goal is misspelled, not that the
             // experiment failed — say which rather than letting 0% read as a result
@@ -3694,8 +3976,13 @@
                 '</b> in this window, so every arm reads 0%. if that looks wrong it is usually the event name, so pick another from the list.</div>')+
               (j.note?'<div class="agmeta" style="margin-top:8px">'+esc(j.note)+'</div>':'')+
               '<div class="agmeta">a difference between arms is a measured difference on <b>'+esc(j.goal)+
-              '</b>, not a proven cause. this read windows by whole days in production scope, so the toolbar\'s date range and filters do not apply to it.</div>';
+              '</b>, not a proven cause. this read windows by whole days in production scope, so the toolbar\'s date range and filters do not apply to it.</div>'+
+              // THE DESIGN, on the page. "Significant" means nothing without the alpha it was
+              // tested at, and an interval means nothing without the mode that drew it. A reader
+              // who cannot see these cannot check the result, which is the whole product.
+              flDesign(j,vs);
           }).catch(function(){out.innerHTML='<div class="inote err">could not load the A/B read</div>';});
+        });
       }
       go.onclick=run;
       inp.onkeydown=function(e){if(e.key==='Enter'){e.preventDefault();run();}};
@@ -3925,9 +4212,14 @@
       function obchk(){fetch('/v1/events/recent?limit=1').then(function(r){return r.json()}).then(function(e){
         if(e&&e.length){ location.reload(); } // first event arrived → reveal the populated dashboard
       }).catch(function(){});}
-      obchk(); setInterval(obchk,4000);
+      saPoll(obchk, 4000);
     }
   })();
 </script>
 </body>
 </html>
+{{/* One definition, two call sites: under the verdict when there is one, at the top of the page
+     when there is not. Two copies of this markup is how one of them silently stops matching the
+     other — the empty-state page is the one where "view dev data →" is the most useful link on
+     the screen, and it is also the page nobody looks at twice. */}}
+{{define "devnote"}}{{if .ShowingDev}}<div class="devnote">Showing <b>development</b> data (localhost / 127.0.0.1), the traffic production reports hide. <a href="/{{if .Site}}?site={{.Site}}{{end}}">&larr; back to production</a></div>{{else if gt .DevHidden 0}}<div class="devnote">{{.DevHidden}} event{{if ne .DevHidden 1}}s{{end}} from localhost/development {{if eq .DevHidden 1}}is{{else}}are{{end}} hidden from these production reports. <a href="/?env=development{{if .Site}}&site={{.Site}}{{end}}">view dev data &rarr;</a></div>{{end}}{{end}}

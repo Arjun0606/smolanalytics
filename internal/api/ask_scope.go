@@ -193,6 +193,45 @@ func realValue(evs []event.Event, prop, wanted string) (string, bool) {
 	return wanted, false
 }
 
+// aliasWordIndex finds w inside the padded question only where it sits on a WORD
+// boundary, and returns -1 otherwise.
+//
+// Plain strings.Index let the twitter alias literal "t.co" match inside a host that
+// merely contains it: "how many visitors from producthunt.com" (producthun-t.co-m)
+// resolved a twitter segment, found no twitter referrer, and answered "0 — no events
+// with referrer = twitter have been sent" for 15 real producthunt visitors — an
+// authoritative zero under a channel the user never named. Same for hubspot.com and
+// gist.com. hostEquals already guarded the DATA side ("reddit.com literally contains
+// t.co"); nothing guarded the QUESTION side, which is what this fixes.
+//
+// A trailing plural "s" still counts as a boundary ("androids", "iphones"), because the
+// alias table is written in the singular and rejecting plurals would silently drop the
+// qualifier — the other half of this same failure.
+func aliasWordIndex(padded, w string) int {
+	if w == "" {
+		return -1
+	}
+	alnum := func(b byte) bool { return b >= 'a' && b <= 'z' || b >= '0' && b <= '9' }
+	for off := 0; off < len(padded); {
+		i := strings.Index(padded[off:], w)
+		if i < 0 {
+			return -1
+		}
+		i += off
+		end := i + len(w)
+		// the alias may itself begin/end with a separator (" usa ", "the us ") — only the
+		// alphanumeric ends need a boundary next to them.
+		left := !alnum(w[0]) || i == 0 || !alnum(padded[i-1])
+		right := !alnum(w[len(w)-1]) || end >= len(padded) || !alnum(padded[end]) ||
+			(padded[end] == 's' && (end+1 >= len(padded) || !alnum(padded[end+1])))
+		if left && right {
+			return i
+		}
+		off = i + 1
+	}
+	return -1
+}
+
 // extractSegments pulls up to two real segments out of the question, in the order
 // they appear, so "android vs ios" compares in the asked order.
 func extractSegments(q string, evs []event.Event) []askSeg {
@@ -206,7 +245,7 @@ func extractSegments(q string, evs []event.Event) []askSeg {
 	tables := append(append([]segMatch{}, segAliases...), countryNames...)
 	for _, a := range tables {
 		for _, w := range a.words {
-			pos := strings.Index(padded, w)
+			pos := aliasWordIndex(padded, w)
 			if pos < 0 {
 				continue
 			}
@@ -268,7 +307,9 @@ func extractSegments(q string, evs []event.Event) []askSeg {
 			{[]string{"docs", "documentation"}, "path", "/docs", "/docs"},
 		} {
 			for _, w := range pa.words {
-				if strings.Contains(padded, w) {
+				// same word-boundary rule as the alias tables above: "blog" must not fire
+				// on a host or word that merely contains it.
+				if aliasWordIndex(padded, w) >= 0 {
 					val, found := realValue(evs, "path", pa.value)
 					out = append(out, askSeg{prop: "path", value: val, label: pa.label, found: found})
 					break
@@ -664,20 +705,148 @@ func parseCompare(q string, now time.Time) (cur, prior askWindow, ok bool) {
 	return cur, prior, false
 }
 
+// applySegs narrows evs by EVERY segment the question named and returns the pool plus
+// the label suffix (" from mobile + pro"). missing is the first segment whose value is in
+// no event, so the caller can answer the honest zero instead of an unfiltered total.
+//
+// The trend and period-comparison paths each had their own `if len(segs) == 1` filter, so
+// a two-qualifier question silently dropped BOTH: "pro signups on mobile over time" and
+// "did pro signups on mobile grow this week vs last week" answered 20 and "20 vs 8" over
+// the whole dataset when the true pro+mobile figures were 10 and "10 vs 4" — the
+// unfiltered number presented as the answer, with no note that the qualifiers were gone.
+// Same user-vs-event scoping rule as answerSegAnd: acquisition/device attributes aren't on
+// every event, so a named-event metric filtered by one has to scope USERS.
+func applySegs(evs []event.Event, m askMetric, segs []askSeg, win askWindow) (pool []event.Event, note string, missing *askSeg) {
+	pool = evs
+	labels := make([]string, 0, len(segs))
+	for i := range segs {
+		if !segs[i].found {
+			return nil, "", &segs[i]
+		}
+		pool = segPoolIn(pool, m, segs[i], win)
+		labels = append(labels, segs[i].label)
+	}
+	if len(labels) == 0 {
+		return pool, "", nil
+	}
+	return pool, " from " + strings.Join(labels, " + "), nil
+}
+
+// segPoolIn narrows evs to one segment for the metric being counted. Every segment-scoped
+// answer goes through it so the ask bar can't contradict itself (or the report it cites)
+// depending on which phrasing routed the question.
+//
+// Three rules, each earned by a wrong answer:
+//   - visitors counted on an ACQUISITION attribute are attributed FIRST-TOUCH, exactly like
+//     answerSources / web.Compute. Any-touch matching double-counted people: 10 visitors who
+//     landed from google and came back via reddit answered "10 visitors from google" AND
+//     "10 visitors from reddit" — 20 attributed visitors out of 10 real ones, one of them
+//     contradicting the first-touch traffic-by-source report the receipt points at.
+//   - a named EVENT filtered by a user attribute scopes USERS: the signup event carries no
+//     referrer, so event-level matching erases the very conversions being asked about.
+//   - everything else (path, plan, custom props) stays event-level.
+func segPoolIn(evs []event.Event, m askMetric, s askSeg, win askWindow) []event.Event {
+	if m.kind == "visitors" && acquisitionAttr(s.prop) {
+		if pool, ok := firstTouchSeg(scope(evs, win), s); ok {
+			return pool
+		}
+		// the acquisition property isn't on any landing event (products that stamp source on
+		// their custom events only) — first-touch would answer a confident zero, so fall
+		// through to any-touch, which is the honest read of that data.
+	}
+	if m.kind == "event" && userAttr(s.prop) {
+		return segFilterUsers(evs, s)
+	}
+	return segFilter(evs, s)
+}
+
+// acquisitionAttr reports whether a property describes WHERE A VISITOR CAME FROM — the
+// attributes the traffic report attributes first-touch, once per visitor. Device/os/browser/
+// country are user attributes too but they aren't acquisition, so they keep matching on any
+// event (a visitor really can be counted under two devices).
+func acquisitionAttr(prop string) bool {
+	switch prop {
+	case "referrer", "source", "channel", "utm_source", "utm_medium", "utm_campaign":
+		return true
+	}
+	return false
+}
+
+// firstTouchSeg keeps every event of the visitors whose FIRST touch matches the segment,
+// mirroring answerSources: the earliest $pageview in the window attributes the visitor, once
+// (falling back to the earliest event carrying the property on datasets with no pageviews).
+//
+// ok is false when no first-touch event carries the property at all — attributing on a
+// property that only ever appears on later custom events would report zero, which is worse
+// than the double count this exists to fix.
+func firstTouchSeg(scoped []event.Event, s askSeg) ([]event.Event, bool) {
+	anyPV := false
+	for _, e := range scoped {
+		if e.Name == "$pageview" {
+			anyPV = true
+			break
+		}
+	}
+	first := map[string]event.Event{}
+	for _, e := range scoped {
+		if anyPV && e.Name != "$pageview" {
+			continue
+		}
+		if f, ok := first[e.DistinctID]; !ok || e.Timestamp.Before(f.Timestamp) {
+			first[e.DistinctID] = e
+		}
+	}
+	carries := false
+	for _, e := range first {
+		if _, ok := e.Properties[s.prop]; ok {
+			carries = true
+			break
+		}
+		if s.orUTM != "" {
+			if _, ok := e.Properties["utm_source"]; ok {
+				carries = true
+				break
+			}
+		}
+	}
+	if !carries {
+		return nil, false
+	}
+	ids := map[string]bool{}
+	for id, e := range first {
+		if segMatches(e, s) {
+			ids[id] = true
+		}
+	}
+	out := make([]event.Event, 0, len(scoped))
+	for _, e := range scoped {
+		if ids[e.DistinctID] {
+			out = append(out, e)
+		}
+	}
+	return out, true
+}
+
 // answerCompareWindows answers "metric this period vs last period" with both numbers
 // and the direction — the shape every "did we grow" question wants.
 func answerCompareWindows(evs []event.Event, m askMetric, segs []askSeg, cur, prior askWindow) string {
-	scopeEvs := evs
-	segNote := ""
-	if len(segs) == 1 {
-		if !segs[0].found {
-			return fmt.Sprintf("No events from %s in the data at all, so there's nothing to compare — 0 in both periods.", segs[0].label)
-		}
-		scopeEvs = segFilter(evs, segs[0])
-		segNote = " from " + segs[0].label
+	// two values of the SAME property ("pro vs free signups this week vs last week") is a
+	// segment comparison, not an intersection — ANDing them would answer a confident 0.
+	// Compare each segment across the two windows instead of dropping both filters.
+	if len(segs) == 2 && segs[0].prop == segs[1].prop {
+		return answerCompareWindows(evs, m, segs[:1], cur, prior) + " " +
+			answerCompareWindows(evs, m, segs[1:], cur, prior)
 	}
-	a := metricCount(scope(scopeEvs, cur), m)
-	b := metricCount(scope(scopeEvs, prior), m)
+	// each period gets its own pool: first-touch acquisition is attributed WITHIN the window
+	// being counted (same as the traffic report), so a visitor acquired last week and back
+	// this week is last week's, not both weeks'.
+	curEvs, segNote, missing := applySegs(evs, m, segs, cur)
+	if missing != nil {
+		return fmt.Sprintf("No events from %s in the data at all, so there's nothing to compare — 0 in both periods.", missing.label)
+	}
+	priorEvs, _, _ := applySegs(evs, m, segs, prior)
+	a := metricCount(scope(curEvs, cur), m)
+	b := metricCount(scope(priorEvs, prior), m)
 	// P1-2: a brand-new account has no prior period — comparing "N vs 0 — up" is
 	// noise. When the prior window is genuinely empty, say so instead of inventing a
 	// direction and a divide-by-zero delta.
@@ -715,14 +884,10 @@ func answerSegment(evs []event.Event, m askMetric, s askSeg, win askWindow) stri
 		return fmt.Sprintf("0 — no events with %s = %s have been sent, so there's no %s from %s in the data. If that's unexpected, check the tracking on that channel.",
 			s.prop, s.label, m.label, s.label)
 	}
-	// user-scope for acquisition/user attributes (referrer/source/utm/device/os/
-	// browser/country): "reddit signups" = signups BY reddit-acquired users, since the
-	// signup event itself carries no referrer. path/other props stay event-scoped.
-	pool := segFilter(evs, s)
-	if m.kind == "event" && userAttr(s.prop) {
-		pool = segFilterUsers(evs, s) // "reddit signups": the signup event carries no referrer
-	}
-	scoped := scope(pool, win)
+	// one shared rule for every segment-scoped answer (see segPoolIn): user-scope a named
+	// event on a user attribute, first-touch a VISITOR count on an acquisition attribute,
+	// event-scope everything else.
+	scoped := scope(segPoolIn(evs, m, s, win), win)
 	n := metricCount(scoped, m)
 	from := "from"
 	if s.prop == "device" || s.prop == "browser" || s.prop == "os" {
@@ -743,12 +908,9 @@ func userAttr(prop string) bool {
 
 // answerSegVsSeg answers "X vs Y" over the same metric — both numbers, then the verdict.
 func answerSegVsSeg(evs []event.Event, m askMetric, a, b askSeg, win askWindow) string {
-	segPool := func(sg askSeg) []event.Event {
-		if m.kind == "event" && userAttr(sg.prop) {
-			return segFilterUsers(evs, sg)
-		}
-		return segFilter(evs, sg)
-	}
+	// same pooling rule as answerSegment — "reddit vs google visitors" must total the real
+	// visitor count, not count every returning visitor under both channels.
+	segPool := func(sg askSeg) []event.Event { return segPoolIn(evs, m, sg, win) }
 	na, nb := 0, 0
 	if a.found {
 		na = metricCount(scope(segPool(a), win), m)
@@ -775,15 +937,12 @@ func answerSegAnd(evs []event.Event, m askMetric, a, b askSeg, win askWindow) st
 				s.prop, s.label, m.label, a.label, b.label)
 		}
 	}
+	// user attributes (device/referrer/country/…) aren't on every event, so segPoolIn scopes
+	// those by USER (and acquisition visitor counts first-touch); product/custom props (plan)
+	// stay event-scoped. Applying both narrows to the intersection.
 	pool := evs
 	for _, s := range []askSeg{a, b} {
-		// user attributes (device/referrer/country/…) aren't on every event, so scope by USER;
-		// product/custom props (plan) stay event-scoped. Applying both narrows to the intersection.
-		if m.kind == "event" && userAttr(s.prop) {
-			pool = segFilterUsers(pool, s)
-		} else {
-			pool = segFilter(pool, s)
-		}
+		pool = segPoolIn(pool, m, s, win)
 	}
 	n := metricCount(scope(pool, win), m)
 	return fmt.Sprintf("%d %s for %s + %s%s.", n, m.label, a.label, b.label, winSuffix(win))
@@ -966,7 +1125,9 @@ func answerAIReferrers(evs []event.Event, win askWindow) string {
 	if len(rows) == 0 {
 		return "No visitors from AI assistants" + windowClause(win) + " yet."
 	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].n > rows[j].n })
+	sort.Slice(rows, func(i, j int) bool {
+		return rows[i].n > rows[j].n || (rows[i].n == rows[j].n && rows[i].host < rows[j].host)
+	})
 	var parts []string
 	for _, r := range rows {
 		parts = append(parts, fmt.Sprintf("%s %d", r.host, r.n))
@@ -1059,8 +1220,9 @@ func answerEntryPages(evs []event.Event, win askWindow) string {
 	return fmt.Sprintf("Entry pages, where sessions land first%s: %s.", winSuffix(win), strings.Join(parts, " · "))
 }
 
-// answerPeakDay names the single biggest day for the metric inside the window.
-func answerPeakDay(evs []event.Event, m askMetric, win askWindow, now time.Time) string {
+// answerPeakDay names the single biggest — or, when the question asks for the trough,
+// smallest — day for the metric inside the window.
+func answerPeakDay(evs []event.Event, m askMetric, win askWindow, now time.Time, q string) string {
 	if !win.scoped() {
 		win = askWindow{from: now.AddDate(0, 0, -30), to: now, label: "the last 30 days (UTC)"}
 	}
@@ -1068,6 +1230,14 @@ func answerPeakDay(evs []event.Event, m askMetric, win askWindow, now time.Time)
 	perDay := map[string][]event.Event{}
 	for _, e := range scoped {
 		perDay[e.Timestamp.UTC().Format("2006-01-02")] = append(perDay[e.Timestamp.UTC().Format("2006-01-02")], e)
+	}
+	// classifyAsk routes BOTH polarities here ("best day" and "worst day" sit in the same
+	// hasAny), and this function only ever computed the maximum — "what was our worst day
+	// last month" answered "Biggest day for visitors last month: Jul 31 with 2", the exact
+	// opposite fact, in the confident voice of a computed report.
+	if trough := hasAny(q, "worst day", "slowest day", "quietest day", "deadest day", "weakest day",
+		"least busy", "fewest", "lowest", "smallest day", "worst traffic day"); trough {
+		return answerTroughDay(perDay, m, win, now)
 	}
 	best, bestN := "", -1
 	for d, des := range perDay {
@@ -1081,6 +1251,45 @@ func answerPeakDay(evs []event.Event, m askMetric, win askWindow, now time.Time)
 	}
 	t, _ := time.Parse("2006-01-02", best)
 	return fmt.Sprintf("Biggest day for %s%s: %s with %d.", m.label, winSuffix(win), t.Format("Mon Jan 2"), bestN)
+}
+
+// answerTroughDay names the quietest day in the window. It cannot just take the minimum of
+// perDay: a day with NO events has no key there, and a silent day is precisely the answer
+// to "our worst day". So it walks every calendar day in the window, starting at the first
+// day that has data (days before tracking existed aren't quiet days, they're absent ones)
+// and excluding the day still in progress (a half-finished today would win almost every
+// trough, which is a measurement artefact, not a fact about the product).
+func answerTroughDay(perDay map[string][]event.Event, m askMetric, win askWindow, now time.Time) string {
+	const day = 24 * time.Hour
+	first := ""
+	for d := range perDay {
+		if first == "" || d < first {
+			first = d
+		}
+	}
+	if first == "" {
+		return "No events" + windowClause(win) + " to find a quiet day in."
+	}
+	start, _ := time.Parse("2006-01-02", first)
+	end := win.to.UTC().Add(-time.Nanosecond).Truncate(day) // win.to is exclusive
+	partial := ""
+	if !win.to.UTC().Equal(win.to.UTC().Truncate(day)) && end.After(start) {
+		end = end.Add(-day)
+		partial = " (today is still in progress, so it isn't in the running)"
+	}
+	worst, worstN := "", -1
+	for d := start; !d.After(end); d = d.Add(day) {
+		key := d.Format("2006-01-02")
+		n := metricCount(perDay[key], m)
+		if worstN < 0 || n < worstN || (n == worstN && key > worst) {
+			worst, worstN = key, n
+		}
+	}
+	if worst == "" {
+		return "No events" + windowClause(win) + " to find a quiet day in."
+	}
+	t, _ := time.Parse("2006-01-02", worst)
+	return fmt.Sprintf("Quietest day for %s%s: %s with %d%s.", m.label, winSuffix(win), t.Format("Mon Jan 2"), worstN, partial)
 }
 
 // answerHours names the busiest hours of the day (UTC) — "when are users most active".
@@ -1153,16 +1362,36 @@ func answerStickiness(evs []event.Event, now time.Time) string {
 // engine /v1/lifecycle serves, never a silently substituted week.
 func answerLifecycle(evs []event.Event, q string, win askWindow, now time.Time) string {
 	if win.scoped() && win.to.Sub(win.from) <= 48*time.Hour {
-		if row, ok := lifecycleDayAt(evs, win.from); ok {
+		anchor, label, note := lifecycleAnchor(win)
+		if row, ok := lifecycleDayAt(evs, anchor); ok {
 			if hasAny(q, "churn", "dormant", "stopped", "lost", "gone quiet") {
-				return fmt.Sprintf("%d users went dormant %s — active the day before but silent that day (computed by the per-day lifecycle report).", row.Dormant, win.label)
+				return fmt.Sprintf("%d users went dormant %s — active the day before but silent that day (computed by the per-day lifecycle report).%s", row.Dormant, label, note)
 			}
-			return fmt.Sprintf("Lifecycle %s: %d new, %d returning, %d resurrected, %d went dormant (per-day lifecycle report).",
-				win.label, row.New, row.Returning, row.Resurrected, row.Dormant)
+			return fmt.Sprintf("Lifecycle %s: %d new, %d returning, %d resurrected, %d went dormant (per-day lifecycle report).%s",
+				label, row.New, row.Returning, row.Resurrected, row.Dormant, note)
 		}
 		return "No activity on that day to classify."
 	}
 	return answerLifecycleWeek(evs, q, now)
+}
+
+// lifecycleAnchor picks WHICH calendar day the per-day lifecycle report should answer for
+// an asked window, and the label that honestly describes it.
+//
+// The lifecycle engine only produces calendar-day rows, but parseWindow happily returns
+// hour windows: "how many users went dormant in the last 24 hours" gives from = 12:00
+// YESTERDAY, which lifecycleDayAt then truncated to yesterday 00:00. The answer was
+// yesterday's row wearing the "last 24 hours" label — off by a full day, and provably so:
+// the same instance answered "0" for "...today", "7" for "...yesterday", and "7" for
+// "...the last 24 hours". Anchor a non-midnight window on the day it ENDS in and name that
+// day, so the number and its label can no longer describe different days.
+func lifecycleAnchor(win askWindow) (anchor time.Time, label, note string) {
+	if !win.scoped() || win.from.UTC().Equal(win.from.UTC().Truncate(24*time.Hour)) {
+		return win.from, win.label, ""
+	}
+	anchor = win.to.Add(-time.Nanosecond) // win.to is exclusive: land inside the last day
+	return anchor, "on " + anchor.UTC().Format("Mon Jan 2") + " (UTC)",
+		" (The lifecycle report is per calendar day, so " + strings.TrimSpace(win.label) + " is answered as that whole day.)"
 }
 
 // lifecycleDayAt picks the lifecycle row for the calendar day containing t.
@@ -1223,7 +1452,11 @@ func answerLifecycleWeek(evs []event.Event, q string, now time.Time) string {
 // segment set only on the entry event still attributes. Segments below a sample floor are
 // listed but never headline (n<5 at "100%" is noise, not a winner).
 func answerConvBySteps(evs []event.Event, prop string, steps []funnel.Step, win askWindow) string {
-	segs := funnel.ComputeBreakdown(query.StampFirstTouch(evs, prop), steps, 7*24*time.Hour, prop)
+	// Opts form even though the ask bar cannot express order/exclusions yet: this is the same
+	// call the dashboard's "conversion by X" pane makes, and the optionless entry point is how
+	// that one silently dropped the funnel definition it was supposed to honour. Going through
+	// Options now means the day the ask bar parses "unordered" there is nothing left to remember.
+	segs := funnel.ComputeBreakdownOpts(query.StampFirstTouch(evs, prop), steps, 7*24*time.Hour, prop, funnel.Options{})
 	type row struct {
 		val   string
 		users int
@@ -1256,7 +1489,10 @@ func answerConvBySteps(evs []event.Event, prop string, steps []funnel.Step, win 
 		if rows[i].conv != rows[j].conv {
 			return rows[i].conv > rows[j].conv
 		}
-		return rows[i].users > rows[j].users
+		if rows[i].users != rows[j].users {
+			return rows[i].users > rows[j].users
+		}
+		return rows[i].val < rows[j].val // fully-tied rows must not be ordered by map iteration
 	})
 	var parts []string
 	for i, r := range rows {
@@ -1322,7 +1558,13 @@ func answerConvBy(evs []event.Event, prop, convEvent string, win askWindow) stri
 		if ri != rj {
 			return ri > rj
 		}
-		return rows[i].users > rows[j].users
+		if rows[i].users != rows[j].users {
+			return rows[i].users > rows[j].users
+		}
+		// segUsers is a map and sort.Slice is unstable, so seven plans all converting 5 of 10
+		// produced six different orderings of the same data — and the 6-row cap dropped a
+		// DIFFERENT plan each time. Break the last tie on the value name.
+		return rows[i].val < rows[j].val
 	})
 	var parts []string
 	for i, r := range rows {
@@ -1637,7 +1879,10 @@ func answerConvByChannel(evs []event.Event, convEvent string, win askWindow) str
 		if ri != rj {
 			return ri > rj
 		}
-		return rows[i].users > rows[j].users
+		if rows[i].users != rows[j].users {
+			return rows[i].users > rows[j].users
+		}
+		return rows[i].ch < rows[j].ch // byCh is a map: without this the channel list reshuffles per call
 	})
 	parts := []string{}
 	for i, r := range rows {
@@ -1779,14 +2024,19 @@ func answerTrendText(evs []event.Event, m askMetric, segs []askSeg, win askWindo
 	if !win.scoped() {
 		win = askWindow{from: now.AddDate(0, 0, -30), to: now, label: "the last 30 days (UTC)"}
 	}
-	segNote := ""
-	if len(segs) == 1 {
-		if !segs[0].found {
-			return fmt.Sprintf("No events from %s in the data, so there's no trend to show.", segs[0].label)
-		}
-		evs = segFilter(evs, segs[0])
-		segNote = " from " + segs[0].label
+	// applySegs applies the SAME user-vs-event scoping rule answerSegment applies, to EVERY
+	// named segment. This path filtered EVENTS unconditionally, and only the first segment:
+	// a signup event carries no referrer, so "signups from reddit" answered "20 signup events
+	// from reddit" while "signups from reddit over time" answered "No signup events from
+	// reddit the last 30 days, so the trend is flat at zero", from the same data, in the same
+	// ask bar, seconds apart; and "pro signups on mobile over time" dropped both qualifiers
+	// and printed the site-wide total. Adding "over time" to a question must not change its
+	// answer from twenty to none, nor silently widen it to everyone.
+	pool, segNote, missing := applySegs(evs, m, segs, win)
+	if missing != nil {
+		return fmt.Sprintf("No events from %s in the data, so there's no trend to show.", missing.label)
 	}
+	evs = pool
 	scoped := scope(evs, win)
 	bucket := 7 * 24 * time.Hour
 	unit := "weekly"
@@ -1841,9 +2091,13 @@ func filterByName(evs []event.Event, name string) []event.Event {
 // lifecycle RESURRECTED bucket (dormant 1+ days, back now), not merely returning.
 func answerReturning(evs []event.Event, q string, win askWindow) string {
 	if hasAny(q, "gone a while", "after being gone", "been away", "gone for a while", "resurrected", "won back") {
-		if row, ok := lifecycleDayAt(evs, win.from); ok {
-			return fmt.Sprintf("%d resurrected users %s — back after being inactive, distinct from the %d who were also active the day before (per-day lifecycle report).",
-				row.Resurrected, win.label, row.Returning)
+		// same per-calendar-day anchoring as answerLifecycle — this sibling read the row for
+		// win.from's day too, so "who came back in the last 24 hours" reported yesterday's
+		// resurrected count under a rolling-window label.
+		anchor, label, note := lifecycleAnchor(win)
+		if row, ok := lifecycleDayAt(evs, anchor); ok {
+			return fmt.Sprintf("%d resurrected users %s — back after being inactive, distinct from the %d who were also active the day before (per-day lifecycle report).%s",
+				row.Resurrected, label, row.Returning, note)
 		}
 		return "No activity on that day to classify."
 	}

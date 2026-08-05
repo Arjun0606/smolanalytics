@@ -11,6 +11,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -54,7 +55,13 @@ func comma(n int) string {
 	return string(out)
 }
 
-var dashTmpl = template.Must(template.New("dash").Funcs(template.FuncMap{"comma": comma}).Parse(dashboardHTML))
+var dashTmpl = template.Must(template.New("dash").Funcs(template.FuncMap{
+	"comma": comma,
+	// the chart table classified its own CHANGE column by slicing the first character off the
+	// delta, which is the same bug buildKPIs had: it read as neither up nor down the moment the
+	// delta printed "70x". One definition now, so the two cannot drift apart again.
+	"deltadir": deltaDir,
+}).Parse(dashboardHTML))
 
 type funnelRow struct {
 	Event   string
@@ -146,19 +153,27 @@ type segConv struct {
 // segmented by the property on their FIRST step and carried through the whole funnel; the
 // old approach filtered EVENTS by the property, which dropped later steps that never carry
 // it (e.g. source set only at signup) and understated every segment's conversion.
-func funnelBySegment(evs []event.Event, property string, steps []funnel.Step) []segConv {
+//
+// Returns the rateable segments and a COUNT of the ones held back for being too thin to rate.
+// opts is the SAME funnel definition the pane directly above it renders (?forder=, and any
+// exclusions/step filters once the dashboard grows them). It used to call the optionless
+// ComputeBreakdown, so "conversion by X" was hardcoded ordered-with-no-exclusions while the
+// funnel above it honoured the toolbar — one page showing two different funnels, with segments
+// that could not add up to the total printed over them.
+func funnelBySegment(evs []event.Event, property string, steps []funnel.Step, opts funnel.Options) ([]segConv, int) {
 	// a real funnel needs ≥2 distinct steps — a degenerate 1-step "funnel" reports a
 	// meaningless 100% conversion for every segment ("conversion by plan — pro 100%") on a
 	// brand-new instance that has only sent one event type. Suppress it entirely.
 	if len(steps) < 2 {
-		return nil
+		return nil, 0
 	}
 	// StampFirstTouch so a segment property that lives only on the acquisition event
 	// (source/referrer/device on the landing pageview, not on later funnel steps) still
 	// segments the whole funnel — matching /v1/funnel and the MCP funnel tool, which both
 	// stamp. Without it this card rendered empty while those surfaces reported the segment.
-	segs := funnel.ComputeBreakdown(query.StampFirstTouch(evs, property), steps, 7*24*time.Hour, property)
+	segs := funnel.ComputeBreakdownOpts(query.StampFirstTouch(evs, property), steps, 7*24*time.Hour, property, opts)
 	out := make([]segConv, 0, len(segs))
+	thin := 0
 	for _, s := range segs {
 		if s.Value == "(none)" {
 			continue // preserve prior behavior: only show segments where the property is set
@@ -167,10 +182,27 @@ func funnelBySegment(evs []event.Event, property string, steps []funnel.Step) []
 		if len(s.Steps) > 0 {
 			users = s.Steps[0].Count
 		}
+		if users < segConvMinUsers {
+			thin++
+			continue
+		}
 		out = append(out, segConv{Value: s.Value, Users: users, Conv: pct(s.OverallConversion)})
 	}
-	return out // ComputeBreakdown already sorts by step-0 users descending
+	return out, thin // ComputeBreakdown already sorts by step-0 users descending
 }
+
+// segConvMinUsers is the floor under which this card refuses to state a conversion rate.
+//
+// Without it the card was a wall of one-user countries: fourteen rows reading "0%", and one
+// reading "100%" off a single visitor with a full-width bar next to it — the best-converting
+// segment on the page, drawn from one person. insight already refuses to build a finding on a
+// base this thin ("a conversion % on a handful of entrants is noise, not a leak"); the card was
+// the one surface still printing it as if it were a result.
+//
+// Ten, because below that a single user moves the rate by ten points or more, which is wider
+// than any difference the card exists to show. The hidden ones are COUNTED on screen rather
+// than silently dropped — a card that quietly truncates reads as a card that covered everything.
+const segConvMinUsers = 10
 
 func toStr(v any) string {
 	if s, ok := v.(string); ok {
@@ -186,19 +218,27 @@ type dashVM struct {
 	OverallConv   int
 	Funnel        []funnelRow
 	Verdict       []insight.Finding
+	// Findings is the SAME slice from the second element on, composed into rows that rank.
+	// The template reads Verdict only for the card (element 0) and Findings for the list.
+	Findings []findingLine
 	// FixBriefs is every verdict finding's fix brief, keyed by fingerprint, as a JSON island.
 	// Computed by the SAME path GET /v1/fix-brief and the fix_brief MCP tool return
 	// (fixbrief.ComputeAll), over the funnel THIS PAGE is showing — so the button, the endpoint
 	// and the tool can never hand out three different stories about one finding. Rendered
 	// server-side rather than fetched: the sheet must open at click speed, and the whole point
 	// of the action is that the evidence is already computed.
-	FixBriefs      template.JS // server-rendered "what to look at" so the front door isn't a JS-only spinner
+	FixBriefs template.JS // server-rendered "what to look at" so the front door isn't a JS-only spinner
+	// FixOrder is the same briefs' fingerprints in severity order (element 0 = the lead finding).
+	// It exists because FixBriefs is a MAP: JSON objects carry no order, so any "open the first
+	// one" path over it is really "open the lexicographically smallest sha1".
+	FixOrder       template.JS
 	Retention      []retRow
 	RetDayHeaders  []string
 	RetentionReady bool // P2-8: at least one observable post-D0 return exists
 	Trend          []trendBar
 	BySource       []segRow
 	ConvBySeg      []segConv
+	ConvByThin     int // segments held back for being too thin to state a rate — said on screen, never silent
 	Events         []string
 	ProductEvents  []string // real named events (no $-prefixed internals) for the "your events" ask chips
 	Updated        string
@@ -220,17 +260,23 @@ type dashVM struct {
 	SourceTitle    string
 	HasConvBy      bool
 	HasSource      bool
-	// the web-analytics glance (from $pageview autocapture) — present only when
-	// pageviews exist, so product-only (backend) instances see nothing extra
+	// the web-analytics glance (from $pageview autocapture) — present only on instances that
+	// have EVER recorded a pageview, so product-only (backend) instances see nothing extra
 	// multi-site: observed `site` values + the currently selected one ("" = all)
-	Sites     []string
-	Site      string
-	HasWeb    bool
-	LiveNow   int
-	Visitors  int // unique visitors, 30d
-	Pageviews int // 30d
-	TopPages  []segRow
-	Referrers []segRow
+	Sites []string
+	Site  string
+	// HasWeb is a LIFETIME fact: a $pageview has been recorded here at some point, so the web
+	// panes and the Visitors tile belong on the page. WebWindowEmpty is the window fact that
+	// used to be conflated with it — pageviews exist, just none in the selected range — and it
+	// exists so the empty copy can say "nothing in this window" instead of "you never installed
+	// the SDK", which is a different instruction to a different person.
+	HasWeb         bool
+	WebWindowEmpty bool
+	LiveNow        int
+	Visitors       int // unique visitors, 30d
+	Pageviews      int // 30d
+	TopPages       []segRow
+	Referrers      []segRow
 	// engagement + the AI channel (shown only when measurable / present)
 	HasEngagement bool
 	EngagedSecs   int
@@ -317,19 +363,28 @@ type dashVM struct {
 	ChartMetric    string     // the charted event (?metric=), defaults to the detected headline event
 	Gran           string     // chart bucket grain (?gran=): day|week|month (hour capped upstream)
 	ChartTable     []chartRow // the sortable-data-table half of the chart+table unit
-	FunnelOrder    string     // the funnel discipline (?forder=): ordered|strict|unordered
-	RetDays        int        // retention horizon (?rdays=): 7|30|90
-	RetBucket      string     // retention bucket (?rbucket=): day|week|month
-	RetRolling     bool       // on-or-after mode (?rroll=1)
-	AgentName      string     // most recent MCP client ("" = never connected)
-	AgentAgo       string     // "2m ago"
-	AgentLive      bool       // seen within 5 minutes
-	AgentCalls     int
-	CustomRange    bool   // an explicit ?from/?to window is active
-	AnyMode        bool   // filters join with OR (?fm=any) instead of AND
-	RangeFrom      string // the custom window's inputs, echoed into the date pickers
-	RangeTo        string
-	EngagedHuman   string // "13m 23s", never "803s"
+	// ChartTrunc is the sentence to print when trends trimmed the OLDEST buckets to stay under
+	// its display cap (744 hourly points, ~11 years of days). Empty when nothing was trimmed.
+	//
+	// It has to be said out loud: the cap moves the CHART but never the TOTAL — Total is summed
+	// over the whole matched window on purpose — so ?days=60&interval=hour drew the most recent
+	// 31 days under a headline covering 60, with nothing on the page admitting the two spans
+	// differ. /v1/trends and the MCP tool already ship `truncated` in their JSON; this is the
+	// dashboard saying the same thing.
+	ChartTrunc   string
+	FunnelOrder  string // the funnel discipline (?forder=): ordered|strict|unordered
+	RetDays      int    // retention horizon (?rdays=): 7|30|90
+	RetBucket    string // retention bucket (?rbucket=): day|week|month
+	RetRolling   bool   // on-or-after mode (?rroll=1)
+	AgentName    string // most recent MCP client ("" = never connected)
+	AgentAgo     string // "2m ago"
+	AgentLive    bool   // seen within 5 minutes
+	AgentCalls   int
+	CustomRange  bool   // an explicit ?from/?to window is active
+	AnyMode      bool   // filters join with OR (?fm=any) instead of AND
+	RangeFrom    string // the custom window's inputs, echoed into the date pickers
+	RangeTo      string
+	EngagedHuman string // "13m 23s", never "803s"
 	// sparklines for the two engagement tiles, computed with the same definitions as the
 	// numbers beside them (see engagementSeries)
 	SparkBounce  *sparkVM
@@ -405,6 +460,54 @@ type chartRow struct {
 	Prior int    // same-position prior-window value (-1 = unknown)
 	Delta string // signed % vs prior, "" when unknowable
 	Bar   int    // count as % of the max, for the inline bar
+	// Partial marks the still-running newest bucket, exactly as trendBar.Partial does for the
+	// chart. The bar carried the flag and the table did not, so the row for today read
+	// "Aug 4 · 14 · prior 96 · -85%" in warning red at 09:00 — a crash that is purely the
+	// clock. The table is the ONLY reading a screen reader or a phone gets (the per-bar numbers
+	// live in a display:none .tip), so it is the one place the flag had to reach.
+	Partial bool
+}
+
+// firstEventTime is the earliest timestamp this instance holds — the moment it started
+// knowing anything. Zero when there are no events. Future-dated events are ignored: a
+// clock-skewed client must not be able to move the start of history.
+func firstEventTime(evs []event.Event) time.Time {
+	var first time.Time
+	now := time.Now().UTC()
+	for _, e := range evs {
+		if e.Timestamp.IsZero() || e.Timestamp.After(now) {
+			continue
+		}
+		if first.IsZero() || e.Timestamp.Before(first) {
+			first = e.Timestamp
+		}
+	}
+	return first
+}
+
+// bucketPredatesData reports whether points[i] covers a span that ended before this instance
+// recorded anything at all — i.e. its count of 0 means "unmeasured", not "nothing happened".
+// The bucket's end is the next bucket's start; for the last one, one granularity step on.
+func bucketPredatesData(points []trends.Point, i int, gran trends.Interval, first time.Time) bool {
+	if first.IsZero() || i < 0 || i >= len(points) {
+		return false
+	}
+	end := points[i].Date
+	if i+1 < len(points) {
+		end = points[i+1].Date
+	} else {
+		switch gran {
+		case trends.Hour:
+			end = end.Add(time.Hour)
+		case trends.Week:
+			end = end.AddDate(0, 0, 7)
+		case trends.Month:
+			end = end.AddDate(0, 1, 0)
+		default:
+			end = end.AddDate(0, 0, 1)
+		}
+	}
+	return !end.After(first)
 }
 
 type rangeVM struct {
@@ -477,6 +580,32 @@ func deltaStr(cur, prior int) string {
 	}
 }
 
+// deltaDir classifies a deltaStr result as "up" | "down" | "" — the arrow, the colour and the
+// sparkline's end-marker all hang off it.
+//
+// It exists because two call sites were reading the FIRST BYTE of the string, which stopped
+// being a sign the moment deltaStr learned to print "70x". The biggest movements on the page —
+// the only ones big enough to switch to the multiple form — were therefore the ones that
+// rendered with no arrow, in the neutral tone, next to smaller changes shown in green. A
+// silent, on-screen-only failure: the number was right and every signal around it was missing.
+//
+// The multiple form is only ever produced for a ratio of 10 or more, so it is always an increase.
+func deltaDir(d string) string {
+	if d == "" {
+		return ""
+	}
+	if strings.HasSuffix(d, "x") {
+		return "up"
+	}
+	switch d[0] {
+	case '+':
+		return "up"
+	case '-':
+		return "down"
+	}
+	return "" // "±0%": no movement to point at
+}
+
 // humanDur renders seconds as a human duration — "13m 23s", not "803s".
 func humanDur(secs int) string {
 	if secs < 60 {
@@ -493,6 +622,97 @@ type goalCard struct {
 	Conversions int
 	Pct         int
 	TopChannel  string
+}
+
+// findingLine is one row of the findings block — the list under the verdict card.
+//
+// The block's whole job is triage, and the version this replaced could not do it: four bullets
+// of undifferentiated prose where "day-1 retention 4%" and "page views up 249%" got identical
+// treatment, one of them three lines long, every line ending in the same two links. The sort was
+// already right (insight.GenerateForFunnel puts warnings first) and the rendering threw it away.
+//
+// A row that ranks needs the finding's MACHINE half — severity — and it needs a decision about
+// which half of the prose survives. A template can do neither, so the row is composed here and
+// the template only prints it.
+type findingLine struct {
+	Warn      bool
+	Mark      string // "!" / "✦": the rank as a character, because colour alone is not a rank
+	MarkLabel string // the same rank as a word, for the a11y tree
+	// Title and Lead are pre-escaped HTML because exactly one figure per row is wrapped for
+	// promotion. Everything that goes into them passes through template.HTMLEscapeString first.
+	Title       template.HTML
+	Lead        template.HTML // the detail's FIRST sentence: one line per finding, always
+	Detail      string        // the whole prose, still on the row for hover and for a screen reader
+	Q           string        // the ask the "why?" affordance runs — the finding's raw title
+	Fingerprint string
+}
+
+// numToken matches the first standalone figure in a sentence: "49%", "1.7×", "1220", "23%".
+// The leading boundary is a capture group rather than a look-behind (RE2 has none) and admits
+// only start-of-string, whitespace or an open paren — so "Day-1 retention 45%" promotes the 45%
+// and not the 1 in "Day-1", and "/blog/2024-guide" promotes nothing. A unit may be preceded by a
+// space ("1.7 ×"), a bare number may not, or "1220 people" would swallow the space after it.
+var numToken = regexp.MustCompile(`(^|[\s(])(\d[\d,]*(?:\.\d+)?(?:\s?(?:%|×|x\b))?)`)
+
+// smallSampleTail is the suffix insight.qualify() appends. It is the honesty caveat on a thin
+// base, so it survives the first-sentence trim that the rest of the prose does not — a number
+// that drops "(n=34, small sample)" reads surer than it is.
+var smallSampleTail = regexp.MustCompile(`\s*\(n=\d+, small sample\)\s*$`)
+
+// promoteFigure wraps a sentence's first figure so the eye can find the number without reading
+// the sentence. Reported so the caller can promote in exactly one place per row.
+func promoteFigure(s string) (template.HTML, bool) {
+	m := numToken.FindStringSubmatchIndex(s)
+	if m == nil {
+		return template.HTML(template.HTMLEscapeString(s)), false
+	}
+	a, b := m[4], m[5] // group 2: the figure itself, without its leading boundary
+	return template.HTML(template.HTMLEscapeString(s[:a]) +
+		`<b class="vn">` + template.HTMLEscapeString(s[a:b]) + `</b>` +
+		template.HTMLEscapeString(s[b:])), true
+}
+
+// leadSentence is the first sentence of a finding's detail — the one carrying the figure.
+// Everything after it is context, and context belongs in the brief, not in a list whose only
+// job is to be scanned.
+func leadSentence(detail string) string {
+	tail := smallSampleTail.FindString(detail)
+	body := strings.TrimSpace(strings.TrimSuffix(detail, tail))
+	if i := strings.Index(body, ". "); i >= 0 {
+		body = body[:i+1]
+	}
+	return body + strings.TrimRight(tail, " ")
+}
+
+// verdictLines composes the findings block from every finding AFTER the first — the first one
+// is the verdict card above the list.
+func verdictLines(fs []insight.Finding) []findingLine {
+	if len(fs) < 2 {
+		return nil
+	}
+	out := make([]findingLine, 0, len(fs)-1)
+	for _, f := range fs[1:] {
+		l := findingLine{
+			Warn: f.Severity == "warn", Mark: "✦", MarkLabel: "note",
+			Detail: f.Detail, Q: f.Title, Fingerprint: f.Fingerprint(),
+		}
+		if l.Warn {
+			l.Mark, l.MarkLabel = "!", "warning"
+		}
+		// Exactly one figure stands out per row: the title's if the title states one, the lead
+		// sentence's otherwise. Two promoted numbers on a line is the undifferentiated prose
+		// again, one row further down.
+		var promoted bool
+		l.Title, promoted = promoteFigure(f.Title)
+		lead := leadSentence(f.Detail)
+		if promoted {
+			l.Lead = template.HTML(template.HTMLEscapeString(lead))
+		} else {
+			l.Lead, _ = promoteFigure(lead)
+		}
+		out = append(out, l)
+	}
+	return out
 }
 
 // kpiCard is one premium headline metric: a number, its delta vs the prior window, and a
@@ -536,8 +756,35 @@ func buildSpark(series []int, endClass string) *sparkVM {
 	return &sparkVM{Line: line, Area: fmt.Sprintf("%s %.1f,%.1f 0.0,%.1f", line, w, h, h), EndX: lx, EndY: ly, EndClass: endClass}
 }
 
-// dailySeries returns per-day counts over the last `days` calendar days ending today.
-// countUsers=true counts DISTINCT users per day (visitors); false counts matching events.
+// seriesWindow is the ONE definition of what a sparkline covers: the same window the tile
+// above it reports. Returns the bucket count, the days per bucket, and the first bucket's
+// start — all three series helpers below take it, so none of them can be drawn over a
+// different period than its neighbour.
+//
+// Two failures it exists to stop, both measured on screen:
+//   - `now` is the window's END, not today. The helpers anchored on time.Now(), so
+//     ?from=2026-01-01&to=2026-01-07 drew a flat August zero-line under "Visitors · 7d 412",
+//     with a good/warn end-dot coloured from the January delta.
+//   - A window longer than the 30-point cap is BUCKETED, not truncated. Clamping days to 30
+//     meant ?days=90 labelled a tile "90d" over a line covering the trailing third of it.
+//
+// The floor of 2 is buildSpark's: one point is a dot, not a line.
+func seriesWindow(days int, now time.Time) (buckets, size int, from time.Time) {
+	if days < 2 {
+		days = 2
+	}
+	size = 1
+	if days > 30 {
+		size = (days + 29) / 30 // days per bucket, so at most 30 points
+	}
+	buckets = (days + size - 1) / size
+	end := now.UTC().Truncate(24 * time.Hour)
+	return buckets, size, end.AddDate(0, 0, -(buckets*size - 1))
+}
+
+// dailySeries returns per-bucket counts over the window seriesWindow defines, ending on the
+// day that contains `now`.
+// countUsers=true counts DISTINCT users per bucket (visitors); false counts matching events.
 // cumulativeUserSeries is the sparkline for the "Users · all time" tile: distinct users
 // known as of the end of each day, so the line RISES to exactly the number printed above
 // it. A daily-active series would have been the easy thing to reuse here and it would have
@@ -549,22 +796,16 @@ func buildSpark(series []int, endClass string) *sparkVM {
 // the two engagement tiles, using the SAME definitions as internal/web so the sparkline
 // cannot drift from the number above it: bounce = visitors with exactly one pageview who
 // engaged under 10s, over all visitors with a pageview; engaged = mean engaged time per
-// engaged visitor. Both are computed per calendar day in one pass rather than by calling
-// the web report N times.
+// engaged visitor. Both are computed per bucket in one pass rather than by calling the web
+// report N times — and a multi-day bucket applies those definitions over the bucket, which is
+// exactly what web.ComputeRange does over the window, so the shape still belongs to the number.
 //
-// Days with no pageviews yield 0 for both, which is honest: there is no rate to report.
+// Buckets with no pageviews yield 0 for both, which is honest: there is no rate to report.
 func engagementSeries(evs []event.Event, days int, now time.Time) (bounce []int, engaged []int) {
-	if days < 2 {
-		days = 2
-	}
-	if days > 30 {
-		days = 30
-	}
-	today := now.Truncate(24 * time.Hour)
-	from := today.AddDate(0, 0, -(days - 1))
-	pv := make([]map[string]int, days)
-	ms := make([]map[string]float64, days)
-	for i := 0; i < days; i++ {
+	n, size, from := seriesWindow(days, now)
+	pv := make([]map[string]int, n)
+	ms := make([]map[string]float64, n)
+	for i := 0; i < n; i++ {
 		pv[i] = map[string]int{}
 		ms[i] = map[string]float64{}
 	}
@@ -573,8 +814,8 @@ func engagementSeries(evs []event.Event, days int, now time.Time) (bounce []int,
 		if ts.Before(from) {
 			continue
 		}
-		i := int(ts.Truncate(24*time.Hour).Sub(from).Hours() / 24)
-		if i < 0 || i >= days {
+		i := int(ts.Truncate(24*time.Hour).Sub(from).Hours()/24) / size
+		if i < 0 || i >= n {
 			continue
 		}
 		switch e.Name {
@@ -586,8 +827,8 @@ func engagementSeries(evs []event.Event, days int, now time.Time) (bounce []int,
 			}
 		}
 	}
-	bounce, engaged = make([]int, days), make([]int, days)
-	for i := 0; i < days; i++ {
+	bounce, engaged = make([]int, n), make([]int, n)
+	for i := 0; i < n; i++ {
 		if n := len(pv[i]); n > 0 {
 			b := 0
 			for u, c := range pv[i] {
@@ -629,12 +870,7 @@ func rangeLabel(days int) string {
 }
 
 func cumulativeUserSeries(evs []event.Event, days int, now time.Time) []int {
-	if days < 2 {
-		days = 2
-	}
-	if days > 30 {
-		days = 30
-	}
+	n, size, from := seriesWindow(days, now)
 	first := map[string]time.Time{}
 	for _, e := range evs {
 		if e.DistinctID == "" {
@@ -644,18 +880,17 @@ func cumulativeUserSeries(evs []event.Event, days int, now time.Time) []int {
 			first[e.DistinctID] = e.Timestamp
 		}
 	}
-	today := now.Truncate(24 * time.Hour)
-	out := make([]int, days)
-	for i := 0; i < days; i++ {
-		// end of the i-th day in the window
-		cutoff := today.AddDate(0, 0, -(days - 1 - i)).Add(24 * time.Hour)
-		n := 0
+	out := make([]int, n)
+	for i := 0; i < n; i++ {
+		// end of the i-th bucket in the window
+		cutoff := from.AddDate(0, 0, (i+1)*size)
+		known := 0
 		for _, f := range first {
 			if f.Before(cutoff) {
-				n++
+				known++
 			}
 		}
-		out[i] = n
+		out[i] = known
 	}
 	// Rebase to the window's own floor. buildSpark scales 0..max, and a cumulative total
 	// that grew 2% across the window (3040 -> 3100) then draws a flat line pinned to the
@@ -676,18 +911,11 @@ func cumulativeUserSeries(evs []event.Event, days int, now time.Time) []int {
 }
 
 func dailySeries(evs []event.Event, match func(event.Event) bool, days int, now time.Time, countUsers bool) []int {
-	if days < 2 {
-		days = 2
-	}
-	if days > 30 {
-		days = 30
-	}
-	today := now.Truncate(24 * time.Hour)
-	from := today.AddDate(0, 0, -(days - 1))
-	out := make([]int, days)
+	n, size, from := seriesWindow(days, now)
+	out := make([]int, n)
 	var seen []map[string]bool
 	if countUsers {
-		seen = make([]map[string]bool, days)
+		seen = make([]map[string]bool, n)
 		for i := range seen {
 			seen[i] = map[string]bool{}
 		}
@@ -696,8 +924,8 @@ func dailySeries(evs []event.Event, match func(event.Event) bool, days int, now 
 		if !match(e) || e.Timestamp.Before(from) {
 			continue
 		}
-		idx := int(e.Timestamp.Truncate(24*time.Hour).Sub(from).Hours() / 24)
-		if idx < 0 || idx >= days {
+		idx := int(e.Timestamp.UTC().Truncate(24*time.Hour).Sub(from).Hours()/24) / size
+		if idx < 0 || idx >= n {
 			continue
 		}
 		if countUsers {
@@ -832,18 +1060,7 @@ type aivisVM struct {
 // with a real trailing-daily sparkline. This is the glance, elevated — the first thing a
 // builder sees, and it should feel effortless: the numbers that matter, moving.
 func buildKPIs(vm *dashVM, evs []event.Event, trendEvent string, days, hours int, now time.Time) {
-	dir := func(d string) string {
-		if d == "" {
-			return ""
-		}
-		switch d[0] {
-		case '+':
-			return "up"
-		case '-':
-			return "down"
-		}
-		return ""
-	}
+	dir := deltaDir
 	endOf := func(d string) string {
 		switch dir(d) {
 		case "up":
@@ -871,6 +1088,79 @@ func buildKPIs(vm *dashVM, evs []event.Event, trendEvent string, days, hours int
 	}
 	cards = append(cards, kpiCard{Label: "Users · all time", Value: comma(vm.TotalUsers), Spark: buildSpark(cumulativeUserSeries(evs, days, now), "")})
 	vm.KPIs = cards
+}
+
+// retentionGrid renders a retention.Result as the cohort grid: the period headers, the rows
+// (most-recent cohort first, capped at 12), and whether the grid is worth showing at all.
+//
+// It is a function rather than inline page code because its one hard rule — which cells may
+// be shown — has to be the SAME rule /v1/retention and the MCP tool apply, and inline it was
+// not. See retention.Observable for the two defects that came out of re-deriving it here.
+func retentionGrid(rr retention.Result, now time.Time) (headers []string, rows []retRow, ready bool) {
+	plabel := "D"
+	switch rr.Bucket {
+	case "week":
+		plabel = "W"
+	case "month":
+		plabel = "M"
+	}
+	for d := 0; d <= rr.MaxDays; d++ {
+		headers = append(headers, fmt.Sprintf("%s%d", plabel, d))
+	}
+	// most-recent cohorts first, capped for a clean grid
+	start := 0
+	if len(rr.Cohorts) > 12 {
+		start = len(rr.Cohorts) - 12
+	}
+	// P2-8: retention needs at least one cohort old enough to have an OBSERVABLE
+	// return past period 0. Below that the grid is a near-empty triangle plus a
+	// tautological 100% D0 column — worse than saying "not enough history yet".
+	for i := len(rr.Cohorts) - 1; i >= start; i-- {
+		c := rr.Cohorts[i]
+		for d := 1; d <= rr.MaxDays && d < len(c.Returned); d++ {
+			if c.Size > 0 && retention.Observable(rr, c.Date, d, now) {
+				ready = true
+				break
+			}
+		}
+	}
+	for i := len(rr.Cohorts) - 1; i >= start; i-- {
+		c := rr.Cohorts[i]
+		row := retRow{Date: c.Date.Format("Jan 2"), Size: c.Size}
+		for d := 0; d <= rr.MaxDays; d++ {
+			// A period that has not FULLY elapsed for this cohort is blank, not "0%": the grid
+			// must never render an unobservable (or half-collected) cell as churn.
+			//
+			// This used to be `cohortDate.Unix()/86400 + d > today`, with `d` counting PERIODS
+			// and the division counting DAYS. On ?rbucket=week a same-week cohort therefore read
+			// `20 | 100% | 0% | 0% | 0% | 0% | 0%` — weeks beginning 2 to 37 days in the FUTURE
+			// printed as finished churn — and month buckets were off by 30x. The `>` was wrong
+			// too: the period that started twenty minutes ago rendered as a final number while
+			// /v1/retention nulled that cell and the summary excluded that cohort, three
+			// different answers to one question on one instance.
+			if c.Size == 0 || d >= len(c.Returned) || !retention.Observable(rr, c.Date, d, now) {
+				row.Cells = append(row.Cells, retCell{Empty: true})
+				continue
+			}
+			frac := float64(c.Returned[d]) / float64(c.Size)
+			// The ramp tops out at 0.52, and the text never flips. Measured over the full
+			// 0.08-1.00 amber wash this grid used to use, there is a dead band from about
+			// 0.54 to 0.60 where NEITHER #EDEDED nor #0A0A0A reaches 4.5:1 — so no flip
+			// threshold could have been right, and the old one (0.45) chose dark text at a
+			// point where dark was 3.0:1 and light would have been 5.7:1. Capping the wash
+			// keeps one text colour AA across every cell (worst case 4.71:1 at the top of
+			// the ramp) and still leaves a clearly graded fill from rgb(40,34,23) to
+			// rgb(138,97,29). A retention number a reader cannot make out is not a
+			// weaker signal than a bright cell — it is no signal.
+			a := 0.08 + 0.44*frac
+			row.Cells = append(row.Cells, retCell{
+				Label: fmt.Sprintf("%d%%", int(math.Round(frac*100))),
+				Style: template.CSS(fmt.Sprintf("background:rgba(245,166,35,%.2f);color:#EDEDED", a)),
+			})
+		}
+		rows = append(rows, row)
+	}
+	return headers, rows, ready
 }
 
 // buildDepthCards computes the paths / lifecycle / stickiness deck from the SAME engine
@@ -1235,17 +1525,6 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		evs = query.Apply(evs, []query.Filter{{Property: "site", Op: query.Eq, Value: site}})
 	}
 
-	// the verdict is computed AFTER the site/env scope so it describes the traffic you
-	// are actually looking at — computed before the site filter, a multi-site instance
-	// opened site B under a diagnosis of site A. It stays window-independent on
-	// purpose: the verdict reports NOW, the range control scopes the reports below.
-	// Server-rendered only — real text on first paint, one source of markup.
-	// Detect the funnel BEFORE the verdict so both describe the same one. Previously the
-	// verdict ran insight's own journey detection while the funnel pane ran detectFunnel,
-	// and the page could contradict itself about which funnel it was talking about.
-	verdictSteps, _ := detectFunnel(evs, eventsByVolume(evs))
-	verdict := insight.GenerateForFunnel(evs, verdictSteps)
-
 	// range control: ?days=7|30|90 presets, or ?from=YYYY-MM-DD&to=YYYY-MM-DD for
 	// arbitrary time travel — every windowed report below recomputes over the window,
 	// and it lives in the querystring so any past view is a shareable URL
@@ -1387,6 +1666,24 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// The verdict is computed here, at the BOTTOM of the scoping section, because `evs` is
+	// only final now — after ?site=, after ?env=, and after the ?f= chips.
+	//
+	// It used to run a hundred lines above this, which handled ?site= (a multi-site instance
+	// opened site B under a diagnosis of site A) and stopped there. So the chips scoped every
+	// pane on the page and left the headline alone: filtering to ?f=plan:pro moved the funnel
+	// pane to 90% conversion while the card above it still read "Free-plan users convert worst
+	// — only 10% continue", telling you to go fix the segment you had just filtered out, and
+	// contradicting the pane directly beneath it.
+	//
+	// It stays window-independent on purpose: the verdict reports NOW, the range control scopes
+	// the reports below. Server-rendered only — real text on first paint, one source of markup.
+	// Detect the funnel BEFORE the verdict so both describe the same one: the verdict used to
+	// run insight's own journey detection while the funnel pane ran detectFunnel, and the page
+	// could contradict itself about which funnel it was even talking about.
+	verdictSteps, _ := detectFunnel(evs, eventsByVolume(evs))
+	verdict := insight.GenerateForFunnel(evs, verdictSteps)
+
 	// the range switcher links, preserving site + filters
 	// every preset link must clear BOTH range params, or clicking 7d after 6h leaves
 	// ?hours=6 in the URL and the chart silently stays on the six-hour window.
@@ -1450,9 +1747,17 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	// own clock — so the sheet, GET /v1/fix-brief and the fix_brief MCP tool cannot tell three
 	// different stories about one finding. Server-rendered because the sheet must open at click
 	// speed; the evidence being already computed is the whole point of the action.
+	// Keyed map for O(1) lookup, PLUS the fingerprints in the order ComputeAll returned them
+	// (severity-sorted, element 0 = today's lead finding). A Go map marshals to a JSON object
+	// with no order, so the sheet's old "just open the first one" fallback opened whichever
+	// fingerprint sorted lexicographically smallest — an arbitrary finding presented as the one
+	// the reader asked for, which is precisely what internal/fixbrief's own invariant forbids
+	// ("Never substitute a different finding for the one that was asked for").
 	fixBriefs := map[string]fixbrief.Brief{}
+	fixOrder := []string{}
 	for _, fb := range fixbrief.ComputeAll(evs, verdictSteps, nowT) {
 		fixBriefs[fb.Fingerprint] = fb
+		fixOrder = append(fixOrder, fb.Fingerprint)
 	}
 	endT := nowT
 	if !rangeAsof.IsZero() {
@@ -1473,7 +1778,10 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	if granParam == "" && (rangeDays == 1 || rangeHours > 0) {
 		gran = trends.Hour
 	}
-	fr := funnel.ComputeOpts(evs, fsteps, 7*24*time.Hour, funnel.Options{Order: forder})
+	// One Options value for BOTH the funnel pane and the "conversion by X" pane below it, so the
+	// two cannot drift into rendering different funnel definitions on the same page.
+	fopts := funnel.Options{Order: forder}
+	fr := funnel.ComputeOpts(evs, fsteps, 7*24*time.Hour, fopts)
 	rr := retention.ComputeBucketed(evs, rdays, retEvent, rbucket, rroll)
 	// the chart and the headline stat both follow the selected range, and the stat
 	// carries a delta vs the prior equal window so movement is visible at a glance
@@ -1493,6 +1801,11 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		// matches parseTrendWindow + MCP so a clock-skewed future event can't make the
 		// headline stat disagree with /v1 and MCP
 	}
+	// The last INSTANT inside the window, which is the last DAY every sparkline must end on.
+	// curTo is an exclusive bound, so handing it straight to the series helpers pushed a custom
+	// range one day past itself: ?from=2026-01-01&to=2026-01-07 would draw Jan 2..Jan 8 with an
+	// empty final bucket under a figure computed over Jan 1..Jan 7.
+	sparkEnd := curTo.Add(-time.Nanosecond)
 	priorFrom, priorTo := endT.AddDate(0, 0, -2*rangeDays), endT.AddDate(0, 0, -rangeDays)
 	if rangeHours > 0 {
 		d := time.Duration(rangeHours) * time.Hour
@@ -1562,6 +1875,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		Updated:        time.Now().UTC().Format("Jan 2, 15:04 MST"),
 		HasData:        len(evs) > 0,
 		Verdict:        verdict,
+		Findings:       verdictLines(verdict),
 		DevHidden:      devHidden,
 		ShowingDev:     showDev,
 		Sites:          sites,
@@ -1696,6 +2010,11 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	} else {
 		vm.FixBriefs = template.JS("{}")
 	}
+	if oj, err := json.Marshal(fixOrder); err == nil {
+		vm.FixOrder = template.JS(oj)
+	} else {
+		vm.FixOrder = template.JS("[]")
+	}
 	vm.VSCodeLink = template.URL("vscode:mcp/install?" + url.QueryEscape(vsCfg))
 
 	for i, st := range fr.Steps {
@@ -1709,66 +2028,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	plabel := "D"
-	switch rr.Bucket {
-	case "week":
-		plabel = "W"
-	case "month":
-		plabel = "M"
-	}
-	for d := 0; d <= rr.MaxDays; d++ {
-		vm.RetDayHeaders = append(vm.RetDayHeaders, fmt.Sprintf("%s%d", plabel, d))
-	}
-	// most-recent cohorts first, capped for a clean grid
-	start := 0
-	if len(rr.Cohorts) > 12 {
-		start = len(rr.Cohorts) - 12
-	}
-	today := time.Now().UTC().Unix() / 86400
-	// P2-8: retention needs at least one cohort old enough to have an OBSERVABLE
-	// return past day 0. Below that the grid is a near-empty triangle plus a
-	// tautological 100% D0 column — worse than saying "not enough history yet".
-	retObservable := 0
-	for i := len(rr.Cohorts) - 1; i >= start; i-- {
-		c := rr.Cohorts[i]
-		cohortDay := c.Date.UTC().Unix() / 86400
-		for d := 1; d <= rr.MaxDays && d < len(c.Returned); d++ {
-			if c.Size > 0 && cohortDay+int64(d) <= today {
-				retObservable++
-				break
-			}
-		}
-	}
-	vm.RetentionReady = retObservable >= 1
-	for i := len(rr.Cohorts) - 1; i >= start; i-- {
-		c := rr.Cohorts[i]
-		row := retRow{Date: c.Date.Format("Jan 2"), Size: c.Size}
-		cohortDay := c.Date.UTC().Unix() / 86400
-		for d := 0; d <= rr.MaxDays; d++ {
-			// a day that hasn't started yet for this cohort is blank, not "0%" —
-			// the grid must never render an unobservable cell as churn.
-			if c.Size == 0 || d >= len(c.Returned) || cohortDay+int64(d) > today {
-				row.Cells = append(row.Cells, retCell{Empty: true})
-				continue
-			}
-			frac := float64(c.Returned[d]) / float64(c.Size)
-			// The ramp tops out at 0.52, and the text never flips. Measured over the full
-			// 0.08-1.00 amber wash this grid used to use, there is a dead band from about
-			// 0.54 to 0.60 where NEITHER #EDEDED nor #0A0A0A reaches 4.5:1 — so no flip
-			// threshold could have been right, and the old one (0.45) chose dark text at a
-			// point where dark was 3.0:1 and light would have been 5.7:1. Capping the wash
-			// keeps one text colour AA across every cell (worst case 4.71:1 at the top of
-			// the ramp) and still leaves a clearly graded fill from rgb(40,34,23) to
-			// rgb(138,97,29). A retention number a reader cannot make out is not a
-			// weaker signal than a bright cell — it is no signal.
-			a := 0.08 + 0.44*frac
-			row.Cells = append(row.Cells, retCell{
-				Label: fmt.Sprintf("%d%%", int(math.Round(frac*100))),
-				Style: template.CSS(fmt.Sprintf("background:rgba(245,166,35,%.2f);color:#EDEDED", a)),
-			})
-		}
-		vm.Retention = append(vm.Retention, row)
-	}
+	vm.RetDayHeaders, vm.Retention, vm.RetentionReady = retentionGrid(rr, nowT)
 
 	maxT, peakIdx := 1, -1
 	for i, p := range tr.Points {
@@ -1835,6 +2095,21 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	vm.TrendMid = (maxT + 1) / 2
 	vm.ChartMetric = trendEvent
 	vm.Gran = string(gran)
+	if tr.Truncated && len(tr.Points) > 0 {
+		span := "buckets"
+		switch gran {
+		case trends.Hour:
+			span = fmt.Sprintf("%d hourly buckets", len(tr.Points))
+		case trends.Week:
+			span = fmt.Sprintf("%d weekly buckets", len(tr.Points))
+		case trends.Month:
+			span = fmt.Sprintf("%d monthly buckets", len(tr.Points))
+		default:
+			span = fmt.Sprintf("%d daily buckets", len(tr.Points))
+		}
+		vm.ChartTrunc = fmt.Sprintf("chart capped: showing the most recent %s (from %s). the total above still counts the whole window — the cap trims the picture, never the number.",
+			span, tr.Points[0].Date.Format("Jan 2 2006"))
+	}
 	// the data-table half of the chart+table unit: newest first, and EVERY bucket the
 	// chart draws. It used to stop at 15 rows, which was fine while it was a convenience
 	// list beside the picture. It is now the chart's text equivalent — the only reading
@@ -1855,13 +2130,23 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 				return t.Format("Jan 2")
 			}
 		}
+		// The prior column has to tell "you had no traffic" apart from "we have no data".
+		// It could not: a bucket from before this instance recorded its FIRST event printed a
+		// hard 0, so a ten-day-old install read as a site with a fortnight of zero traffic
+		// behind it, in a column of zeros, under a change column that was blank because
+		// deltaStr correctly refuses to divide by a prior of nothing. Prior = -1 already means
+		// "unknown" to the template; a bucket that ends before the first event we ever saw is
+		// exactly that, and now says so.
+		firstEv := firstEventTime(evs)
 		for i := n - 1; i >= start; i-- {
 			p := tr.Points[i]
 			row := chartRow{Label: lbl(p.Date), Count: p.Count, Prior: -1}
+			// same condition the bar uses at the top of this function — one rule, two renderings
+			row.Partial = rangeAsof.IsZero() && i == len(tr.Points)-1
 			if maxT > 0 {
 				row.Bar = int(math.Round(float64(p.Count) / float64(maxT) * 100))
 			}
-			if i < len(trPrior.Points) {
+			if i < len(trPrior.Points) && !bucketPredatesData(trPrior.Points, i, gran, firstEv) {
 				row.Prior = trPrior.Points[i].Count
 				row.Delta = deltaStr(p.Count, trPrior.Points[i].Count)
 			}
@@ -1883,9 +2168,19 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 				firstOf[e.DistinctID] = e
 			}
 		}
+		// Converters are the ones who fired it INSIDE the page's window; firstOf stays over all
+		// history because a converter's first touch is a fact about them, not about the window,
+		// and re-deriving it from the window would credit the channel of whatever they happened
+		// to do first inside it.
+		//
+		// This set used to be built over the whole unwindowed `evs`, so on an instance with a
+		// year of data the tile read "signup · 7d — 12" and the pane directly under it read
+		// "signup by channel: direct 1,840 · 61%", and moving the range control from 7d to 90d
+		// changed nothing in the pane — under a provenance line that names the window.
+		// Half-open [curFrom, curTo), the same bounds trends and web.ComputeRange use.
 		converters := map[string]bool{}
 		for _, e := range evs {
-			if e.Name == trendEvent {
+			if e.Name == trendEvent && !e.Timestamp.Before(curFrom) && e.Timestamp.Before(curTo) {
 				converters[e.DistinctID] = true
 			}
 		}
@@ -1931,7 +2226,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if segProp != "" {
-		vm.ConvBySeg = funnelBySegment(evs, segProp, fsteps)
+		vm.ConvBySeg, vm.ConvByThin = funnelBySegment(evs, segProp, fsteps, fopts)
 		if segProp == "country" {
 			decorateCountrySegs(vm.ConvBySeg)
 		}
@@ -1998,13 +2293,27 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	// exists; a backend-only instance stays product-only.
 	// ONE window for the tiles and the chart. A 6h preset that only moved the chart left
 	// every KPI reading 24h, which makes the range control look broken.
-	winDur := time.Duration(rangeDays) * 24 * time.Hour
-	if rangeHours > 0 {
-		winDur = time.Duration(rangeHours) * time.Hour
-	}
-	wv := web.ComputeWindow(evs, winDur, rangeAsof)
-	if wv.Pageviews > 0 {
-		wvPrior := web.ComputeWindow(evs, winDur, endT.Add(-winDur))
+	//
+	// And ONE window across the tiles themselves: curFrom/curTo and priorFrom/priorTo are the
+	// exact bounds the trend tile, /v1/trends and the MCP trends tool use, calendar-aligned for
+	// day presets. This block used to derive its own ROLLING bounds from a duration, so the
+	// "Visitors · 10d" tile and the "$pageview · 10d" tile beside it measured windows offset by
+	// up to a day at each edge. On a ten-day-old instance that was the difference between a
+	// prior window containing data and one containing none: one tile read "71x vs prior" and
+	// its neighbour showed no delta at all, under the same label, on the same row.
+	wv := web.ComputeRange(evs, curFrom, curTo)
+	// "never installed" and "nothing in THIS window" are different facts with different fixes,
+	// and this block used to answer both with wv.Pageviews > 0 — a WINDOW fact used as a
+	// LIFETIME one. Pick the 6h preset at night on a site with months of pageviews and the page
+	// claimed "this instance has events but no $pageview yet … drop <script src=…/sdk.js> into
+	// your app", telling the operator to reinstall an SDK that is working, and buildKPIs silently
+	// dropped the Visitors tile so the KPI row lost a card. Ever comes from the store's event
+	// NAMES, exactly as aivisVM.Ever / aicrawlVM.Ever already do; the panes below keep their own
+	// windowed empty states, and WebWindowEmpty tells the copy which sentence is true.
+	everWeb := hasName(names, "$pageview")
+	if wv.Pageviews > 0 || everWeb {
+		vm.WebWindowEmpty = wv.Pageviews == 0
+		wvPrior := web.ComputeRange(evs, priorFrom, priorTo)
 		vm.VisitorsDelta = deltaStr(wv.Visitors, wvPrior.Visitors)
 		vm.PageviewsDelta = deltaStr(wv.Pageviews, wvPrior.Pageviews)
 		vm.HasWeb = true
@@ -2015,7 +2324,11 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		vm.EngagedSecs = wv.AvgEngagedSecs
 		vm.EngagedHuman = humanDur(wv.AvgEngagedSecs)
 		vm.BouncePct = wv.BounceRatePct
-		if bs, es := engagementSeries(evs, rangeDays, nowT); len(bs) > 1 {
+		// sparkEnd, not nowT: the sparkline is the picture OF the number above it, so it has to
+		// end where that number's window ends. Anchored on "today" it drew the last N days
+		// ending now regardless — so ?from=2026-01-01&to=2026-01-31 rendered a January bounce
+		// rate with an August sparkline under it, a chart contradicting the figure it sits below.
+		if bs, es := engagementSeries(evs, rangeDays, sparkEnd); len(bs) > 1 {
 			// endOf() is a closure scoped to the KPI block above, and its "up = good" rule is
 			// backwards for bounce anyway: a rising bounce rate is bad. So classify here.
 			endClass := func(delta int, upIsGood bool) string {
@@ -2035,16 +2348,15 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		// per-pageview → divide by pageviews. Referrer/UTM/device/browser/os/country are
 		// per-VISITOR first-touch attributes AND partial (not every visitor carries one) —
 		// dividing those by pageviews understates them and the percentages never sum to 100
-		// (device "mobile 37% / desktop 31%" with a third of the bar silently missing). Divide
-		// each partial per-visitor dimension by the sum of its OWN recorded values, so the
-		// split reads as an honest share-of-recorded that adds up.
-		sumRows := func(rows []web.Row) int {
-			t := 0
-			for _, r := range rows {
-				t += r.Count
-			}
-			return t
-		}
+		// (device "mobile 37% / desktop 31%" with a third of the bar silently missing). Each
+		// partial per-visitor dimension is divided by its OWN recorded total instead.
+		//
+		// That total is web.Result.Recorded — the count BEFORE rank() truncates — never the sum
+		// of the rows we were handed. Summing the rows was the bug: rank() keeps only the top N,
+		// so on a site with 40 countries (20 US of 100 visitors, the tail 2 each) the ten visible
+		// rows summed to 38 and the card rendered "US 20 · 52%" for a true 20% share, with the
+		// visible rows adding to exactly 100% — asserting there is no tail at all. The longer the
+		// tail, the bigger the overstatement.
 		toRows := func(rows []web.Row, n int, denom int) []segRow {
 			top := 0
 			if len(rows) > 0 {
@@ -2067,19 +2379,19 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 			return out
 		}
 		vm.TopPages = toRows(wv.TopPages, 6, wv.Pageviews)
-		vm.Referrers = toRows(wv.Referrers, 6, sumRows(wv.Referrers))
+		vm.Referrers = toRows(wv.Referrers, 6, wv.Recorded.Referrers)
 		// the traffic half of the AI channel, for the AI-visibility card. Counted per
 		// VISITOR at first touch (web.go bumps aiRefs from firstPV), so the denominator is
 		// the AI visitors themselves, not pageviews.
-		vm.AIRefs = toRows(wv.AIReferrers, 6, sumRows(wv.AIReferrers))
-		vm.EntryPages = toRows(wv.EntryPages, 6, sumRows(wv.EntryPages))
-		vm.Browsers = toRows(wv.Browsers, 6, sumRows(wv.Browsers))
-		vm.OSes = toRows(wv.OSes, 6, sumRows(wv.OSes))
-		vm.DeviceRows = toRows(wv.DeviceSplit, 4, sumRows(wv.DeviceSplit))
-		vm.UTMSources = toRows(wv.UTMSources, 6, sumRows(wv.UTMSources))
-		vm.UTMMediums = toRows(wv.UTMMediums, 6, sumRows(wv.UTMMediums))
-		vm.UTMCampaigns = toRows(wv.UTMCampaigns, 6, sumRows(wv.UTMCampaigns))
-		vm.Countries = toRows(wv.Countries, 10, sumRows(wv.Countries))
+		vm.AIRefs = toRows(wv.AIReferrers, 6, wv.Recorded.AIReferrers)
+		vm.EntryPages = toRows(wv.EntryPages, 6, wv.Recorded.EntryPages)
+		vm.Browsers = toRows(wv.Browsers, 6, wv.Recorded.Browsers)
+		vm.OSes = toRows(wv.OSes, 6, wv.Recorded.OSes)
+		vm.DeviceRows = toRows(wv.DeviceSplit, 4, wv.Recorded.DeviceSplit)
+		vm.UTMSources = toRows(wv.UTMSources, 6, wv.Recorded.UTMSources)
+		vm.UTMMediums = toRows(wv.UTMMediums, 6, wv.Recorded.UTMMediums)
+		vm.UTMCampaigns = toRows(wv.UTMCampaigns, 6, wv.Recorded.UTMCampaigns)
+		vm.Countries = toRows(wv.Countries, 10, wv.Recorded.Countries)
 		// "ZZ"/"XX" are MaxMind's not-a-real-country codes (anonymous proxy, unresolved).
 		// Show them as a plain "Unknown" row, never a bogus flag. If the ONLY thing we have
 		// is Unknown (geo disabled, or all traffic from unresolved IPs), the card carries no
@@ -2114,7 +2426,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	buildKPIs(&vm, evs, trendEvent, rangeDays, rangeHours, nowT)
+	buildKPIs(&vm, evs, trendEvent, rangeDays, rangeHours, sparkEnd)
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	// The page is a live report AND it carries the whole app inline, so a cached copy is

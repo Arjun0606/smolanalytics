@@ -19,12 +19,16 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/store/memory"
 )
 
+// the credential this test authenticates with — a real deployment sets one alongside the password
+const readKeyForTest = "sa_test_read_key"
+
 func TestExportLinkMintDownloadBurn(t *testing.T) {
 	t.Setenv("SMOLANALYTICS_PASSWORD", "operator-pass-123") // auth ON — the real threat model
 	st := memory.New()
 	_ = st.Ingest(event.Event{ID: "ev1", Name: "signup", DistinctID: "u1", Timestamp: time.Now().UTC(),
 		Properties: map[string]any{"plan": "pro"}})
 	s := New(st)
+	s.SetReadKey(readKeyForTest) // an operator with a password should also hold a read key
 	ex, err := exportlink.Open(filepath.Join(t.TempDir(), "exportlinks.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -38,10 +42,18 @@ func TestExportLinkMintDownloadBurn(t *testing.T) {
 		return w
 	}
 
-	// mint via the MCP tool (the real creation path)
+	// mint via the MCP tool (the real creation path), WITH a credential.
+	//
+	// This used to mint with no credential at all, on an instance with the password set — and
+	// it passed, because authorized()'s "nothing configured" fallback ignored the password and
+	// left POST /mcp open. The test was encoding the hole: a stranger could mint this very link
+	// and download the raw event log. A credential is now required, and TestMCPIsClosedWhenOnly
+	// APasswordIsSet below proves the door is shut without one.
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest("POST", "/mcp", strings.NewReader(
-		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_export_link","arguments":{"format":"jsonl"}}}`)))
+	req := httptest.NewRequest("POST", "/mcp", strings.NewReader(
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_export_link","arguments":{"format":"jsonl"}}}`))
+	req.Header.Set("Authorization", "Bearer "+readKeyForTest)
+	h.ServeHTTP(w, req)
 	var env struct {
 		Result struct {
 			Content []struct{ Text string }

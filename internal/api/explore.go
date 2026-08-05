@@ -4,7 +4,6 @@ import (
 	"container/heap"
 	"net/http"
 	"sort"
-	"strconv"
 	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/aicrawl"
@@ -60,11 +59,14 @@ func (s *Server) apiBrief(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "login or a valid key required")
 		return
 	}
-	days := 7
-	if d := r.URL.Query().Get("days"); d != "" {
-		if n, err := strconv.Atoi(d); err == nil && n >= 1 && n <= 90 {
-			days = n
-		}
+	// days used to be accepted only when it parsed AND fell in 1..90, and silently ignored
+	// otherwise — so ?days=abc AND ?days=200 both returned the 7-day digest with a 200, a
+	// different window than the one asked for and nothing in the body to say so. Now a
+	// non-positive/unparseable value is a 400 and an over-cap one clamps to 90.
+	days, derr := posIntParam(r, "days", 7, 90)
+	if derr != nil {
+		writeQueryErr(w, derr)
+		return
 	}
 	evs, err := s.store.Range(time.Time{}, time.Time{})
 	if err != nil {
@@ -124,12 +126,10 @@ func (s *Server) usage(w http.ResponseWriter, r *http.Request) {
 // recentEvents returns the most recent events (newest first) — the live feed you
 // watch right after instrumenting to confirm data is flowing. GET /v1/events/recent?limit=50
 func (s *Server) recentEvents(w http.ResponseWriter, r *http.Request) {
-	limit := 50
-	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 {
-		limit = v
-	}
-	if limit > 500 {
-		limit = 500
+	limit, lerr := posIntParam(r, "limit", 50, 500)
+	if lerr != nil {
+		writeQueryErr(w, lerr)
+		return
 	}
 	// Stream a bounded top-N by timestamp (a min-heap of size `limit`) instead of pulling
 	// the whole history into RAM to sort it — O(limit) memory over a single Scan, so this

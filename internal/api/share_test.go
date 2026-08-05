@@ -22,6 +22,9 @@ func TestShareLinkAccess(t *testing.T) {
 	_ = st.Ingest(event.Event{ID: "1", Name: "$pageview", DistinctID: "u1", Timestamp: time.Now().UTC(),
 		Properties: map[string]any{"path": "/", "referrer": "https://news.ycombinator.com/"}})
 	s := New(st)
+	// a credential, because /mcp is no longer open on a password-protected instance — this test
+	// used to mint a share link with none, which is exactly the hole it was meant to guard
+	s.SetReadKey(readKeyForTest)
 	sh, err := share.Open(filepath.Join(t.TempDir(), "shares.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -37,8 +40,10 @@ func TestShareLinkAccess(t *testing.T) {
 
 	// mint via the MCP tool (the real creation path)
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest("POST", "/mcp", strings.NewReader(
-		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_share_link","arguments":{"name":"investor"}}}`)))
+	mcpReq := httptest.NewRequest("POST", "/mcp", strings.NewReader(
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_share_link","arguments":{"name":"investor"}}}`))
+	mcpReq.Header.Set("Authorization", "Bearer "+readKeyForTest)
+	h.ServeHTTP(w, mcpReq)
 	var env struct {
 		Result struct {
 			Content []struct{ Text string }

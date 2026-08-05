@@ -51,13 +51,14 @@
   var timer = null;
   var flagCache = {};
   var flagMeasured = {}; // keys the server marked "measured" → log an exposure on read
-  var flagExposed = {}; // per-session dedupe so a measured flag logs at most one exposure
+  var flagExposed = {}; // in-memory half of the per-session exposure dedupe (see alreadyExposed)
   var flagsLoaded = false;
   var flagListeners = [];
   var surveyShownThisLoad = false; // at most one survey popover per page load
   var captured = false; // autocapture wired once, even if the snippet loads twice
   var inited = false; // init() is idempotent: a second call would double every number
   var warnedAuth = false; // warn once on a bad key, don't spam the console
+  var warnedAnonMeasured = false; // warn once that cookieless bucketing can't carry an experiment
   var lifecycleBound = false; // flush-on-unload listeners bound once, even on re-init
   // engagement: accumulate time the page is visible AND focused, reported as a
   // $engagement event when the visitor leaves the page (route change or unload).
@@ -78,6 +79,16 @@
   // two can never be confused.
   function bucketId() {
     if (bid) return bid;
+    // Cookieless mode promises nothing is written to the visitor's device, and a persisted
+    // bucket key is precisely the identifier that promise is about — so it lives for one page
+    // load only. Flags still resolve (they used to be skipped entirely, see fetchFlags), and the
+    // share of visitors in each variant stays honest, but one visitor can land in a different
+    // arm on their next page load. flag() warns the first time a MEASURED flag is read this way,
+    // because that is the only case where the instability corrupts a result rather than a pixel.
+    if (anon) {
+      bid = uid();
+      return bid;
+    }
     try {
       bid = localStorage.getItem("smol_bucket_id");
       if (!bid) {
@@ -171,9 +182,33 @@
     } catch (e) {}
   }
 
-  function flush() {
+  // A keepalive request whose body exceeds 64KiB fails immediately with a TypeError — per the
+  // Fetch spec, and Chrome enforces the same ceiling as a shared per-origin inflight quota. It
+  // never reaches the network, so there is no HTTP response and the warn path below never runs.
+  //
+  // flush() used to splice the WHOLE queue into ONE body and set keepalive on EVERY flush, not
+  // just the unload one. Twenty autocaptured $click events carrying $elements chains is already
+  // 20-90KB, and any 5xx/offline period requeues until the 1000 cap — so the 3s timer re-sent the
+  // identical oversized body forever, .catch(requeue) put it straight back, and every event on
+  // that page was lost with nothing in the console. Hence: chunk by count AND by serialized
+  // bytes, and ask for keepalive only where the request must outlive the document.
+  var MAX_BATCH = 50;
+  var MAX_BODY = 60000; // under the 64KiB ceiling, leaving room for headers
+
+  function flush(final) {
     if (!queue.length) return;
-    var batch = queue.splice(0, queue.length);
+    var batch = [], bytes = 2; // "[" + "]"
+    while (queue.length && batch.length < MAX_BATCH) {
+      var enc = "";
+      try { enc = JSON.stringify(queue[0]); } catch (e) { queue.shift(); continue; }
+      // a single event larger than the whole ceiling can never be delivered — drop it rather
+      // than wedge every event behind it for the rest of the visit
+      if (batch.length === 0 && enc.length + 2 > MAX_BODY) { queue.shift(); continue; }
+      if (bytes + enc.length + 1 > MAX_BODY) break;
+      bytes += enc.length + 1;
+      batch.push(queue.shift());
+    }
+    if (!batch.length) return;
     var headers = { "Content-Type": "application/json" };
     if (key) headers["Authorization"] = "Bearer " + key;
     // on a network failure, put the batch back so the next flush retries instead of
@@ -189,7 +224,7 @@
         method: "POST",
         headers: headers,
         body: JSON.stringify(batch),
-        keepalive: true,
+        keepalive: !!final,
         mode: "cors",
       }).then(function (r) {
         if (!r.ok && r.status >= 500) requeue();
@@ -232,6 +267,54 @@
     engPath = location.pathname;
   }
 
+  // Exposure dedupe has to outlive the page or "exactly one $feature_flag_called per visitor per
+  // session" — what the SDK comment, the dashboard note and the create-flag copy all promise — is
+  // simply false. flagExposed is IIFE state, so it reset on every full page load and a 5-page
+  // visit re-emitted the same exposure 5 times, inflating the raw event count and the billed plan
+  // meter by roughly pageviews-per-session. (The A/B numbers were never wrong: Measure and
+  // firstExposures both collapse a user to their EARLIEST exposure. The meter was.)
+  //
+  // Keyed on the same session id enqueue() stamps, so a genuinely new session re-exposes, which
+  // is the documented behaviour. Cookieless mode has no session and writes no storage, so it
+  // keeps the per-page-load fallback — the console already warns that cookieless bucketing cannot
+  // carry an experiment.
+  //
+  // localStorage rather than sessionStorage, which is the obvious choice and the wrong one:
+  // sessionStorage is per-TAB, so opening the site in a second tab is a second exposure and the
+  // copy would still be a lie. The 30-minute session id in localStorage is the thing the promise
+  // is actually about.
+  var EXPOSED_KEY = "smol_flag_exposed";
+  function exposureRecord() {
+    if (anon || !sess || !sess.id) return null;
+    try {
+      var rec = JSON.parse(localStorage.getItem(EXPOSED_KEY) || "null");
+      if (!rec || rec.sid !== sess.id || !rec.k) rec = { sid: sess.id, k: {} };
+      return rec;
+    } catch (e) {
+      return null;
+    }
+  }
+  // flag:variant, inside a record stamped with the session id — i.e. flag:variant:session_id.
+  //
+  // The variant belongs IN the key. Deduping on the flag name alone would swallow the second
+  // exposure of a visitor whose variant CHANGED mid-session — a weight edit, identity stitching
+  // collapsing two ids, or an unstable bucket key — and a multi-variant exposure is precisely
+  // what the experiment-health check exists to catch. Deduped away, it looks like a clean test.
+  function exposureKey(name, variant) {
+    return name + ":" + variant;
+  }
+  function alreadyExposed(k) {
+    var rec = exposureRecord();
+    return rec ? !!rec.k[k] : !!flagExposed[k];
+  }
+  function markExposed(k) {
+    flagExposed[k] = true;
+    var rec = exposureRecord();
+    if (!rec) return;
+    rec.k[k] = 1;
+    try { localStorage.setItem(EXPOSED_KEY, JSON.stringify(rec)); } catch (e) {}
+  }
+
   function enqueue(name, props) {
     props = props || {};
     // site + env stamped on EVERY event, so multi-site filtering and the
@@ -246,6 +329,15 @@
       if (sess.utm && sess.utm.utm_source && props.initial_utm_source === undefined) props.initial_utm_source = sess.utm.utm_source;
     }
     queue.push({
+      // A STABLE id, minted once at enqueue and carried through every retry.
+      //
+      // Without it the ingest contract's "a retried request never double-counts" was false for
+      // the primary client: flush() requeues the whole batch on any network failure, and the
+      // server mints a fresh random id per delivery, so a batch that actually landed before the
+      // connection dropped was counted twice with no way for either side to tell. The id is the
+      // only thing that makes that request idempotent, and the browser is the one place that
+      // knows the retry is a retry.
+      id: uid(),
       name: name,
       distinct_id: distinctId(),
       timestamp: new Date().toISOString(),
@@ -263,6 +355,60 @@
     return (c && (c + "").trim()) || "";
   }
 
+  // labelOf returns what a control is CALLED, never what it holds.
+  //
+  // The old chain was `innerText || value`, and isClickable deliberately admits
+  // input[type=checkbox|radio|submit|button] — an <input> has no innerText, so the fallback
+  // always fired. `<input type="checkbox" name="invite" value="jane@corp.com">`, a plain
+  // multi-select over records, shipped that address as $click.text AND again inside
+  // $elements[0].text, stored raw and visible in recent_events and every session timeline. The
+  // operator never opted into collecting it. Only submit/button expose a value that is the
+  // rendered caption (author-set copy, not the visitor's data), so that is the one case where
+  // the value is a label at all; for everything else the caption lives in aria-label or the
+  // associated <label>.
+  function labelOf(el) {
+    var t = ((el.innerText || "") + "").trim();
+    if (t) return t;
+    var tag = ((el.tagName || "") + "").toLowerCase();
+    if (tag !== "input") return "";
+    var type = ((el.type || "") + "").toLowerCase();
+    if (type === "submit" || type === "button" || type === "reset") {
+      var caption = el.value; // the button's rendered text, written by the site author
+      if (caption) return (caption + "").trim();
+      return "";
+    }
+    try {
+      var aria = el.getAttribute && el.getAttribute("aria-label");
+      if (aria) return (aria + "").trim();
+    } catch (e) {}
+    try {
+      if (el.labels && el.labels.length) {
+        var lt = ((el.labels[0].innerText || "") + "").trim();
+        if (lt) return lt;
+      }
+    } catch (e) {}
+    return "";
+  }
+
+  // safeHref keeps WHICH link was clicked and drops the secret inside it.
+  //
+  // Password-reset, magic-link, invite and OAuth callback URLs carry their token in the query
+  // string, and mailto:/tel:/sms: put a person's address or number in the href itself — all of
+  // it used to land verbatim in $click.href and $elements[*].href, then in the event store,
+  // recent_events and every shared session timeline. Origin + path identifies the link; the
+  // rest is either a credential or a person.
+  function safeHref(v) {
+    v = (v + "");
+    var cut = v.search(/[?#]/);
+    if (cut >= 0) v = v.slice(0, cut);
+    var scheme = (v.match(/^([a-z][a-z0-9+.\-]*):/i) || [])[1];
+    if (scheme) {
+      var s = scheme.toLowerCase();
+      if (s !== "http" && s !== "https") v = s + ":"; // mailto:, tel:, sms:, javascript:
+    }
+    return v.slice(0, 300);
+  }
+
   // elemDesc snapshots ONE element: enough to re-identify it later for a retroactive
   // named event, and for a coding agent to map an element to a business event. Metadata
   // only, never input values.
@@ -276,17 +422,25 @@
       var aria = el.getAttribute("aria-label"); if (aria) d.aria_label = aria.slice(0, 80);
       var name = el.getAttribute("name"); if (name) d.name = name.slice(0, 80);
     }
-    if (el.href) d.href = (el.href + "").slice(0, 300);
-    // data-* attributes (opt-in element identity; data-sa-* drive named events)
+    if (el.href) d.href = safeHref(el.href);
+    // data-sa-* ONLY — the attributes namespaced for this SDK.
+    //
+    // This used to send EVERY data-* attribute, on the clicked element and four ancestors,
+    // under a comment calling it "opt-in element identity". It was opt-OUT: apps routinely
+    // carry data-user-id, data-email, data-price, data-account on the very elements people
+    // click, and all of it left the browser on every click of every visitor. Reading only our
+    // own namespace makes the comment true and makes the opt-in real.
     try {
       if (el.dataset) {
         for (var dk in el.dataset) {
+          if (dk.indexOf("sa") !== 0) continue; // data-sa-* → dataset keys begin "sa"
           var dv = el.dataset[dk];
           if (dv) (d.data = d.data || {})[dk] = (dv + "").slice(0, 80);
         }
       }
     } catch (e) {}
-    var t = ((el.innerText || el.value || "") + "").trim();
+    // The element's LABEL, never its contents — see labelOf for what that used to leak.
+    var t = labelOf(el);
     if (t) d.text = t.slice(0, 80);
     if (el.parentElement) {
       try {
@@ -329,6 +483,27 @@
     return false;
   }
 
+  // ignored answers "is this node inside a data-sa-ignore subtree?" — the documented opt-out.
+  //
+  // It used to be checked inside the same walk that hunts for the clickable target, on the same
+  // node, with a `break` the moment one was found. So `<div data-sa-ignore><button>Reveal
+  // SSN</button></div>` matched the button on the FIRST iteration and broke out; the ancestor
+  // carrying the opt-out was never examined, and the SDK captured the button's text, id, classes
+  // and the whole $elements chain — including the ignored container's own text. The opt-out
+  // worked only for clicks on non-interactive filler, i.e. the clicks nobody needed protected.
+  // The walk here is uncapped on purpose: the 5-deep limit is about finding a plausible click
+  // target, and a privacy opt-out that stops after five ancestors is not an opt-out.
+  function ignored(node) {
+    try {
+      if (node && node.closest) return !!node.closest("[data-sa-ignore]");
+    } catch (e) {}
+    while (node && node.tagName) {
+      if (node.dataset && node.dataset.saIgnore !== undefined) return true;
+      node = node.parentElement;
+    }
+    return false;
+  }
+
   // frustration + scroll state (all best-effort, never allowed to throw into capture)
   var clickBuf = []; // recent click coords, for rage-click detection
   var maxScroll = 0; // deepest scroll % reached on the current page
@@ -345,21 +520,49 @@
     }
   }
 
+  // handsOff is true for controls that intentionally leave this document untouched: a link that
+  // opens a new tab, a download, or a handoff to mailto:/tel:/sms:. They worked perfectly and
+  // still produced no DOM change and no navigation, so they were reported as dead clicks.
+  function handsOff(el) {
+    try {
+      if (((el.tagName || "") + "").toLowerCase() !== "a") return false;
+      var tgt = ((el.target || "") + "");
+      if (tgt && tgt !== "_self") return true;
+      if (el.hasAttribute && el.hasAttribute("download")) return true;
+      var p = ((el.protocol || "") + "").toLowerCase();
+      if (p && p !== "http:" && p !== "https:") return true;
+    } catch (e) {}
+    return false;
+  }
+
   // armDeadClick fires $deadclick when a clickable element produces no DOM change and no
   // navigation within ~1s — a broken control, exactly the "what to fix" signal.
+  //
+  // It watched childList+subtree only and compared location.pathname, which made it fire on
+  // WORKING controls, and insight/human.go then told the builder "people clicked something that
+  // did nothing": a dropdown or modal opened by toggling a CSS class is an ATTRIBUTES mutation;
+  // a React text update sets nodeValue on an existing text node, a CHARACTERDATA mutation; a
+  // filter or tab that only rewrites the query string or hash leaves pathname identical. All
+  // three are covered now. Targets that are supposed to change nothing here are not armed at
+  // all (handsOff). Still invisible: mutations inside a shadow root the SDK cannot reach, so a
+  // web-component UI can produce a false $deadclick — the target's own shadow root is observed
+  // when it has one, which covers the common "click the component, it re-renders itself" case.
   function armDeadClick(target) {
-    var startPath = location.pathname, changed = false, obs = null;
+    if (handsOff(target)) return;
+    var startHref = location.href, changed = false, obs = null;
+    var opts = { childList: true, subtree: true, attributes: true, characterData: true };
     try {
       obs = new MutationObserver(function () { changed = true; if (obs) obs.disconnect(); });
-      obs.observe(document.documentElement, { childList: true, subtree: true });
+      obs.observe(document.documentElement, opts);
+      if (target.shadowRoot) obs.observe(target.shadowRoot, opts);
     } catch (e) { return; }
     setTimeout(function () {
       try { if (obs) obs.disconnect(); } catch (e) {}
-      if (!changed && location.pathname === startPath) {
+      if (!changed && location.href === startHref) {
         enqueue("$deadclick", {
-          path: startPath,
+          path: location.pathname,
           tag: target.tagName.toLowerCase(),
-          text: ((target.innerText || "") + "").trim().slice(0, 80) || undefined,
+          text: labelOf(target).slice(0, 80) || undefined,
         });
       }
     }, 1000);
@@ -436,9 +639,9 @@
       "click",
       function (e) {
         try {
+          if (ignored(e.target)) return; // opt out of a subtree — checked BEFORE anything is read
           var node = e.target, depth = 0, target = null;
           while (node && node.tagName && depth < 5) {
-            if (node.dataset && node.dataset.saIgnore !== undefined) return; // opt out of a subtree
             if (isClickable(node)) { target = node; break; }
             node = node.parentElement;
             depth++;
@@ -449,10 +652,10 @@
           var name = (target.dataset && target.dataset.saEvent) ? target.dataset.saEvent : "$click";
           var props = {
             tag: target.tagName.toLowerCase(),
-            text: ((target.innerText || target.value || "") + "").trim().slice(0, 80) || undefined,
+            text: labelOf(target).slice(0, 80) || undefined, // label, never the control's value
             id: target.id || undefined,
             classes: classesOf(target).slice(0, 160) || undefined,
-            href: target.href || undefined,
+            href: target.href ? safeHref(target.href) : undefined,
             path: location.pathname,
             x: e.clientX,
             y: e.clientY,
@@ -473,11 +676,13 @@
       function (e) {
         try {
           var f = e.target;
-          if (!f || f.tagName !== "FORM" || (f.dataset && f.dataset.saIgnore !== undefined)) return;
+          // same opt-out bug as clicks: this only tested the <form> itself, so wrapping a form in
+          // a data-sa-ignore container did nothing
+          if (!f || f.tagName !== "FORM" || ignored(f)) return;
           enqueue("$form_submit", {
             id: f.id || undefined,
             name: (f.getAttribute && f.getAttribute("name")) || undefined,
-            action: f.action ? (f.action + "").slice(0, 200) : undefined,
+            action: f.action ? safeHref(f.action).slice(0, 200) : undefined,
             fields: f.elements ? f.elements.length : undefined,
             path: location.pathname,
           });
@@ -506,10 +711,19 @@
   // Feature flags — fetch this user's resolved values once (and again on identify), cache them,
   // and read them synchronously via flag(key, default). The server does the bucketing; the
   // browser only ever holds resolved values, so there is no targeting logic to leak or drift.
+  // Gate on the RESOLVED id, not on the module-level `did`.
+  //
+  // In cookieless mode distinctId() returns the "$anon" sentinel and never assigns `did`, so
+  // `did` stayed null forever and this function returned on its first line: flag() answered
+  // every cookieless visitor with the caller's default, onFlags(cb) never fired (an app that
+  // gates its render on it never rendered), and no $feature_flag_called exposure was ever
+  // logged — so an A/B test on a cookieless site reported "no exposures" as though the SDK were
+  // fine. Nothing was written to the console. Same shape in fetchSurveys.
   function fetchFlags() {
-    if (!host || !key || !did) return;
+    var id = distinctId();
+    if (!host || !key || !id) return;
     try {
-      fetch(host + "/v1/flags/evaluate?distinct_id=" + encodeURIComponent(did) +
+      fetch(host + "/v1/flags/evaluate?distinct_id=" + encodeURIComponent(id) +
         "&bucket_id=" + encodeURIComponent(bucketId()), {
         headers: { Authorization: "Bearer " + key },
       })
@@ -538,7 +752,11 @@
   }
   function hashPct(s) { var h = 5381; for (var i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0; return h % 100; }
   function fetchSurveys() {
-    if (!host || !key || !did || surveyShownThisLoad || typeof document === "undefined") return;
+    var id = distinctId(); // see fetchFlags: `did` is null for the whole visit in cookieless mode
+    // "$anon" is the same string for every cookieless visitor, so hashing it would sample all of
+    // them in or all of them out; the per-page-load bucket id samples the right PROPORTION.
+    var sampleKey = anon ? bucketId() : id;
+    if (!host || !key || !id || surveyShownThisLoad || typeof document === "undefined") return;
     try {
       fetch(host + "/v1/surveys/active?path=" + encodeURIComponent(location.pathname), { headers: { Authorization: "Bearer " + key } })
         .then(function (r) { return r && r.ok ? r.json() : null; })
@@ -547,7 +765,7 @@
           for (var i = 0; i < d.surveys.length; i++) {
             var sv = d.surveys[i];
             if (surveySeen(sv.id)) continue;
-            if (sv.sample_pct && sv.sample_pct > 0 && sv.sample_pct < 100 && hashPct(sv.id + ":" + did) >= sv.sample_pct) continue;
+            if (sv.sample_pct && sv.sample_pct > 0 && sv.sample_pct < 100 && hashPct(sv.id + ":" + sampleKey) >= sv.sample_pct) continue;
             showSurvey(sv);
             break;
           }
@@ -642,7 +860,11 @@
         setupAutocapture(); // pageviews + clicks, zero manual instrumentation
       }
       if (timer) clearInterval(timer);
-      timer = setInterval(flush, (opts.flushInterval || 3) * 1000);
+      // setInterval hands the callback a timer argument in some engines, and flush(final) reads
+      // its first argument as "this request must outlive the document" — a truthy one here would
+      // put keepalive on every routine flush, which is the ceiling this whole scheme exists to
+      // stay under. Call it with nothing, explicitly.
+      timer = setInterval(function () { flush(); }, (opts.flushInterval || 3) * 1000);
       if (!lifecycleBound) {
         // bind once — a second init() must not stack duplicate flush-on-unload listeners
         lifecycleBound = true;
@@ -650,7 +872,9 @@
           engTick();
           if (document.visibilityState === "hidden") {
             engReport();
-            flush();
+            // hidden is where a mobile tab gets frozen or killed, so this one has to survive the
+            // document — the ONLY places keepalive belongs (see flush)
+            flush(true);
           }
         });
         window.addEventListener("focus", engTick);
@@ -658,7 +882,7 @@
         window.addEventListener("pagehide", function () {
           engReport();
           persistSession();
-          flush();
+          flush(true); // the page is going away; without keepalive the browser cancels this
         });
         engPath = location.pathname;
         engTick();
@@ -677,16 +901,56 @@
         did = id;
       }
       var props = traits || {};
-      // breadcrumb for identity stitching: the server joins the pre-login journey
-      // to this account (guarded server-side against the $anon sentinel)
-      if (prev && prev !== id) props.$anon_distinct_id = prev;
+      // Breadcrumb for identity stitching — ONLY from an id this SDK minted anonymously.
+      //
+      // The guard used to be `prev !== id`, and `prev` is whatever distinctId() last resolved,
+      // which on a returning browser is the PREVIOUS ACCOUNT'S id: identify() writes it into the
+      // same localStorage key distinctId() reads back. So a shared laptop, or any app-side logout
+      // that doesn't call reset(), sent $identify{$anon_distinct_id:"u-alice"} for u-bob. The
+      // server's alias.Add only refuses empty/self/"$anon", so it accepted the edge and wrote it
+      // to disk — from then on every historical Alice event was rewritten to Bob at read time.
+      // Two humans merged into one, permanently: user counts, DAU, retention cohorts and funnels
+      // all wrong, and DeleteUser("u-alice") would erase Bob too. uid() namespaces anonymous ids
+      // with "a-", which is the only thing that distinguishes "not logged in yet" from "was
+      // someone else".
+      if (prev && prev !== id && prev.indexOf("a-") === 0) props.$anon_distinct_id = prev;
       enqueue("$identify", props);
       if (id && id !== prev) fetchFlags(); // re-evaluate flags for the newly identified user
       return smol;
     },
     reset: function () {
+      // Logout ends the VISIT, not just the id. This used to clear smol_did only, so `sess`
+      // survived in memory and in localStorage and ensureSession() kept reusing it for the rest
+      // of the 30-minute window — including across reloads. web.go keys entry/exit pages on
+      // session_id alone, so the next person on that browser joined the logged-out user's
+      // session and "where do visits start / where do they die" attributed one person's landing
+      // page to the other's visit. The flag caches survived too, so flagExposed still marked
+      // measured flags as exposed and the new visitor's variant was never logged while their
+      // conversions still landed — an experiment quietly missing one arm's exposures.
+      //
+      // Order matters: flush() first, so anything already queued goes out under the identity
+      // that produced it. smol_bucket_id is deliberately KEPT — bucketing is per browser by
+      // design (see bucketId), and re-minting it on logout would reshuffle a running experiment.
+      flush();
       try { localStorage.removeItem("smol_did"); } catch (e) {}
+      try { localStorage.removeItem("smol_session"); } catch (e) {}
+      // the exposure record is keyed on the session id, so a stale one can never be read back
+      // after this point — but leaving it behind is dead storage, and removing it keeps "logout
+      // ends the visit" literally true of everything the visit wrote.
+      try { localStorage.removeItem(EXPOSED_KEY); } catch (e) {}
       did = null;
+      sess = null;
+      flagCache = {};
+      flagMeasured = {};
+      flagExposed = {};
+      flagsLoaded = false;
+      surveyShownThisLoad = false;
+      engAccum = 0;
+      engStart = engActive() ? Date.now() : null; // restart the clock, don't stop it
+      engPath = location.pathname;
+      distinctId(); // mint the new visitor's id now, so the re-fetch below buckets against it
+      fetchFlags();
+      return smol;
     },
     flush: flush,
     // flag(key, default) reads the resolved value for this user (default when off/absent).
@@ -694,9 +958,45 @@
       var has = Object.prototype.hasOwnProperty.call(flagCache, name);
       // a measured flag logs one $feature_flag_called exposure per session on first read, so it
       // can be A/B-analysed; ordinary flags add zero events.
-      if (has && flagMeasured[name] && !flagExposed[name]) {
-        flagExposed[name] = true;
-        enqueue("$feature_flag_called", { $feature_flag: name, $feature_flag_response: flagCache[name] });
+      // ensureSession() BEFORE the check, not after: on a second page load `sess` is null until it
+      // is rehydrated, and a null session makes alreadyExposed() fall back to the empty in-memory
+      // map — which is the very duplicate this dedupe exists to stop.
+      if (has && flagMeasured[name]) ensureSession();
+      if (has && flagMeasured[name]) {
+        var variant = flagCache[name];
+        var ekey = exposureKey(name, variant);
+        if (!alreadyExposed(ekey)) {
+          markExposed(ekey);
+          // Cookieless mode has no device-stable bucket key (see bucketId), so the same visitor can
+          // be re-bucketed on their next page load and land in both arms of the same experiment.
+          // The exposures are real, the comparison is not — say so once rather than let someone
+          // read a lift off it.
+          if (anon && !warnedAnonMeasured) {
+            warnedAnonMeasured = true;
+            if (window.console) console.warn("smolanalytics: \"" + name + "\" is a measured experiment but this page is in cookieless mode — bucketing cannot be stable per visitor, so treat the A/B result as indicative only.");
+          }
+          var ex = { $feature_flag: name, $feature_flag_response: variant };
+          // The RANDOMISATION UNIT, stamped on the exposure — the same key that was sent to
+          // /v1/flags/evaluate and therefore the thing the coin was actually flipped on.
+          //
+          // Without it the analysis has nothing but distinct_id to aggregate to, and distinct_id
+          // is a different estimand: it changes at login, so one person who signs up mid-test is
+          // ONE unit under bucket_id and TWO under distinct_id — the second carrying only the
+          // post-signup half of their behaviour. internal/flag reads $bucket_id and states in the
+          // result which unit it used; absent, every instance silently fell back to distinct_id.
+          //
+          // Deliberately NOT stamped in cookieless mode: bucketId() there lives for one page load
+          // (nothing may be written to the device), while the server derives a day-stable visitor
+          // id from the "$anon" sentinel. Stamping the per-page-load key would hand the analysis a
+          // unit that is LESS stable than the one it falls back to, and would hide the re-bucketing
+          // inside a pile of single-exposure units instead of surfacing it as the multi-variant
+          // exposure it is.
+          if (!anon) {
+            var bkt = bucketId();
+            if (bkt) ex.$bucket_id = bkt;
+          }
+          enqueue("$feature_flag_called", ex);
+        }
       }
       return has ? flagCache[name] : (def === undefined ? false : def);
     },

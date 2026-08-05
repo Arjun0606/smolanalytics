@@ -19,7 +19,6 @@ import (
 	"net/http"
 	"os"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -325,6 +324,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/insights", s.listInsights)
 	mux.HandleFunc("POST /v1/insights", s.saveInsight)
 	mux.HandleFunc("DELETE /v1/insights/{id}", s.deleteInsight)
+	// Named boards: the dashboard was one flat pinned list, which is the artifact PostHog and
+	// Mixpanel users open every morning and the gap they would notice first.
+	mux.HandleFunc("GET /v1/boards", s.listBoards)
+	mux.HandleFunc("POST /v1/boards", s.saveBoard)
+	mux.HandleFunc("DELETE /v1/boards/{id}", s.deleteBoard)
+	mux.HandleFunc("POST /v1/insights/{id}/board", s.moveInsight)
 	mux.HandleFunc("GET /v1/cohorts", s.listCohorts)
 	mux.HandleFunc("POST /v1/cohorts", s.saveCohort)
 	mux.HandleFunc("DELETE /v1/cohorts/{id}", s.deleteCohort)
@@ -374,7 +379,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/flags", s.saveFlag)
 	mux.HandleFunc("DELETE /v1/flags/{key}", s.deleteFlag)
 	mux.HandleFunc("GET /v1/flags/{key}/measure", s.measureFlag) // A/B read for a measured flag
-	mux.HandleFunc("GET /v1/flags/evaluate", s.evaluateFlags)    // public: write-key + CORS, for the SDK
+	// The SRM check had NO route at all. flag.CheckSRM is the most valuable code in the package —
+	// it is what tells you the randomisation broke and the arms differ by whatever broke it
+	// rather than by the change you shipped — and it was callable from exactly one place, the
+	// MCP tool. The dashboard could not show it, the ask bar could not cite it, and no agreement
+	// test could pin it, while measure.go's own note told the reader to go check it.
+	mux.HandleFunc("GET /v1/flags/{key}/health", s.flagHealth)
+	mux.HandleFunc("GET /v1/flags/evaluate", s.evaluateFlags) // public: write-key + CORS, for the SDK
 	mux.HandleFunc("OPTIONS /v1/flags/evaluate", s.preflight)
 	mux.HandleFunc("GET /v1/surveys", s.listSurveys)
 	mux.HandleFunc("POST /v1/surveys", s.saveSurvey)
@@ -469,8 +480,26 @@ func (s *Server) serveLLMs(w http.ResponseWriter, r *http.Request) {
 // logs. Open (no auth) only in pure local dev, when NOTHING is configured.
 func (s *Server) authorized(r *http.Request) bool {
 	hasManaged := s.settings != nil && len(s.settings.Keys()) > 0
-	if s.readKey == "" && s.writeKey == "" && !hasManaged {
-		return true // pure local dev: nothing configured at all
+	// "Nothing configured at all" has to include the DASHBOARD PASSWORD, or the open-mode
+	// fallback fires on a locked-down instance.
+	//
+	// It did. An operator who followed the startup guard's own advice — bind publicly, set
+	// SMOLANALYTICS_PASSWORD, set no keys (both are optional) — got a dashboard behind a login,
+	// /v1/* returning 401, and POST /mcp WIDE OPEN, because isPublic() exempts /mcp from the
+	// session gate and this branch then returned true. Verified end-to-end with no credential:
+	// tools/call trends → 200; recent_events → 200 with raw distinct_ids; create_export_link →
+	// a token, and /export/<token> streams the entire raw event log; create_api_key → a
+	// permanent managed key, i.e. persistent full-tenant access for a stranger.
+	//
+	// readsGated() three functions below already encodes the right rule and simply was not used
+	// here. A password IS a configured credential.
+	if s.readKey == "" && s.writeKey == "" && !hasManaged && !s.authEnabled() {
+		return true // pure local dev: nothing configured at all, not even a dashboard password
+	}
+	// A logged-in operator is authorised. Without this, closing the hole above would lock the
+	// password-only operator out of the very endpoints their own browser session drives.
+	if s.validSession(r) {
+		return true
 	}
 	got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if s.readKey != "" && subtle.ConstantTimeCompare([]byte(got), []byte(s.readKey)) == 1 {
@@ -901,10 +930,18 @@ func (s *Server) apiFunnel(w http.ResponseWriter, r *http.Request) {
 		for i, st := range steps {
 			names[i] = st.Event
 		}
-		segs := funnel.ComputeBreakdown(query.StampFirstTouch(evs, bd), steps, window, bd)
-		limit := 10 // same default as the MCP funnel tool — surfaces must agree
-		if v, err := strconv.Atoi(q.Get("breakdown_limit")); err == nil && v > 0 {
-			limit = v
+		// opts, not defaults: order= and exclude= were parsed above and applied to the
+		// headline funnel, then dropped here, so one response carried two different funnel
+		// definitions and the segments did not add up to the total above them.
+		segs := funnel.ComputeBreakdownOpts(query.StampFirstTouch(evs, bd), steps, window, bd, opts)
+		// 10 = the MCP funnel tool's default, so the two surfaces cap identically. Parsed
+		// through posIntParam because the old `err == nil && v > 0` form read
+		// breakdown_limit=abc as absent and quietly returned the top 10 segments as if that
+		// were the number the caller asked for.
+		limit, lerr := posIntParam(r, "breakdown_limit", 10, 0)
+		if lerr != nil {
+			writeQueryErr(w, lerr)
+			return
 		}
 		kept, omitted := funnel.CapSegments(segs, limit)
 		out := map[string]any{"steps": names, "breakdown": bd, "segments": kept}

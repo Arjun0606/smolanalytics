@@ -138,5 +138,55 @@ func (s *Server) measureFlag(w http.ResponseWriter, r *http.Request) {
 	// (applyDefaultScope). Without this the /v1 read and the editor's read disagree whenever
 	// any event carries env=development — the exact MCP==API break the agreement test guards.
 	evs = query.Apply(evs, nil)
-	writeJSON(w, http.StatusOK, flag.Measure(evs, r.PathValue("key"), goalEvent, days))
+	// Look the flag up and resolve `days` to absolute instants HERE, at the boundary. Measure
+	// used to do both itself: it never saw the Flag (so control was picked alphabetically and a
+	// zero-exposure arm vanished) and it called time.Now() inside the pure computation (so the
+	// same events produced a different report every run).
+	key := r.PathValue("key")
+	f, _ := s.flags.Get(key)
+	to := time.Now().UTC()
+	from := to.AddDate(0, 0, -days)
+	rep := flag.MeasureRange(evs, f, goalEvent, from, to)
+	rep.Days = days
+	writeJSON(w, http.StatusOK, rep)
+}
+
+// flagHealth is the sample-ratio-mismatch check for one experiment.
+// GET /v1/flags/{key}/health?days=30 — read-key authed, pinned MCP==API by the agreement test.
+//
+// This is the check you run BEFORE trusting any A/B number. A mismatch means the randomisation
+// broke, so the arms differ by whatever broke it rather than by the change being tested, and
+// every conversion figure beside it is unreadable. flag.CheckSRM has existed and been correct
+// for a while — validated against fifteen published chi-square criticals — and had no HTTP route
+// at all, so the dashboard could not show it and the ask bar could not cite it, while the A/B
+// report's own note told the reader to go and check it.
+func (s *Server) flagHealth(w http.ResponseWriter, r *http.Request) {
+	if s.flags == nil {
+		writeErr(w, http.StatusServiceUnavailable, "feature flags not configured")
+		return
+	}
+	key := r.PathValue("key")
+	f, ok := s.flags.Get(key)
+	if !ok {
+		writeErr(w, http.StatusNotFound, "no flag named "+key)
+		return
+	}
+	days := 30
+	if d := r.URL.Query().Get("days"); d != "" {
+		n, err := strconv.Atoi(d)
+		if err != nil || n < 0 {
+			writeErr(w, http.StatusBadRequest, "days must be a non-negative integer (0 = all time)")
+			return
+		}
+		days = n // including an explicit 0, which CheckSRM reads as all history
+	}
+	evs, err := s.store.Range(time.Time{}, time.Time{})
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	// Deliberately NOT default-scoped, matching the MCP tool exactly. The split check counts who
+	// was actually bucketed, and filtering the population before checking it is how a real
+	// mismatch hides behind the very filter that caused it.
+	writeJSON(w, http.StatusOK, flag.CheckSRM(evs, f, days))
 }
