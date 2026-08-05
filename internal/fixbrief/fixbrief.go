@@ -358,6 +358,26 @@ func human(s string) string {
 	return s
 }
 
+// sampleNoun names what a finding's N actually counts. Only three of the seven kinds count
+// people: an anomaly's N is EVENTS over the trailing week (insight.go, s.baseTotal), a trend's
+// N is events in the prior week (prev7), a crawl finding's N is HTTP fetches by a bot, and an
+// AI-visibility finding's N is sampled model answers. lowN called all of them "people", and
+// that sentence is embedded verbatim in the paste-into-your-agent prompt — an agent told it
+// has "40 people" when it has 40 GPTBot fetches sizes its confidence on a population that does
+// not exist. Kinds without an N never reach here (lowN returns early on 0).
+func sampleNoun(kind string) string {
+	switch kind {
+	case insight.KindAnomaly, insight.KindTrend:
+		return "events"
+	case insight.KindCrawl:
+		return "crawler fetches"
+	case insight.KindAIVis:
+		return "sampled model answers"
+	default: // dropoff, segment, retention — these really are distinct users
+		return "people"
+	}
+}
+
 // lowN restates the sample in the brief's own voice. The verdict already suppresses anything
 // under its floor and annotates anything thin — but a brief is the thing that gets PASTED
 // somewhere else, where the page's "(n=34, small sample)" caveat does not travel with it.
@@ -366,7 +386,7 @@ func lowN(f insight.Finding) string {
 	case f.N == 0:
 		return ""
 	case f.N < 100:
-		return fmt.Sprintf("Sample: %d. That is thin. A percentage over %d people is directional, not a measurement — weigh the size of the fix accordingly and do not ship anything large off this number alone.", f.N, f.N)
+		return fmt.Sprintf("Sample: %d. That is thin. A percentage over %d %s is directional, not a measurement — weigh the size of the fix accordingly and do not ship anything large off this number alone.", f.N, f.N, sampleNoun(f.Kind))
 	default:
 		return fmt.Sprintf("Sample: %d.", f.N)
 	}

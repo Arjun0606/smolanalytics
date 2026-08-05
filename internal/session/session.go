@@ -93,9 +93,18 @@ func One(evs []event.Event, distinctID string, startUnix int64) (Detail, bool) {
 		}
 	}
 	for _, grp := range splitSessions(ues) {
-		if grp[0].Timestamp.Unix() != startUnix {
+		// startUnix is the handle the LIST minted, and the list splits a narrower slice than
+		// this: Sessions() drops everything before the days= cutoff first, so a visit that
+		// straddles that cutoff begins later there than it does here. Demanding an exact
+		// grp[0] match therefore 404'd rows the list had just emitted ("session not found" on
+		// its own link) whenever a session spanned the window edge. Play back the SUFFIX that
+		// starts at the handle instead: the events after startUnix are identical either way,
+		// so the detail's step count, duration and entry page match the row that opened it.
+		i := startIndex(grp, startUnix)
+		if i < 0 {
 			continue
 		}
+		grp = grp[i:]
 		d := Detail{Session: summarize(distinctID, grp)}
 		start := grp[0].Timestamp
 		for _, e := range grp {
@@ -114,6 +123,18 @@ func One(evs []event.Event, distinctID string, startUnix int64) (Detail, bool) {
 		return d, true
 	}
 	return Detail{}, false
+}
+
+// startIndex finds where a session handle points inside an already time-sorted group: 0 when
+// the group starts exactly there, a later index when the list's window cut this visit short,
+// -1 when the handle belongs to some other visit (so a made-up handle still 404s).
+func startIndex(grp []event.Event, startUnix int64) int {
+	for i, e := range grp {
+		if e.Timestamp.Unix() == startUnix {
+			return i
+		}
+	}
+	return -1
 }
 
 // splitSessions sorts a user's events by time and splits them on the inactivity gap.
