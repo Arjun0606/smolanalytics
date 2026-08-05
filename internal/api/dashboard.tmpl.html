@@ -51,11 +51,17 @@
        offset against near-black is not a shadow, it is nothing. #6E6555 reads as the solid
        extruded plate the gesture is actually made of. */
     --edge:#877D69; --sh-ink:#6E6555; --sh-focus-ink:#FFC900; --heat-fg:#F0ECDF;
-    --sh-1:3px 3px 0 var(--sh-ink); --sh-2:5px 5px 0 var(--sh-ink);
-    --sh-3:8px 8px 0 var(--sh-ink); --sh-focus:5px 5px 0 var(--sh-focus-ink);
+    --sh-1:4px 4px 0 var(--sh-ink); --sh-2:6px 6px 0 var(--sh-ink);
+    --sh-3:10px 10px 0 var(--sh-ink); --sh-focus:6px 6px 0 var(--sh-focus-ink);
+    /* border weights, named. 3px is the card/object weight the reference sites use; 2px is for
+       controls, which would look clownish at 3. */
+    --bw:3px; --bw-ctl:2px;
     /* type — exactly four sizes, weights 400/500/600 */
-    --fs-lbl:12px; --lh-lbl:18px; --fs-body:14px; --lh-body:22px;
-    --fs-lead:16px; --lh-lead:24px; --fs-num:26px; --lh-num:32px;
+    --fs-lbl:13px; --lh-lbl:19px; --fs-body:15px; --lh-body:23px;
+    --fs-lead:19px; --lh-lead:27px; --fs-num:40px; --lh-num:44px;
+    /* display: section headings. New rung at the top, because the ladder previously stopped at
+       the KPI number and left headings competing with body copy for attention. */
+    --fs-disp:30px; --lh-disp:34px;
     --track-lbl:.06em; --track-num:-.02em; --track-body:-.01em;
     /* space — 4px base */
     --sp1:4px; --sp2:8px; --sp3:12px; --sp4:16px; --sp6:24px; --sp8:32px;
@@ -195,7 +201,7 @@
   .answer .atext{font-size:var(--fs-lead);line-height:1.55;white-space:pre-wrap}
   .answer .achart{margin-top:14px;border-top:1px solid var(--line);padding-top:14px}
   .answer .arow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:12px}
-  .proof{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--a45);color:var(--accent);
+  .proof{display:inline-flex;align-items:center;gap:5px;border:var(--bw-ctl) solid var(--edge);color:var(--on-brand);background:var(--brand);box-shadow:var(--sh-1);font-weight:700;
     font-family:var(--mono);font-size:var(--fs-lbl);text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:99px;text-decoration:none}
   .proof:hover{background:var(--brand);color:var(--on-brand)}
   .amethod{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2)}
@@ -209,8 +215,9 @@
      stated plainly, with the proof and a way in. This IS the product's job-done-for-you. */
   .verdict{margin:var(--zone) 0 0}
   .callout{position:relative;display:grid;grid-template-columns:auto 1fr auto;gap:20px;align-items:start;
-    border:1px solid var(--line2);border-radius:var(--r-card);background:var(--s1);padding:17px 20px 17px 22px;overflow:hidden;margin-bottom:12px}
-  .callout::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent)}
+    border:var(--bw) solid var(--edge);border-radius:var(--r-card);background:var(--s1);padding:19px 22px 19px 26px;overflow:hidden;margin-bottom:16px;
+    box-shadow:var(--sh-3)}
+  .callout::before{content:"";position:absolute;left:0;top:0;bottom:0;width:8px;background:var(--brand)}
   .callout.warn::before{background:var(--warn)}
   .callout.warn{background:radial-gradient(130% 150% at 0% 0%,rgba(229,84,75,.07),transparent 52%),var(--s1)}
   .co-tag{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:var(--fs-lbl);letter-spacing:.09em;text-transform:uppercase;color:var(--accent);font-weight:700;white-space:nowrap;padding-top:3px}
@@ -319,10 +326,10 @@
      or a chart series. Neobrutalism applied uniformly to a data tool produces a page where
      everything shouts and the numbers lose, which is the exact failure this dashboard already
      fixed once under the name "data vomit". */
-  .kpi{position:relative;overflow:hidden;border:2px solid var(--edge);border-radius:var(--r-card);background:var(--s1);padding:14px 15px 15px;
-    display:flex;flex-direction:column;box-shadow:var(--sh-1);
+  .kpi{position:relative;overflow:hidden;border:var(--bw) solid var(--edge);border-radius:var(--r-card);background:var(--s1);padding:16px 17px 17px;
+    display:flex;flex-direction:column;box-shadow:var(--sh-2);
     transition:box-shadow var(--t-base) var(--ease), transform var(--t-base) var(--ease)}
-  .kpi:hover{border-color:var(--edge);box-shadow:var(--sh-2);transform:translate(-2px,-2px)}
+  .kpi:hover{border-color:var(--edge);box-shadow:var(--sh-3);transform:translate(-3px,-3px)}
   /* NO text-transform here. It used to be `capitalize`, which does not know the difference
      between a word and an identifier: the headline tile carries the EVENT NAME, so "$pageview"
      rendered as "$Pageview" and the conversion tile read "$Pageview → $Click". Those are the
@@ -451,7 +458,7 @@
   .deck>.pane{animation:panein 340ms var(--ease-out) both;animation-delay:var(--pd,0ms)}
   /* a paying customer's live pill should feel live; everything else stays still */
   .livepill.on .dot{animation:pulse 1.6s infinite}
-  .bars .col.pk .bar{box-shadow:inset 0 2px 0 0 #FFC259}
+  .bars .col.pk .bar{box-shadow:inset 0 3px 0 0 var(--edge)}
   /* in-progress bucket: hatched, so a half-finished day never reads as a collapse */
   .bars .col.part .bar{background:repeating-linear-gradient(135deg,var(--brand) 0 4px,var(--bg) 4px 8px);opacity:1}
   .bars .col:hover .bar{background:linear-gradient(180deg,#FFC259 0%,var(--accent) 100%)}
@@ -485,7 +492,7 @@
 
   /* zone 8 — breakdowns: one tabbed panel */
   .breakdowns{margin:var(--zone) 0 0}
-  .pane h3{font-size:var(--fs-lead);font-family:var(--mono);text-transform:uppercase;letter-spacing:.07em;color:var(--fg);margin:0 0 14px;font-weight:600}
+  .pane h3{font-size:var(--fs-lead);font-family:var(--sans);text-transform:none;letter-spacing:-.01em;color:var(--fg);margin:0 0 14px;font-weight:800}
   /* the subtitle is a full sentence and was being asked to sit inline after the title,
      where it wrapped into the title's own letter-spacing and uppercase rhythm */
   .pane h3 .sub{display:block;margin:7px 0 0;font-size:var(--fs-lbl);line-height:1.6;font-weight:400;
@@ -584,7 +591,7 @@
      A basis makes each input ask for 170px and WRAP (the row already sets flex-wrap)
      while still being allowed to shrink, so nothing overflows. */
   .exrow input{flex:1 1 170px}
-  .exrow button{background:var(--brand);border:2px solid var(--edge);color:var(--on-brand);box-shadow:var(--sh-1);font-family:var(--mono);font-size:var(--fs-lbl);font-weight:700;padding:7px 14px;border-radius:5px;cursor:pointer}
+  .exrow button{background:var(--brand);border:var(--bw-ctl) solid var(--edge);color:var(--on-brand);box-shadow:var(--sh-1);font-family:var(--mono);font-size:var(--fs-lbl);font-weight:700;padding:7px 14px;border-radius:5px;cursor:pointer}
   .exrow button.btn2{background:transparent;color:var(--mut);border-color:var(--line)}
   .exrow button.btn2:hover{color:var(--accent);border-color:var(--accent)}
   .exout{margin-top:6px}
@@ -628,10 +635,10 @@
   .crow .cn{font-weight:600;font-size:var(--fs-body);min-width:120px}
   /* The press is the point: offset collapses to 0 and the button translates INTO where the
      shadow was, so the travel is real rather than a colour change pretending to be one. */
-  .cbtn{display:inline-flex;align-items:center;gap:6px;border:2px solid var(--edge);border-radius:var(--r-ctl);background:var(--s2);color:var(--fg);font-family:var(--mono);font-size:var(--fs-lbl);padding:5px 12px;cursor:pointer;text-decoration:none;
+  .cbtn{display:inline-flex;align-items:center;gap:6px;border:var(--bw-ctl) solid var(--edge);border-radius:var(--r-ctl);background:var(--s2);color:var(--fg);font-family:var(--mono);font-size:var(--fs-lbl);padding:5px 12px;cursor:pointer;text-decoration:none;
     box-shadow:var(--sh-1);transition:box-shadow var(--t-fast) var(--ease), transform var(--t-fast) var(--ease)}
   .cbtn:hover{background:var(--s3)}
-  .cbtn:active{box-shadow:none;transform:translate(3px,3px)}
+  .cbtn:active{box-shadow:none;transform:translate(4px,4px)}
   .cbtn:hover{border-color:var(--accent);color:var(--accent)}
   .cbtn.primary{border-color:var(--accent);color:var(--accent)}
   .ccode{background:var(--well);border:1px solid var(--line);border-radius:var(--r-ctl);padding:6px 12px;font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);overflow:auto;white-space:nowrap;flex:1;min-width:200px}
@@ -714,7 +721,7 @@
   #sa-top{gap:10px;align-items:stretch;min-width:0}
   #sa-top>*{min-width:0;max-width:100%}
   #sa-top #lastev{overflow-wrap:anywhere}
-  .sa-nav{border-bottom:1px solid var(--line);margin-bottom:8px}
+  .sa-nav{border-bottom:var(--bw-ctl) solid var(--edge);margin-bottom:8px}
   .sa-nav .sa-lbl{margin-top:6px}
   .sa-nav .deckindex{display:flex;flex-wrap:wrap;gap:4px 8px}
   .sa-foot{display:flex;gap:14px;flex-wrap:wrap}
@@ -736,10 +743,11 @@
     .sa-inner{max-width:1560px}
     /* the deck index becomes the rail's spine: one report per line, grouped, always visible */
     .sa-nav .deckindex{display:flex;flex-direction:column;align-items:stretch;gap:1px;padding:0}
-    .sa-nav .deckindex .jsec{border-left:none;padding:10px 2px 4px;color:var(--mut2)}
+    .sa-nav .deckindex .jsec{border-left:none;padding:14px 2px 5px;color:var(--fg);
+      box-shadow:inset 0 -.35em 0 var(--brand-soft);align-self:flex-start}
     .sa-nav .deckindex .jsec:first-child{padding-top:2px}
-    .sa-nav .deckindex a.jcard{padding:4px 6px;border-bottom:none;border-radius:4px;color:var(--mut)}
-    .sa-nav .deckindex a.jcard:hover{color:var(--fg);background:var(--s2);border-bottom:none}
+    .sa-nav .deckindex a.jcard{padding:5px 7px;border-bottom:none;border-radius:0;color:var(--sec)}
+    .sa-nav .deckindex a.jcard:hover{color:var(--on-brand);background:var(--brand);border-bottom:none}
     .sa-nav .deckindex a.jcard.cur{color:var(--accent)}
     .sa-lbl{font-family:var(--mono);font-weight:400;font-size:var(--fs-lbl);line-height:1;
       text-transform:uppercase;letter-spacing:.1em;color:var(--mut2);margin-bottom:8px}
@@ -780,15 +788,17 @@
      order:N is still the only thing that POSITIONS anything — nothing here reads or writes it. */
   .deck{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(280px,100%),1fr));
     gap:var(--gap);margin:var(--zone) 0 0;align-items:stretch}
-  .deck>.pane{grid-column:span 1}
+  .deck>.pane{grid-column:span 1;background:var(--s1);border:var(--bw) solid var(--edge);border-radius:var(--r-card);
+    box-shadow:var(--sh-2);padding:var(--card-pad)}
 
   /* ═══ SECTIONS — headings, not containers. They are grid siblings of the cards, so every
      pane stays a DIRECT child of .deck and its inline order:N still drives layout. Nesting
      cards in section wrappers would kill grid-column and desync the index. ═══ */
-  .deck>.stratum{grid-column:1/-1;display:flex;align-items:baseline;gap:10px;margin:var(--sec-pad) 0 2px;
+  .deck>.stratum{grid-column:1/-1;display:flex;align-items:baseline;gap:12px;margin:var(--sec-pad) 0 6px;
     font-weight:400}
   .deck>.stratum:first-child{margin-top:4px}
-  .deck>.stratum .stitle{font-family:var(--mono);font-weight:400;font-size:var(--fs-lead);line-height:1.2;color:var(--fg);letter-spacing:-.01em}
+  .deck>.stratum .stitle{font-family:var(--sans);font-weight:800;font-size:var(--fs-disp);line-height:var(--lh-disp);color:var(--fg);letter-spacing:-.02em;
+    box-shadow:inset 0 -.42em 0 var(--brand-soft);padding:0 2px}
   .deck>.stratum .ssub{font-family:var(--mono);font-weight:400;font-size:var(--fs-lbl);line-height:1;color:var(--mut2);text-transform:uppercase;letter-spacing:.08em}
   .deck>.stratum .srule{flex:1;height:1px;background:var(--line);position:relative;overflow:hidden}
   .deck>.stratum .scount{font-family:var(--mono);font-weight:400;font-size:var(--fs-lbl);line-height:1;color:var(--mut2);white-space:nowrap}
@@ -874,13 +884,13 @@
      duplicated it are gone. A scroll-spy marks the current section in the rail. ═══ */
   .deckindex{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;padding:10px 0 2px}
   .deckindex:empty{display:none}
-  .deckindex .jsec{font-family:var(--mono);font-weight:400;font-size:var(--fs-lbl);line-height:1;
-    text-transform:uppercase;letter-spacing:.08em;
-    color:var(--mut2);text-decoration:none;padding:4px 2px 4px 10px;border-left:1px solid var(--line)}
+  .deckindex .jsec{font-family:var(--sans);font-weight:800;font-size:var(--fs-lbl);line-height:1.2;
+    text-transform:uppercase;letter-spacing:.06em;
+    color:var(--fg);text-decoration:none;padding:4px 2px 4px 10px;border-left:1px solid var(--line)}
   .deckindex .jsec:first-child{border-left:none;padding-left:2px}
-  .deckindex a.jcard{font-family:var(--mono);font-weight:400;font-size:var(--fs-lbl);line-height:1;color:var(--mut2);text-decoration:none;padding:4px 2px;
+  .deckindex a.jcard{font-family:var(--mono);font-weight:500;font-size:var(--fs-lbl);line-height:1.2;color:var(--sec);text-decoration:none;padding:4px 2px;
     border-bottom:1px solid transparent}
-  .deckindex a.jcard:hover{color:var(--fg);border-bottom-color:var(--accent)}
+  .deckindex a.jcard:hover{color:var(--on-brand);background:var(--brand);border-bottom-color:transparent}
   @media(max-width:880px){.deckindex .jsec{flex-basis:100%;border-left:none;padding-left:2px}}
   /* a jumped-to card flashes its border once, so you can see WHICH of the 21 you landed on */
   @keyframes panehit{0%,100%{border-color:var(--line)}18%,72%{border-color:var(--accent)}}
