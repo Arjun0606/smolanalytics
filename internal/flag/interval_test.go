@@ -84,8 +84,8 @@ func TestPValueAgreesWithTheSignificanceBoolean(t *testing.T) {
 // Relative lift is a ratio, so its interval must be asymmetric — and must never claim a change
 // worse than -100%, which is not a thing that can happen.
 func TestLiftIntervalIsAsymmetricAndBounded(t *testing.T) {
-	ci, ok := liftInterval(120, 1000, 100, 1000, z95)
-	if !ok {
+	ci, why := liftInterval(120, 1000, 100, 1000, z95)
+	if why != liftOK {
 		t.Fatal("a healthy comparison should produce an interval")
 	}
 	if math.Abs(ci.Point-20.0) > 0.5 {
@@ -100,8 +100,8 @@ func TestLiftIntervalIsAsymmetricAndBounded(t *testing.T) {
 		t.Errorf("interval is symmetric (%.2f vs %.2f) — it was not computed on the ratio scale", below, above)
 	}
 	// A large true drop must not produce a bound below -100%.
-	drop, ok := liftInterval(5, 1000, 200, 1000, z95)
-	if ok && drop.Lo < -100 {
+	drop, dropWhy := liftInterval(5, 1000, 200, 1000, z95)
+	if dropWhy == liftOK && drop.Lo < -100 {
 		t.Errorf("lower bound %.1f%% claims worse than a total loss", drop.Lo)
 	}
 }
@@ -110,14 +110,14 @@ func TestLiftIntervalIsAsymmetricAndBounded(t *testing.T) {
 // from zero makes every ratio enormous and meaningless, and it is the single most misleading
 // number an experiment tool can print.
 func TestLiftRefusedWhenControlIsNearZero(t *testing.T) {
-	if _, ok := liftInterval(40, 1000, 1, 1000, z95); ok {
+	if _, why := liftInterval(40, 1000, 1, 1000, z95); why == liftOK {
 		t.Error("a control rate of 0.1% should not produce a relative-lift interval")
 	}
-	if _, ok := liftInterval(10, 100, 0, 100, z95); ok {
+	if _, why := liftInterval(10, 100, 0, 100, z95); why == liftOK {
 		t.Error("a control with zero conversions cannot have a relative lift")
 	}
 	// But a healthy control must still get one.
-	if _, ok := liftInterval(150, 1000, 100, 1000, z95); !ok {
+	if _, why := liftInterval(150, 1000, 100, 1000, z95); why != liftOK {
 		t.Error("a 10% control rate should produce a relative-lift interval")
 	}
 }
@@ -125,27 +125,27 @@ func TestLiftRefusedWhenControlIsNearZero(t *testing.T) {
 // The sentence is the product. A reader acts on the words, not the JSON.
 func TestReadLiftSaysWhatToDo(t *testing.T) {
 	better, _ := liftInterval(150, 1000, 100, 1000, z95)
-	if s := readLift(better, true, 0.001, true); !strings.Contains(s, "better") {
+	if s := readLift(better, liftOK, 0.001, true, 150, 1000, 100, 1000); !strings.Contains(s, "better") {
 		t.Errorf("a clear win should say so, got %q", s)
 	}
 	worse, _ := liftInterval(60, 1000, 100, 1000, z95)
-	if s := readLift(worse, true, 0.001, true); !strings.Contains(s, "worse") {
+	if s := readLift(worse, liftOK, 0.001, true, 60, 1000, 100, 1000); !strings.Contains(s, "worse") {
 		t.Errorf("a clear loss should say so, got %q", s)
 	}
 	// The important case: an interval spanning zero must NOT read as a result. This is where a
 	// significance boolean quietly misleads, and where most experiments actually land.
 	flat, _ := liftInterval(102, 1000, 100, 1000, z95)
-	s := readLift(flat, true, 0.6, true)
+	s := readLift(flat, liftOK, 0.6, true, 102, 1000, 100, 1000)
 	if !strings.Contains(s, "spans zero") {
 		t.Errorf("an inconclusive result must say the range spans zero, got %q", s)
 	}
 	if strings.Contains(s, "better;") || strings.Contains(s, "worse;") {
 		t.Errorf("an inconclusive result must not read as a verdict: %q", s)
 	}
-	if s := readLift(Interval{}, false, 1, false); !strings.Contains(s, "too few") {
+	if s := readLift(Interval{}, liftCtrlNearZero, 1, false, 1, 10, 1, 10); !strings.Contains(s, "too few") {
 		t.Errorf("a tiny sample should say so, got %q", s)
 	}
-	if s := readLift(Interval{}, false, 1, true); !strings.Contains(s, "raw counts") {
+	if s := readLift(Interval{}, liftCtrlNearZero, 1, true, 40, 1000, 1, 1000); !strings.Contains(s, "raw counts") {
 		t.Errorf("an unusable ratio should point at the raw counts, got %q", s)
 	}
 }

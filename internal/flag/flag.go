@@ -40,8 +40,14 @@ type Flag struct {
 	Variants    []Variant `json:"variants,omitempty"`
 	Rules       []Rule    `json:"rules,omitempty"`
 	Measured    bool      `json:"measured,omitempty"`
-	Created     time.Time `json:"created"`
-	Updated     time.Time `json:"updated"`
+	// Experiment is the pre-registered analysis plan: which arm is control, what the goal is,
+	// the inference mode, alpha, N*, the guardrails and their margins. Nil means "a flag, not an
+	// experiment" — Measure then falls back to documented defaults and SAYS SO in the report,
+	// rather than pretending a plan existed. Locked once the experiment starts, because a design
+	// chosen after seeing the data is not a design.
+	Experiment *Experiment `json:"experiment,omitempty"`
+	Created    time.Time   `json:"created"`
+	Updated    time.Time   `json:"updated"`
 }
 
 // Evaluate resolves the flag for one user, given their context properties. Returns the served
@@ -58,13 +64,19 @@ func (f Flag) Evaluate(distinctID string, context map[string]any) (string, bool)
 	ctx := event.Event{Properties: context}
 	for _, r := range f.Rules {
 		if len(r.Filters) > 0 && !query.Matches(ctx, r.Filters) {
-			continue // targeting doesn't match this user
+			continue // a filter MISS is the only thing that advances to the next rule
 		}
+		// Once the filters match, this rule decides — including deciding "no". Every miss used to
+		// `continue`, so a user who matched a targeted rule but lost its rollout fell through to
+		// the next, broader rule. On the standard shape [{plan==free, 10%}, {catch-all, 100%}],
+		// measured over 5,000 free ids: 5000 of 5000 served, against a configured 10%. The
+		// rollout on a targeted rule was not a percentage at all, it was decoration, and the
+		// targeting it was meant to limit could be bypassed entirely by any later rule.
 		if r.RolloutPct <= 0 {
-			continue // this rule serves no one
+			return "", false // this rule matched and serves no one
 		}
 		if r.RolloutPct < 100 && !bucketIn("rollout:"+f.Key, distinctID, r.RolloutPct) {
-			continue // user falls outside this rule's rollout percentage
+			return "", false // matched, but outside this rule's rollout share
 		}
 		return f.variantFor(distinctID), true
 	}

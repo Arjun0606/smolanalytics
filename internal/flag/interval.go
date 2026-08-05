@@ -71,30 +71,58 @@ func twoProportionP(c1, n1, c2, n2 int) float64 {
 	return math.Erfc(z / math.Sqrt2)
 }
 
+// liftBlock names WHY a relative-lift interval could not be computed.
+//
+// It replaces a bare ok=false, and that was a correctness problem, not a tidiness one. Every
+// degenerate input collapsed into ONE sentence: "the control rate is too close to zero…". Fed
+// control 60/200 (30%) against a test arm of 0/200, the report said the CONTROL was near zero —
+// naming the healthy arm as the broken one, and reading as a data-quality shrug rather than
+// "this arm converted nobody". The two mirror-image inputs liftInterval(0,200,60,200) and
+// liftInterval(60,200,0,200) were literally indistinguishable to the reader.
+type liftBlock int
+
+const (
+	liftOK            liftBlock = iota
+	liftNoSample                // an arm has no exposures at all
+	liftNoConversions           // neither arm has converted anyone yet
+	liftTestZero                // the test arm converted nobody: log(0) is -inf
+	liftCtrlZero                // the control converted nobody: nothing to divide by
+	liftSaturated               // an arm converted every user it was shown; variance undefined at p=1
+	liftCtrlNearZero            // control is nonzero but statistically indistinguishable from zero
+)
+
 // liftInterval is the confidence interval on RELATIVE lift, as a percentage.
 //
 // Computed on the log ratio and transformed back, because relative lift is a ratio and its
 // sampling distribution is skewed — a symmetric interval around the point estimate would put the
 // lower bound below -100%, which is not a thing that can happen.
 //
-// Returns ok=false when the control arm is too close to zero to divide by. A control converting
-// at 0.1% turns any movement into a four-figure percentage, and "+4,000% lift" from eleven
-// conversions is the single most misleading number an experiment tool can print. Better to show
-// the absolute difference and say the relative figure is not meaningful.
-func liftInterval(cTest, nTest, cCtrl, nCtrl int, z float64) (Interval, bool) {
-	if nTest <= 0 || nCtrl <= 0 || cTest <= 0 || cCtrl <= 0 {
-		return Interval{}, false
+// Returns a non-OK liftBlock when the control arm is too close to zero to divide by. A control
+// converting at 0.1% turns any movement into a four-figure percentage, and "+4,000% lift" from
+// eleven conversions is the single most misleading number an experiment tool can print. Better to
+// show the absolute difference and say the relative figure is not meaningful — but say WHICH arm
+// made it meaningless, which is what the liftBlock carries.
+func liftInterval(cTest, nTest, cCtrl, nCtrl int, z float64) (Interval, liftBlock) {
+	switch {
+	case nTest <= 0 || nCtrl <= 0:
+		return Interval{}, liftNoSample
+	case cTest <= 0 && cCtrl <= 0:
+		return Interval{}, liftNoConversions
+	case cTest <= 0:
+		return Interval{}, liftTestZero
+	case cCtrl <= 0:
+		return Interval{}, liftCtrlZero
 	}
 	p1 := float64(cTest) / float64(nTest)
 	p2 := float64(cCtrl) / float64(nCtrl)
 	if p1 >= 1 || p2 >= 1 {
-		return Interval{}, false // log-ratio variance is undefined at a 100% rate
+		return Interval{}, liftSaturated // log-ratio variance is undefined at a 100% rate
 	}
 	// The control rate must be far enough from zero that a ratio means anything. Eppo publishes
 	// this guard as a multiple of standard deviations; the same idea, stated in the units here.
 	seCtrl := math.Sqrt(p2 * (1 - p2) / float64(nCtrl))
 	if seCtrl <= 0 || p2 < 10*seCtrl {
-		return Interval{}, false
+		return Interval{}, liftCtrlNearZero
 	}
 	logRatio := math.Log(p1 / p2)
 	seLog := math.Sqrt((1-p1)/(p1*float64(nTest)) + (1-p2)/(p2*float64(nCtrl)))
@@ -104,18 +132,40 @@ func liftInterval(cTest, nTest, cCtrl, nCtrl int, z float64) (Interval, bool) {
 		Point: round1(100 * (p1/p2 - 1)),
 		Lo:    round1(100 * lo),
 		Hi:    round1(100 * hi),
-	}, true
+	}, liftOK
 }
 
 // readLift turns an interval on relative lift into the sentence a person should act on.
 //
 // The wording is the product. "Significant" invites shipping; "between 2% worse and 31% better"
 // invites waiting, which is usually the correct call and the one a boolean never prompts.
-func readLift(ci Interval, ok bool, p float64, enoughSample bool) string {
+//
+// It takes the raw counts because the degenerate cases have nothing else to say. A test arm at
+// 0 of 200 against a control at 60 of 200 has no ratio, but it is not an unknown: it is the
+// clearest loss the tool can find, and the previous single-string branch buried it under a
+// sentence about the control being near zero. Naming the counts is what makes the verdict
+// checkable rather than a shrug.
+func readLift(ci Interval, why liftBlock, p float64, enoughSample bool, cTest, nTest, cCtrl, nCtrl int) string {
 	if !enoughSample {
 		return "too few users so far to say anything; the interval would be wider than any effect worth shipping"
 	}
-	if !ok {
+	of := func(c, n int) string { return itoa(c) + " of " + itoa(n) }
+	switch why {
+	case liftNoSample:
+		return "one arm has no exposures at all, so there is nothing to compare — check that the flag is being read on both code paths"
+	case liftNoConversions:
+		return "neither arm has converted anyone yet (" + of(cTest, nTest) + " against control's " +
+			of(cCtrl, nCtrl) + "), so there is nothing to compare — if that looks wrong it is usually the goal event name"
+	case liftTestZero:
+		return "this arm converted " + of(cTest, nTest) + " while control converted " + of(cCtrl, nCtrl) +
+			" — a relative lift is undefined against zero, but this arm is strictly worse"
+	case liftCtrlZero:
+		return "control converted " + of(cCtrl, nCtrl) + " while this arm converted " + of(cTest, nTest) +
+			" — there is no control rate to divide by, so the lift is undefined, but this arm is strictly better"
+	case liftSaturated:
+		return "one arm converted every user it was shown (" + of(cTest, nTest) + " against control's " +
+			of(cCtrl, nCtrl) + "), so a relative interval is undefined — read the raw counts instead"
+	case liftCtrlNearZero:
 		return "the control rate is too close to zero for a relative comparison to mean anything — read the raw counts instead"
 	}
 	switch {

@@ -35,7 +35,25 @@ func TestMeasureABWin(t *testing.T) {
 		}
 	}
 
-	rep := Measure(evs, "banner", "purchase", 30)
+	// MeasureRange with a pre-registered FIXED-horizon design, not the deprecated Measure.
+	//
+	// Sequential is the default now, and an always-valid interval is deliberately wider — that
+	// width is what makes a result survive having been peeked at, and it costs roughly 16% of the
+	// power of a fixed test. At n=100 per arm a 20%-to-40% doubling is genuinely inconclusive
+	// under always-valid inference, and reporting it as significant would be the exact
+	// overconfidence this engine was rebuilt to stop.
+	//
+	// This test is about the LIFT arithmetic and the control arm, so it declares the regime it
+	// was written for rather than depending on whichever one happens to be the default.
+	f := Flag{
+		Key:      "banner",
+		Variants: []Variant{{Key: "a", Weight: 50}, {Key: "b", Weight: 50}},
+		Experiment: &Experiment{
+			Goal: "purchase", Control: "a", Mode: ModeFixed, NPlanned: 200,
+			BaselinePct: 20, MDEPct: 50, Power: 0.8,
+		},
+	}
+	rep := MeasureRange(evs, f, "purchase", time.Time{}, time.Time{})
 	if rep.Control != "a" {
 		t.Fatalf("control = %q, want a", rep.Control)
 	}

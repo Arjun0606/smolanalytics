@@ -44,7 +44,13 @@ type SRMResult struct {
 	// difference between "your experiment is broken" and "your experiment is broken, and it is
 	// iOS users: 340 in control against 91 in test".
 	Culprit string `json:"culprit,omitempty"`
-	Verdict string `json:"verdict"`
+	// WindowDays is the window the check actually ran over (0 = all history). It exists because
+	// the result was not self-describing: a caller that asks for all-time and is silently given
+	// 30 days gets back "traffic split looks correct" with nothing saying which window that
+	// sentence is about, so an SRM on day 40 of a long-running experiment reads as a clean bill
+	// of health. Echoing the window makes the number checkable against what was requested.
+	WindowDays int    `json:"window_days"`
+	Verdict    string `json:"verdict"`
 }
 
 // CheckSRM compares how many users were actually exposed to each arm against the flag's
@@ -55,6 +61,9 @@ type SRMResult struct {
 // would blame the split for a stale SDK.
 func CheckSRM(evs []event.Event, f Flag, days int) SRMResult {
 	res := SRMResult{Observed: map[string]int{}, Expected: map[string]float64{}}
+	if days > 0 {
+		res.WindowDays = days
+	}
 
 	weights := map[string]float64{}
 	total := 0.0
@@ -106,7 +115,11 @@ func CheckSRM(evs []event.Event, f Flag, days int) SRMResult {
 	res.Detected = res.PValue < SRMAlpha
 
 	if !res.Detected {
-		res.Verdict = fmt.Sprintf("traffic split looks correct (p=%.3f). %s", res.PValue, describeSplit(res))
+		// The window belongs in the sentence, not only in the JSON. "Traffic split looks correct"
+		// is the one verdict a reader stops at, and it is exactly the one that must not hide the
+		// fact that it only looked at part of the experiment.
+		res.Verdict = fmt.Sprintf("traffic split looks correct (p=%.3f) %s. %s",
+			res.PValue, windowPhrase(res.WindowDays), describeSplit(res))
 		return res
 	}
 	res.Culprit = worstSegment(evs, f, days, weights)
@@ -117,6 +130,14 @@ func CheckSRM(evs []event.Event, f Flag, days int) SRMResult {
 		res.Verdict += " Most skewed segment: " + res.Culprit + "."
 	}
 	return res
+}
+
+// windowPhrase states which stretch of history a verdict is about, in the sentence itself.
+func windowPhrase(days int) string {
+	if days <= 0 {
+		return "over the experiment's whole history"
+	}
+	return "over the last " + itoa(days) + " days"
 }
 
 func describeSplit(r SRMResult) string {
