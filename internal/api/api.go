@@ -311,6 +311,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/events/recent", s.recentEvents)
 	mux.HandleFunc("GET /v1/users/{id}", s.userActivity)
 	mux.HandleFunc("GET /v1/who", s.apiWho) // the microscope: the people behind any datapoint
+	// ...and the rows behind it, with the figure recomputed over exactly those rows. The thing
+	// an engine that keeps no rollups can do and a sampled one structurally cannot.
+	mux.HandleFunc("GET /v1/rows", s.apiRows)
 	mux.HandleFunc("GET /v1/agent-status", s.apiAgentStatus)
 	// agent observability (computed over agent_tool_call / agent_turn events) — distinct
 	// from /v1/agent-status above (that's the MCP-client presence badge).

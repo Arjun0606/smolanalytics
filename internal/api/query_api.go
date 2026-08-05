@@ -19,6 +19,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
 	"github.com/Arjun0606/smolanalytics/internal/groups"
 	"github.com/Arjun0606/smolanalytics/internal/paths"
+	"github.com/Arjun0606/smolanalytics/internal/provenance"
 	"github.com/Arjun0606/smolanalytics/internal/query"
 	"github.com/Arjun0606/smolanalytics/internal/retention"
 	"github.com/Arjun0606/smolanalytics/internal/trends"
@@ -973,4 +974,80 @@ func applyCohort(r *http.Request, s *Server, all []event.Event, evs *[]event.Eve
 	}
 	*evs = cohort.FilterToUsers(*evs, cohort.Resolve(all, d))
 	return nil
+}
+
+// apiRows is the microscope pointed at the EVENTS rather than the people.
+// GET /v1/rows?event=signup&days=7[&property=&value=][&unique=1][&limit=N]
+//
+// /v1/who answers "which people are behind this number". This answers "which ROWS", and then
+// recomputes the figure over exactly those rows and hands back a digest of them. That last part
+// is the whole feature: a listing invites trust, a listing that reproduces the number it explains
+// can be checked.
+//
+// It is only possible because every report here is a pure function of raw events with no
+// rollups, no sampling and no pre-aggregation — the rows are still present at query time. At
+// PostHog's or Mixpanel's scale they are not, which is why "why don't your numbers match" is
+// answered over there with ad blockers and residency endpoints instead of with the rows.
+func (s *Server) apiRows(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	name := q.Get("event")
+	if name == "" {
+		writeErr(w, http.StatusBadRequest, "event is required — name the event whose rows you want, e.g. ?event=signup&days=7")
+		return
+	}
+	evs, err := s.filtered(r)
+	if err != nil {
+		writeQueryErr(w, err)
+		return
+	}
+	from, to, werr := parseTrendWindow(r)
+	if werr != nil {
+		writeErr(w, http.StatusBadRequest, werr.Error())
+		return
+	}
+	// The SAME scoping and window the report used. A microscope loaded through a different path
+	// than the number it explains is worse than none: it produces a confident, contradictory
+	// second answer. (That exact defect was found in this endpoint's sibling, /v1/who, which
+	// scoped funnels at event level while /v1/funnel scoped them at user level.)
+	evs = scopeToWindow(evs, from, to)
+
+	prop, val := q.Get("property"), q.Get("value")
+	match := func(e event.Event) bool {
+		if e.Name != name {
+			return false
+		}
+		if prop == "" {
+			return true
+		}
+		got, ok := e.Properties[prop]
+		return ok && toStr(got) == val
+	}
+
+	unique := q.Get("unique") == "1" || q.Get("unique") == "true"
+	recompute := provenance.CountOf
+	question := "how many " + name + " events"
+	if unique {
+		recompute = provenance.UniqueUsersOf
+		question = "how many people did " + name
+	}
+	if prop != "" {
+		question += " where " + prop + " = " + val
+	}
+
+	// The claimed figure is computed HERE, over the same slice, by the same function that will
+	// be used to verify it. That is deliberate: the endpoint is not asserting a number it was
+	// handed, it is showing its own working.
+	var matched []event.Event
+	for _, e := range evs {
+		if match(e) {
+			matched = append(matched, e)
+		}
+	}
+	claimed := recompute(matched)
+
+	limit := 0
+	if v, err := strconv.Atoi(q.Get("limit")); err == nil {
+		limit = v
+	}
+	writeJSON(w, http.StatusOK, provenance.Collect(evs, question, claimed, limit, match, recompute))
 }
