@@ -341,8 +341,9 @@ var toolList = []map[string]any{
 		}, []string{"distinct_id", "start"}),
 	},
 	{
-		"name":        "groups",
-		"description": "Account-level (B2B) analytics: roll events up by a group property (company, account_id, team) — total accounts, active accounts (7d/30d), and the most active accounts with their user + event counts. Use for 'which companies are most active', 'how many accounts', 'account engagement'.",
+		"name": "groups",
+		"description": "Account-level (B2B) analytics: roll events up by a group property (company, account_id, team) — total accounts, active accounts (7d/30d), and the most active accounts with their user + event counts. Use for 'which companies are most active', 'how many accounts', 'account engagement'. " +
+			"Call this FIRST to find which group property this instance carries, then pass that property as `group_by` to funnel or retention to recount those reports per ACCOUNT — an account converts, or is retained, when anyone in it does. That is usually the number a B2B product is paid on, and it can differ enormously from the user number.",
 		"inputSchema": obj(map[string]any{
 			"property": map[string]any{"type": "string", "description": "The group key, e.g. \"company\" or \"account_id\"."},
 			"limit":    map[string]any{"type": "number", "description": "Max accounts to return (default 50)."},
