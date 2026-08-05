@@ -422,6 +422,10 @@
   .bars{display:flex;align-items:flex-end;gap:3px;height:178px;padding-top:24px;position:relative}
   .bars .col{flex:1;min-width:0;display:flex;flex-direction:row;align-items:flex-end;gap:1px;height:100%;position:relative}
   .bars .bar{flex:2;background:var(--brand);border:1px solid var(--edge);border-bottom:none;min-height:2px;border-radius:0;transition:background var(--t-fast) var(--ease),filter var(--t-fast) var(--ease)}
+  /* The affordance. A bar that opens its own evidence has to LOOK like it does. */
+  .bars .col[data-who]{cursor:pointer}
+  .bars .col[data-who]:hover .bar{filter:brightness(.9)}
+  .bars .col[data-who]:focus-visible{outline:var(--bw-ctl) solid var(--edge);outline-offset:2px}
   .bars .ghost{flex:1;background:var(--ghost);min-height:1px;border-radius:3px 3px 0 0}
   /* the tallest bar carries a top edge so the peak reads at a glance, not only via its label */
   /* ---- data-in motion --------------------------------------------------------------
@@ -1288,7 +1292,8 @@
         <option value="source">by source</option>
         <option value="utm_source">by utm source</option>
       </select>
-      <span class="sub">· last {{.RangeLabel}}{{if gt .GhostTotal 0}} · grey = prior {{.RangeLabel}}, same scale{{end}} · computed by /v1/trends</span>
+      <span class="sub">· last {{.RangeLabel}}{{if gt .GhostTotal 0}} · grey = prior {{.RangeLabel}}, same scale{{end}} · computed by /v1/trends
+        · <b>click any bar</b> for the exact rows behind it, recomputed and fingerprinted — no rollups here, so every number can show its own evidence</span>
     </div>
     {{if .ChartTrunc}}<div class="inote">{{.ChartTrunc}}</div>{{end}}
     <div id="chartAlt" hidden></div>
@@ -1298,7 +1303,7 @@
       <div class="plot">
         <div class="gridlines"><div></div><div></div><div></div></div>
         <div class="bars">
-          {{range .Trend}}<div class="col{{if and .Peak (gt .Count 0)}} pk{{end}}{{if .Partial}} part{{end}}" data-who="event={{$.ChartMetric}}&date={{.ISO}}" title="click: who is behind this bar"><span class="tip">{{.Tip}}</span>{{if and .Peak (gt .Count 0)}}<span class="peaklbl">{{.Count}}</span>{{end}}<div class="bar" style="height:{{.HeightPct}}%"></div>{{if gt $.GhostTotal 0}}<div class="ghost" style="height:{{.GhostPct}}%" aria-hidden="true"></div>{{end}}</div>{{end}}
+          {{range .Trend}}<div class="col{{if and .Peak (gt .Count 0)}} pk{{end}}{{if .Partial}} part{{end}}" data-who="event={{$.ChartMetric}}&date={{.ISO}}" role="button" tabindex="0" aria-label="{{.Tip}} — open the rows behind this bar" title="click: the rows behind this bar, and a recomputation of them"><span class="tip">{{.Tip}}</span>{{if and .Peak (gt .Count 0)}}<span class="peaklbl">{{.Count}}</span>{{end}}<div class="bar" style="height:{{.HeightPct}}%"></div>{{if gt $.GhostTotal 0}}<div class="ghost" style="height:{{.GhostPct}}%" aria-hidden="true"></div>{{end}}</div>{{end}}
         </div>
         <div class="xaxis">
           {{range .Trend}}<span class="xt">{{.Tick}}</span>{{end}}
@@ -3404,6 +3409,15 @@
         });
       }).catch(function(){panel.querySelector('.jmeta').textContent='could not load';});
     }
+    // role="button" without key activation is a promise the element does not keep, so Enter and
+    // Space are routed through the same delegated handler as a click.
+    document.addEventListener('keydown',function(e){
+      if(e.key!=='Enter'&&e.key!==' ')return;
+      var t=e.target.closest&&e.target.closest('.col[data-who]');
+      if(!t)return;
+      e.preventDefault();
+      t.click();
+    });
     document.addEventListener('click',function(e){
       var c=e.target.closest('.col[data-who]');
       if(c){openWho(c.getAttribute('data-who'),'people behind this bar');return;}
