@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/Arjun0606/smolanalytics/internal/person"
+	"github.com/Arjun0606/smolanalytics/internal/query"
 )
 
 // apiPeople is the person view: GET /v1/people[?trait=plan][&value=pro][&limit=50]
@@ -22,7 +23,13 @@ func (s *Server) apiPeople(w http.ResponseWriter, r *http.Request) {
 		writeQueryErr(w, err)
 		return
 	}
-	profiles := person.Compute(evs)
+	// This tool's OWN writes are not people. The edge middleware records every AI-crawler fetch
+	// as $ai_crawl under the synthetic id "$crawler", and the AI-visibility and readability runs
+	// do the same — so on a real instance the single most active "person" in this list was
+	// smolanalytics itself, sitting above every genuine user. The sampler filter already guards
+	// retention, lifecycle, stickiness, paths and the ask bar; profiles were simply never wired
+	// to it, which is how the crawler ended up with a profile page.
+	profiles := person.Compute(query.WithoutSampler(evs))
 	q := r.URL.Query()
 	limit := 50
 	if v, err := strconv.Atoi(q.Get("limit")); err == nil && v > 0 {

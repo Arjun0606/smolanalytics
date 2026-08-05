@@ -781,7 +781,7 @@ func (s *Server) apiGroups(w http.ResponseWriter, r *http.Request) {
 		writeQueryErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, groups.Compute(evs, property, time.Time{}, limit))
+	writeJSON(w, http.StatusOK, groups.Compute(query.WithoutSampler(evs), property, time.Time{}, limit))
 }
 
 // apiWho is the Microscope: the people behind any datapoint. Three descriptor

@@ -920,7 +920,11 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		if err := query.Validate(a.Filters); err != nil {
 			return "", err
 		}
-		profiles := person.Compute(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters))
+		// WithoutSampler: this tool's own writes ($ai_crawl under the synthetic id "$crawler",
+		// the visibility and readability runs) are not people, and on a real instance the crawler
+		// outranked every genuine user in this list. Applied on BOTH surfaces or /v1/people and
+		// the MCP tool would report different person counts for the same instance.
+		profiles := person.Compute(query.WithoutSampler(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters)))
 		limit := a.Limit
 		if limit <= 0 {
 			limit = 50
@@ -1205,7 +1209,9 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		if err := guardFilters(evs, a.Filters); err != nil {
 			return "", err
 		}
-		res := groups.Compute(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters), a.Property, time.Time{}, a.Limit)
+		// Same reason as people: a synthetic crawler id carries no account, so leaving samplers in
+		// only inflates the event counts an account roll-up is read for.
+		res := groups.Compute(query.WithoutSampler(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters)), a.Property, time.Time{}, a.Limit)
 		// no event carries this property → say so (with what IS available) instead of
 		// returning zeros the model would read as "you have 0 accounts".
 		if res.TotalGroups == 0 && len(evs) > 0 {

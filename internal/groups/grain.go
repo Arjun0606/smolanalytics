@@ -54,7 +54,12 @@ func Regroup(evs []event.Event, property string) ([]event.Event, Grain) {
 	if property == "" {
 		return evs, g
 	}
-	stamped := query.StampFirstTouch(evs, property)
+	// This tool's own writes are dropped BEFORE the coverage maths, not after. A crawler-fetch
+	// record carries no account and never could, so counting it as unattributed traffic would
+	// make the coverage note read "only 60% of events belong to an account" on an instance where
+	// every real event is attributed perfectly — an accusation of bad instrumentation that is
+	// entirely our own doing.
+	stamped := query.StampFirstTouch(query.WithoutSampler(evs), property)
 
 	accounts := map[string]bool{}
 	noAccount := map[string]bool{}
