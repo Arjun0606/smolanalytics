@@ -60,9 +60,33 @@ func (s *Store) Get(key string) (Flag, bool) {
 
 // Save upserts by Key. A new key is created (Created stamped); an existing key is updated in
 // place (Created preserved, Updated bumped). Validates the key and the variant weights.
-func (s *Store) Save(f Flag) (Flag, error) {
+// Save persists a flag. Plan changes go through the lock.
+//
+// exposedUsers is unknown here — this store holds flags, not events — so the error message cannot
+// say how many people are already in the experiment. Callers that DO know should use
+// SaveWithExposure, which produces the message an operator can act on. The LOCK itself is
+// enforced either way; only the wording degrades.
+func (s *Store) Save(f Flag) (Flag, error) { return s.SaveWithExposure(f, 0) }
+
+// SaveWithExposure is Save with the exposure count, for the error message and for the layer rule.
+//
+// This is the enforcement point experiment.go's own comment promised — "attach it to a Flag and
+// Store.Save enforces the lock" — and which nothing implemented. A pre-registered plan that can be
+// silently re-aimed after the data arrives is not pre-registration, it is a comment. Verified by
+// changing a locked plan's goal through the MCP tool and watching it succeed.
+func (s *Store) SaveWithExposure(f Flag, exposedUsers int) (Flag, error) {
 	if f.Key == "" {
 		return Flag{}, fmt.Errorf("flag key is required")
+	}
+	if prev, ok := s.Get(f.Key); ok || f.Experiment != nil {
+		var oldPlan *Experiment
+		var oldVariants []Variant
+		if ok {
+			oldPlan, oldVariants = prev.Experiment, prev.Variants
+		}
+		if err := ValidatePlanChange(f.Key, oldPlan, f.Experiment, oldVariants, f.Variants, exposedUsers); err != nil {
+			return Flag{}, err
+		}
 	}
 	for _, r := range f.Rules {
 		if r.RolloutPct < 0 || r.RolloutPct > 100 {

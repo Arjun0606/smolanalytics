@@ -128,7 +128,8 @@ func (s *Server) SetReadOnly(v bool) { s.readOnly = v }
 // fails the build until someone classifies it, which is the only version of this guard that
 // cannot quietly reopen.
 var mutatingTools = map[string]bool{
-	"create_alert": true, "delete_alert": true, "save_report": true, "delete_saved_report": true,
+	"experiment_plan": true,
+	"create_alert":    true, "delete_alert": true, "save_report": true, "delete_saved_report": true,
 	"create_cohort": true, "create_sequence_cohort": true, "delete_cohort": true,
 	"add_webhook": true, "delete_webhook": true, "test_webhook": true,
 	"create_flag": true, "delete_flag": true, "set_flag_enabled": true,
@@ -147,7 +148,7 @@ var mutatingTools = map[string]bool{
 // that a tool is one or the other — an unclassified tool is callable on the unauthenticated
 // public demo, which is precisely the hole this pair of maps closes.
 var readOnlyTools = map[string]bool{
-	"rows_behind": true, "errors": true,
+	"rows_behind": true, "errors": true, "plan_experiment": true,
 	"overview": true, "trends": true, "funnel": true, "retention": true, "breakdown": true,
 	"paths": true, "lifecycle": true, "stickiness": true, "groups": true, "web_overview": true,
 	"heatmap": true, "user_activity": true, "recent_events": true, "list_events": true,
@@ -825,6 +826,10 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		// they do on the /v1 side. Filtering the crawl events alone would silently answer a
 		// different question than the endpoint.
 		return jsonText(aicrawl.Compute(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters), a.Days, time.Time{}))
+	case "plan_experiment":
+		return s.toolPlanExperiment(args, evs)
+	case "experiment_plan":
+		return s.toolExperimentPlan(args, evs)
 	case "errors":
 		var a struct {
 			Days    float64   `json:"days"`
