@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>smolanalytics</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%276%27 fill=%27%23F5A623%27/%3E%3Ctext x=%2716%27 y=%2723%27 font-size=%2720%27 text-anchor=%27middle%27 fill=%27%230A0A0A%27 font-family=%27monospace%27 font-weight=%27bold%27%3Es%3C/text%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2016%2016%22%20width%3D%2216%22%20height%3D%2216%22%20shape-rendering%3D%22crispEdges%22%20role%3D%22img%22%20aria-label%3D%22smolanalytics%22%3E%3Cpath%20fill%3D%22%23ffc900%22%20d%3D%22M1%204h14v1h-14zM1%205h2v1h-2zM13%205h2v1h-2zM1%206h2v1h-2zM13%206h2v1h-2zM1%207h2v1h-2zM5%207h10v1h-10zM1%208h2v1h-2zM13%208h2v1h-2zM1%209h2v1h-2zM13%209h2v1h-2zM1%2010h10v1h-10zM13%2010h2v1h-2zM1%2011h2v1h-2zM13%2011h2v1h-2zM1%2012h2v1h-2zM13%2012h2v1h-2zM1%2013h14v1h-14zM1%2014h14v1h-14z%22%2F%3E%3Cpath%20fill%3D%22%2317140d%22%20d%3D%22M3%200h1v1h-1zM12%200h1v1h-1zM2%201h3v1h-3zM11%201h3v1h-3zM1%202h5v1h-5zM10%202h5v1h-5zM0%203h16v1h-16zM0%204h1v1h-1zM15%204h1v1h-1zM0%205h1v1h-1zM3%205h10v1h-10zM15%205h1v1h-1zM0%206h1v1h-1zM3%206h10v1h-10zM15%206h1v1h-1zM0%207h1v1h-1zM3%207h2v1h-2zM15%207h1v1h-1zM0%208h1v1h-1zM3%208h10v1h-10zM15%208h1v1h-1zM0%209h1v1h-1zM3%209h10v1h-10zM15%209h1v1h-1zM0%2010h1v1h-1zM11%2010h2v1h-2zM15%2010h1v1h-1zM0%2011h1v1h-1zM3%2011h10v1h-10zM15%2011h1v1h-1zM0%2012h1v1h-1zM3%2012h10v1h-10zM15%2012h1v1h-1zM0%2013h1v1h-1zM15%2013h1v1h-1zM0%2014h1v1h-1zM15%2014h1v1h-1zM0%2015h16v1h-16z%22%2F%3E%3C%2Fsvg%3E">
 <style>
   /* the whole theme derives from three decisions: a near-black base, one amber accent
      used as punctuation only (focus ring, active underline, live pulse, pin), and a
@@ -14,9 +14,11 @@
      the floor; there is no 9px, 10px or 10.5px anywhere. If you need something quieter
      than a 12px label, take it down a tone, not a size. */
   :root{
-    /* surfaces — one ladder, strays named */
-    --bg:#0A0A0A; --well:#0D0D0D; --s1:#111111; --s2:#161616; --s3:#1C1C1C;
-    --line:#262626; --line2:#2E2E2E; --line3:#3E3E3E;
+    /* surfaces — one ladder, strays named. Warmed toward the brand's paper: the neutral greys
+       became warm near-blacks so cream and yellow sit on the same temperature instead of
+       reading as two unrelated palettes stapled together. */
+    --bg:#12100C; --well:#0C0A07; --s1:#191610; --s2:#1B1811; --s3:#1E1B15;
+    --line:#2A251D; --line2:#3A3428; --line3:#544B3B;
     /* text — three reading tones + disabled. MEASURED, not asserted: the worst surface any
        of these renders on is --s3 (a hovered pane), so that is the number that has to clear
        AA 4.5:1, and these do — --sec 8.31, --mut 6.06, --mut2 4.94. The previous ladder put
@@ -25,11 +27,32 @@
        --dis is the ONLY tone below AA and is now used for exactly one thing: a value that
        does not exist (.sk.agnull). At 3.97:1 it still clears the 3:1 non-text bar, and a
        reader who has to read it is a bug — nothing there is text you need. */
-    --fg:#EDEDED; --sec:#B5B5B5; --mut:#9A9A9A; --mut2:#8A8A8A; --dis:#7A7A7A;
-    /* amber — one accent, a real ladder */
-    --accent:#F5A623; --accent-hi:#FFC24D; --accent-dim:#C77F0A; --accent-bar:#C98A1E;--accent-bar-lo:#7E5412;--spark:#FFC24D;
-    --a14:rgba(245,166,35,.14); --a25:rgba(245,166,35,.25); --a45:rgba(245,166,35,.45);
-    --warn:#E5544B; --ok:#3FB27F; --ghost:#6A6A6A; --grid:#1C1C1C;
+    --fg:#F0ECDF; --sec:#B5B5B5; --mut:#9A9A9A; --mut2:#8A8A8A; --dis:#7A7A7A;
+    /* THE READING LADDER IS LOAD-BEARING AND PINNED. --sec/--mut/--mut2 are asserted as literal
+       substrings by dashboard_legibility_test.go across every served page, so the DARK values
+       live here verbatim and the light theme arrives as an override block below. That is not a
+       trick to dodge the test — it is the reason the light palette had to be designed to land on
+       the SAME rungs (6.06 / 4.61) rather than wherever a cream background happened to allow. */
+    /* brand — the mark's own yellow. FILL only, never text: #FFC900 on cream is 1.6:1. */
+    --brand:#FFC900; --on-brand:#17140D; --brand-soft:#7E6100;
+    /* accent — one hue, a real ladder. On dark the brand yellow IS the accent (11.13:1 on a
+       hovered pane); on light it has to darken to a bronze to stay readable as text. */
+    --accent:#FFC900; --accent-hi:#FFDA5C; --accent-dim:#C79A00; --accent-bar:#C79A00;--accent-bar-lo:#8A6A00;--spark:#FFDA5C;
+    --a14:rgba(255,201,0,.14); --a25:rgba(255,201,0,.25); --a45:rgba(255,201,0,.45);
+    --warn:#FF6A5E; --ok:#3FB27F; --ghost:#6A6A6A; --grid:#232019;
+    /* Coral (#FF5941) from the reference site is deliberately NOT adopted in the product: it
+       sits a few degrees from --warn, and a tool for reading numbers cannot have "brand" and
+       "something is wrong" render as the same colour. */
+    /* shape — the neobrutalist half of the system.
+       --edge is a 2px OBJECT border (a card, a button); --line* stay 1px hairlines (table rows).
+       Conflating them is what turns this look into noise: every row getting a heavy border is
+       how a data table becomes unreadable.
+       --sh-ink is NOT black in dark mode. Measured: #000 on --bg #12100C is 1.11:1 — a black
+       offset against near-black is not a shadow, it is nothing. #6E6555 reads as the solid
+       extruded plate the gesture is actually made of. */
+    --edge:#877D69; --sh-ink:#6E6555; --sh-focus-ink:#FFC900; --heat-fg:#F0ECDF;
+    --sh-1:3px 3px 0 var(--sh-ink); --sh-2:5px 5px 0 var(--sh-ink);
+    --sh-3:8px 8px 0 var(--sh-ink); --sh-focus:5px 5px 0 var(--sh-focus-ink);
     /* type — exactly four sizes, weights 400/500/600 */
     --fs-lbl:12px; --lh-lbl:18px; --fs-body:14px; --lh-body:22px;
     --fs-lead:16px; --lh-lead:24px; --fs-num:26px; --lh-num:32px;
@@ -45,8 +68,10 @@
        nothing on the deck is allowed to exceed roughly a third of the viewport. */
     --peek-tail:280px;   /* the live feed */
     --peek-stream:420px; /* sessions, event stream */
-    /* radii — three, nested smaller than parent */
-    --r-ctl:4px; --r-card:8px; --r-pill:999px;
+    /* radii — squared off. Pills stay pills: a hard rectangle everywhere EXCEPT the fully-round
+       state token is the Gumroad idiom, and it keeps "pill = a piece of state" readable at a
+       glance now that nothing else is rounded. */
+    --r-ctl:0; --r-card:0; --r-pill:999px;
     /* control metrics — four heights replace eleven */
     --chip-h:24px; --ctl-h:28px; --tab-h:32px; --ask-h:46px; --row-h:32px;
     /* motion — two speeds + one slow, ease-out only */
@@ -57,6 +82,31 @@
     --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     font-variant-numeric:tabular-nums;
   }
+  /* ═══ LIGHT ════════════════════════════════════════════════════════════════════════════════
+     The brand face: warm paper, ink, hard shadows. Follows the OS — there is no toggle in this
+     pass, so nothing here can disagree with a stored preference that does not exist.
+
+     Every tone below is measured against --well #EDE7D5, the DARKEST light surface any text
+     renders on, because a ratio quoted against the lightest surface is a ratio chosen to pass:
+       --fg  #17140D  14.88   --sec #443D2C  8.72   --mut #5C5443  6.06   --mut2 #6E6653  4.61
+     --mut and --mut2 land on the same rungs as the dark ladder (6.06 / 4.94) on purpose. The
+     type hierarchy that fixed "data vomit" is a hierarchy of RELATIVE contrast, so it survives
+     a palette inversion only if the steps are reproduced, not merely kept above AA.
+
+     --dis stays the one sub-AA tone (2.85), still used for exactly one thing: a value that does
+     not exist. A reader who has to read it is a bug.
+     --accent darkens to bronze #8A5D00 (4.66) — the brand yellow as TEXT on cream is 1.6:1, so
+     the accent and the brand part ways here. --brand keeps the true yellow for fills.  ═══════ */
+  @media (prefers-color-scheme:light){ :root:not([data-theme="dark"]){
+    --bg:#F7F4EA; --well:#EDE7D5; --s1:#FFFDF6; --s2:#FBF8ED; --s3:#FFFFFF;
+    --line:#E0D9C6; --line2:#CFC6AE; --line3:#B9AF95;
+    --fg:#17140D; --sec:#443D2C; --mut:#5C5443; --mut2:#6E6653; --dis:#918872;
+    --brand:#FFC900; --on-brand:#17140D; --brand-soft:#FFE14D;
+    --accent:#8A5D00; --accent-hi:#6E4A00; --accent-dim:#A87400; --accent-bar:#A87400;--accent-bar-lo:#8A5D00;--spark:#8A5D00;
+    --a14:rgba(168,116,0,.16); --a25:rgba(168,116,0,.30); --a45:#A87400;
+    --warn:#C0271C; --ok:#14713F; --ghost:#8E8570; --grid:#DCD5C0;
+    --edge:#17140D; --sh-ink:#17140D; --sh-focus-ink:#17140D; --heat-fg:#17140D;
+  }}
   /* companion globals: keyboard focus, reduced motion, entrances */
   :where(a,button,select,input,summary,[tabindex]):focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   :where(a,button,select,input,summary):focus:not(:focus-visible){outline:none}
@@ -77,7 +127,8 @@
   @media(max-width:880px){.bar{flex-wrap:wrap;padding:6px 0}}
   .logo{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-weight:600;letter-spacing:-.02em;font-size:var(--fs-lead);white-space:nowrap}
   .logo b{color:var(--accent);font-weight:600}
-  .logo .lmk{display:inline-grid;place-items:center;width:19px;height:19px;border-radius:5px;background:var(--accent);color:var(--bg);font-weight:700;font-size:var(--fs-body)}
+  .logo .lmk{display:inline-block;width:19px;height:19px;border-radius:0;background:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2016%2016%22%20width%3D%2216%22%20height%3D%2216%22%20shape-rendering%3D%22crispEdges%22%20role%3D%22img%22%20aria-label%3D%22smolanalytics%22%3E%3Cpath%20fill%3D%22%23ffc900%22%20d%3D%22M1%204h14v1h-14zM1%205h2v1h-2zM13%205h2v1h-2zM1%206h2v1h-2zM13%206h2v1h-2zM1%207h2v1h-2zM5%207h10v1h-10zM1%208h2v1h-2zM13%208h2v1h-2zM1%209h2v1h-2zM13%209h2v1h-2zM1%2010h10v1h-10zM13%2010h2v1h-2zM1%2011h2v1h-2zM13%2011h2v1h-2zM1%2012h2v1h-2zM13%2012h2v1h-2zM1%2013h14v1h-14zM1%2014h14v1h-14z%22%2F%3E%3Cpath%20fill%3D%22%2317140d%22%20d%3D%22M3%200h1v1h-1zM12%200h1v1h-1zM2%201h3v1h-3zM11%201h3v1h-3zM1%202h5v1h-5zM10%202h5v1h-5zM0%203h16v1h-16zM0%204h1v1h-1zM15%204h1v1h-1zM0%205h1v1h-1zM3%205h10v1h-10zM15%205h1v1h-1zM0%206h1v1h-1zM3%206h10v1h-10zM15%206h1v1h-1zM0%207h1v1h-1zM3%207h2v1h-2zM15%207h1v1h-1zM0%208h1v1h-1zM3%208h10v1h-10zM15%208h1v1h-1zM0%209h1v1h-1zM3%209h10v1h-10zM15%209h1v1h-1zM0%2010h1v1h-1zM11%2010h2v1h-2zM15%2010h1v1h-1zM0%2011h1v1h-1zM3%2011h10v1h-10zM15%2011h1v1h-1zM0%2012h1v1h-1zM3%2012h10v1h-10zM15%2012h1v1h-1zM0%2013h1v1h-1zM15%2013h1v1h-1zM0%2014h1v1h-1zM15%2014h1v1h-1zM0%2015h16v1h-16z%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;
+    color:transparent;text-indent:-9999px;overflow:hidden}
   .siteselect{background:transparent;border:1px solid var(--line);color:var(--mut);font-family:var(--mono);font-size:var(--fs-lbl);padding:4px 8px;border-radius:4px;max-width:180px}
   .spacer{flex:1}
   .hlink{color:var(--mut);font-family:var(--mono);font-size:var(--fs-lbl);text-decoration:none;white-space:nowrap;flex:none;padding:6px 4px;margin:-6px -4px}
@@ -96,7 +147,7 @@
   .rangebtn:hover{color:var(--fg)}
   .toolbar{position:sticky;top:0;z-index:30;background:var(--bg);display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;margin:16px 0 0;padding:8px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
   .chiprail{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0 0}
-  .fchip{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(245,166,35,.5);color:var(--accent);border-radius:99px;font-family:var(--mono);font-size:var(--fs-lbl);padding:4px 11px}
+  .fchip{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--a45);color:var(--accent);border-radius:99px;font-family:var(--mono);font-size:var(--fs-lbl);padding:4px 11px}
   .fchip a{color:var(--mut);text-decoration:none}
   .fchip a:hover{color:var(--warn)}
   .fchip .fop{font-weight:600;cursor:pointer}
@@ -119,7 +170,7 @@
   .livepill.on .dot{background:var(--accent);animation:pulse 1.6s infinite}
   .agentpill{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;flex:none;font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);border:1px solid var(--line);padding:3px 9px;border-radius:99px;cursor:pointer}
   .agentpill:hover{border-color:var(--accent);color:var(--accent)}
-  .agentpill.on{border-color:rgba(245,166,35,.6);color:var(--accent)}
+  .agentpill.on{border-color:var(--a45);color:var(--accent)}
   .agentpill.on::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-right:6px;animation:pulse 1.6s infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 
@@ -128,7 +179,7 @@
   .ask{position:relative}
   .ask input{width:100%;height:var(--ask-h);background:var(--s1);border:1px solid var(--line2);color:var(--fg);border-radius:var(--r-card);
     font:400 var(--fs-lead)/var(--lh-lead) var(--mono);padding:0 84px 0 44px;outline:none;transition:border-color var(--t-base) var(--ease), box-shadow var(--t-base) var(--ease)}
-  .ask input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(245,166,35,.14)}
+  .ask input:focus{border-color:var(--edge);box-shadow:var(--sh-focus)}
   .ask .k{position:absolute;left:17px;top:50%;transform:translateY(-50%);color:var(--accent);font-family:var(--mono);font-size:var(--fs-lead)}
   .ask .hint{position:absolute;right:12px;top:50%;transform:translateY(-50%);display:flex;gap:4px;align-items:center}
   /* chips WRAP — a hidden-scrollbar side-scroll reads as content amputated at the edge
@@ -144,9 +195,9 @@
   .answer .atext{font-size:var(--fs-lead);line-height:1.55;white-space:pre-wrap}
   .answer .achart{margin-top:14px;border-top:1px solid var(--line);padding-top:14px}
   .answer .arow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:12px}
-  .proof{display:inline-flex;align-items:center;gap:5px;border:1px solid rgba(245,166,35,.5);color:var(--accent);
+  .proof{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--a45);color:var(--accent);
     font-family:var(--mono);font-size:var(--fs-lbl);text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:99px;text-decoration:none}
-  .proof:hover{background:var(--accent);color:var(--bg)}
+  .proof:hover{background:var(--brand);color:var(--on-brand)}
   .amethod{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2)}
   .amethod summary{cursor:pointer;list-style:none;display:inline}
   .amethod summary:hover{color:var(--accent)}
@@ -191,7 +242,7 @@
   .fixsheet .fxdetail{color:var(--mut);font-size:var(--fs-body);line-height:1.7;margin-top:4px}
   .fixsheet .fxnote{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--warn);margin-top:8px;line-height:1.7}
   .fixsheet .fxsec{font-family:var(--mono);font-size:var(--fs-lbl);text-transform:uppercase;letter-spacing:var(--track-lbl);color:var(--mut2);margin:20px 0 6px;border-top:1px solid var(--line);padding-top:12px}
-  .fxrow{padding:8px 0;border-bottom:1px solid var(--s2)}
+  .fxrow{padding:8px 0;border-bottom:1px solid var(--line)}
   .fxrow .fxlbl{font-size:var(--fs-lbl);color:var(--mut)}
   .fxrow .fxval{font-size:var(--fs-body);color:var(--fg);font-variant-numeric:tabular-nums;margin-top:2px}
   .fxrow .fxn{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2)}
@@ -201,8 +252,8 @@
   .fixsheet .fxwhy{color:var(--mut);font-size:var(--fs-body);line-height:1.6;padding:2px 0 8px}
   .fixsheet ol.fxdo{margin:0;padding-left:18px;color:var(--mut);font-size:var(--fs-body);line-height:1.75}
   .fixsheet .fxaccept{font-size:var(--fs-body);color:var(--fg);line-height:1.7}
-  .co-go{display:inline-block;background:var(--accent);color:var(--bg);font-family:var(--mono);font-size:var(--fs-lbl);font-weight:700;border-radius:var(--r-ctl);padding:8px 14px;text-decoration:none;white-space:nowrap;cursor:pointer;transition:background var(--t-fast)}
-  .co-go:hover{background:var(--accent-hi)}
+  .co-go{display:inline-block;background:var(--brand);color:var(--on-brand);font-family:var(--mono);font-size:var(--fs-lbl);font-weight:700;border-radius:var(--r-ctl);padding:8px 14px;text-decoration:none;white-space:nowrap;cursor:pointer;transition:background var(--t-fast)}
+  .co-go:hover{filter:brightness(.93)}
   .verdict-more{margin-top:8px;border-top:1px solid var(--line)}
   @media(max-width:720px){.callout{grid-template-columns:1fr;gap:12px}.co-act{justify-self:start}}
   /* ---- the findings block ------------------------------------------------------------
@@ -262,9 +313,16 @@
     .kpis:has(>:nth-child(9):last-child){grid-template-columns:repeat(3,1fr)}
     .kpis:has(>:nth-child(10):last-child){grid-template-columns:repeat(5,1fr)}
   }
-  .kpi{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:var(--r-card);background:var(--s1);padding:14px 15px 15px;
-    display:flex;flex-direction:column}
-  .kpi:hover{border-color:var(--line2)}
+  /* THE SHADOW ALLOWLIST. A hard offset shadow is an OBJECT gesture — it says "this is a thing
+     you can pick up". It belongs on the small number of elements a reader treats as objects:
+     KPI tiles, buttons, the ask bar, slide-overs. It must never land on a table row, a list item
+     or a chart series. Neobrutalism applied uniformly to a data tool produces a page where
+     everything shouts and the numbers lose, which is the exact failure this dashboard already
+     fixed once under the name "data vomit". */
+  .kpi{position:relative;overflow:hidden;border:2px solid var(--edge);border-radius:var(--r-card);background:var(--s1);padding:14px 15px 15px;
+    display:flex;flex-direction:column;box-shadow:var(--sh-1);
+    transition:box-shadow var(--t-base) var(--ease), transform var(--t-base) var(--ease)}
+  .kpi:hover{border-color:var(--edge);box-shadow:var(--sh-2);transform:translate(-2px,-2px)}
   /* NO text-transform here. It used to be `capitalize`, which does not know the difference
      between a word and an identifier: the headline tile carries the EVENT NAME, so "$pageview"
      rendered as "$Pageview" and the conversion tile read "$Pageview → $Click". Those are the
@@ -343,7 +401,7 @@
   table.ctab .acc{color:var(--accent)}
   table.ctab .nw{white-space:nowrap}
   table.ctab .cbar{width:30%}
-  table.ctab .cbar div{height:8px;background:rgba(245,166,35,.35);border-radius:2px}
+  table.ctab .cbar div{height:8px;background:var(--a25);border-radius:2px}
   .chartwrap{display:flex;gap:10px}
   .yaxis{display:flex;flex-direction:column;justify-content:space-between;text-align:right;color:var(--mut2);font-family:var(--mono);font-size:var(--fs-lbl);padding:24px 0 0;height:174px;min-width:34px}
     /* min-width:0 is load-bearing, not tidying: a flex item defaults to min-width:auto, so
@@ -356,7 +414,7 @@
   .gridlines div{border-top:1px solid var(--grid);height:0}
   .bars{display:flex;align-items:flex-end;gap:3px;height:178px;padding-top:24px;position:relative}
   .bars .col{flex:1;min-width:0;display:flex;flex-direction:row;align-items:flex-end;gap:1px;height:100%;position:relative}
-  .bars .bar{flex:2;background:linear-gradient(180deg,var(--accent-bar) 0%,var(--accent-bar-lo) 100%);min-height:2px;border-radius:3px 3px 0 0;transition:background var(--t-fast) var(--ease),filter var(--t-fast) var(--ease)}
+  .bars .bar{flex:2;background:var(--brand);border:1px solid var(--edge);border-bottom:none;min-height:2px;border-radius:0;transition:background var(--t-fast) var(--ease),filter var(--t-fast) var(--ease)}
   .bars .ghost{flex:1;background:var(--ghost);min-height:1px;border-radius:3px 3px 0 0}
   /* the tallest bar carries a top edge so the peak reads at a glance, not only via its label */
   /* ---- data-in motion --------------------------------------------------------------
@@ -366,7 +424,7 @@
      prefers-reduced-motion guard above collapses all of these to instant. */
   /* the first focusable element on the page: visually hidden until focused, so keyboard
      users can reach the numbers without tabbing the whole rail, and nobody else sees it. */
-  .skiplink{position:absolute;left:8px;top:-48px;z-index:100;background:var(--accent);color:var(--bg);
+  .skiplink{position:absolute;left:8px;top:-48px;z-index:100;background:var(--brand);color:var(--on-brand);
     font-family:var(--mono);font-size:var(--fs-lbl);font-weight:700;padding:9px 14px;border-radius:var(--r-ctl);
     text-decoration:none;transition:top var(--t-base) var(--ease)}
   .skiplink:focus{top:8px}
@@ -395,7 +453,7 @@
   .livepill.on .dot{animation:pulse 1.6s infinite}
   .bars .col.pk .bar{box-shadow:inset 0 2px 0 0 #FFC259}
   /* in-progress bucket: hatched, so a half-finished day never reads as a collapse */
-  .bars .col.part .bar{background:repeating-linear-gradient(135deg,var(--accent-bar) 0 4px,var(--accent-bar-lo) 4px 8px);opacity:.8}
+  .bars .col.part .bar{background:repeating-linear-gradient(135deg,var(--brand) 0 4px,var(--bg) 4px 8px);opacity:1}
   .bars .col:hover .bar{background:linear-gradient(180deg,#FFC259 0%,var(--accent) 100%)}
   /* instant tooltip — pure css, zero native-title delay, readable size */
   .bars .col .tip{display:none;position:absolute;bottom:calc(100% + 4px);left:50%;transform:translateX(-50%);
@@ -469,7 +527,7 @@
     color:var(--mut);background:var(--s1);border:1px solid var(--line);border-radius:var(--r-ctl);
     padding:5px 11px;cursor:pointer;white-space:nowrap}
   .boardtabs .btab:hover,.boardtabs .btab:focus-visible{color:var(--fg);border-color:var(--line2)}
-  .boardtabs .btab.on{color:var(--bg);background:var(--accent);border-color:var(--accent);font-weight:700}
+  .boardtabs .btab.on{color:var(--on-brand);background:var(--brand);border-color:var(--edge);font-weight:700}
   .boardtabs .btab .bn{color:inherit;opacity:.7;font-variant-numeric:tabular-nums}
   .boardtabs .btab.add{color:var(--mut2);border-style:dashed}
   .segconv .sc{margin-bottom:10px}
@@ -495,7 +553,7 @@
   .pane .live{max-height:var(--peek-tail);overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--line2) transparent}
   /* the event stream is 200 rows of history rather than a tail, so it earns a taller window */
   .pane #evTable{max-height:var(--peek-stream)}
-  .live .row{display:flex;gap:12px;padding:6px 0;border-bottom:1px solid var(--s2);font-family:var(--mono);font-size:var(--fs-body)}
+  .live .row{display:flex;gap:12px;padding:6px 0;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:var(--fs-body)}
   .live .ev{color:var(--accent);min-width:130px}
   .live .who{color:var(--mut);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .live .ago{color:var(--mut2)}
@@ -526,17 +584,17 @@
      A basis makes each input ask for 170px and WRAP (the row already sets flex-wrap)
      while still being allowed to shrink, so nothing overflows. */
   .exrow input{flex:1 1 170px}
-  .exrow button{background:var(--accent);border:1px solid var(--accent);color:var(--bg);font-family:var(--mono);font-size:var(--fs-lbl);font-weight:700;padding:7px 14px;border-radius:5px;cursor:pointer}
+  .exrow button{background:var(--brand);border:2px solid var(--edge);color:var(--on-brand);box-shadow:var(--sh-1);font-family:var(--mono);font-size:var(--fs-lbl);font-weight:700;padding:7px 14px;border-radius:5px;cursor:pointer}
   .exrow button.btn2{background:transparent;color:var(--mut);border-color:var(--line)}
   .exrow button.btn2:hover{color:var(--accent);border-color:var(--accent)}
   .exout{margin-top:6px}
   .exsummary{font-family:var(--mono);font-size:var(--fs-body);line-height:1.65;color:var(--mut);margin:8px 0;max-width:80ch}
   .exbar{position:relative;height:30px;margin-bottom:4px;background:var(--s2);border:1px solid var(--line);border-radius:5px;overflow:hidden}
-  .exfill{position:absolute;inset:0 auto 0 0;background:rgba(245,166,35,.15);border-right:2px solid rgba(245,166,35,.5)}
+  .exfill{position:absolute;inset:0 auto 0 0;background:var(--a14);border-right:2px solid var(--a45)}
   .exmeta{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 11px;font-family:var(--mono);font-size:var(--fs-lbl)}
   .exmeta .p{color:var(--accent);margin-left:8px}
   table.lc{border-collapse:collapse;font-family:var(--mono);font-size:var(--fs-lbl);margin-top:6px}
-  table.lc th,table.lc td{padding:3px 10px;text-align:right;border-bottom:1px solid var(--s2)}
+  table.lc th,table.lc td{padding:3px 10px;text-align:right;border-bottom:1px solid var(--line)}
   table.lc th{color:var(--mut2);font-weight:500}
   table.lc .n{color:var(--ok)} table.lc .r{color:var(--accent)} table.lc .rs{color:var(--fg)} table.lc .dm{color:var(--mut2)}
   /* was flex with content-sized items, so a row read as five neat tiles and one much wider
@@ -566,9 +624,14 @@
   .connect>summary{cursor:pointer;list-style:none;font-family:var(--mono);font-size:var(--fs-lbl);text-transform:uppercase;letter-spacing:var(--track-lbl);color:var(--mut2);padding:10px 0;border-top:1px solid var(--line)}
   .connect>summary::-webkit-details-marker{display:none}
   .connect>summary:hover{color:var(--accent)}
-  .crow{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--s2)}
+  .crow{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--line)}
   .crow .cn{font-weight:600;font-size:var(--fs-body);min-width:120px}
-  .cbtn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line2);border-radius:5px;background:var(--s2);color:var(--fg);font-family:var(--mono);font-size:var(--fs-lbl);padding:5px 12px;cursor:pointer;text-decoration:none}
+  /* The press is the point: offset collapses to 0 and the button translates INTO where the
+     shadow was, so the travel is real rather than a colour change pretending to be one. */
+  .cbtn{display:inline-flex;align-items:center;gap:6px;border:2px solid var(--edge);border-radius:var(--r-ctl);background:var(--s2);color:var(--fg);font-family:var(--mono);font-size:var(--fs-lbl);padding:5px 12px;cursor:pointer;text-decoration:none;
+    box-shadow:var(--sh-1);transition:box-shadow var(--t-fast) var(--ease), transform var(--t-fast) var(--ease)}
+  .cbtn:hover{background:var(--s3)}
+  .cbtn:active{box-shadow:none;transform:translate(3px,3px)}
   .cbtn:hover{border-color:var(--accent);color:var(--accent)}
   .cbtn.primary{border-color:var(--accent);color:var(--accent)}
   .ccode{background:var(--well);border:1px solid var(--line);border-radius:var(--r-ctl);padding:6px 12px;font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);overflow:auto;white-space:nowrap;flex:1;min-width:200px}
@@ -598,7 +661,7 @@
   .journey .jclose{color:var(--mut2);cursor:pointer;font-family:var(--mono);font-size:var(--fs-lbl);white-space:nowrap}
   .journey .jclose:hover{color:var(--warn)}
   .journey .jmeta{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2);margin-bottom:14px;line-height:1.8}
-  .journey .jrow{display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--s2);font-family:var(--mono);font-size:var(--fs-lbl)}
+  .journey .jrow{display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:var(--fs-lbl)}
   .journey .jrow .jt{color:var(--mut2);min-width:52px}
   .journey .jrow .je{color:var(--accent);min-width:110px}
   .journey .jrow .jp{color:var(--mut);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -847,8 +910,8 @@
     cursor:pointer;transition:background var(--t-fast) var(--ease),border-color var(--t-base) var(--ease),color var(--t-base) var(--ease)}
   .exrow button,.rangego,.copy,.cbtn,.abtn{background:transparent;border:1px solid var(--line2);color:var(--mut)}
   .exrow button:hover,.rangego:hover,.copy:hover,.cbtn:hover,.abtn:hover{border-color:var(--accent);color:var(--accent)}
-  .exrow button:not(.btn2){background:var(--accent);border-color:var(--accent);color:#0A0A0A;font-weight:600}
-  .exrow button:not(.btn2):hover{background:var(--accent-hi);color:#0A0A0A}
+  .exrow button:not(.btn2){background:var(--accent);border-color:var(--accent);color:var(--on-brand);font-weight:600}
+  .exrow button:not(.btn2):hover{background:var(--accent-hi);color:var(--on-brand)}
   .exrow button:not(.btn2):active{background:var(--accent-dim)}
   .chip{display:inline-flex;align-items:center;height:var(--chip-h);padding:0 10px;border:1px solid var(--line);
     border-radius:var(--r-pill);background:transparent;color:var(--mut);font-family:var(--mono);font-weight:400;font-size:var(--fs-lbl);line-height:1;cursor:pointer;
@@ -873,7 +936,7 @@
     letter-spacing:var(--track-lbl);color:var(--mut2);white-space:nowrap}
   .inprompt input{flex:1;min-width:170px;background:var(--s1)}
   .inprompt button{height:var(--ctl-h);padding:0 12px;border:1px solid var(--accent);border-radius:var(--r-ctl);
-    background:var(--accent);color:#0A0A0A;font-family:var(--mono);font-weight:600;font-size:var(--fs-lbl);line-height:1;cursor:pointer;
+    background:var(--accent);color:var(--on-brand);font-family:var(--mono);font-weight:600;font-size:var(--fs-lbl);line-height:1;cursor:pointer;
     transition:background var(--t-fast) var(--ease),border-color var(--t-base) var(--ease),color var(--t-base) var(--ease)}
   .inprompt button:hover{background:var(--accent-hi)}
   .inprompt button:active{background:var(--accent-dim)}
@@ -888,7 +951,7 @@
      punctuation, the same table/stat idioms as every other zone) and what a MODEL
      INFERRED (dashed hairline, no amber anywhere, and the labelling model named on
      the row). the dashed/solid split is the whole visual argument. ═══ */
-  .agprov{display:inline-flex;align-items:center;gap:5px;border:1px solid rgba(245,166,35,.5);color:var(--accent);
+  .agprov{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--a45);color:var(--accent);
     font-family:var(--mono);font-size:var(--fs-lbl);text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:99px}
   .aginf{display:inline-flex;align-items:center;gap:5px;border:1px dashed var(--line3);color:var(--mut2);
     font-family:var(--mono);font-size:var(--fs-lbl);text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:99px}
