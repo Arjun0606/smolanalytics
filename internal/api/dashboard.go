@@ -1157,7 +1157,7 @@ func retentionGrid(rr retention.Result, now time.Time) (headers []string, rows [
 			frac := float64(c.Returned[d]) / float64(c.Size)
 			// The ramp tops out at 0.52, and the text never flips. Measured over the full
 			// 0.08-1.00 amber wash this grid used to use, there is a dead band from about
-			// 0.54 to 0.60 where NEITHER #EDEDED nor #0A0A0A reaches 4.5:1 — so no flip
+			// 0.54 to 0.60 where NEITHER #F0ECDF nor #12100C reaches 4.5:1 — so no flip
 			// threshold could have been right, and the old one (0.45) chose dark text at a
 			// point where dark was 3.0:1 and light would have been 5.7:1. Capping the wash
 			// keeps one text colour AA across every cell (worst case 4.71:1 at the top of
@@ -1167,7 +1167,7 @@ func retentionGrid(rr retention.Result, now time.Time) (headers []string, rows [
 			a := 0.08 + 0.44*frac
 			row.Cells = append(row.Cells, retCell{
 				Label: fmt.Sprintf("%d%%", int(math.Round(frac*100))),
-				Style: template.CSS(fmt.Sprintf("background:rgba(245,166,35,%.2f);color:#EDEDED", a)),
+				Style: template.CSS(fmt.Sprintf("background:rgba(245,166,35,%.2f);color:#F0ECDF", a)),
 			})
 		}
 		rows = append(rows, row)
@@ -2496,9 +2496,9 @@ func (s *Server) notFound(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusNotFound)
 	_, _ = io.WriteString(w, `<!doctype html><meta charset="utf-8">`+
 		`<title>not found · smolanalytics</title>`+
-		`<style>html{background:#0A0A0A;color:#FAFAFA;font-family:ui-monospace,Menlo,monospace}`+
+		`<style>html{background:#12100C;color:#FAFAFA;font-family:ui-monospace,Menlo,monospace}`+
 		`body{min-height:100vh;margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px}`+
-		`a{color:#F5A623;text-decoration:none}.b{font-weight:800;letter-spacing:-.02em;font-size:18px;font-family:Inter,sans-serif}.b i{color:#F5A623;font-style:normal}</style>`+
+		`a{color:#FFC900;text-decoration:none}.b{font-weight:800;letter-spacing:-.02em;font-size:18px;font-family:Inter,sans-serif}.b i{color:#FFC900;font-style:normal}</style>`+
 		`<div class="b">smol<i>analytics</i></div><div style="color:#8E8E8E">404 · nothing here</div><a href="/">← back to dashboard</a>`)
 }
 

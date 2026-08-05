@@ -68,7 +68,7 @@ var shareTmpl = template.Must(template.New("share").Parse(`<!doctype html>
 <meta name="robots" content="noindex">
 <title>{{.Project}} · traffic</title>
 <style>
-:root{--bg:#0A0A0A;--surface:#161616;--surface2:#1C1C1C;--line:#262626;--fg:#FAFAFA;--mut:#9A9A9A;--mut2:#8A8A8A;--accent:#F5A623;
+:root{--bg:#12100C;--surface:#1B1811;--surface2:#1E1B15;--line:#2A251D;--fg:#FAFAFA;--mut:#9A9A9A;--mut2:#8A8A8A;--accent:#FFC900;
 --mono:ui-monospace,"JetBrains Mono",Menlo,monospace;--sans:Inter,-apple-system,"Segoe UI",sans-serif;
 --num-col:64px}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;line-height:1.5}
@@ -143,7 +143,7 @@ func (s *Server) sharePage(w http.ResponseWriter, r *http.Request) {
 		// same body for missing store / bad token — no oracle for probing
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusNotFound)
-		_, _ = w.Write([]byte(`<!doctype html><meta charset="utf-8"><title>not found</title><style>html{background:#0A0A0A;color:#8E8E8E;font-family:ui-monospace,Menlo,monospace}body{display:flex;min-height:100vh;align-items:center;justify-content:center}</style><div>this share link doesn't exist or was revoked</div>`))
+		_, _ = w.Write([]byte(`<!doctype html><meta charset="utf-8"><title>not found</title><style>html{background:#12100C;color:#8E8E8E;font-family:ui-monospace,Menlo,monospace}body{display:flex;min-height:100vh;align-items:center;justify-content:center}</style><div>this share link doesn't exist or was revoked</div>`))
 		return
 	}
 	evs, err := s.store.Range(time.Time{}, time.Time{})

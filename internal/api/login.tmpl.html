@@ -4,24 +4,34 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>sign in · smolanalytics</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%276%27 fill=%27%23F5A623%27/%3E%3Ctext x=%2716%27 y=%2723%27 font-size=%2720%27 text-anchor=%27middle%27 fill=%27%230A0A0A%27 font-family=%27monospace%27 font-weight=%27bold%27%3Es%3C/text%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2016%2016%22%20width%3D%2216%22%20height%3D%2216%22%20shape-rendering%3D%22crispEdges%22%20role%3D%22img%22%20aria-label%3D%22smolanalytics%22%3E%3Cpath%20fill%3D%22%23ffc900%22%20d%3D%22M1%204h14v1h-14zM1%205h2v1h-2zM13%205h2v1h-2zM1%206h2v1h-2zM13%206h2v1h-2zM1%207h2v1h-2zM5%207h10v1h-10zM1%208h2v1h-2zM13%208h2v1h-2zM1%209h2v1h-2zM13%209h2v1h-2zM1%2010h10v1h-10zM13%2010h2v1h-2zM1%2011h2v1h-2zM13%2011h2v1h-2zM1%2012h2v1h-2zM13%2012h2v1h-2zM1%2013h14v1h-14zM1%2014h14v1h-14z%22%2F%3E%3Cpath%20fill%3D%22%2317140d%22%20d%3D%22M3%200h1v1h-1zM12%200h1v1h-1zM2%201h3v1h-3zM11%201h3v1h-3zM1%202h5v1h-5zM10%202h5v1h-5zM0%203h16v1h-16zM0%204h1v1h-1zM15%204h1v1h-1zM0%205h1v1h-1zM3%205h10v1h-10zM15%205h1v1h-1zM0%206h1v1h-1zM3%206h10v1h-10zM15%206h1v1h-1zM0%207h1v1h-1zM3%207h2v1h-2zM15%207h1v1h-1zM0%208h1v1h-1zM3%208h10v1h-10zM15%208h1v1h-1zM0%209h1v1h-1zM3%209h10v1h-10zM15%209h1v1h-1zM0%2010h1v1h-1zM11%2010h2v1h-2zM15%2010h1v1h-1zM0%2011h1v1h-1zM3%2011h10v1h-10zM15%2011h1v1h-1zM0%2012h1v1h-1zM3%2012h10v1h-10zM15%2012h1v1h-1zM0%2013h1v1h-1zM15%2013h1v1h-1zM0%2014h1v1h-1zM15%2014h1v1h-1zM0%2015h16v1h-16z%22%2F%3E%3C%2Fsvg%3E">
 <style>
-  :root{--bg:#0A0A0A;--surface:#161616;--surface2:#1C1C1C;--line:#262626;--line2:#303030;--fg:#FAFAFA;--mut:#9A9A9A;--mut2:#8A8A8A;--accent:#F5A623;--accent2:#FFB84D;--warn:#E5544B;
-    --mono:ui-monospace,"JetBrains Mono",SFMono-Regular,Menlo,monospace;--sans:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}
+  :root{--bg:#12100C;--surface:#1B1811;--surface2:#1E1B15;--line:#2A251D;--line2:#3A3428;--fg:#F0ECDF;--mut:#9A9A9A;--mut2:#8A8A8A;
+    --brand:#FFC900;--on-brand:#17140D;--accent:#FFC900;--accent2:#FFDA5C;--warn:#FF6A5E;
+    --edge:#877D69;--sh-ink:#6E6555;--sh-2:6px 6px 0 var(--sh-ink);--sh-1:4px 4px 0 var(--sh-ink);
+    --mono:ui-monospace,"JetBrains Mono",SFMono-Regular,Menlo,monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}
+  @media (prefers-color-scheme:light){ :root{
+    --bg:#F7F4EA;--surface:#FFFDF6;--surface2:#FBF8ED;--line:#E0D9C6;--line2:#CFC6AE;--fg:#17140D;--mut:#5C5443;--mut2:#6E6653;
+    --brand:#FFC900;--on-brand:#17140D;--accent:#8A5D00;--accent2:#6E4A00;--warn:#C0271C;
+    --edge:#17140D;--sh-ink:#17140D;
+  }}
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);color:var(--fg);font-family:var(--sans);overflow:hidden}
-  .glow{position:fixed;top:50%;left:50%;transform:translate(-50%,-58%);width:720px;height:420px;background:radial-gradient(ellipse at center,rgba(245,166,35,.10),transparent 60%);pointer-events:none;filter:blur(6px)}
-  .box{position:relative;width:340px;background:var(--surface);border:1px solid var(--line);padding:28px;animation:rise .28s cubic-bezier(.2,.7,.3,1) both}
+  .glow{position:fixed;top:50%;left:50%;transform:translate(-50%,-58%);width:720px;height:420px;background:radial-gradient(ellipse at center,rgba(255,201,0,.10),transparent 60%);pointer-events:none;filter:blur(6px)}
+  @media (prefers-color-scheme:light){.glow{display:none}}
+  .box{position:relative;width:340px;background:var(--surface);border:3px solid var(--edge);box-shadow:var(--sh-2);padding:28px;animation:rise .28s cubic-bezier(.2,.7,.3,1) both}
   @keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
   @media (prefers-reduced-motion: reduce){.box{animation:none}}
-  .logo{font-weight:800;letter-spacing:-.02em;font-size:18px;margin-bottom:4px}
+  .logo{font-weight:800;letter-spacing:-.02em;font-size:18px;margin-bottom:4px;display:flex;align-items:center;gap:8px}
+  .logo .lmk{flex:none;width:22px;height:22px;background:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2016%2016%22%20width%3D%2216%22%20height%3D%2216%22%20shape-rendering%3D%22crispEdges%22%20role%3D%22img%22%20aria-label%3D%22smolanalytics%22%3E%3Cpath%20fill%3D%22%23ffc900%22%20d%3D%22M1%204h14v1h-14zM1%205h2v1h-2zM13%205h2v1h-2zM1%206h2v1h-2zM13%206h2v1h-2zM1%207h2v1h-2zM5%207h10v1h-10zM1%208h2v1h-2zM13%208h2v1h-2zM1%209h2v1h-2zM13%209h2v1h-2zM1%2010h10v1h-10zM13%2010h2v1h-2zM1%2011h2v1h-2zM13%2011h2v1h-2zM1%2012h2v1h-2zM13%2012h2v1h-2zM1%2013h14v1h-14zM1%2014h14v1h-14z%22%2F%3E%3Cpath%20fill%3D%22%2317140d%22%20d%3D%22M3%200h1v1h-1zM12%200h1v1h-1zM2%201h3v1h-3zM11%201h3v1h-3zM1%202h5v1h-5zM10%202h5v1h-5zM0%203h16v1h-16zM0%204h1v1h-1zM15%204h1v1h-1zM0%205h1v1h-1zM3%205h10v1h-10zM15%205h1v1h-1zM0%206h1v1h-1zM3%206h10v1h-10zM15%206h1v1h-1zM0%207h1v1h-1zM3%207h2v1h-2zM15%207h1v1h-1zM0%208h1v1h-1zM3%208h10v1h-10zM15%208h1v1h-1zM0%209h1v1h-1zM3%209h10v1h-10zM15%209h1v1h-1zM0%2010h1v1h-1zM11%2010h2v1h-2zM15%2010h1v1h-1zM0%2011h1v1h-1zM3%2011h10v1h-10zM15%2011h1v1h-1zM0%2012h1v1h-1zM3%2012h10v1h-10zM15%2012h1v1h-1zM0%2013h1v1h-1zM15%2013h1v1h-1zM0%2014h1v1h-1zM15%2014h1v1h-1zM0%2015h16v1h-16z%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat}
   .logo b{color:var(--accent)}
   .sub{color:var(--mut);font-size:13px;margin-bottom:22px}
   label{display:block;font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--mut);margin-bottom:8px}
-  input{width:100%;background:var(--surface2);border:1px solid {{if .Error}}var(--warn){{else}}var(--line){{end}};color:var(--fg);font-family:var(--mono);font-size:14px;padding:11px 13px;outline:none;transition:border-color .15s, box-shadow .15s}
-  input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(245,166,35,.12)}
-  button{width:100%;margin-top:16px;background:var(--accent);color:#0A0A0A;border:1px solid var(--accent);font-weight:700;padding:11px;cursor:pointer;font-family:var(--mono);font-size:13px;transition:background .15s,border-color .15s}
-  button:hover{background:var(--accent2);border-color:var(--accent2)}
+  input{width:100%;background:var(--surface2);border:2px solid {{if .Error}}var(--warn){{else}}var(--line){{end}};color:var(--fg);font-family:var(--mono);font-size:14px;padding:11px 13px;outline:none;transition:border-color .15s, box-shadow .15s}
+  input:focus{border-color:var(--edge);box-shadow:var(--sh-1)}
+  button{width:100%;margin-top:16px;background:var(--brand);color:var(--on-brand);border:2px solid var(--edge);font-weight:700;padding:11px;cursor:pointer;font-family:var(--mono);font-size:13px;box-shadow:var(--sh-1);transition:filter .12s,box-shadow .12s,transform .12s}
+  button:hover{filter:brightness(.93)}
+  button:active{box-shadow:none;transform:translate(4px,4px)}
   button:focus-visible{outline:2px solid var(--accent2);outline-offset:2px}
   .err{color:var(--warn);font-size:12px;margin-top:12px;font-family:var(--mono)}
   .hint{color:var(--mut2);font-size:12px;margin-top:18px;line-height:1.5}
@@ -31,7 +41,7 @@
 <body>
   <div class="glow"></div>
   <form class="box" method="post" action="/login">
-    <div class="logo">smol<b>analytics</b></div>
+    <div class="logo"><span class="lmk"></span>smol<b>analytics</b></div>
     <div class="sub">{{.Project}}</div>
     <label for="pw">password</label>
     <input id="pw" name="password" type="password" autofocus autocomplete="current-password" {{if .Error}}aria-invalid="true" aria-describedby="err"{{end}}>
