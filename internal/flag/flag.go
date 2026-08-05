@@ -58,6 +58,19 @@ func (f Flag) Evaluate(distinctID string, context map[string]any) (string, bool)
 	if !f.Enabled {
 		return "", false
 	}
+	// Layer and holdout eligibility come BEFORE targeting and rollout, because they are
+	// statements about which experiments a user may be in at all, not about who this one is for.
+	// Both are no-ops unless the experiment declares them, so a flag without a plan behaves
+	// exactly as it always has — and both draw on their own salt, so switching either on never
+	// moves anyone's variant inside an experiment they stay eligible for.
+	if e := f.Experiment; e != nil {
+		if InHoldout(e.Holdout, distinctID, e.HoldoutPct) {
+			return "", false
+		}
+		if e.Layer != "" && !InSlice(e.Layer, distinctID, e.Slice) {
+			return "", false
+		}
+	}
 	if len(f.Rules) == 0 {
 		return f.variantFor(distinctID), true
 	}

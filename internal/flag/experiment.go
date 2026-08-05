@@ -111,12 +111,21 @@ type Experiment struct {
 	RandomisationUnit string      `json:"randomisation_unit"`     // bucket_id | distinct_id
 	CUPED             *CUPEDCfg   `json:"cuped,omitempty"`
 	Layer             string      `json:"layer,omitempty"` // immutable once anyone is exposed
-	HashVersion       int         `json:"hash_version"`
-	Started           time.Time   `json:"started"`
-	Stopped           time.Time   `json:"stopped,omitempty"`
-	PlanHash          string      `json:"plan_hash"`
-	Locked            bool        `json:"locked"`
-	Amendments        []Amendment `json:"amendments,omitempty"`
+	// Slice is this experiment's claim on its layer's [0,1) space. Empty means unlayered, which
+	// admits everyone — so a flag that never opts in is unaffected by any of this.
+	Slice LayerSlice `json:"slice,omitempty"`
+	// Holdout names a population kept out of experiments entirely, and HoldoutPct is its share
+	// (0..100). Its purpose is the question nobody can otherwise answer: after six months of
+	// individually-significant wins, did any of it add up? Held-out users are the control for
+	// everything you shipped.
+	Holdout     string      `json:"holdout,omitempty"`
+	HoldoutPct  float64     `json:"holdout_pct,omitempty"`
+	HashVersion int         `json:"hash_version"`
+	Started     time.Time   `json:"started"`
+	Stopped     time.Time   `json:"stopped,omitempty"`
+	PlanHash    string      `json:"plan_hash"`
+	Locked      bool        `json:"locked"`
+	Amendments  []Amendment `json:"amendments,omitempty"`
 }
 
 // Resolve returns the plan with every default filled in. This is also the ECHO form: what gets
@@ -378,7 +387,8 @@ func StopExperiment(e *Experiment, at time.Time) (*Experiment, error) {
 var PlanFields = []string{
 	"goal", "control", "guardrails", "secondary", "mode", "alpha", "power",
 	"n_tune", "n_tune_source", "baseline_pct", "mde_pct", "n_planned",
-	"randomisation_unit", "cuped", "layer", "hash_version", "variant weights",
+	"randomisation_unit", "cuped", "layer", "slice", "holdout", "holdout_pct",
+	"hash_version", "variant weights",
 }
 
 // ChangedPlanFields names what differs between two plans, comparing them in RESOLVED form so a
@@ -410,6 +420,9 @@ func ChangedPlanFields(old, next Experiment, oldVariants, nextVariants []Variant
 	add(a.RandomisationUnit != b.RandomisationUnit, "randomisation_unit")
 	add(canonCUPED(a.CUPED) != canonCUPED(b.CUPED), "cuped")
 	add(a.Layer != b.Layer, "layer")
+	add(a.Slice != b.Slice, "slice")
+	add(a.Holdout != b.Holdout, "holdout")
+	add(a.HoldoutPct != b.HoldoutPct, "holdout_pct")
 	add(a.HashVersion != b.HashVersion, "hash_version")
 	add(variantWeightsDiffer(oldVariants, nextVariants), "variant weights")
 	return out
@@ -604,6 +617,12 @@ func (e Experiment) canonicalPlan() []byte {
 		"randomisation_unit": canonStr(r.RandomisationUnit),
 		"secondary":          canonStrings(r.Secondary),
 		"started":            canonTime(r.Started),
+		// Slice and holdout decide WHO is eligible at all. Changing either after start silently
+		// swaps the population underneath a running result — the most invisible way to pick an
+		// outcome after seeing the data, because every number on screen stays plausible.
+		"slice":       "[" + canonFloat(r.Slice.Start) + "," + canonFloat(r.Slice.End) + "]",
+		"holdout":     canonStr(r.Holdout),
+		"holdout_pct": canonFloat(r.HoldoutPct),
 	}
 	keys := make([]string, 0, len(fields))
 	for k := range fields {

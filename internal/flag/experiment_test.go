@@ -264,8 +264,13 @@ func planMutators() map[string]func(*Experiment) {
 		"randomisation_unit": func(e *Experiment) { e.RandomisationUnit = UnitDistinctID },
 		"cuped":              func(e *Experiment) { e.CUPED = nil },
 		"layer":              func(e *Experiment) { e.Layer = "checkout" },
-		"hash_version":       func(e *Experiment) { e.HashVersion = 2 },
-		"started":            func(e *Experiment) { e.Started = startedAt.Add(time.Hour) },
+		// slice and holdout decide who is ELIGIBLE, so they are plan fields in the strongest
+		// sense: change either mid-flight and the result describes a different population.
+		"slice":        func(e *Experiment) { e.Slice = LayerSlice{Start: 0.25, End: 0.5} },
+		"holdout":      func(e *Experiment) { e.Holdout = "2026-h2" },
+		"holdout_pct":  func(e *Experiment) { e.HoldoutPct = 5 },
+		"hash_version": func(e *Experiment) { e.HashVersion = 2 },
+		"started":      func(e *Experiment) { e.Started = startedAt.Add(time.Hour) },
 	}
 }
 
