@@ -111,16 +111,55 @@ func (s *Server) SetReadOnly(v bool) { s.readOnly = v }
 // mutatingTools are the tools that change state. Listed explicitly rather than inferred from
 // a name prefix: a rename would silently reopen the hole, and a wrong guess here is a
 // vandalism surface on a public host.
+// It rotted anyway. Eight of the names in it — create_webhook, create_share, delete_share,
+// create_defined_event, delete_report, delete_api_key, update_flag, set_settings — were tools
+// that DO NOT EXIST, so those entries guarded nothing. Meanwhile the real tools behind those
+// same capabilities shipped under different names and went straight through: add_webhook,
+// create_share_link, revoke_share_link, define_event, delete_saved_report, revoke_api_key,
+// set_flag_enabled. Also uncovered: delete_user_data (destructive), set_project,
+// set_survey_active, regenerate_plan_from_code, and test_webhook (fires an HTTP request at an
+// arbitrary URL from the server).
+//
+// The list being explicit was never the problem — NOTHING CHECKED IT AGAINST REALITY.
+// readonly_guard_test.go does now, in both directions: every name here must be a registered
+// tool, and every registered tool must appear in exactly one of these two maps. A new tool
+// fails the build until someone classifies it, which is the only version of this guard that
+// cannot quietly reopen.
 var mutatingTools = map[string]bool{
-	"create_alert": true, "delete_alert": true, "save_report": true, "delete_report": true,
+	"create_alert": true, "delete_alert": true, "save_report": true, "delete_saved_report": true,
 	"create_cohort": true, "create_sequence_cohort": true, "delete_cohort": true,
-	"create_webhook": true, "delete_webhook": true, "create_flag": true, "update_flag": true,
-	"delete_flag": true, "create_survey": true, "delete_survey": true, "create_goal": true,
-	"delete_goal": true, "create_defined_event": true, "delete_defined_event": true,
-	"create_api_key": true, "delete_api_key": true, "create_export_link": true,
-	"set_retention": true, "set_tracking_plan": true, "import_events": true,
-	"record_deploy": true, "delete_deploy": true, "label_conversation": true,
-	"create_share": true, "delete_share": true, "set_settings": true,
+	"add_webhook": true, "delete_webhook": true, "test_webhook": true,
+	"create_flag": true, "delete_flag": true, "set_flag_enabled": true,
+	"create_survey": true, "delete_survey": true, "set_survey_active": true,
+	"create_goal": true, "delete_goal": true,
+	"define_event": true, "delete_defined_event": true,
+	"create_api_key": true, "revoke_api_key": true, "create_export_link": true,
+	"create_share_link": true, "revoke_share_link": true,
+	"set_retention": true, "set_tracking_plan": true, "regenerate_plan_from_code": true,
+	"set_project": true, "delete_user_data": true,
+	"import_events": true, "record_deploy": true, "delete_deploy": true,
+	"label_conversation": true,
+}
+
+// readOnlyTools is every tool that only READS. It exists so the classification test can insist
+// that a tool is one or the other — an unclassified tool is callable on the unauthenticated
+// public demo, which is precisely the hole this pair of maps closes.
+var readOnlyTools = map[string]bool{
+	"overview": true, "trends": true, "funnel": true, "retention": true, "breakdown": true,
+	"paths": true, "lifecycle": true, "stickiness": true, "groups": true, "web_overview": true,
+	"heatmap": true, "user_activity": true, "recent_events": true, "list_events": true,
+	"list_sessions": true, "session_timeline": true, "whats_notable": true, "fix_brief": true,
+	"explain_change": true, "goal_report": true, "deploy_impact": true, "list_deploys": true,
+	"ai_visibility": true, "ai_crawlers": true, "gsc_status": true, "search_console_report": true,
+	"survey_results": true, "list_surveys": true, "list_goals": true, "list_alerts": true,
+	"list_cohorts": true, "list_webhooks": true, "list_flags": true, "list_saved_reports": true,
+	"list_api_keys": true, "list_share_links": true, "list_defined_events": true,
+	"evaluate_flag": true, "flag_impact": true, "experiment_health": true,
+	"agent_tools": true, "agent_errors": true, "agent_conversations": true, "agent_labels": true,
+	"sample_conversations": true, "get_settings": true, "run_sql": true, "event_source": true,
+	"instrumentation_coverage": true, "instrumentation_health": true,
+	"propose_instrumentation": true, "suggest_instrumentation_fix": true,
+	"verify_instrumentation": true,
 }
 
 // --- JSON-RPC envelope ---
@@ -307,7 +346,13 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 	}
 	switch name {
 	case "overview":
-		return s.toolOverview(evs)
+		// applyDefaultScope, like every other read tool. This is the ORIENT tool — the one the
+		// server instructions tell the model to call FIRST — and it was counting the raw store,
+		// so on any machine where the SDK stamps localhost as env=development it led with a
+		// user count the dashboard has never shown. Measured on a 4-event fixture (2 production,
+		// 1 development, 1 preview): overview said 4 users while trends(unique=true) and the
+		// dashboard both said 2. The first number the agent says has to be the real one.
+		return s.toolOverview(applyDefaultScope(evs))
 	case "list_events":
 		names, _ := s.store.Names()
 		return jsonText(map[string]any{"events": names})
@@ -318,6 +363,7 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 			Breakdown      string              `json:"breakdown"`
 			BreakdownLimit int                 `json:"breakdown_limit"`
 			Days           float64             `json:"days"`
+			Hours          float64             `json:"hours"`
 			From           string              `json:"from"`
 			To             string              `json:"to"`
 			Filters        FilterSet           `json:"filters"`
@@ -340,9 +386,13 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		if err := guardFilters(evs, a.Filters); err != nil {
 			return "", err
 		}
-		// scope which events enter the funnel by the time range (days/from/to), like
+		// scope which events enter the funnel by the time range (days/hours/from/to), like
 		// GET /v1/funnel — the tool used to swallow these and always run all-time.
-		fFrom, fTo, fwErr := mcpWindow(a.Days, 0, a.From, a.To)
+		// `hours` was still swallowed after that fix: it was not a field on this struct at
+		// all, so encoding/json dropped it and funnel(steps=[...], hours=6) measured TWO
+		// YEARS of history while the model reported it as "conversion in the last 6 hours".
+		// Measured on a seeded store: hours=6 and no-window returned the identical count.
+		fFrom, fTo, fwErr := mcpWindow(a.Days, a.Hours, a.From, a.To)
 		if fwErr != nil {
 			return "", fwErr
 		}
@@ -357,10 +407,20 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		if window <= 0 {
 			window = 7 * 24 * time.Hour
 		}
+		// Parsed BEFORE the breakdown branch, and passed into it. The breakdown used to return
+		// early with default options, so `order` and `exclude` were accepted, validated and
+		// then silently discarded the moment a breakdown was also asked for — and an invalid
+		// `order` returned segments happily instead of the error the unsegmented call gives.
+		order, oerr := funnel.ParseOrder(a.Order)
+		if oerr != nil {
+			return "", oerr
+		}
+		opts := funnel.Options{Order: order, Exclusions: a.Exclude, StepFilters: a.StepFilters}
+
 		// breakdown: conversion by a property (segment by the user's first step-0 value) —
 		// same shape as GET /v1/funnel?breakdown=, locked by agreement_test.
 		if a.Breakdown != "" {
-			segs := funnel.ComputeBreakdown(query.StampFirstTouch(query.ScopeUsers(evs, a.Filters, false), a.Breakdown), steps, window, a.Breakdown)
+			segs := funnel.ComputeBreakdownOpts(query.StampFirstTouch(query.ScopeUsers(evs, a.Filters, false), a.Breakdown), steps, window, a.Breakdown, opts)
 			limit := a.BreakdownLimit
 			if limit <= 0 {
 				limit = 10 // same default as GET /v1/funnel — surfaces must agree
@@ -373,12 +433,7 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 			}
 			return jsonText(out)
 		}
-		order, oerr := funnel.ParseOrder(a.Order)
-		if oerr != nil {
-			return "", oerr
-		}
-		return jsonText(funnel.ComputeOpts(query.ScopeUsers(evs, a.Filters, false), steps, window,
-			funnel.Options{Order: order, Exclusions: a.Exclude, StepFilters: a.StepFilters}))
+		return jsonText(funnel.ComputeOpts(query.ScopeUsers(evs, a.Filters, false), steps, window, opts))
 	case "retention":
 		var a struct {
 			Event   string    `json:"event"`
@@ -768,7 +823,12 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		// different question than the endpoint.
 		return jsonText(aicrawl.Compute(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters), a.Days, time.Time{}))
 	case "whats_notable":
-		return jsonText(map[string]any{"findings": insight.Generate(evs)})
+		// applyDefaultScope, like every other read tool. s.all() returns the RAW store and each
+		// tool scopes for itself; this one did not, so the verdict an agent read in the editor
+		// was computed over dev-env traffic that the dashboard's verdict card excludes. Two
+		// different verdicts about the same product, from the two surfaces most likely to be
+		// compared side by side.
+		return jsonText(map[string]any{"findings": insight.Generate(applyDefaultScope(evs))})
 	case "paths":
 		var a struct {
 			Start   string    `json:"start"`
@@ -869,16 +929,23 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		return jsonText(map[string]any{"sessions": session.Sessions(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters), days, a.Limit)})
 	case "session_timeline":
 		var a struct {
-			DistinctID string `json:"distinct_id"`
-			Start      int64  `json:"start"`
+			DistinctID string    `json:"distinct_id"`
+			Start      int64     `json:"start"`
+			Filters    FilterSet `json:"filters"`
 		}
 		if err := unmarshalArgs(args, &a); err != nil {
+			return "", err
+		}
+		if err := query.Validate(a.Filters); err != nil {
 			return "", err
 		}
 		if a.DistinctID == "" || a.Start == 0 {
 			return "", fmt.Errorf("session_timeline needs distinct_id and start (from list_sessions)")
 		}
-		d, ok := session.One(evs, a.DistinctID, a.Start)
+		// the SAME scope list_sessions builds its rows from. This read the unscoped slice, so a
+		// `start` list_sessions had just emitted could fail to resolve here — the agent gets
+		// "session not found" for a session the tool beside it just described.
+		d, ok := session.One(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters), a.DistinctID, a.Start)
 		if !ok {
 			return "", fmt.Errorf("session not found")
 		}
@@ -1316,6 +1383,16 @@ func mcpWindow(days, hours float64, fromStr, toStr string) (from, to time.Time, 
 	if math.IsNaN(days) || math.IsInf(days, 0) || days < 0 {
 		return from, to, fmt.Errorf("days must be a non-negative number")
 	}
+	// A fractional day is not a small window, it is an INVERTED one. days=0.5 is a natural
+	// reading of "rolling window in days" for "the last 12 hours", and int(0.5)==0 made the
+	// offset -(0-1) = +1, so from became TOMORROW 00:00 UTC while to stayed now. Measured:
+	// breakdown(days=0.5) returned {"groups":[]} and funnel(days=0.5) returned every step at
+	// count 0 — a confident empty report, not an error — while the identical hours=12 call
+	// returned real numbers. trends already rejected the same input with this wording
+	// (parseTrendWindow), so the two tools disagreed about whether the question was askable.
+	if days != math.Trunc(days) {
+		return from, to, fmt.Errorf("days must be a positive integer — use hours for sub-day windows (days=0.5 means hours=12)")
+	}
 	if math.IsNaN(hours) || math.IsInf(hours, 0) || hours < 0 {
 		return from, to, fmt.Errorf("hours must be a non-negative number")
 	}
@@ -1351,6 +1428,14 @@ func mcpWindow(days, hours float64, fromStr, toStr string) (from, to time.Time, 
 		if to.IsZero() || to.After(now) {
 			to = now
 		}
+	}
+	// Backstop: scopeWindow keeps [from, to), so a window whose start is not strictly before
+	// its end matches NOTHING and every caller reports a real-looking zero. from=2026-06-01&
+	// to=2026-01-01 (a transposed pair) used to sail through and answer "0 signups". Both
+	// bounds zero means "all recorded history" and is the legitimate no-args case.
+	if !from.IsZero() && !to.IsZero() && !from.Before(to) {
+		return time.Time{}, time.Time{}, fmt.Errorf("empty window: from (%s) is not before to (%s), so nothing can match — check the order of the bounds",
+			from.Format(time.RFC3339), to.Format(time.RFC3339))
 	}
 	return from, to, nil
 }

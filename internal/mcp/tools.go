@@ -34,7 +34,7 @@ var toolList = []map[string]any{
 	},
 	{
 		"name":        "overview",
-		"description": "Headline numbers for the product: total users, active users in the last 7 days, total events, and the list of event names being tracked. Call this first to orient.",
+		"description": "Headline numbers for the product: total users, active users in the last 7 days, total events, and the list of event names being tracked. Counts cover PRODUCTION traffic — env development/preview/staging/test/ci is excluded, exactly as on the dashboard and every other report — so say so if the user expects their localhost traffic to be in here. Call this first to orient.",
 		"inputSchema": obj(nil, nil),
 	},
 	{
@@ -44,7 +44,12 @@ var toolList = []map[string]any{
 	},
 	{
 		"name":        "funnel",
-		"description": "Compute an ordered conversion funnel: of the users who did the first step, how many went on to each later step, where they drop off, and the median time to convert. Set breakdown to compare conversion across a segment (e.g. by source). Use for 'what's my conversion', 'where do users drop off', 'which source converts best', 'how long does signup to paid take'.",
+		"description": "Compute an ordered conversion funnel: of the users who did the first step, how many went on to each later step, where they drop off, and the median time to convert. Scope it to a period with days=7, hours=6 or from/to (omit for all time). Set breakdown to compare conversion across a segment (e.g. by source). Use for 'what's my conversion', 'where do users drop off', 'which source converts best', 'how long does signup to paid take'.",
+		// days/hours/from/to are DECLARED here, not just accepted by the handler. A
+		// schema-validating MCP client strips arguments the schema does not mention, so
+		// funnel(steps=[...], days=7) reached the server as an all-time call and a two-year-old
+		// instance answered "conversion this week" with two years of data. It was the only
+		// windowed report tool advertising no window at all.
 		"inputSchema": obj(map[string]any{
 			"steps": map[string]any{
 				"type":        "array",
@@ -53,7 +58,23 @@ var toolList = []map[string]any{
 			},
 			"window_hours": map[string]any{
 				"type":        "number",
-				"description": "Conversion window in hours from the first step (default 168 = 7 days).",
+				"description": "Conversion window in hours from the first step (default 168 = 7 days). This is per-user conversion time, NOT the reporting period — use days/hours/from/to for that.",
+			},
+			"days": map[string]any{
+				"type":        "number",
+				"description": "Rolling window in days ending now, e.g. 7 for 'last week'. Whole numbers only — use hours for sub-day windows. Omit for all time.",
+			},
+			"hours": map[string]any{
+				"type":        "number",
+				"description": "Rolling window in hours ending now, e.g. 6 for 'the last 6 hours'. Omit for all time.",
+			},
+			"from": map[string]any{
+				"type":        "string",
+				"description": "Absolute window start, RFC3339 or YYYY-MM-DD.",
+			},
+			"to": map[string]any{
+				"type":        "string",
+				"description": "Absolute window end (exclusive), RFC3339 or YYYY-MM-DD.",
 			},
 			"breakdown": map[string]any{
 				"type":        "string",

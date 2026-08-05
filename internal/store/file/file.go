@@ -8,8 +8,10 @@ package file
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -38,26 +40,62 @@ func Open(path string) (*Store, error) {
 		}
 	}
 	s := &Store{seen: map[string]bool{}, names: map[string]bool{}, path: path}
+	repairTail := false // the kept tail record lost its newline and must get one back
 
 	if f, err := os.Open(path); err == nil {
-		sc := bufio.NewScanner(f)
-		sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
-		for sc.Scan() {
-			line := sc.Bytes()
-			if len(line) == 0 {
-				continue
+		// endOfLastRecord is the byte offset just past the last newline-terminated line.
+		// Anything after it is a torn tail (crash or ENOSPC short write) and gets truncated
+		// below. Skipping the torn line was not enough: the O_APPEND handle then opened at
+		// the END of the file, so the next event was written directly onto the fragment and
+		// the two became one unparseable line. That event was fsynced, indexed, 202-ACKed
+		// and served by every query for the life of the process — and then vanished on the
+		// next restart (measured: 6 acked events, 5 on disk after reopen). The segment
+		// store's crash-safety argument rests on its hot WAL replaying completely, so this
+		// silently undermined that tier too.
+		br := bufio.NewReaderSize(f, 64*1024)
+		var offset, endOfLastRecord int64
+		var readErr error
+		tailUnterminated := false
+		for {
+			line, rerr := br.ReadBytes('\n')
+			offset += int64(len(line))
+			terminated := rerr == nil // ReadBytes returns nil only once it has found the delimiter
+			trimmed := bytes.TrimRight(line, "\r\n")
+			if len(trimmed) > 0 {
+				var e event.Event
+				if json.Unmarshal(trimmed, &e) == nil {
+					// A tail that still parses is a whole record that merely lost its
+					// newline (the record landed, the '\n' did not). Keep it — dropping it
+					// would lose an event we already acked — and re-terminate it below.
+					s.index(e)
+					endOfLastRecord = offset
+					tailUnterminated = !terminated
+				} else if terminated {
+					endOfLastRecord = offset // corrupt, but its own line: it can't swallow the next record
+					tailUnterminated = false
+				}
+			} else if terminated {
+				endOfLastRecord = offset
+				tailUnterminated = false
 			}
-			var e event.Event
-			if json.Unmarshal(line, &e) != nil {
-				continue // skip a torn/partial line rather than refuse to start
+			if rerr != nil {
+				if rerr != io.EOF {
+					readErr = rerr
+				}
+				break
 			}
-			s.index(e)
 		}
-		err := sc.Err()
+		size := offset
 		_ = f.Close()
-		if err != nil {
-			return nil, err
+		if readErr != nil {
+			return nil, readErr
 		}
+		if endOfLastRecord < size {
+			if err := os.Truncate(path, endOfLastRecord); err != nil {
+				return nil, err
+			}
+		}
+		repairTail = tailUnterminated
 	} else if !os.IsNotExist(err) {
 		return nil, err
 	}
@@ -67,6 +105,18 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	s.w = w
+	if repairTail {
+		// The kept tail record has no newline of its own, so close the line before any
+		// append lands — same reason as the truncation above, from the other direction.
+		if _, err := s.w.Write([]byte{'\n'}); err != nil {
+			_ = s.w.Close()
+			return nil, err
+		}
+		if err := s.w.Sync(); err != nil {
+			_ = s.w.Close()
+			return nil, err
+		}
+	}
 	return s, nil
 }
 
@@ -91,9 +141,23 @@ func (s *Store) Ingest(events ...event.Event) error {
 	// a client retry would partially duplicate) and is durable before we ack.
 	var buf []byte
 	toIndex := events[:0:0]
+	// s.seen is only written by index(), which runs AFTER this loop, so a batch that
+	// repeated an ID inside itself (a body posting the same event twice, an export whose
+	// $insert_id repeats, an SDK that retries a flush before clearing its queue) slipped
+	// every copy past the guard: measured 2 events on the file backend where the memory
+	// backend — which marks seen inline — recorded 1. The duplicate was durable, so it
+	// inflated every count, funnel step and revenue sum forever. batchSeen closes the gap
+	// without writing to s.seen before the append is known to have succeeded.
+	var batchSeen map[string]bool
 	for _, e := range events {
-		if e.ID != "" && s.seen[e.ID] {
-			continue // idempotent: a retried event is neither re-logged nor re-counted
+		if e.ID != "" {
+			if s.seen[e.ID] || batchSeen[e.ID] {
+				continue // idempotent: a retried event is neither re-logged nor re-counted
+			}
+			if batchSeen == nil {
+				batchSeen = make(map[string]bool, len(events))
+			}
+			batchSeen[e.ID] = true
 		}
 		b, err := json.Marshal(e)
 		if err != nil {

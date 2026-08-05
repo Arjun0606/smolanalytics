@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/event"
+	"github.com/Arjun0606/smolanalytics/internal/query"
 )
 
 // Cohort is one first-seen day and how many of its users returned on each later day.
@@ -54,6 +55,14 @@ func Compute(events []event.Event, maxDays int, retentionEvent string) Result {
 //   - rolling=true counts a user as retained at period n if they were active on period n OR
 //     ANY LATER period (unbounded retention), instead of exactly on period n (classic).
 func ComputeBucketed(events []event.Event, maxPeriods int, retentionEvent, bucket string, rolling bool) Result {
+	// Retention counts ANY activity as returning, which makes it the report this tool's own
+	// sampler corrupts hardest: the GEO runner writes under one synthetic distinct_id every
+	// single day, so left in it is a permanently-retained user. Dropped HERE, in the shared
+	// engine, so the dashboard pane, /v1/retention, the MCP tool, the ask bar and the verdict
+	// card all inherit one answer — internal/insight used to filter them in a private helper,
+	// and being the only surface that did is exactly how the verdict card ended up reading 4%
+	// while the ask bar three inches above it said 6%.
+	events = query.WithoutSampler(events)
 	if maxPeriods < 0 {
 		maxPeriods = 0 // never make a negative-length Returned slice
 	}
@@ -125,6 +134,30 @@ func ComputeBucketed(events []event.Event, maxPeriods int, retentionEvent, bucke
 	return Result{Cohorts: out, MaxDays: maxPeriods, Bucket: b, Rolling: rolling}
 }
 
+// Observable reports whether period n of the cohort starting at cohortDate is a FINISHED,
+// countable period as of now — measured in the grid's OWN bucket unit (day, 7-day week or
+// 30-day month), never in days.
+//
+// It exists because the dashboard grid re-derived this rule by hand with `/ 86400` on both
+// sides while `n` was a PERIOD index, so on a weekly grid it compared a day index against a
+// day index plus a week count. Measured on a same-week cohort with no returns: the row
+// rendered `20 | 100% | 0% | 0% | 0% | 0% | 0%` — W1..W5 presented as finished churn although
+// those weeks begin 2 to 37 days in the FUTURE — while /v1/retention?bucket=week for the same
+// instant returned [20,null,null,...]. Month buckets were off by 30x. One exported predicate
+// so the grid, the JSON and the summary cannot answer the same question three ways.
+//
+// n<=0 is the cohort baseline (its size, known the moment the cohort forms) and is always
+// observable. n>=1 is observable only once the period has FULLY elapsed: the in-progress
+// period is a partial count, and rendering a partial as final is what made the grid
+// contradict the summary that had (correctly) excluded that cohort.
+func Observable(r Result, cohortDate time.Time, n int, now time.Time) bool {
+	if n <= 0 {
+		return true
+	}
+	bs := bucketSeconds(r.Bucket)
+	return cohortDate.UTC().Unix()/bs+int64(n) < now.UTC().Unix()/bs
+}
+
 // PeriodN aggregates period-n retention across cohorts HONESTLY: only cohorts whose
 // period-n has fully elapsed as of `now` enter the denominator. Users who signed up
 // yesterday cannot have day-7 (or week-2) activity yet — counting them would systematically
@@ -136,11 +169,8 @@ func PeriodN(r Result, n int, now time.Time) (retained, size int) {
 	if n <= 0 || n > r.MaxDays {
 		return 0, 0
 	}
-	bs := bucketSeconds(r.Bucket)
-	cur := now.UTC().Unix() / bs
 	for _, c := range r.Cohorts {
-		cp := c.Date.UTC().Unix() / bs
-		if cp+int64(n) < cur && len(c.Returned) > n {
+		if Observable(r, c.Date, n, now) && len(c.Returned) > n {
 			size += c.Size
 			retained += c.Returned[n]
 		}
@@ -173,14 +203,11 @@ type CohortJSON struct {
 // a finished number made the grid contradict the summary (which excluded that cohort). Period
 // 0 is the cohort baseline (its size, known at signup) and is always shown.
 func SerializeCohorts(r Result, now time.Time) []CohortJSON {
-	bs := bucketSeconds(r.Bucket)
-	cur := now.UTC().Unix() / bs
 	out := make([]CohortJSON, 0, len(r.Cohorts))
 	for _, c := range r.Cohorts {
-		cp := c.Date.UTC().Unix() / bs
 		cj := CohortJSON{Date: c.Date, Size: c.Size, Returned: make([]*int, len(c.Returned))}
 		for n := range c.Returned {
-			if n >= 1 && cp+int64(n) >= cur {
+			if !Observable(r, c.Date, n, now) {
 				cj.Returned[n] = nil // future OR in-progress period: not yet fully observable
 				continue
 			}

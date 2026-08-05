@@ -5,6 +5,7 @@
 package query
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"sort"
@@ -60,10 +61,18 @@ func (f Filter) match(e event.Event) bool {
 		return !ok || !eq(v, f.Value)
 	case Contains:
 		return ok && strings.Contains(toStr(v), toStr(f.Value))
+	// gt/lt require the EVENT's value to be a real number, not just the comparand. toNum used
+	// to answer 0 for "n/a", true, or a nested object, so `amount lt 100` matched every event
+	// whose amount was a string or a bool — measured: 4 matches where the honest answer was 1,
+	// and `lt 100` + `gt 100` no longer partitioned the data. It also disagreed with the measure
+	// path over the identical property (trends.numOf skips non-numeric values, never coerces),
+	// so sum(amount) saw 2 values while filter(amount) saw 4.
 	case Gt:
-		return ok && toNum(v) > toNum(f.Value)
+		n, isNum := numOf(v)
+		return ok && isNum && n > toNum(f.Value)
 	case Lt:
-		return ok && toNum(v) < toNum(f.Value)
+		n, isNum := numOf(v)
+		return ok && isNum && n < toNum(f.Value)
 	case In:
 		return ok && inListEq(v, f.Value, eq)
 	case NotIn:
@@ -111,9 +120,19 @@ func ApplyMode(evs []event.Event, filters []Filter, anyMode bool) []event.Event 
 	if !anyMode || len(filters) <= 1 {
 		return Apply(evs, filters)
 	}
-	base := Apply(evs, nil) // keeps the default dev-env exclusion
-	out := make([]event.Event, 0, len(base))
-	for _, e := range base {
+	// The OR base used to be Apply(evs, nil). Passing nil threw away the env escape hatch:
+	// Keeper(nil) sees no env filter, so every development/preview event was stripped BEFORE
+	// the OR rows ran, and "env=development OR source=nope" returned 0 while the same env
+	// filter in AND mode returned 1. That is exactly the querystring the dashboard emits when
+	// "show dev traffic" is on in OR mode (f=env:eq:development + fm=any) — the page blanked
+	// instead of showing the dev traffic it was asked for. envKeeper is the same decision
+	// Keeper makes, minus the filters themselves.
+	envOK := envKeeper(filters)
+	out := make([]event.Event, 0, len(evs))
+	for _, e := range evs {
+		if !envOK(e) {
+			continue
+		}
 		for _, f := range filters {
 			if f.match(e) {
 				out = append(out, e)
@@ -234,7 +253,11 @@ var NonProduction = map[string]bool{
 // default-scoped query". Apply is written in terms of it. A second hand-rolled copy of
 // the env rule in a streaming caller would drift the moment either changed, and the
 // symptom would be two screens quietly disagreeing about the same number.
-func Keeper(filters []Filter) func(event.Event) bool {
+// envKeeper is the default "hide non-production" scope ON ITS OWN, decided by whether the
+// filter set explicitly mentions env. Keeper ANDs it with the filters; ApplyMode's OR mode
+// needs it WITHOUT them, and hand-rolling a second copy there is what let the two modes
+// disagree about dev traffic in the first place. One definition, two compositions.
+func envKeeper(filters []Filter) func(event.Event) bool {
 	filtersTouchEnv := false
 	for _, f := range filters {
 		if f.Property == "env" {
@@ -246,10 +269,19 @@ func Keeper(filters []Filter) func(event.Event) bool {
 		// An explicit env filter means the caller asked for that env on purpose, so the
 		// default "hide non-production" rule steps out of the way rather than ANDing with
 		// it and returning nothing.
-		if !filtersTouchEnv {
-			if v, ok := e.Properties["env"].(string); ok && NonProduction[v] {
-				return false
-			}
+		if filtersTouchEnv {
+			return true
+		}
+		v, ok := e.Properties["env"].(string)
+		return !ok || !NonProduction[v]
+	}
+}
+
+func Keeper(filters []Filter) func(event.Event) bool {
+	envOK := envKeeper(filters)
+	return func(e event.Event) bool {
+		if !envOK(e) {
+			return false
 		}
 		for _, f := range filters {
 			if !f.match(e) {
@@ -279,14 +311,12 @@ type Group struct {
 }
 
 // Breakdown groups events by a property value, sorted by count descending.
-// Events missing the property fall into "(none)".
+// Events missing the property fall into "(none)" — and so does an explicit JSON null, see
+// GroupKey.
 func Breakdown(events []event.Event, property string) []Group {
 	buckets := map[string][]event.Event{}
 	for _, e := range events {
-		key := "(none)"
-		if v, ok := e.Properties[property]; ok {
-			key = toStr(v)
-		}
+		key := GroupKey(e.Properties, property)
 		buckets[key] = append(buckets[key], e)
 	}
 	out := make([]Group, 0, len(buckets))
@@ -303,6 +333,15 @@ func Breakdown(events []event.Event, property string) []Group {
 }
 
 func toStr(v any) string {
+	return ToStr(v)
+}
+
+// ToStr is the engine's ONE property stringifier, exported so every breakdown surface labels a
+// group the same way. trends.ComputeBreakdown used to carry its own copy that rendered a nil as
+// "<nil>" while this one rendered "" — the same three events came back as `{"value":""}` from
+// /v1/breakdown and `("<nil>", 2)` from /v1/trends?breakdown=, and the drill-down filter the
+// legend generates (f=plan:eq:<nil>) matched neither, so a real segment opened as an empty report.
+func ToStr(v any) string {
 	if v == nil {
 		return ""
 	}
@@ -312,34 +351,57 @@ func toStr(v any) string {
 	return fmt.Sprintf("%v", v)
 }
 
+// GroupKey is the breakdown bucket label for one event's property: "(none)" when the property is
+// missing OR explicitly null. A JSON null carries no information the way "" or "pro" does — an
+// SDK sending track("signup", {plan: null}) means "no plan", and bucketing it under its own
+// stringified label ("" here, "<nil>" in trends) made one group render as two different segments
+// depending on which endpoint you asked, neither of them clickable.
+func GroupKey(props map[string]any, property string) string {
+	if v, ok := props[property]; ok && v != nil {
+		return ToStr(v)
+	}
+	return "(none)"
+}
+
 // isNumericValue reports whether a gt/lt comparand is a real number (or a numeric string),
 // so a non-numeric one is rejected at validation instead of silently coercing to 0.
 func isNumericValue(v any) bool {
-	switch n := v.(type) {
-	case float64, float32, int, int64, int32:
-		return true
-	case string:
-		_, err := strconv.ParseFloat(strings.TrimSpace(n), 64)
-		return err == nil
-	}
-	return false
+	// same definition as the event-side check in match(), so validation can never accept a
+	// comparand shape the matcher would then treat as non-numeric (or vice versa).
+	_, ok := numOf(v)
+	return ok
 }
 
 func toNum(v any) float64 {
+	n, _ := numOf(v)
+	return n
+}
+
+// numOf is toNum with an honesty bit: it reports whether the value WAS a number. gt/lt need
+// that, because a bare 0 for "n/a"/true/{"x":1} is indistinguishable from a real 0 and made
+// every non-numeric event match `lt`. Same shapes as trends.numOf (JSON numbers, Go ints,
+// numeric strings) so the filter path and the measure path agree on what "numeric" means —
+// this is a copy rather than an import because trends imports query, not the other way round.
+func numOf(v any) (float64, bool) {
 	switch n := v.(type) {
 	case float64:
-		return n
+		return n, true
 	case float32:
-		return float64(n)
+		return float64(n), true
 	case int:
-		return float64(n)
+		return float64(n), true
 	case int64:
-		return float64(n)
+		return float64(n), true
+	case int32:
+		return float64(n), true
+	case json.Number:
+		f, err := n.Float64()
+		return f, err == nil
 	case string:
-		f, _ := strconv.ParseFloat(n, 64)
-		return f
+		f, err := strconv.ParseFloat(strings.TrimSpace(n), 64)
+		return f, err == nil
 	}
-	return 0
+	return 0, false
 }
 
 // ScopeUsers keeps every event of any user who has at least one event matching the
@@ -378,20 +440,83 @@ var acquisitionProps = map[string]bool{
 	"channel": true, "device": true, "os": true, "browser": true, "country": true, "platform": true,
 }
 
-// StampForFilters first-touch-stamps every acquisition/user-attribute property a filter
-// targets, so "signups where device=mobile" (or referrer/utm/country/…) means "signups by
-// users acquired on mobile" — the same number the dashboard and ask bar report — instead of a
-// silent 0 because the signup event never carried the property. Product/event props (plan,
-// amount) are left untouched; they're set at the step itself, so an event-level filter is right.
-// Both GET /v1 and the MCP tools call this before applying filters, so all four surfaces agree.
+// StampForFilters stamps every acquisition/user-attribute property a filter targets onto the
+// user's whole stream, so "signups where device=mobile" (or referrer/utm/country/…) means
+// "signups by users who came in on mobile" — the same number the dashboard and ask bar report —
+// instead of a silent 0 because the signup event never carried the property. Product/event props
+// (plan, amount) are left untouched; they're set at the step itself, so an event-level filter is
+// right. Both GET /v1 and the MCP tools call this before applying filters.
+//
+// The stamped value is the user's first touch EXCEPT where they have an event that actually
+// satisfies the filter, in which case that value wins. Pure first touch made this surface
+// disagree with the other two on any user whose attribute changed between sessions: u1 lands on
+// desktop, returns on mobile, signs up — "signups where device=mobile" measured 0 on /v1 and MCP
+// (the mobile pageview was overwritten with desktop before filtering) and 1 on the dashboard
+// (query.ScopeUsers) and the ask bar (segFilterUsers), which both keep every event of a user with
+// AT LEAST ONE match. Two answers to one question is the failure this engine exists to prevent,
+// and any-touch is the semantic the majority of surfaces already implement, so this one moves.
+// Single-valued users — the overwhelming majority, and everything the covenant tests cover —
+// score identically under either rule.
 func StampForFilters(evs []event.Event, filters []Filter) []event.Event {
 	var want []string
 	for _, f := range filters {
 		if acquisitionProps[f.Property] {
-			want = append(want, f.Property) // StampFirstTouchAll deduplicates
+			want = append(want, f.Property) // BuildFirstTouch deduplicates
 		}
 	}
-	return StampFirstTouchAll(evs, want)
+	if len(want) == 0 {
+		return evs
+	}
+	ft := BuildFirstTouch(evs, want)
+	ft.preferMatching(evs, filters)
+	return ft.Stamp(evs)
+}
+
+// preferMatching replaces a user's first-touch value with the value of their EARLIEST event that
+// both carries the property and satisfies the filter, making the subsequent event-level filter
+// behave like user-level scoping (ScopeUsers) for acquisition attributes. Users with no matching
+// event keep their first touch, so they still fail the filter for the honest reason.
+//
+// Only the FIRST filter on a given property decides, so a contradictory pair (device eq mobile
+// AND device eq desktop) still matches nobody instead of being stamped into agreement.
+func (f *FirstTouch) preferMatching(events []event.Event, filters []Filter) {
+	if f == nil {
+		return
+	}
+	for i, prop := range f.props {
+		var flt Filter
+		found := false
+		for _, cand := range filters {
+			if cand.Property == prop {
+				flt, found = cand, true
+				break
+			}
+		}
+		if !found {
+			continue
+		}
+		at := map[string]int64{}
+		for _, e := range events {
+			v, ok := e.Properties[prop]
+			if !ok || !flt.match(e) {
+				continue
+			}
+			val := ToStr(v)
+			if val == "" {
+				continue // an empty value is not an attribution, it is a missing one
+			}
+			if prop == "referrer" {
+				val = hostOfURL(val)
+			}
+			// earliest match wins, like BuildFirstTouch — the answer must not depend on the
+			// order the store happens to hand events back in.
+			ts := e.Timestamp.UnixNano()
+			if cur, seen := at[e.DistinctID]; !seen || ts < cur {
+				at[e.DistinctID] = ts
+				f.first[i][e.DistinctID] = val
+			}
+		}
+	}
 }
 
 func StampFirstTouch(events []event.Event, prop string) []event.Event {

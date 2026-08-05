@@ -18,6 +18,11 @@ func pv(user, path, ref string, props map[string]any, ts time.Time) event.Event 
 
 func TestComputeOverview(t *testing.T) {
 	now := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+	// this fixture asserts LiveNow==1, which is only true if the wall clock IS this instant —
+	// live is measured against the present, not against the as-of the report was asked for.
+	// Before that fix the assertion passed for the wrong reason (asof was the clock), which is
+	// exactly how a historical range came to claim people were on the site right now.
+	pinWall(t, now)
 	var evs []event.Event
 	// 3 visitors over the period; one live (2 min ago); google + direct referrers
 	evs = append(evs,

@@ -70,10 +70,26 @@ type SegmentResult struct {
 // would drop steps that never carry it and report a broken conversion). Segments are sorted
 // by step-0 users descending; users who never reach step 0 belong to no segment.
 func ComputeBreakdown(events []event.Event, steps []Step, window time.Duration, property string) []SegmentResult {
+	return ComputeBreakdownOpts(events, steps, window, property, Options{})
+}
+
+// ComputeBreakdownOpts is ComputeBreakdown with Options — the segmented half of the SAME
+// engine, so `order` and `exclude` mean the same thing whether or not you asked for a
+// breakdown.
+//
+// They did not. ComputeBreakdown called Compute (default options) with no way to pass any in,
+// so GET /v1/funnel?steps=...&order=strict&exclude=refund&breakdown=source parsed both options,
+// applied them to the headline funnel, and silently dropped them for every segment underneath
+// it. One response, two different funnel definitions, no error and no note — the reader compares
+// segments against a total that was measured a different way and concludes the segments do not
+// add up. That is the agreement guarantee failing inside a single JSON body.
+func ComputeBreakdownOpts(events []event.Event, steps []Step, window time.Duration, property string, opts Options) []SegmentResult {
 	if len(steps) == 0 {
 		return nil
 	}
-	first := steps[0].Event
+	if opts.Order == "" {
+		opts.Order = Ordered // stepMatches reads opts; normalize once, exactly as ComputeOpts does
+	}
 	type u struct {
 		evs      []event.Event
 		seg      string
@@ -88,7 +104,13 @@ func ComputeBreakdown(events []event.Event, steps []Step, window time.Duration, 
 			byUser[e.DistinctID] = x
 		}
 		x.evs = append(x.evs, e)
-		if e.Name == first && (!x.hasStep0 || e.Timestamp.Before(x.anchorTS)) {
+		// stepMatches, not a bare name comparison: with a step-0 filter (sf0=plan:pro) the
+		// funnel anchors only on step-0 events that PASS the filter, so segmenting on the
+		// first event merely NAMED signup labelled the user by a property carried on an
+		// event the funnel itself refused to anchor on — the segment header said hn while
+		// the conversion underneath it was measured from the twitter signup. One definition
+		// of "step 0" for both halves, or the breakdown is not a cut of the same funnel.
+		if stepMatches(e, steps, 0, opts) && (!x.hasStep0 || e.Timestamp.Before(x.anchorTS)) {
 			x.hasStep0 = true
 			x.anchorTS = e.Timestamp
 			if v, ok := e.Properties[property]; ok {
@@ -106,7 +128,7 @@ func ComputeBreakdown(events []event.Event, steps []Step, window time.Duration, 
 	}
 	out := make([]SegmentResult, 0, len(segEvents))
 	for val, evs := range segEvents {
-		out = append(out, SegmentResult{Value: val, Result: Compute(evs, steps, window)})
+		out = append(out, SegmentResult{Value: val, Result: ComputeOpts(evs, steps, window, opts)})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		ci, cj := stepZero(out[i].Result), stepZero(out[j].Result)
@@ -125,7 +147,13 @@ func stepZero(r Result) int {
 	return 0
 }
 
+// segValue renders a property value as the string a filter compares against. Deliberately the
+// same rule as query.toStr — a nil is empty, a string is itself, anything else takes %v — so the
+// funnel's per-step filters and the main filter engine can never disagree about a value.
 func segValue(v any) string {
+	if v == nil {
+		return ""
+	}
 	if s, ok := v.(string); ok {
 		return s
 	}
@@ -158,7 +186,7 @@ func CapSegments(segs []SegmentResult, limit int) ([]SegmentResult, int) {
 // later retries and converts is still counted (standard Mixpanel/Amplitude re-anchoring,
 // rather than dropping them on the first anchor). dur is measured on that best path.
 func furthestStep(evs []event.Event, steps []Step, window time.Duration) (reached int, dur time.Duration, converted bool) {
-	sort.SliceStable(evs, func(i, j int) bool { return evs[i].Timestamp.Before(evs[j].Timestamp) })
+	sortForFunnel(evs, steps)
 
 	best := 0
 	var bestDur time.Duration
@@ -222,7 +250,32 @@ type Options struct {
 	StepFilters []map[string]string // per-step property equals-filters; nil entry = no filter
 }
 
+// propString stringifies a property value the same way the ordinary filter engine does
+// (internal/query toStr): nil is the empty string, a string is itself, everything else goes
+// through %v. Kept as a three-line copy rather than an import so funnel stays dependency-free
+// on query — but the two MUST agree, because they are the two halves of "eq" in one product.
+func propString(v any) string {
+	if v == nil {
+		return ""
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return fmt.Sprintf("%v", v)
+}
+
 // stepMatches reports whether e satisfies step i under opts (name + per-step filter).
+//
+// The comparison used to be a bare type assertion, `e.Properties[k].(string)`. Properties
+// arrive from JSON as map[string]any, so a numeric property is a float64 and a boolean is a
+// bool; the assertion failed on both and yielded "", which never equals the wanted value.
+// Measured: two checkout events with amount 50 and 10, then sf1=amount:50 returned step
+// count 0, conversion 0%, dropped_from_prev = the whole population — a confident, error-free
+// zero, while the SAME property through /v1/trends?filters=[{"property":"amount","op":"eq",
+// "value":50}] returned 1. Two filtering surfaces of one product disagreeing on one property
+// is the exact failure this engine exists to rule out. Stringify like the filter engine, and
+// require the property to be PRESENT — a missing property is not an empty-string match, which
+// is also how query.Filter's Eq reads it (`ok && toStr(v) == toStr(want)`).
 func stepMatches(e event.Event, steps []Step, i int, opts Options) bool {
 	if e.Name != steps[i].Event {
 		return false
@@ -231,8 +284,16 @@ func stepMatches(e event.Event, steps []Step, i int, opts Options) bool {
 		return true
 	}
 	for k, want := range opts.StepFilters[i] {
-		got, _ := e.Properties[k].(string)
-		if got != want {
+		// segValue, not a bare .(string) assertion. Properties arrive from JSON as
+		// map[string]any, so 50 is a float64 and the assertion yielded "" for it — the step
+		// collapsed to a confident 0 with no error, while the SAME property compared through
+		// query's filter engine matched fine. Two filter engines in one product disagreeing
+		// about what "amount = 50" means is the shape of bug this codebase exists to not have,
+		// so this stringifies exactly the way query.toStr does — including requiring the key to
+		// be PRESENT, which is query.Filter's Eq rule (`ok && toStr(v) == want`). Reading a
+		// missing property as "" would invent conversions for events that never carried it.
+		v, present := e.Properties[k]
+		if !present || segValue(v) != want {
 			return false
 		}
 	}
@@ -280,7 +341,7 @@ func ComputeOpts(events []event.Event, steps []Step, window time.Duration, opts 
 
 // furthestStepOpts is the single matching core under every discipline.
 func furthestStepOpts(evs []event.Event, steps []Step, window time.Duration, opts Options, excl map[string]bool) (reached int, dur time.Duration, converted bool) {
-	sort.SliceStable(evs, func(i, j int) bool { return evs[i].Timestamp.Before(evs[j].Timestamp) })
+	sortForFunnel(evs, steps)
 	best := 0
 	var bestDur time.Duration
 	for start := range evs {
@@ -479,4 +540,48 @@ func Users(events []event.Event, steps []Step, window time.Duration, opts Option
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].DistinctID < out[j].DistinctID })
 	return out
+}
+
+// sortForFunnel orders a user's events into the sequence the matcher walks.
+//
+// It used to be a plain stable sort on timestamp, which leaves EQUAL timestamps in whatever
+// order the storage layer happened to yield. The matcher scans forward from the anchor and
+// treats "later in the slice" as "later in time", so two events sharing a millisecond decided
+// the result by input order: the same signup and checkout returned converted=1 or converted=0
+// depending on nothing but how the bytes came off disk. An import, a backfill, a DeleteUser
+// segment rewrite or a compaction could therefore flip a funnel with no data change at all —
+// the sharpest possible contradiction of the thing this engine exists to promise.
+//
+// Ties break on STEP ORDER first, which is deterministic AND the only reading consistent with
+// the funnel's own definition: if signup and checkout carry the identical instant, the sequence
+// that makes sense is signup then checkout. (Same-millisecond batches are ordinary — a client
+// with second-resolution stamps, or an import — so refusing to credit ties would quietly
+// under-count real conversions instead.) Events that are not funnel steps sort after the steps
+// they tie with, then by ID and name so the order is total and storage-independent.
+func sortForFunnel(evs []event.Event, steps []Step) {
+	rank := make(map[string]int, len(steps))
+	for i, s := range steps {
+		if _, seen := rank[s.Event]; !seen {
+			rank[s.Event] = i
+		}
+	}
+	stepRank := func(name string) int {
+		if r, ok := rank[name]; ok {
+			return r
+		}
+		return len(steps) // not a step: after every step it ties with
+	}
+	sort.SliceStable(evs, func(i, j int) bool {
+		a, b := evs[i], evs[j]
+		if !a.Timestamp.Equal(b.Timestamp) {
+			return a.Timestamp.Before(b.Timestamp)
+		}
+		if ra, rb := stepRank(a.Name), stepRank(b.Name); ra != rb {
+			return ra < rb
+		}
+		if a.ID != b.ID {
+			return a.ID < b.ID
+		}
+		return a.Name < b.Name
+	})
 }

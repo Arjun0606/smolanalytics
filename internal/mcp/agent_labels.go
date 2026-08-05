@@ -49,7 +49,11 @@ func (s *Server) labelConversation(evs []event.Event, cid string, labels map[str
 		return "", fmt.Errorf("too many labels (%d). keep it to %d or fewer so the breakdowns stay readable", len(labels), maxLabelKeys)
 	}
 	// the conversation must actually exist, or the label counts a conversation nobody had.
-	if !hasConversation(evs, cid) {
+	// The owner comes back from the same walk: the label event has to be attributed to the
+	// user who HAD the conversation, and looking it up here means we never write one without
+	// having proved the conversation is real.
+	owner, ok := conversationOwner(evs, cid)
+	if !ok {
 		return "", fmt.Errorf("no %s events for conversation_id %q, so there is nothing to label. list real conversations with sample_conversations", agent.EventTurn, cid)
 	}
 
@@ -83,10 +87,20 @@ func (s *Server) labelConversation(evs []event.Event, cid string, labels map[str
 	now := time.Now().UTC()
 	props[agent.PropLabeledAt] = now.Format(time.RFC3339)
 
+	// DistinctID is the user who HAD the conversation, not the conversation id. It used to be
+	// cid, which matches no real user — so labelling 22 conversations invented 22 brand-new
+	// users: overview's total_users and active_users_7d each jumped by 22, ComputeLifecycle
+	// reported 22 "new" users on the day of labelling, and retention gained 22 single-event
+	// cohort members that could never return. Measured on a one-user fixture, a single label
+	// took total_users from 1 to 2. Nothing here reads DistinctID — the join to the
+	// conversation is on the conversation_id property (agent/labels.go) — so the id was pure
+	// bookkeeping that a user then read as growth. The demo seeder already wrote it this way
+	// (internal/demo/demo.go emits agent_label under the agent USER's id), so the live loop and
+	// the demo now produce the same-shaped data for the same feature.
 	ev := event.Event{
 		ID:         newEventID(),
 		Name:       agent.EventLabel,
-		DistinctID: cid,
+		DistinctID: owner,
 		Timestamp:  now,
 		Properties: props,
 	}
@@ -134,19 +148,38 @@ func scalarLabelValue(key string, v any) (any, error) {
 	}
 }
 
-// hasConversation reports whether any agent_turn event carries this conversation_id. Runs over
-// the RAW event set (not the default production scope) so a conversation recorded in a dev
-// environment can still be labeled.
-func hasConversation(evs []event.Event, cid string) bool {
+// conversationOwner returns the distinct_id of the user whose agent_turn events carry this
+// conversation_id, and whether the conversation exists at all. Runs over the RAW event set (not
+// the default production scope) so a conversation recorded in a dev environment can still be
+// labeled.
+//
+// It takes the EARLIEST turn's identity rather than the first one storage happens to hand back:
+// the same conversation can carry more than one distinct_id after identity stitching, and
+// picking by storage order would attribute the label to a different user on a different backend
+// — the kind of "same data, two answers" split this engine exists to not have.
+func conversationOwner(evs []event.Event, cid string) (string, bool) {
+	owner, found := "", false
+	var at time.Time
 	for _, e := range evs {
 		if e.Name != agent.EventTurn {
 			continue
 		}
-		if v, ok := e.Properties[agent.PropConversationID]; ok && toLabelString(v) == cid {
-			return true
+		v, ok := e.Properties[agent.PropConversationID]
+		if !ok || toLabelString(v) != cid {
+			continue
+		}
+		ts := e.Timestamp.UTC()
+		if !found || ts.Before(at) {
+			owner, at, found = e.DistinctID, ts, true
 		}
 	}
-	return false
+	return owner, found
+}
+
+// hasConversation reports whether any agent_turn event carries this conversation_id.
+func hasConversation(evs []event.Event, cid string) bool {
+	_, ok := conversationOwner(evs, cid)
+	return ok
 }
 
 // toLabelString stringifies a property the same way the agent package's bucketing does, so a

@@ -66,7 +66,7 @@ func TestSegmentBlame(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		mk(i, "tiktok", i < 2)
 	}
-	f := segmentBlame(evs, "signup", "activate")
+	f := segmentBlame(evs, nil, "signup", "activate")
 	if f == nil {
 		t.Fatal("expected a blame finding for the tiktok segment")
 	}
@@ -87,7 +87,7 @@ func TestSegmentBlame(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		mk(i, "tiktok", i < 10)
 	}
-	if f := segmentBlame(evs, "signup", "activate"); f != nil {
+	if f := segmentBlame(evs, nil, "signup", "activate"); f != nil {
 		t.Fatalf("uniform segments must not produce blame: %+v", f)
 	}
 }
@@ -118,7 +118,7 @@ func TestSegmentBlameFirstTouch(t *testing.T) {
 	for i := 0; i < 25; i++ {
 		mk(i, "mobile", i < 3) // mobile: 12% activate — the segment to blame
 	}
-	f := segmentBlame(evs, "signup", "activate")
+	f := segmentBlame(evs, nil, "signup", "activate")
 	if f == nil {
 		t.Fatal("expected blame on device=mobile, got nil (first-touch stamp not applied?)")
 	}
@@ -200,13 +200,13 @@ func TestSegmentBlameEntryOnlyCustomProp(t *testing.T) {
 	}
 
 	// 1) UNIFORM conversion (30% vs 30%): there is no worst segment — must NOT fabricate one.
-	if f := segmentBlame(build(30, 30), "$pageview", "signup"); f != nil {
+	if f := segmentBlame(build(30, 30), nil, "$pageview", "signup"); f != nil {
 		t.Fatalf("uniform 30%%/30%% A-B split must NOT be blamed, got: %q / %q", f.Title, f.Detail)
 	}
 
 	// 2) REAL leak (variant B converts 3x worse): the custom prop must now be named correctly,
 	// proving the generalized first-touch stamp works for custom props, not just device.
-	f := segmentBlame(build(45, 12), "$pageview", "signup")
+	f := segmentBlame(build(45, 12), nil, "$pageview", "signup")
 	if f == nil {
 		t.Fatal("a real ab_variant=B underperformance should be blamed, got nil")
 	}

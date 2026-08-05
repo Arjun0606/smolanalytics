@@ -99,7 +99,37 @@ var blameProps = []string{"source", "plan", "platform", "device", "channel", "co
 // the from→to step than everyone else — the difference between "conversion is 40%"
 // and "fix mobile, it converts at 9%". Noise-guarded: the segment needs real volume
 // and a gap big enough (≤70% of the overall rate) to be an action, not a wobble.
-func segmentBlame(evs []event.Event, from, to string) *Finding {
+//
+// `steps` is the funnel the drop-off was measured on, and it is not optional decoration.
+// This used to measure both the segment and the "for everyone" base with a standalone
+// two-step funnel over ALL events, which is a DIFFERENT population from the multi-step
+// funnel the reader is looking at: anyone who did `from` counted, including users who never
+// entered the funnel at step 0. Measured on signup→activate→checkout where 100 signups
+// activate and 30 of them check out, plus 100 users who activate without signing up and 90
+// of whom check out, the verdict card printed "2.0× worse than average — only 30% of mobile
+// visitors continue, against 60% for everyone" one line above a drop-off card reading 30%
+// for the same transition. Mobile WAS the funnel average, and 60% appeared nowhere else on
+// the page. Both rates now come off the same funnel (ComputeBreakdown is the segmented half
+// of the same engine), so "for everyone" is byte-for-byte the drop-off finding's own rate.
+func segmentBlame(evs []event.Event, steps []funnel.Step, from, to string) *Finding {
+	// Locate the blamed transition inside the caller's funnel. When the caller has no funnel
+	// (the old two-argument callers, and the tests that blame a bare pair), the pair IS the
+	// funnel and the two populations coincide.
+	fromIdx, toIdx := -1, -1
+	for i := 1; i < len(steps); i++ {
+		if steps[i-1].Event == from && steps[i].Event == to {
+			fromIdx, toIdx = i-1, i
+			break
+		}
+	}
+	if fromIdx < 0 {
+		steps = []funnel.Step{{Event: from}, {Event: to}}
+		fromIdx, toIdx = 0, 1
+	}
+	inFunnel := make(map[string]bool, len(steps))
+	for _, s := range steps {
+		inFunnel[s.Event] = true
+	}
 	// Acquisition/user attributes (device, browser, source, country…) live on the LANDING
 	// pageview, never on the conversion step — so without stamping each user's first-touch
 	// value onto their events, the blame property is never found on the `from` event and
@@ -112,16 +142,16 @@ func segmentBlame(evs []event.Event, from, to string) *Finding {
 	// different costs. Finding a user's first touch must LOOK at every event — the country
 	// is on the landing pageview, long before the funnel step being blamed. But stamping
 	// COPIES a property map per event, and nothing below this line ever reads an event that
-	// is not named `from` or `to`: usableBlameProps skips them, the value scan skips them,
-	// and stepRate runs a plain two-step funnel that ignores every other name.
+	// is not one of the funnel's own steps: usableBlameProps skips them, and an ordered funnel
+	// ignores every other name anyway.
 	//
 	// So: scan everything to build the index (allocates nothing per event), then stamp only
-	// the two names that matter. This was chaining eight full copies of history, measured at
-	// 47% of everything the dashboard allocated.
+	// the funnel's own event names. This was chaining eight full copies of history, measured
+	// at 47% of everything the dashboard allocated.
 	acq := []string{"source", "channel", "device", "country", "browser", "platform", "os", "referrer"}
 	relevant := make([]event.Event, 0, len(evs)/4)
 	for _, e := range evs {
-		if e.Name == from || e.Name == to {
+		if inFunnel[e.Name] {
 			relevant = append(relevant, e)
 		}
 	}
@@ -133,22 +163,16 @@ func segmentBlame(evs []event.Event, from, to string) *Finding {
 	// Step 2: discover every property worth segmenting `from`→`to` by (now including the
 	// stamped acquisition props, plus product/custom props already on the `from` event).
 	props := usableBlameProps(stamped, from)
-	// Step 3: any discovered property NOT natively carried on the conversion (`to`) event must
-	// ALSO be first-touch-stamped — otherwise filtering by it drops every conversion event
-	// (which never had the property) and the segment falsely reads 0%. THIS is the bug that
-	// fabricated a "converts worst, fix this first" verdict for a custom entry-only property
-	// (ab_variant, $current_url) even under perfectly uniform conversion.
-	toProps := map[string]bool{}
-	for _, e := range evs {
-		if e.Name == to {
-			for k := range e.Properties {
-				toProps[k] = true
-			}
-		}
-	}
+	// Step 3: first-touch-stamp every remaining candidate. A funnel breakdown reads the
+	// segment off the user's FIRST STEP-0 event, so a property that lives anywhere else —
+	// the landing pageview (ab_variant, $current_url), or the `from` step halfway down a
+	// four-step funnel — leaves that user in "(none)" and out of every segment. The older
+	// filter-based version had the mirror-image failure: it dropped conversion events that
+	// never carried the property and read EVERY segment at 0%, fabricating a "converts
+	// worst, fix this first" verdict under perfectly uniform conversion.
 	var alsoStamp []string
 	for _, p := range props {
-		if !toProps[p] && !stampedProp[p] {
+		if !stampedProp[p] {
 			alsoStamp = append(alsoStamp, p)
 			stampedProp[p] = true
 		}
@@ -156,8 +180,17 @@ func segmentBlame(evs []event.Event, from, to string) *Finding {
 	// Index off the FULL history again (these properties live on the landing event too), but
 	// apply to the already-narrowed slice.
 	stamped = query.BuildFirstTouch(evs, alsoStamp).Stamp(stamped)
-	overall := stepRate(stamped, from, to, nil)
-	if overall.entered < minSample || overall.rate() <= 0 {
+
+	// The base every segment is judged against: the SAME multi-step funnel the drop-off card
+	// reports, restricted to the blamed transition. Narrowing `relevant` to the funnel's event
+	// names does not move these counts — an ordered funnel ignores intervening events — so
+	// this is the identical Result insight.go computed over the unstamped slice.
+	base := funnel.Compute(stamped, steps, blameWindow)
+	if len(base.Steps) <= toIdx {
+		return nil
+	}
+	overallEntered, overallRate := base.Steps[fromIdx].Count, base.Steps[toIdx].ConversionFromPrev
+	if overallEntered < minSample || overallRate <= 0 {
 		return nil // too thin to blame anyone
 	}
 
@@ -166,32 +199,27 @@ func segmentBlame(evs []event.Event, from, to string) *Finding {
 	// of them (the one whose conversion is furthest below the average), so the verdict
 	// names the real root cause wherever it lives (device / source / plan / country).
 	var worst *Finding
-	worstRate := overall.rate()
+	worstRate := overallRate
 	for _, prop := range props {
-		values := map[string]bool{}
-		for _, e := range stamped {
-			if e.Name != from {
-				continue
+		for _, sr := range funnel.ComputeBreakdown(stamped, steps, blameWindow, prop) {
+			if sr.Value == "(none)" || len(sr.Steps) <= toIdx {
+				continue // no value to name; "(none)" is the absence of a segment, not one
 			}
-			if v, ok := e.Properties[prop]; ok {
-				values[fmt.Sprintf("%v", v)] = true
-			}
-		}
-		for val := range values {
-			seg := stepRate(stamped, from, to, []query.Filter{{Property: prop, Op: query.Eq, Value: val}})
-			if seg.entered < minSample {
+			entered, converted := sr.Steps[fromIdx].Count, sr.Steps[toIdx].Count
+			if entered < minSample {
 				continue // not enough users in the segment to conclude anything
 			}
-			r := seg.rate()
+			val := sr.Value
+			r := sr.Steps[toIdx].ConversionFromPrev
 			// a segment converting at ≤70% of the average through this step is a real,
 			// actionable gap (e.g. mobile at 32% vs 50% overall — ~1.6× worse), not a
 			// wobble. minSample + the "worst across all props" scan keep it from firing on
 			// noise; the old 0.6 cutoff was strict enough to miss genuine 2× underperformers.
-			if r < 0.7*overall.rate() && r < worstRate {
+			if r < 0.7*overallRate && r < worstRate {
 				worstRate = r
 				mult := ""
 				if r > 0 {
-					if x := overall.rate() / r; x >= 1.5 {
+					if x := overallRate / r; x >= 1.5 {
 						mult = fmt.Sprintf(", %.1f× worse than average", x)
 					}
 				}
@@ -203,10 +231,10 @@ func segmentBlame(evs []event.Event, from, to string) *Finding {
 					Prop:     prop,
 					Value:    val,
 					Rate:     int(r*100 + 0.5),
-					N:        seg.entered,
+					N:        entered,
 					Title:    fmt.Sprintf("%s convert worst from %s to %s%s", capFirst(HumanSegment(prop, val)), HumanEventIng(from), HumanEventIng(to), mult),
 					Detail: qualify(fmt.Sprintf("only %d%% of %s continue, against %d%% for everyone (%d of %d). Fixing this group is the biggest single lever on the funnel.",
-						int(r*100+0.5), HumanSegment(prop, val), int(overall.rate()*100+0.5), seg.converted, seg.entered), seg.entered),
+						int(r*100+0.5), HumanSegment(prop, val), int(overallRate*100+0.5), converted, entered), entered),
 				}
 			}
 		}
@@ -260,25 +288,8 @@ func usableBlameProps(evs []event.Event, from string) []string {
 	return append(out, extra...)
 }
 
-// stepRate computes how many users who did `from` went on to `to` (7-day window),
-// optionally within a filtered segment.
-type rateResult struct{ entered, converted int }
-
-func (r rateResult) rate() float64 {
-	if r.entered == 0 {
-		return 0
-	}
-	return float64(r.converted) / float64(r.entered)
-}
-
-func stepRate(evs []event.Event, from, to string, filters []query.Filter) rateResult {
-	scoped := evs
-	if len(filters) > 0 {
-		scoped = query.Apply(evs, filters)
-	}
-	fr := funnel.Compute(scoped, []funnel.Step{{Event: from}, {Event: to}}, 7*24*time.Hour)
-	if len(fr.Steps) != 2 {
-		return rateResult{}
-	}
-	return rateResult{entered: fr.Steps[0].Count, converted: fr.Steps[1].Count}
-}
+// blameWindow is the conversion window every blame rate is measured over. It is the same
+// 7-day window insight.GenerateForFunnel runs the drop-off funnel with — a segment measured
+// over a different window than the card above it is the same "two numbers, one question"
+// failure this package exists to rule out.
+const blameWindow = 7 * 24 * time.Hour

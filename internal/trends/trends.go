@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/event"
+	"github.com/Arjun0606/smolanalytics/internal/query"
 )
 
 // maxDayBuckets caps how many daily points an all-time (span-derived) series may emit, so
@@ -32,6 +33,11 @@ type Result struct {
 	Unique bool    `json:"unique"` // true = distinct users, false = raw count
 	Points []Point `json:"points"`
 	Total  int     `json:"total"`
+	// Truncated marks that the display cap (maxDayBuckets / the hourly 744) trimmed the OLDEST
+	// buckets: Points cover less than the requested window, Total still covers all of it. It is
+	// set rather than left implicit because a reader can otherwise only conclude that the number
+	// and the chart disagree — which is the same thing as not trusting either.
+	Truncated bool `json:"truncated,omitempty"`
 }
 
 // Compute returns daily counts for eventName (empty = all events) between from and
@@ -101,6 +107,18 @@ func Compute(events []event.Event, eventName string, from, to time.Time, unique 
 		// so ONE mangled ancient timestamp used to emit a zero bucket per day for
 		// centuries (~700K points, ~30MB responses). Keep the most RECENT ~11 years.
 		lo = hi - maxDayBuckets
+		r.Truncated = true
+	}
+
+	// Total is summed over EVERY matched day, not just the emitted ones. It used to be
+	// accumulated inside the bucket loop below, so the display cap silently changed the answer:
+	// an instance holding one event dated at the 2000-01-01 ingest floor plus 30 real events last
+	// month reported total=1 for 31 matching events, with no error and no warning. The cap is a
+	// rendering guardrail; it must never move a number.
+	if !unique {
+		for _, m := range perDay {
+			r.Total += m[""]
+		}
 	}
 
 	for d := lo; d <= hi; d++ {
@@ -113,9 +131,6 @@ func Compute(events []event.Event, eventName string, from, to time.Time, unique 
 			}
 		}
 		r.Points = append(r.Points, Point{Date: time.Unix(d*86400, 0).UTC(), Count: c})
-		if !unique {
-			r.Total += c
-		}
 	}
 	if unique {
 		// a user active on 3 days is ONE user in the window, not three (TRENDS-UNIQUE)
@@ -151,10 +166,7 @@ func ComputeBreakdown(events []event.Event, eventName, property string, from, to
 		if to.IsZero() && (spanTo.IsZero() || e.Timestamp.After(spanTo)) {
 			spanTo = e.Timestamp
 		}
-		key := "(none)"
-		if v, ok := e.Properties[property]; ok {
-			key = valueOf(v)
-		}
+		key := query.GroupKey(e.Properties, property)
 		groups[key] = append(groups[key], e)
 	}
 	// When `to` was unbounded, spanTo is the LAST event's exact timestamp. Compute filters
@@ -178,13 +190,6 @@ func ComputeBreakdown(events []event.Event, eventName, property string, from, to
 		return out[i].Value < out[j].Value
 	})
 	return out
-}
-
-func valueOf(v any) string {
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return fmt.Sprintf("%v", v)
 }
 
 // Measure is a numeric aggregation over an event property — the money/growth questions
@@ -232,6 +237,11 @@ type MeasureResult struct {
 	Points   []MeasurePoint `json:"points"`
 	Total    float64        `json:"total"`
 	N        int            `json:"n"` // total events that carried a numeric value
+	// Truncated: same meaning as Result.Truncated — the span cap trimmed the oldest buckets,
+	// so Points cover less of the window than Total/N do. Total stays the honest window
+	// aggregate (sum=1005) even when the rendered bars only add to 5; without this flag that
+	// 200x gap looked like the response contradicting itself for no stated reason.
+	Truncated bool `json:"truncated,omitempty"`
 }
 
 // ComputeMeasure aggregates a numeric event property per day between from and to. Events
@@ -295,6 +305,11 @@ func ComputeMeasure(events []event.Event, eventName, property string, m Measure,
 	}
 	if hi-lo > maxDayBuckets { // span cap — see Compute; keep only the most recent points
 		lo = hi - maxDayBuckets
+		// Compute and ComputeMeasure used to make OPPOSITE choices here: Compute shrank its
+		// Total to the emitted buckets while this one aggregated the whole window, so the same
+		// data produced two disagreeing answers depending on which endpoint you called. Both
+		// now keep the window aggregate and say so.
+		res.Truncated = true
 	}
 
 	for d := lo; d <= hi; d++ {
@@ -371,10 +386,7 @@ func ComputeMeasureBreakdown(events []event.Event, eventName, property string, m
 		if !ok {
 			continue
 		}
-		key := "(none)"
-		if v, ok := e.Properties[breakdown]; ok {
-			key = valueOf(v)
-		}
+		key := query.GroupKey(e.Properties, breakdown)
 		groups[key] = append(groups[key], f)
 	}
 	out := make([]MeasureSeries, 0, len(groups))
@@ -574,6 +586,25 @@ func next(t time.Time, iv Interval) time.Time {
 	}
 }
 
+// backOff rewinds a bucket start by n intervals — the inverse of next, used to place the
+// display cap at the RECENT end of the window (keep the last N buckets) instead of letting it
+// cut the series off after the first N.
+func backOff(t time.Time, iv Interval, n int) time.Time {
+	if n < 0 {
+		n = 0
+	}
+	switch iv {
+	case Hour:
+		return t.Add(-time.Duration(n) * time.Hour)
+	case Week:
+		return t.AddDate(0, 0, -7*n)
+	case Month:
+		return t.AddDate(0, -n, 0)
+	default:
+		return t.AddDate(0, 0, -n)
+	}
+}
+
 // ComputeInterval is Compute with a bucketing grain. Buckets with no activity fill
 // with zero so the series is continuous. Hourly output is capped at 31 days of
 // buckets (744) — the guardrail every incumbent applies to keep charts readable.
@@ -623,15 +654,27 @@ func ComputeInterval(events []event.Event, eventName string, from, to time.Time,
 	if !have && (from.IsZero() || to.IsZero()) {
 		return r
 	}
-	guard := 0
+	// The bucket cap used to be a `break` at the END of the emit loop, which got two things
+	// wrong at once. It kept the OLDEST buckets, so ?days=60&interval=hour rendered the first
+	// 31 days of the window and dropped the most recent month — the opposite of Compute's cap,
+	// which keeps the recent end. And because r.Total was accumulated inside that loop, the
+	// truncation also changed the answer: the same 1440 events totalled 1440 at day and week
+	// grain but 744 at hour grain, breaking the WINDOW-2 contract asserted at the top of this
+	// file. Trim from the START instead, and count the whole window.
+	limit := 4000 // absolute runaway stop for any grain
+	if iv == Hour {
+		limit = 744 // ~31 days of hourly points, the guardrail every incumbent applies
+	}
+	if start := backOff(hiT, iv, limit-1); start.After(loT) {
+		loT = start
+		r.Truncated = true
+	}
+	if !unique {
+		for _, m := range per {
+			r.Total += m[""]
+		}
+	}
 	for b := loT; !b.After(hiT); b = next(b, iv) {
-		guard++
-		if iv == Hour && guard > 744 {
-			break
-		}
-		if guard > 4000 {
-			break // absolute runaway stop for any grain
-		}
 		n := 0
 		if m := per[b.Unix()]; m != nil {
 			if unique {
@@ -641,7 +684,6 @@ func ComputeInterval(events []event.Event, eventName string, from, to time.Time,
 			}
 		}
 		r.Points = append(r.Points, Point{Date: b, Count: n})
-		r.Total += n
 	}
 	if unique {
 		// unique totals must not double-count users across buckets
@@ -690,9 +732,17 @@ func ComputeXAU(events []event.Event, eventName string, from, to time.Time, wind
 	// BEFORE `from` are needed to compute the earliest points — extend the collection floor
 	// back by windowDays. Without this, a short query range (days=1) starved the wau/mau
 	// lookback of data and every point silently collapsed to DAU.
+	// ...and the floor is aligned to the START OF A UTC DAY before that subtraction, because
+	// every bucket below is a whole UTC day (`ts.Truncate(24h)`).
+	//
+	// Subtracting calendar days from an UNALIGNED `from` cut the earliest lookback day in half,
+	// so the window collected a partial day and the answer depended on what time of day you
+	// asked: ?measure=wau&hours=6 returned 7 while ?measure=wau&days=1 returned 6 over the
+	// identical events. A stickiness number that moves because the clock moved is not a
+	// stickiness number, and DAU/WAU/MAU is the one report whose whole job is comparability.
 	lookbackFrom := from
 	if !from.IsZero() {
-		lookbackFrom = from.AddDate(0, 0, -(windowDays - 1))
+		lookbackFrom = from.UTC().Truncate(24*time.Hour).AddDate(0, 0, -(windowDays - 1))
 	}
 	for _, e := range events {
 		if eventName != "" && e.Name != eventName {
@@ -726,6 +776,7 @@ func ComputeXAU(events []event.Event, eventName string, from, to time.Time, wind
 	}
 	if hiD-loD > maxDayBuckets { // span cap — see Compute
 		loD = hiD - maxDayBuckets
+		r.Truncated = true // the leading points are missing; Total (the CURRENT value) is not affected
 	}
 	byDay := map[int64]map[string]bool{}
 	for _, p := range pairs {

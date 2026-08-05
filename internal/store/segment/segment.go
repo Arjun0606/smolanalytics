@@ -9,10 +9,12 @@ package segment
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/event"
@@ -39,6 +41,17 @@ type Store struct {
 	names    map[string]bool
 	sealAt   int
 	seq      int // next segment sequence number — monotonic, NEVER derived from len(manifest)
+
+	// scans counts readers that are between snapshotting the manifest and their last blob
+	// read, i.e. readers holding a manifest snapshot that a mutation could invalidate. It is
+	// atomic (not mu-guarded) because it is incremented under RLock, which several readers
+	// hold at once; the mutex still orders it against mutators, who only read it under Lock.
+	scans atomic.Int64
+	// garbage is blob keys the manifest no longer references but that a live scan's snapshot
+	// might still name. Deleting them inline is what made in-flight queries 500; they are
+	// swept by the next mutation once no scan is registered. Unreferenced blobs are already
+	// an expected, harmless state here (Verify calls them orphans).
+	garbage []string
 }
 
 // Open recovers the hot WAL at hotPath and the cold manifest from the blob backend.
@@ -222,10 +235,32 @@ func (s *Store) persistManifestLocked() error {
 // Scan streams every event in [from, to) through fn, reading only the segments whose
 // time range overlaps and the hot block — bounded memory regardless of total volume.
 func (s *Store) Scan(from, to time.Time, fn func(event.Event) error) error {
+	// Register before snapshotting so a mutator either sees this scan (and holds its blob
+	// deletes back — see dropBlobsLocked) or completes its delete before we snapshot, in
+	// which case the snapshot never names the deleted key. Both orders are safe; the old
+	// code had neither, so a retention prune or GDPR erasure that landed mid-scan made the
+	// next Get fail with a raw "open .../cold/seg/0000000001.sms: no such file or directory"
+	// after fn had already been handed part of the answer.
+	s.scans.Add(1)
+	defer s.scans.Add(-1)
+
+	// The manifest snapshot and the hot-block read must be ONE observation. They used to be
+	// two: copy the manifest, drop the lock, decode segments, and only then read the hot WAL.
+	// A seal landing in that window wrote the hot block out as a segment the snapshot does
+	// not contain and then cleared the WAL, so those events were in neither half — measured
+	// 1 event returned where Count() said 6, with a nil error, and a second identical query
+	// answering 6. With the default sealAt that window opens every 50k events, i.e. exactly
+	// under the load where dashboards, HTTP and MCP are all polling. Materializing the hot
+	// block here costs at most sealAt events, which sealLocked already materializes anyway,
+	// so bounded memory is preserved.
 	s.mu.RLock()
 	segs := make([]segMeta, len(s.manifest))
 	copy(segs, s.manifest)
+	hot, hotErr := s.hot.Range(from, to)
 	s.mu.RUnlock()
+	if hotErr != nil {
+		return hotErr
+	}
 
 	for _, m := range segs {
 		if !overlaps(m.MinTS, m.MaxTS, from, to) {
@@ -233,6 +268,12 @@ func (s *Store) Scan(from, to time.Time, fn func(event.Event) error) error {
 		}
 		data, err := s.blob.Get(m.Key)
 		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				// Deletes are deferred while a scan is registered, so a missing referenced
+				// segment means something outside this process removed it. Say so instead of
+				// leaking a filesystem/S3 path into an API response body.
+				return fmt.Errorf("segment %s disappeared while the query was reading it — retry", m.Key)
+			}
 			return err
 		}
 		evs, err := decodeSegment(data)
@@ -247,16 +288,31 @@ func (s *Store) Scan(from, to time.Time, fn func(event.Event) error) error {
 			}
 		}
 	}
-	hot, err := s.hot.Range(from, to)
-	if err != nil {
-		return err
-	}
 	for _, e := range hot {
 		if err := fn(e); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// dropBlobsLocked retires blob keys the manifest no longer references. It deletes them only
+// when no scan is registered; otherwise it queues them, because an in-flight Scan iterates
+// the manifest snapshot it took before this mutation and would Get a key we just removed
+// (that was a hard 500, with the storage path in the body, for every query running during
+// the 6-hourly retention prune or a GDPR erasure). Holding the delete back is always safe:
+// segments are immutable and seq is monotonic, so a retired key is never re-used, and the
+// queue is swept by the next mutation — or reported as an orphan by Verify and removed by
+// Scrub if the process restarts first. Caller holds s.mu for writing.
+func (s *Store) dropBlobsLocked(keys []string) {
+	s.garbage = append(s.garbage, keys...)
+	if s.scans.Load() > 0 {
+		return
+	}
+	for _, k := range s.garbage {
+		_ = s.blob.Delete(k) // a failed delete just orphans a blob — never a dangling ref
+	}
+	s.garbage = nil
 }
 
 func (s *Store) Range(from, to time.Time) ([]event.Event, error) {
@@ -315,26 +371,60 @@ func (s *Store) Prune(before time.Time) (int, error) {
 			s.mu.Unlock()
 			return 0, err
 		}
-		// manifest no longer references these — a failed Delete just orphans a blob
-		// (harmless, unreferenced), never a dangling reference.
-		for _, k := range drop {
-			_ = s.blob.Delete(k)
-		}
+		// manifest no longer references these — retire them (deferred if a scan is live).
+		s.dropBlobsLocked(drop)
 	}
 	s.mu.Unlock()
 	hn, err := s.hot.Prune(before)
 	if err != nil {
 		return removed, err
 	}
+	// s.names is a CACHE of "which event names does this store still hold", and Prune was the
+	// one mutation that dropped data without refreshing it — DeleteUser rebuilds, Clear resets,
+	// Prune did neither. So an event whose only data aged out stayed in the list forever: it
+	// kept appearing in /v1/meta, in the chart and deploy pickers, and in the MCP list_events
+	// tool, and picking it drew an empty chart with nothing to explain why. Restarting the
+	// process "fixed" it, because Open rebuilds the set from the manifest — which is the
+	// signature of a stale cache rather than a storage bug, and why it survived this long.
+	//
+	// Rebuilt AFTER the hot block is pruned, not before, or the names about to leave the hot
+	// block would be counted as still present.
+	if len(drop) > 0 || hn > 0 {
+		s.rebuildNames()
+	}
 	return removed + hn, nil
+}
+
+// rebuildNames recomputes the event-name cache from the only two things that actually hold
+// events: the sealed segments' manifest entries and the hot block.
+func (s *Store) rebuildNames() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.rebuildNamesLocked()
+}
+
+func (s *Store) rebuildNamesLocked() {
+	s.names = map[string]bool{}
+	for _, m := range s.manifest {
+		for _, n := range m.Names {
+			s.names[n] = true
+		}
+	}
+	if hn, _ := s.hot.Names(); hn != nil {
+		for _, n := range hn {
+			s.names[n] = true
+		}
+	}
 }
 
 func (s *Store) Clear() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	drop := make([]string, 0, len(s.manifest))
 	for _, m := range s.manifest {
-		_ = s.blob.Delete(m.Key)
+		drop = append(drop, m.Key)
 	}
+	s.dropBlobsLocked(drop)
 	s.manifest = nil
 	s.names = map[string]bool{}
 	if err := s.persistManifestLocked(); err != nil {
@@ -451,21 +541,8 @@ func (s *Store) DeleteUser(distinctID string) (int, error) {
 			s.mu.Unlock()
 			return 0, err
 		}
-		for _, k := range dropBlobs {
-			_ = s.blob.Delete(k) // unreferenced now — failure just orphans a blob
-		}
-		// names may have shrunk — rebuild from what remains
-		s.names = map[string]bool{}
-		for _, m := range s.manifest {
-			for _, n := range m.Names {
-				s.names[n] = true
-			}
-		}
-		if hn, _ := s.hot.Names(); hn != nil {
-			for _, n := range hn {
-				s.names[n] = true
-			}
-		}
+		s.dropBlobsLocked(dropBlobs) // unreferenced now, but a live scan may still name them
+		s.rebuildNamesLocked()       // names may have shrunk — rebuild from what remains
 	}
 	s.mu.Unlock()
 
@@ -490,6 +567,11 @@ type VerifyReport struct {
 // from the blob backend, decodes (CRC), and matches its recorded count and time
 // range; the hot WAL is readable; unreferenced blobs are reported as orphans.
 func (s *Store) Verify() VerifyReport {
+	// Same snapshot-then-Get shape as Scan, so register the same way: without this a prune
+	// racing a health check deletes a blob Verify is about to read and Verify reports a
+	// perfectly healthy instance as corrupt ("referenced by manifest but unreadable").
+	s.scans.Add(1)
+	defer s.scans.Add(-1)
 	s.mu.RLock()
 	segs := make([]segMeta, len(s.manifest))
 	copy(segs, s.manifest)
@@ -542,8 +624,25 @@ func (s *Store) Verify() VerifyReport {
 // (they're unreferenced by design after a failed delete — safe to remove).
 func (s *Store) Scrub() (VerifyReport, int) {
 	r := s.Verify()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// An orphan is unreferenced by the CURRENT manifest, but a scan that snapshotted before
+	// the mutation that orphaned it is still reading it — so Scrub has to defer exactly like
+	// Prune does, or it reintroduces the mid-scan "no such file" it is meant to clean up
+	// after. Deferred keys land in the same queue and go on the next sweep.
+	if s.scans.Load() > 0 {
+		s.garbage = append(s.garbage, r.Orphans...)
+		return r, 0
+	}
+	queued := s.garbage
+	s.garbage = nil
 	deleted := 0
-	for _, k := range r.Orphans {
+	done := make(map[string]bool, len(r.Orphans)+len(queued))
+	for _, k := range append(append([]string{}, r.Orphans...), queued...) {
+		if done[k] {
+			continue // a queued key is also listed as an orphan; don't double-count it
+		}
+		done[k] = true
 		if err := s.blob.Delete(k); err == nil {
 			deleted++
 		}

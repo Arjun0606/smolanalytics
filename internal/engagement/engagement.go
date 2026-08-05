@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/event"
+	"github.com/Arjun0606/smolanalytics/internal/query"
 )
 
 func dayNum(t time.Time) int64 { return t.UTC().Unix() / 86400 }
@@ -22,6 +23,9 @@ type LifecycleDay struct {
 
 // ComputeLifecycle returns the last `days` of lifecycle classification (daily).
 func ComputeLifecycle(events []event.Event, days int) []LifecycleDay {
+	// see the note in retention.ComputeBucketed: our own daily sampler is not a user, and
+	// left in it is a permanently-"returning" one.
+	events = query.WithoutSampler(events)
 	type u struct {
 		days  map[int64]bool
 		first int64
@@ -83,6 +87,8 @@ type Stickiness struct {
 // ComputeStickiness counts distinct users active in the trailing 1/7/30 days from
 // asof (defaults to now). DAU/MAU is the stickiness ratio.
 func ComputeStickiness(events []event.Event, asof time.Time) Stickiness {
+	// our own daily sampler would otherwise contribute one guaranteed DAU, every day
+	events = query.WithoutSampler(events)
 	if asof.IsZero() {
 		asof = time.Now().UTC()
 	}

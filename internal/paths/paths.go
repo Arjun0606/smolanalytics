@@ -8,6 +8,7 @@ import (
 	"sort"
 
 	"github.com/Arjun0606/smolanalytics/internal/event"
+	"github.com/Arjun0606/smolanalytics/internal/query"
 )
 
 // Step is one event and how many users took it at a given depth.
@@ -32,6 +33,9 @@ type Result struct {
 // After follows up to `depth` steps after each user's first `start` event and
 // ranks what they did at each step (a user who stops contributes an implicit drop).
 func After(events []event.Event, start string, depth int) Result {
+	// $geo_check / $site_readable / $ai_crawl are this tool writing about itself; as path
+	// steps they are noise with no reader-facing wording at all
+	events = query.WithoutSampler(events)
 	if depth < 1 {
 		depth = 3
 	}

@@ -32,19 +32,47 @@ type eventWords struct {
 	base string // go on to ___          : "engage with a page"
 	ing  string // from ___ to ___       : "viewing a page"
 	noun string // ___ dropped 20%       : "page views"
+	// plural says whether noun takes "are" or "is". Without it the trend finding rendered
+	// "page views is up 230% week-over-week" on a live dashboard — the noun forms are plural
+	// for six of the nine events here, and the sentence around them was hardcoded singular.
+	plural bool
 }
 
 var autocaptureLabel = map[string]eventWords{
-	"$pageview":            {"viewed a page", "view a page", "viewing a page", "page views"},
-	"$engagement":          {"engaged with a page", "engage with a page", "engaging with a page", "page engagement"},
-	"$click":               {"clicked something", "click something", "clicking something", "clicks"},
-	"$deadclick":           {"clicked something that did nothing", "click something that does nothing", "clicking something that does nothing", "dead clicks"},
-	"$rageclick":           {"rage-clicked", "rage-click", "rage-clicking", "rage clicks"},
-	"$feature_flag_called": {"saw a flagged feature", "see a flagged feature", "seeing a flagged feature", "flag exposures"},
-	"$identify":            {"signed in", "sign in", "signing in", "sign-ins"},
-	"$survey_shown":        {"saw a survey", "see a survey", "seeing a survey", "survey views"},
-	"$survey_answered":     {"answered a survey", "answer a survey", "answering a survey", "survey answers"},
+	"$pageview":            {"viewed a page", "view a page", "viewing a page", "page views", true},
+	"$engagement":          {"engaged with a page", "engage with a page", "engaging with a page", "page engagement", false},
+	"$click":               {"clicked something", "click something", "clicking something", "clicks", true},
+	"$deadclick":           {"clicked something that did nothing", "click something that does nothing", "clicking something that does nothing", "dead clicks", true},
+	"$rageclick":           {"rage-clicked", "rage-click", "rage-clicking", "rage clicks", true},
+	"$feature_flag_called": {"saw a flagged feature", "see a flagged feature", "seeing a flagged feature", "flag exposures", true},
+	"$identify":            {"signed in", "sign in", "signing in", "sign-ins", true},
+	"$survey_shown":        {"saw a survey", "see a survey", "seeing a survey", "survey views", true},
+	"$survey_answered":     {"answered a survey", "answer a survey", "answering a survey", "survey answers", true},
 }
+
+// EventVerbIs returns the verb that agrees with HumanEventNoun(name) — "are" for the plural
+// autocapture nouns, "is" otherwise. A custom event keeps "is": the operator named it "signup",
+// not "signups", and "signup is up 6%" is what they expect to read.
+func EventVerbIs(name string) string {
+	if w, ok := autocaptureLabel[name]; ok && w.plural {
+		return "are"
+	}
+	return "is"
+}
+
+// failureEvent names the autocapture events that only ever record a user FAILING at something.
+// Every other event in the product is something you want more of, so "it went down" is the
+// warning; for these four the polarity is inverted and more is the warning.
+//
+// Custom events are deliberately not guessed at. An operator's "error" or "checkout_failed"
+// would be a fair guess and a wrong one often enough to matter — calling a real improvement a
+// regression costs more trust than staying quiet, and the operator can already see the number.
+var failureEvent = map[string]bool{
+	"$deadclick": true, "$rageclick": true, "$exception": true, "$error": true,
+}
+
+// UpIsBad reports whether a RISE in this event is the bad news rather than the good news.
+func UpIsBad(name string) bool { return failureEvent[name] }
 
 // HumanEvent is the PAST-tense form, for "after they ___".
 // Custom events are returned unchanged: the operator chose "signup" or "checkout" and it

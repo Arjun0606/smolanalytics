@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/event"
+	"github.com/Arjun0606/smolanalytics/internal/query"
 	sqlq "github.com/Arjun0606/smolanalytics/internal/sql"
 )
 
@@ -38,7 +41,24 @@ func (s *Server) toolRunSQL(args json.RawMessage) (string, error) {
 		lim.MaxRows = int(a.Limit)
 	}
 
-	res, err := sqlq.Run(q, s.store, lim)
+	// The escape hatch must answer the SAME question the built reports answer. It used to scan
+	// s.store raw, so every other tool applied the default production scope and this one did
+	// not: on a store holding p1/p2 (env=production), d1 (development) and s1 (preview),
+	// run_sql("SELECT count(distinct distinct_id) ... WHERE name='signup'") returned 4 while
+	// trends(event=signup, unique=true) returned 2 and breakdown(property="env") showed only
+	// the production bucket. Two MCP tools, one question, two numbers — and nothing in the
+	// grammar warned the model which one to trust.
+	//
+	// The opt-back-in mirrors query.Keeper's filtersTouchEnv rule exactly: a WHERE that names
+	// env asked for that env on purpose, so the default scope steps aside instead of ANDing
+	// with it and returning a flat zero. Only WHERE counts, so that a GROUP BY prop.env here
+	// answers the same as breakdown(property="env") there.
+	var sc sqlq.Scanner = s.store
+	scoped := !exprTouchesEnv(q.Where)
+	if scoped {
+		sc = scopedScanner{inner: s.store, keep: query.Keeper(nil)}
+	}
+	res, err := sqlq.Run(q, sc, lim)
 	if err != nil {
 		return "", err
 	}
@@ -63,6 +83,10 @@ func (s *Server) toolRunSQL(args json.RawMessage) (string, error) {
 		"row_count":      len(rows),
 		"events_scanned": res.Scanned,
 		"elapsed":        res.Elapsed,
+		// Say the scope out loud. A model comparing this to trends must be able to explain a
+		// difference rather than pick a side, and a model that wants dev data needs to know
+		// the one way to ask for it.
+		"scope": sqlScopeNote(scoped),
 	}
 	if res.Groups > 0 {
 		out["groups"] = res.Groups
@@ -79,6 +103,69 @@ func (s *Server) toolRunSQL(args json.RawMessage) (string, error) {
 	return jsonText(out)
 }
 
+// scopedScanner applies the query layer's default production scope to a streaming scan, so
+// run_sql inherits the one rule every other surface obeys without materializing the store.
+// It decorates rather than reimplements: query.Keeper is the single definition of "does this
+// event belong in a default-scoped query", and a second hand-rolled copy of the env rule here
+// would drift the moment either changed — which is exactly how this tool ended up answering a
+// different number than trends for the same question.
+type scopedScanner struct {
+	inner sqlq.Scanner
+	keep  func(event.Event) bool
+}
+
+func (s scopedScanner) Scan(from, to time.Time, fn func(event.Event) error) error {
+	return s.inner.Scan(from, to, func(e event.Event) error {
+		if !s.keep(e) {
+			return nil
+		}
+		return fn(e)
+	})
+}
+
+// exprTouchesEnv reports whether the expression references the env property anywhere. Walked
+// over the AST rather than matched against Expr.String(): a literal 'prop.env' inside a string
+// comparison would fool a text match into disabling the default scope silently.
+func exprTouchesEnv(e sqlq.Expr) bool {
+	switch t := e.(type) {
+	case nil:
+		return false
+	case sqlq.Prop:
+		return t.Key == "env"
+	case sqlq.Binary:
+		return exprTouchesEnv(t.Left) || exprTouchesEnv(t.Right)
+	case sqlq.Unary:
+		return exprTouchesEnv(t.X)
+	case sqlq.Call:
+		for _, a := range t.Args {
+			if exprTouchesEnv(a) {
+				return true
+			}
+		}
+		return false
+	case sqlq.InList:
+		if exprTouchesEnv(t.X) {
+			return true
+		}
+		for _, v := range t.Vals {
+			if exprTouchesEnv(v) {
+				return true
+			}
+		}
+		return false
+	case sqlq.IsNull:
+		return exprTouchesEnv(t.X)
+	}
+	return false
+}
+
+func sqlScopeNote(scoped bool) string {
+	if scoped {
+		return "production traffic only — events with env development/preview/staging/test/ci are excluded, the same default scope trends/funnel/breakdown and the dashboard use. Add a WHERE on prop.env (e.g. WHERE prop.env = 'development') to include them."
+	}
+	return "unscoped: this query names prop.env, so the default production-only scope stepped aside and every env is included."
+}
+
 // sqlToolDef is appended to toolList. The description carries the full grammar because the
 // dialect is a subset: an agent that writes valid ANSI SQL and gets "unsupported" back has a
 // worse time than one told the exact surface up front.
@@ -90,7 +177,11 @@ var sqlToolDef = map[string]any{
 		"Prefer the purpose-built tools when one fits: they encode the correct definitions (a funnel's ordering and " +
 		"window, retention's cohort rule) that hand-written SQL would have to reproduce. " +
 		"Results are computed by scanning events, so they are exact rather than estimated, and identical on every run. " +
-		"Only SELECT parses — there is no way to write data through this tool.\n\n" + sqlqGrammar(),
+		"Only SELECT parses — there is no way to write data through this tool.\n\n" +
+		"SCOPE: like every other report here, queries see PRODUCTION traffic only — events stamped env development, preview, " +
+		"staging, test or ci are excluded, so a count here matches the equivalent trends/breakdown call and the dashboard. " +
+		"Reference prop.env in the WHERE clause (e.g. WHERE prop.env = 'development') to opt back in and see every env.\n\n" +
+		sqlqGrammar(),
 	"inputSchema": obj(map[string]any{
 		"query": map[string]any{
 			"type":        "string",

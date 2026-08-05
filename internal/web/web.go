@@ -50,9 +50,41 @@ type Result struct {
 	// distinct from AI crawlers, which the bot filter drops before storage.
 	AIVisitors  int   `json:"ai_visitors"`
 	AIReferrers []Row `json:"ai_referrers"`
+	// Every ranked list above is TRUNCATED to its top N. A reader that sums the rows it can
+	// see and calls that the total gets a denominator that only covers the visible head: a
+	// site with 40 countries, 20 US visitors out of 100, rendered "US 20 · 52%" because the
+	// ten visible rows summed to 38. The visible shares then also add to exactly 100%,
+	// asserting there is no tail at all. These are the pre-truncation recorded totals — the
+	// only honest denominator for "share of recorded" — so no surface has to re-derive one
+	// from rows it was already handed in truncated form.
+	Recorded Recorded `json:"recorded"`
+}
+
+// Recorded is the untruncated total behind each ranked dimension: how many pageviews (for
+// per-pageview dimensions) or first-touch visitors (for the per-visitor ones) actually
+// carried a value, before rank() cut the list down to what fits on screen.
+type Recorded struct {
+	TopPages     int `json:"top_pages"`
+	Referrers    int `json:"referrers"`
+	UTMSources   int `json:"utm_sources"`
+	DeviceSplit  int `json:"device_split"`
+	Browsers     int `json:"browsers"`
+	OSes         int `json:"oses"`
+	Countries    int `json:"countries"`
+	UTMMediums   int `json:"utm_mediums"`
+	UTMCampaigns int `json:"utm_campaigns"`
+	EntryPages   int `json:"entry_pages"`
+	ExitPages    int `json:"exit_pages"`
+	TopTitles    int `json:"top_titles"`
+	AIReferrers  int `json:"ai_referrers"`
 }
 
 const pageview = "$pageview"
+
+// wallClock is the real present, indirected only so tests can pin it. Every number in this
+// report is a fact about the SELECTED window except LiveNow, which is a fact about right
+// now, and the two must not be derived from the same clock — see the live block below.
+var wallClock = func() time.Time { return time.Now().UTC() }
 
 // Compute builds the overview over the trailing `days` (default 30) as of `asof`.
 func Compute(evs []event.Event, days int, asof time.Time) Result {
@@ -65,17 +97,50 @@ func Compute(evs []event.Event, days int, asof time.Time) Result {
 // range control that lies about what it changed.
 func ComputeWindow(evs []event.Event, window time.Duration, asof time.Time) Result {
 	if asof.IsZero() {
-		asof = time.Now().UTC()
+		asof = wallClock()
 	}
 	if window <= 0 {
 		window = 30 * 24 * time.Hour
 	}
-	days := int(window.Hours() / 24)
+	return ComputeRange(evs, asof.Add(-window), asof)
+}
+
+// ComputeRange is ComputeWindow over an EXPLICIT [from, to) — the form the dashboard needs.
+//
+// ComputeWindow derives its bounds from a duration and an as-of, which produces a ROLLING
+// window: "last 10 days" means now−240h. The trends path next to it aligns the same preset to
+// calendar days (day0−9d .. now) precisely so the tile, /v1/trends and the MCP tool agree. Two
+// tiles sat side by side on the same row, both labelled "· 10d", measuring windows that differ
+// by up to a day at each edge — and on a young instance that is the difference between a prior
+// window with data in it and one without, so one tile showed "71x vs prior" and the one beside
+// it showed no delta at all. Taking the bounds as arguments is what makes ONE window definition
+// possible for the whole row.
+func ComputeRange(evs []event.Event, from, to time.Time) Result {
+	if to.IsZero() {
+		to = wallClock()
+	}
+	if !from.Before(to) {
+		from = to.Add(-30 * 24 * time.Hour)
+	}
+	days := int(to.Sub(from).Hours() / 24)
 	if days < 1 {
 		days = 1
 	}
-	cutoff := asof.Add(-window)
-	liveCutoff := asof.Add(-5 * time.Minute)
+	cutoff, asof := from, to
+	// "live now" means people on the site AT THIS MOMENT, so it is measured against the wall
+	// clock — never against the end of the selected range. Anchored to the range end, opening
+	// ?from=2026-01-01&to=2026-01-31 counted the visitors of the five minutes ending in
+	// January and the header rendered a green "2 now" pill: two people declared to be on the
+	// site right now, months after they left. A range that ends in the past has nobody live in
+	// it, and this window intersection says so by construction.
+	wall := wallClock()
+	liveCutoff := wall.Add(-5 * time.Minute)
+	// [from, to): the START is inclusive, the END is not. A window has to be half-open or
+	// adjacent windows share an instant — and the dashboard's prior window ends exactly where
+	// its current window begins, so an event landing on that boundary was counted in BOTH, and
+	// every delta on the KPI row was computed against a prior that included one of the events
+	// it was being compared to. Silent, and only ever visible at one nanosecond a month.
+	inWindow := func(t time.Time) bool { return !t.Before(cutoff) && t.Before(asof) }
 
 	bump := func(m map[string]*agg, key, user string) {
 		a := m[key]
@@ -103,7 +168,7 @@ func ComputeWindow(evs []event.Event, window time.Duration, asof time.Time) Resu
 	hasEngagement := false
 
 	for _, e := range evs {
-		if e.Timestamp.Before(cutoff) || e.Timestamp.After(asof) {
+		if !inWindow(e.Timestamp) {
 			continue
 		}
 		if e.Name == "$engagement" {
@@ -119,7 +184,7 @@ func ComputeWindow(evs []event.Event, window time.Duration, asof time.Time) Resu
 		pv++
 		visitors[e.DistinctID] = true
 		pvPerUser[e.DistinctID]++
-		if !e.Timestamp.Before(liveCutoff) {
+		if !e.Timestamp.Before(liveCutoff) && !e.Timestamp.After(wall) {
 			live[e.DistinctID] = true
 		}
 		if p, _ := e.Properties["path"].(string); p != "" {
@@ -218,6 +283,22 @@ func ComputeWindow(evs []event.Event, window time.Duration, asof time.Time) Resu
 		ExitPages:    rank(exits, 10),
 		TopTitles:    rank(titles, 10),
 		Hours:        hours,
+
+		Recorded: Recorded{
+			TopPages:     recorded(pages),
+			Referrers:    recorded(refs),
+			UTMSources:   recorded(utms),
+			DeviceSplit:  recorded(devices),
+			Browsers:     recorded(browsers),
+			OSes:         recorded(oses),
+			Countries:    recorded(countries),
+			UTMMediums:   recorded(mediums),
+			UTMCampaigns: recorded(campaigns),
+			EntryPages:   recorded(entries),
+			ExitPages:    recorded(exits),
+			TopTitles:    recorded(titles),
+			AIReferrers:  recorded(aiRefs),
+		},
 	}
 	if hasEngagement {
 		r.HasEngagement = true
@@ -284,6 +365,18 @@ func refHost(v any) string {
 type agg struct {
 	count    int
 	visitors map[string]bool
+}
+
+// recorded is the total behind a dimension BEFORE rank() truncates it — the denominator a
+// share-of-recorded percentage needs. Computed from the aggregation map itself so it cannot
+// drift from the rows: summing the surviving rows instead is exactly the mistake that made
+// the tail of a long-tailed dimension vanish from every percentage on the page.
+func recorded(m map[string]*agg) int {
+	t := 0
+	for _, a := range m {
+		t += a.count
+	}
+	return t
 }
 
 // rank turns an aggregation map into rows sorted by pageviews desc (name asc on

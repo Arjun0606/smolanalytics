@@ -68,6 +68,16 @@ func (f Finding) Fingerprint() string {
 // products this digest serves.
 const minSample = 20
 
+// baselineDays is how many days of history the 24h anomaly detector compares against, and
+// minBaselineDays is how many of them must actually carry the event before that comparison
+// means anything. A brand-new instance holds fewer days than the window asks for, and
+// dividing by the window instead of by the data fabricates a baseline the event never had —
+// see the divisor in anomalies() for the measured symptom.
+const (
+	baselineDays    = 7
+	minBaselineDays = 5
+)
+
 // smallSample is the base under which a surviving rate finding carries an explicit
 // qualifier, so the reader can weigh a swing on n=34 against one on n=3400.
 const smallSample = 100
@@ -235,7 +245,9 @@ func GenerateForFunnel(evs []event.Event, pageSteps []funnel.Step) []Finding {
 			// ("it's mobile, 1.6× worse"). When we have it, LEAD with it and let the raw
 			// drop-off follow as context, so the verdict opens with the root cause, not the
 			// symptom.
-			if f := segmentBlame(evs, worstFrom, worstTo); f != nil {
+			// steps, not just the endpoints: the blame has to be measured on THIS funnel, or
+			// "against N% for everyone" is a number that appears nowhere else on the page.
+			if f := segmentBlame(evs, steps, worstFrom, worstTo); f != nil {
 				// the blame finding leaks out of the SAME funnel — carry its definition so a
 				// brief built from it re-runs the exact funnel the reader was looking at
 				f.Steps = names
@@ -269,12 +281,21 @@ func GenerateForFunnel(evs []event.Event, pageSteps []funnel.Step) []Finding {
 	}
 	if prev7 >= minSample {
 		change := int(math.Round(float64(last7-prev7) / float64(prev7) * 100)) // round (handles negatives), not truncate
+		// Same polarity rule as anomalies() a hundred lines below, for the same reason. This
+		// branch hardcoded "a drop is the warning", which is exactly inverted for the events
+		// that only ever record a user failing at something. On an instance where $deadclick
+		// is the highest-volume event (so `head` falls through to names[0]), dead clicks
+		// collapsing 100→30 rendered as [warn] and sorted to the TOP of the verdict card as
+		// the lead item, while dead clicks tripling rendered as [info] below the fold among
+		// the wins. polarity_test.go pinned this for anomalies() only, so the sibling
+		// detector kept the bug.
+		rose, bad := change > 0, UpIsBad(head)
 		sev, dir := "info", "up"
 		if change < 0 {
 			dir = "down"
-			if change <= -15 {
-				sev = "warn"
-			}
+		}
+		if rose == bad && absInt(change) >= 15 { // the direction that means something got worse
+			sev = "warn"
 		}
 		out = append(out, Finding{
 			Severity: sev,
@@ -282,7 +303,7 @@ func GenerateForFunnel(evs []event.Event, pageSteps []funnel.Step) []Finding {
 			Metric:   head,
 			Rate:     change,
 			N:        prev7,
-			Title:    fmt.Sprintf("%s is %s %d%% week-over-week", HumanEventNoun(head), dir, absInt(change)),
+			Title:    fmt.Sprintf("%s %s %s %d%% week-over-week", HumanEventNoun(head), EventVerbIs(head), dir, absInt(change)),
 			Detail:   qualify(fmt.Sprintf("%d in the last 7 days vs %d the week before.", last7, prev7), prev7),
 		})
 	}
@@ -324,8 +345,11 @@ func GenerateForFunnel(evs []event.Event, pageSteps []funnel.Step) []Finding {
 // low-volume product never gets false alarms.
 func anomalies(evs []event.Event, names []string, now time.Time) []Finding {
 	recentStart := now.Add(-24 * time.Hour)
-	baseStart := now.Add(-8 * 24 * time.Hour)
-	type stat struct{ last24, baseTotal int }
+	baseStart := now.Add(-baselineDays * 24 * time.Hour).Add(-24 * time.Hour)
+	type stat struct {
+		last24, baseTotal int
+		day               [baselineDays]bool // which baseline days this event was actually seen on
+	}
 	stats := map[string]*stat{}
 	for _, e := range evs {
 		if e.Timestamp.Before(baseStart) || e.Timestamp.After(now) {
@@ -338,9 +362,16 @@ func anomalies(evs []event.Event, names []string, now time.Time) []Finding {
 		}
 		if !e.Timestamp.Before(recentStart) {
 			s.last24++
-		} else {
-			s.baseTotal++
+			continue
 		}
+		s.baseTotal++
+		// Which of the seven baseline days this landed on, counted back from the start of the
+		// last-24h window so the buckets line up with the window instead of with UTC midnight.
+		d := int(recentStart.Sub(e.Timestamp) / (24 * time.Hour))
+		if d >= baselineDays { // an event exactly on baseStart divides to baselineDays
+			d = baselineDays - 1
+		}
+		s.day[d] = true
 	}
 
 	top := names // only the highest-volume events, so we never flag something obscure
@@ -354,7 +385,23 @@ func anomalies(evs []event.Event, names []string, now time.Time) []Finding {
 		if s == nil {
 			continue
 		}
-		baseDaily := float64(s.baseTotal) / 7.0
+		// Divide by the days this event was ACTUALLY seen on, not by a hard-coded 7. A
+		// three-day-old instance running a perfectly flat 30 signups/day has only two days
+		// inside the baseline window, so 60/7 invented a baseline of ~9/day and the verdict
+		// read "signup jumped 250% in the last 24h — 30 in the last 24h vs ~9/day normally"
+		// on traffic that never moved. (n=60 clears minSample and 8.6 clears the 3/day floor,
+		// so every existing guard passed it through.) The same arithmetic runs the other way
+		// once an instance outlives its retention window.
+		observed := 0
+		for _, seen := range s.day {
+			if seen {
+				observed++
+			}
+		}
+		if observed < minBaselineDays {
+			continue // no baseline to speak of — a percentage against it would be fiction
+		}
+		baseDaily := float64(s.baseTotal) / float64(observed)
 		if s.baseTotal < minSample || baseDaily < 3 { // not enough normal volume to trust a percentage swing
 			continue
 		}
@@ -365,17 +412,26 @@ func anomalies(evs []event.Event, names []string, now time.Time) []Finding {
 		}
 		bestScore, found = score, true
 		pct := int(math.Round(score * 100))
-		if dev < 0 {
-			best = Finding{
-				Severity: "warn", Kind: KindAnomaly, Metric: n, Rate: -pct, N: s.baseTotal,
-				Title:  fmt.Sprintf("%s dropped %d%% in the last 24h", HumanEventNoun(n), pct),
-				Detail: fmt.Sprintf("%d in the last 24h vs ~%.0f/day normally, worth a look (tracking down, or a regression?).", s.last24, baseDaily),
-			}
-		} else {
-			best = Finding{
-				Severity: "info", Kind: KindAnomaly, Metric: n, Rate: pct, N: s.baseTotal,
-				Title:  fmt.Sprintf("%s jumped %d%% in the last 24h", HumanEventNoun(n), pct),
-				Detail: fmt.Sprintf("%d in the last 24h vs ~%.0f/day normally.", s.last24, baseDaily),
+		volume := fmt.Sprintf("%d in the last 24h vs ~%.0f/day normally", s.last24, baseDaily)
+
+		// WHICH direction is the bad one depends on the event. For everything a product wants
+		// more of, the drop is the warning — which is what this used to assume for all of them.
+		// For the autocapture events that exist only to record a user failing at something it is
+		// exactly backwards, and the verdict was filing "dead clicks jumped 308% in the last 24h"
+		// as an info-level note, sorted in among the good news, on a live dashboard.
+		rose, bad := dev > 0, UpIsBad(n)
+		verb := "dropped"
+		best = Finding{Severity: "info", Kind: KindAnomaly, Metric: n, Rate: -pct, N: s.baseTotal, Detail: volume + "."}
+		if rose {
+			verb, best.Rate = "jumped", pct
+		}
+		best.Title = fmt.Sprintf("%s %s %d%% in the last 24h", HumanEventNoun(n), verb, pct)
+		if rose == bad { // the move that means something got worse
+			best.Severity = "warn"
+			if bad {
+				best.Detail = volume + " — that many more people hitting something that did not work."
+			} else {
+				best.Detail = volume + ", worth a look (tracking down, or a regression?)."
 			}
 		}
 		best.Detail = qualify(best.Detail, s.baseTotal)

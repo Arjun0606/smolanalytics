@@ -7,6 +7,7 @@ package mcp
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/flag"
 )
@@ -192,14 +193,22 @@ func (s *Server) callFlags(name string, args json.RawMessage) (bool, string, err
 			return true, "", err
 		}
 		evs = applyDefaultScope(evs)
-		return true, jsonStr(flag.Measure(evs, p.Key, p.Event, p.Days)), nil
+		// same resolution as GET /v1/flags/{key}/measure — the agreement test pins them equal
+		f, _ := s.flags.Get(p.Key)
+		to := time.Now().UTC()
+		rep := flag.MeasureRange(evs, f, p.Event, to.AddDate(0, 0, -p.Days), to)
+		rep.Days = p.Days
+		return true, jsonStr(rep), nil
 	case "experiment_health":
 		if s.flags == nil {
 			return true, "", fmt.Errorf(noStore, "flag")
 		}
 		var p struct {
-			Key  string `json:"key"`
-			Days int    `json:"days"`
+			Key string `json:"key"`
+			// Pointer, not int, because the tool documents "0 = all time" and a plain int cannot
+			// tell an omitted key from an explicit 0 — the old `if p.Days == 0 { p.Days = 30 }`
+			// silently rewrote the documented all-time request into a 30-day one.
+			Days *int `json:"days"`
 		}
 		if err := unmarshalArgs(args, &p); err != nil {
 			return true, "", err
@@ -211,8 +220,9 @@ func (s *Server) callFlags(name string, args json.RawMessage) (bool, string, err
 		if !ok {
 			return true, "", fmt.Errorf("no flag named %q", p.Key)
 		}
-		if p.Days == 0 {
-			p.Days = 30
+		days := 30
+		if p.Days != nil {
+			days = *p.Days // including an explicit 0, which CheckSRM reads as all history
 		}
 		evs, err := s.all()
 		if err != nil {
@@ -221,7 +231,7 @@ func (s *Server) callFlags(name string, args json.RawMessage) (bool, string, err
 		// Deliberately NOT default-scoped. The split check counts who was actually bucketed, and
 		// filtering the population before checking it is how a real mismatch gets hidden behind
 		// the filter that caused it.
-		return true, jsonStr(flag.CheckSRM(evs, f, p.Days)), nil
+		return true, jsonStr(flag.CheckSRM(evs, f, days)), nil
 	}
 	return false, "", nil
 }

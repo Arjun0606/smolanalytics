@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Arjun0606/smolanalytics/internal/aicrawl"
 	"github.com/Arjun0606/smolanalytics/internal/aivis"
 	"github.com/Arjun0606/smolanalytics/internal/event"
+	"github.com/Arjun0606/smolanalytics/internal/query"
 	"github.com/Arjun0606/smolanalytics/internal/web"
 )
 
@@ -277,26 +277,12 @@ func rateOf(part, n int) float64 {
 // high-volume event competing for the anomaly slot, and as a candidate funnel step
 // whose name has no reader-facing wording at all. Returns the input untouched when
 // there are none, which is every instance that never turned GEO on.
+// Now a thin alias for query.WithoutSampler. It used to be the only implementation, private to
+// this package — which is exactly why the verdict was the only surface on the page that
+// excluded the sampler, and why the ask bar answered a different retention number than the
+// verdict card sitting above it.
 func withoutGeoChecks(evs []event.Event) []event.Event {
-	ours := func(name string) bool {
-		return name == aivis.CheckEvent || name == ReadableEvent || name == aicrawl.CrawlEvent
-	}
-	n := 0
-	for _, e := range evs {
-		if ours(e.Name) {
-			n++
-		}
-	}
-	if n == 0 {
-		return evs
-	}
-	out := make([]event.Event, 0, len(evs)-n)
-	for _, e := range evs {
-		if !ours(e.Name) {
-			out = append(out, e)
-		}
-	}
-	return out
+	return query.WithoutSampler(evs)
 }
 
 // geoMinCited is the floor for the cited-not-recommended finding. Lower than geoMinRuns on
