@@ -6,6 +6,7 @@
     "pane-conversion",
     "pane-deploys",
     "pane-devices",
+    "pane-errors",
     "pane-events",
     "pane-flags",
     "pane-funnel",

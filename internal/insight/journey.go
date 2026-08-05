@@ -293,3 +293,11 @@ func usableBlameProps(evs []event.Event, from string) []string {
 // over a different window than the card above it is the same "two numbers, one question"
 // failure this package exists to rule out.
 const blameWindow = 7 * 24 * time.Hour
+
+// DetectJourney is detectJourney, exported.
+//
+// Other packages need the SAME funnel this package's verdict describes — the error report's
+// impact join, for one. Exporting the existing detector rather than letting each caller write its
+// own is the whole point: two detectors would eventually disagree, and then one screen would say
+// "checkout dropped" about a funnel another screen never mentions.
+func DetectJourney(evs []event.Event) []funnel.Step { return detectJourney(evs) }

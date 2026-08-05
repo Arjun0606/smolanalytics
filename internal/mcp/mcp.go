@@ -30,6 +30,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/defined"
 	"github.com/Arjun0606/smolanalytics/internal/deploys"
 	"github.com/Arjun0606/smolanalytics/internal/engagement"
+	"github.com/Arjun0606/smolanalytics/internal/errortrack"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/exportlink"
 	"github.com/Arjun0606/smolanalytics/internal/fixbrief"
@@ -146,8 +147,8 @@ var mutatingTools = map[string]bool{
 // that a tool is one or the other — an unclassified tool is callable on the unauthenticated
 // public demo, which is precisely the hole this pair of maps closes.
 var readOnlyTools = map[string]bool{
-	"rows_behind": true,
-	"overview":    true, "trends": true, "funnel": true, "retention": true, "breakdown": true,
+	"rows_behind": true, "errors": true,
+	"overview": true, "trends": true, "funnel": true, "retention": true, "breakdown": true,
 	"paths": true, "lifecycle": true, "stickiness": true, "groups": true, "web_overview": true,
 	"heatmap": true, "user_activity": true, "recent_events": true, "list_events": true,
 	"list_sessions": true, "session_timeline": true, "whats_notable": true, "fix_brief": true,
@@ -824,6 +825,40 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		// they do on the /v1 side. Filtering the crawl events alone would silently answer a
 		// different question than the endpoint.
 		return jsonText(aicrawl.Compute(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters), a.Days, time.Time{}))
+	case "errors":
+		var a struct {
+			Days    float64   `json:"days"`
+			Filters FilterSet `json:"filters"`
+		}
+		if err := unmarshalArgs(args, &a); err != nil {
+			return "", err
+		}
+		if err := query.Validate(a.Filters); err != nil {
+			return "", err
+		}
+		days := int(a.Days)
+		if days <= 0 {
+			days = 7
+		}
+		scoped := query.Apply(query.StampForFilters(evs, a.Filters), a.Filters)
+		to := time.Now().UTC()
+		from := to.AddDate(0, 0, -days)
+		// the preceding equal window is what lets "new" mean anything rather than everything
+		res := errortrack.Compute(scoped, from, to, from.Add(-to.Sub(from)))
+		out := map[string]any{
+			"groups": res.Groups, "users": res.Users, "users_affected": res.UsersAffected,
+			"crash_free_pct": res.CrashFreePct, "total": res.Total,
+			"from": from.Format(time.RFC3339), "to": to.Format(time.RFC3339),
+		}
+		if res.Note != "" {
+			out["note"] = res.Note
+		}
+		if steps := insight.DetectJourney(scoped); len(steps) >= 2 {
+			if im := errortrack.FunnelImpact(scoped, res.Groups, steps, 7*24*time.Hour); len(im) > 0 {
+				out["impact"] = im
+			}
+		}
+		return jsonText(out)
 	case "rows_behind":
 		// The evidence tool. An agent that can only report numbers is asking to be believed; one
 		// that can hand over the rows AND a recomputation of the figure over exactly those rows

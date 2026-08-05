@@ -164,6 +164,21 @@ var toolList = []map[string]any{
 		}, nil),
 	},
 	{
+		"name": "errors",
+		"description": "The error report from captured $exception events: one row per distinct bug, " +
+			"ranked by how many PEOPLE hit it rather than how often it fires, split into new and " +
+			"already-known, with a crash-free rate and — when a funnel is detectable — what each error " +
+			"is associated with costing. Use for 'what is broken', 'did my deploy break anything', " +
+			"'why did checkout drop'. The impact figures are a COMPARISON between people who hit the " +
+			"error and people who did not, never a proven cause: an error that only fires on a late " +
+			"step will always look worse, because reaching that step is what exposes people to it. " +
+			"Say that when you report it.",
+		"inputSchema": obj(map[string]any{
+			"days":    map[string]any{"type": "number", "description": "Window in days (default 7)."},
+			"filters": filtersSchema,
+		}, nil),
+	},
+	{
 		"name": "rows_behind",
 		"description": "THE EVIDENCE BEHIND A NUMBER. Returns the actual events that produced a figure, " +
 			"then recomputes the figure over exactly those rows and hands back a content digest of them. " +

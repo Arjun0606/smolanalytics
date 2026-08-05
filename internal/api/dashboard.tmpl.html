@@ -1958,6 +1958,14 @@
       <div class="agmeta" id="flNote" style="margin-top:6px">a new flag starts <b>off</b>, so creating one changes nothing for your users until you turn it on. an A/B flag is created measured: the SDK then logs one <b>$feature_flag_called</b> exposure per user per session, which is what the A/B read counts. a boolean flag logs no events at all. read one in your app with <b>smolanalytics.flag("checkout_v2", false)</b>.</div>
     </div>
 
+    <!-- Errors. The $exception events have been arriving since the SDK shipped and nothing has
+         ever read them. Ranked by PEOPLE, because one user in a retry loop outranks a bug that
+         hit forty of them on any list sorted by volume. -->
+    <div class="pane wide" id="pane-errors" style="order:625" data-stratum="ship">
+      <h3>errors<span class="sub"> · what broke, ranked by how many people it hit · computed by /v1/errors</span></h3>
+      <div id="errOut"><div class="exsummary">…</div></div>
+    </div>
+
     <div class="pane wide" id="pane-surveys" style="order:630" data-stratum="ship">
       <h3>surveys
         <span class="sub">· one-question in-product surveys and what came back · computed by /v1/surveys</span></h3>
@@ -3561,6 +3569,55 @@
     // header states the window it actually answered over instead of implying the
     // toolbar's. Nothing here is a recording: a step is an event that was captured.
     var SA_DAYS="{{.RangeDays}}";
+
+    // ---- errors: the report those $exception events were always worth ------------------
+    //
+    // Placed AFTER SA_DAYS is assigned, deliberately. `var` hoists the declaration but not the
+    // value, so running this earlier in the same scope fetched days=undefined and rendered the
+    // server's 400 — which reads as a broken endpoint rather than a mis-ordered script.
+    var errOut=document.getElementById('errOut');
+    if(errOut){
+      shipGet('/v1/errors?days='+encodeURIComponent(SA_DAYS)).then(function(r){
+        var j=r.j||{};
+        if(j.error){errOut.innerHTML='<div class="inote err">'+esc(j.error)+'</div>';return;}
+        var gs=j.groups||[];
+        if(!gs.length){
+          // "no errors" and "no error tracking" look identical in an empty list and need
+          // opposite reactions, so say which one this is.
+          errOut.innerHTML='<div class="agmeta">no <b>$exception</b> events in this window. '+
+            'the browser SDK reports uncaught errors and rejected promises automatically, so this '+
+            'fills in on its own — an empty list here is good news, not a missing integration.</div>';
+          return;
+        }
+        var impact={};(j.impact||[]).forEach(function(i){impact[i.fingerprint]=i;});
+        var h='<div class="agrow"><span class="proof">'+shipPct(j.crash_free_pct)+' crash-free</span>'+
+          '<span class="agmeta">'+j.users_affected+' of '+j.users+' people hit an error · '+
+          j.total+' occurrences · '+gs.length+' distinct</span></div>'+
+          '<table class="ctab" style="margin-top:10px"><thead><tr><th>error</th><th class="n">people</th>'+
+          '<th class="n">times</th><th>where</th><th>cost</th></tr></thead><tbody>';
+        gs.forEach(function(g){
+          var im=impact[g.fingerprint];
+          // a thin comparison is shown as unjudgeable rather than as a finding — a coin flip in
+          // a ranked list reads exactly like a result
+          var cost=!im?'<span class="mut">—</span>'
+            :im.thin?'<span class="mut" title="'+esc(im.read)+'">too few to judge</span>'
+            :im.gap_pct>0?'<span class="down" title="'+esc(im.read)+'">'+shipPct(im.gap_pct)+' worse conversion</span>'
+            :'<span class="mut" title="'+esc(im.read)+'">no measured cost</span>';
+          h+='<tr><td><b>'+esc(g.title)+'</b>'+(g.new?' <span class="acc">new</span>':'')+
+            (g.source?'<span class="cpath">'+esc(g.source)+(g.line?':'+g.line:'')+'</span>':'')+'</td>'+
+            '<td class="n">'+g.users+'</td><td class="n">'+g.count+'</td>'+
+            '<td class="mut nw">'+esc((g.paths||[])[0]||'')+'</td>'+
+            '<td>'+cost+'</td></tr>';
+        });
+        errOut.innerHTML=h+'</tbody></table>'+
+          '<div class="agmeta" style="margin-top:8px">ranked by <b>people</b>, not occurrences — one '+
+          'visitor stuck in a retry loop outranks a bug that hit forty of them on any list sorted by '+
+          'volume. Cost compares people who hit the error against people who did not; it is an '+
+          'association, never a proven cause, because an error that only fires on a late step will '+
+          'always look worse.</div>';
+      }).catch(function(){errOut.innerHTML='<div class="inote err">could not load the error report</div>';});
+    }
+
     var SA_FILTERS=SA_SCOPE.split('&').filter(function(p){
       return p.indexOf('from=')!==0&&p.indexOf('to=')!==0;
     }).join('&');
