@@ -3200,6 +3200,41 @@
     // the microscope: any chart bar or funnel step opens the PEOPLE behind it —
     // same engine as the aggregate, so the list always sums to the bar
     var SA_FSTEPS=SA_FUNNEL.join(',');
+    // openRows is the second lens on the same click: not WHO is behind a number, but WHICH ROWS —
+    // and whether those rows reproduce it.
+    //
+    // Every other analytics tool asks to be trusted. This engine keeps no rollups and does no
+    // sampling, so the raw events are still here at query time and a figure can hand back its own
+    // evidence plus a recomputation over exactly that evidence. The verdict line at the top is the
+    // product: "359 rows · recomputes to 359 · matches". If it ever says otherwise, that is a bug
+    // here and it says so rather than quietly rendering.
+    function openRows(query,label,panel,close){
+      panel.querySelector('.jmeta').textContent='loading the rows…';
+      fetch('/v1/rows?'+query).then(function(r){return r.json()}).then(function(j){
+        if(j.error){panel.querySelector('.jmeta').textContent=j.error;return;}
+        var p=j.proof||{};
+        var verdict=p.matches
+          ? '<span class="proof">'+j.total+' rows · recomputes to '+String(p.recomputed)+' · matches</span>'
+          : '<span class="inote err" style="display:inline-block;padding:4px 8px">these rows do NOT reproduce '+String(p.claimed)+' — that is a bug here, not in your data</span>';
+        var rows=(j.rows||[]).map(function(e){
+          var props=e.properties?Object.keys(e.properties).slice(0,4).map(function(k){
+            return esc(k)+'='+esc(String(e.properties[k]));
+          }).join(' · '):'';
+          return '<div class="jrow"><span class="je">'+esc(e.name)+'</span>'+
+            '<span class="jt" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">'+esc(e.distinct_id)+
+            (props?' <span class="mut">'+props+'</span>':'')+'</span>'+
+            '<span class="jt">'+ago(e.timestamp)+' ago</span></div>';
+        }).join('');
+        panel.innerHTML='<div class="jh"><span class="jid">'+esc(label)+' · the rows</span><span class="jclose">close ×</span></div>'+
+          '<div class="jmeta">'+verdict+' · digest <code>'+esc(p.digest||'')+'</code>'+
+          (j.capped?' · showing the first '+j.returned+' of '+j.total+', the count and the proof are over all of them':'')+
+          ' · <a class="jrows" role="button" tabindex="0">&larr; back to the people</a></div>'+rows;
+        panel.querySelector('.jclose').onclick=close;
+        var back=panel.querySelector('.jrows');
+        if(back)back.onclick=function(){close();openWho(query,label);};
+      }).catch(function(){panel.querySelector('.jmeta').textContent='could not load the rows';});
+    }
+
     function openWho(query,label){
       var shade=document.createElement('div');shade.className='jshade';
       var panel=document.createElement('div');panel.className='journey';
@@ -3215,8 +3250,11 @@
           return '<div class="jrow" style="cursor:pointer" data-uid="'+esc(u.distinct_id)+'"><span class="je" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">'+esc(u.distinct_id)+'</span><span class="jt">'+u.events+' ev</span><span class="jt">'+ago(u.last_seen)+' ago</span></div>';
         }).join('');
         panel.innerHTML='<div class="jh"><span class="jid">'+esc(label)+'</span><span class="jclose">close ×</span></div>'+
-          '<div class="jmeta">'+j.total_users+' people · click one for their journey · computed by /v1/who, same engine as the chart</div>'+rows;
+          '<div class="jmeta">'+j.total_users+' people · click one for their journey · computed by /v1/who, same engine as the chart'+
+          ' · <a class="jrows" role="button" tabindex="0">show me the rows &rarr;</a></div>'+rows;
         panel.querySelector('.jclose').onclick=close;
+        var rowsLink=panel.querySelector('.jrows');
+        if(rowsLink)rowsLink.onclick=function(){openRows(query,label,panel,close);};
         panel.addEventListener('click',function(ev){
           var r2=ev.target.closest('.jrow[data-uid]');if(!r2)return;
           close();openJourney(r2.getAttribute('data-uid'));

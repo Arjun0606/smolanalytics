@@ -164,6 +164,26 @@ var toolList = []map[string]any{
 		}, nil),
 	},
 	{
+		"name": "rows_behind",
+		"description": "THE EVIDENCE BEHIND A NUMBER. Returns the actual events that produced a figure, " +
+			"then recomputes the figure over exactly those rows and hands back a content digest of them. " +
+			"Use it whenever the user asks 'why is that number what it is', 'are you sure', 'show me', or " +
+			"disputes a result — and use it BEFORE defending a number you reported. Every report here is " +
+			"recomputed from raw events with no rollups and no sampling, which is why the rows are still " +
+			"available to show; do not describe this as an estimate or a sample. If proof.matches is false, " +
+			"say so plainly: that is a bug in this engine, not in the user's data.",
+		"inputSchema": obj(map[string]any{
+			"event":    map[string]any{"type": "string", "description": "The event whose rows you want, e.g. signup."},
+			"days":     map[string]any{"type": "number", "description": "Window in days (default 30)."},
+			"date":     map[string]any{"type": "string", "description": "Narrow to ONE day, YYYY-MM-DD — use this when explaining a single point on a chart."},
+			"property": map[string]any{"type": "string", "description": "Optional: only rows where this property equals value."},
+			"value":    map[string]any{"type": "string", "description": "The value that property must equal."},
+			"unique":   map[string]any{"type": "boolean", "description": "Prove a PEOPLE count rather than an event count."},
+			"limit":    map[string]any{"type": "number", "description": "Rows to return (default 500). The count and the proof always cover every matching row, not just these."},
+			"filters":  filtersSchema,
+		}, []string{"event"}),
+	},
+	{
 		"name":        "recent_events",
 		"description": "The most recent raw events (newest first) with their properties. Use to debug instrumentation ('did my signup event arrive', 'what's coming in right now') or to eyeball live activity.",
 		"inputSchema": obj(map[string]any{

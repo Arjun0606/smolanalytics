@@ -1011,10 +1011,32 @@ func (s *Server) apiRows(w http.ResponseWriter, r *http.Request) {
 	// scoped funnels at event level while /v1/funnel scoped them at user level.)
 	evs = scopeToWindow(evs, from, to)
 
+	// ?date= narrows to ONE bucket, exactly as /v1/who does for the same click.
+	//
+	// Without this the rows behind a single bar were every row in the window: click one day's
+	// 47 signups and the panel proved 2,376 — internally consistent, and about a different
+	// number than the one you clicked. A proof that verifies the wrong figure is worse than no
+	// proof, because it is confidently checkable and still wrong.
+	var dayFrom, dayTo time.Time
+	if d := q.Get("date"); d != "" {
+		day, derr := time.Parse("2006-01-02", d)
+		if derr != nil {
+			writeErr(w, http.StatusBadRequest, "date must be YYYY-MM-DD")
+			return
+		}
+		dayFrom, dayTo = day, day.AddDate(0, 0, 1)
+	}
+
 	prop, val := q.Get("property"), q.Get("value")
 	match := func(e event.Event) bool {
 		if e.Name != name {
 			return false
+		}
+		if !dayFrom.IsZero() {
+			ts := e.Timestamp.UTC()
+			if ts.Before(dayFrom) || !ts.Before(dayTo) {
+				return false
+			}
 		}
 		if prop == "" {
 			return true
@@ -1032,6 +1054,9 @@ func (s *Server) apiRows(w http.ResponseWriter, r *http.Request) {
 	}
 	if prop != "" {
 		question += " where " + prop + " = " + val
+	}
+	if !dayFrom.IsZero() {
+		question += " on " + dayFrom.Format("2006-01-02")
 	}
 
 	// The claimed figure is computed HERE, over the same slice, by the same function that will

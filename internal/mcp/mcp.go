@@ -42,6 +42,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/insight"
 	"github.com/Arjun0606/smolanalytics/internal/insights"
 	"github.com/Arjun0606/smolanalytics/internal/paths"
+	prov "github.com/Arjun0606/smolanalytics/internal/provenance"
 	"github.com/Arjun0606/smolanalytics/internal/query"
 	"github.com/Arjun0606/smolanalytics/internal/retention"
 	"github.com/Arjun0606/smolanalytics/internal/session"
@@ -145,7 +146,8 @@ var mutatingTools = map[string]bool{
 // that a tool is one or the other — an unclassified tool is callable on the unauthenticated
 // public demo, which is precisely the hole this pair of maps closes.
 var readOnlyTools = map[string]bool{
-	"overview": true, "trends": true, "funnel": true, "retention": true, "breakdown": true,
+	"rows_behind": true,
+	"overview":    true, "trends": true, "funnel": true, "retention": true, "breakdown": true,
 	"paths": true, "lifecycle": true, "stickiness": true, "groups": true, "web_overview": true,
 	"heatmap": true, "user_activity": true, "recent_events": true, "list_events": true,
 	"list_sessions": true, "session_timeline": true, "whats_notable": true, "fix_brief": true,
@@ -822,6 +824,89 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		// they do on the /v1 side. Filtering the crawl events alone would silently answer a
 		// different question than the endpoint.
 		return jsonText(aicrawl.Compute(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters), a.Days, time.Time{}))
+	case "rows_behind":
+		// The evidence tool. An agent that can only report numbers is asking to be believed; one
+		// that can hand over the rows AND a recomputation of the figure over exactly those rows
+		// can be checked. Only possible because nothing here is pre-aggregated or sampled.
+		var a struct {
+			Event    string    `json:"event"`
+			Days     float64   `json:"days"`
+			Date     string    `json:"date"`
+			Property string    `json:"property"`
+			Value    string    `json:"value"`
+			Unique   bool      `json:"unique"`
+			Limit    int       `json:"limit"`
+			Filters  FilterSet `json:"filters"`
+		}
+		if err := unmarshalArgs(args, &a); err != nil {
+			return "", err
+		}
+		if a.Event == "" {
+			return "", fmt.Errorf("event is required — name the event whose rows you want")
+		}
+		if err := s.checkEvents(a.Event); err != nil {
+			return "", err
+		}
+		if err := query.Validate(a.Filters); err != nil {
+			return "", err
+		}
+		days := int(a.Days)
+		if days <= 0 {
+			days = 30
+		}
+		scoped := query.Apply(query.StampForFilters(evs, a.Filters), a.Filters)
+		to := time.Now().UTC()
+		from := to.AddDate(0, 0, -days)
+		var dayFrom, dayTo time.Time
+		if a.Date != "" {
+			d, derr := time.Parse("2006-01-02", a.Date)
+			if derr != nil {
+				return "", fmt.Errorf("date must be YYYY-MM-DD")
+			}
+			dayFrom, dayTo = d, d.AddDate(0, 0, 1)
+		}
+		match := func(e event.Event) bool {
+			if e.Name != a.Event {
+				return false
+			}
+			ts := e.Timestamp.UTC()
+			if ts.Before(from) || !ts.Before(to) {
+				return false
+			}
+			if !dayFrom.IsZero() && (ts.Before(dayFrom) || !ts.Before(dayTo)) {
+				return false
+			}
+			if a.Property == "" {
+				return true
+			}
+			got, ok := e.Properties[a.Property]
+			if !ok || got == nil {
+				return false
+			}
+			if str, isStr := got.(string); isStr {
+				return str == a.Value
+			}
+			return fmt.Sprintf("%v", got) == a.Value
+		}
+		recompute := prov.CountOf
+		question := "how many " + a.Event + " events"
+		if a.Unique {
+			recompute = prov.UniqueUsersOf
+			question = "how many people did " + a.Event
+		}
+		if a.Property != "" {
+			question += " where " + a.Property + " = " + a.Value
+		}
+		if a.Date != "" {
+			question += " on " + a.Date
+		}
+		var matched []event.Event
+		for _, e := range scoped {
+			if match(e) {
+				matched = append(matched, e)
+			}
+		}
+		return jsonText(prov.Collect(scoped, question, recompute(matched), a.Limit, match, recompute))
 	case "whats_notable":
 		// applyDefaultScope, like every other read tool. s.all() returns the RAW store and each
 		// tool scopes for itself; this one did not, so the verdict an agent read in the editor
