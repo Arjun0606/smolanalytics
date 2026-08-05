@@ -164,6 +164,22 @@ var toolList = []map[string]any{
 		}, nil),
 	},
 	{
+		"name": "people",
+		"description": "Person profiles: every user's last-known traits, derived from the event log " +
+			"rather than stored in a person table. Call with no arguments for the trait keys that " +
+			"exist and the most recently active people; with `trait` for how many people hold each " +
+			"value of it; with `trait` and `value` for the distinct_ids that match, which is what " +
+			"scopes any other report to a person property. Use for 'how many pro users', 'what do we " +
+			"know about our users', 'who is on the enterprise plan'. Last-known is decided by " +
+			"TIMESTAMP, not arrival order, so a late-arriving old event cannot overwrite a newer trait.",
+		"inputSchema": obj(map[string]any{
+			"trait":   map[string]any{"type": "string", "description": "A trait key, e.g. plan."},
+			"value":   map[string]any{"type": "string", "description": "With trait: return the people holding this value."},
+			"limit":   map[string]any{"type": "number", "description": "Rows to return (default 50). Counts above are always the true totals."},
+			"filters": filtersSchema,
+		}, nil),
+	},
+	{
 		"name": "errors",
 		"description": "The error report from captured $exception events: one row per distinct bug, " +
 			"ranked by how many PEOPLE hit it rather than how often it fires, split into new and " +

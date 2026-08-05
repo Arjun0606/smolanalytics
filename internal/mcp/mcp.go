@@ -43,6 +43,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/insight"
 	"github.com/Arjun0606/smolanalytics/internal/insights"
 	"github.com/Arjun0606/smolanalytics/internal/paths"
+	"github.com/Arjun0606/smolanalytics/internal/person"
 	prov "github.com/Arjun0606/smolanalytics/internal/provenance"
 	"github.com/Arjun0606/smolanalytics/internal/query"
 	"github.com/Arjun0606/smolanalytics/internal/retention"
@@ -148,7 +149,7 @@ var mutatingTools = map[string]bool{
 // that a tool is one or the other — an unclassified tool is callable on the unauthenticated
 // public demo, which is precisely the hole this pair of maps closes.
 var readOnlyTools = map[string]bool{
-	"rows_behind": true, "errors": true, "plan_experiment": true,
+	"rows_behind": true, "errors": true, "plan_experiment": true, "people": true,
 	"overview": true, "trends": true, "funnel": true, "retention": true, "breakdown": true,
 	"paths": true, "lifecycle": true, "stickiness": true, "groups": true, "web_overview": true,
 	"heatmap": true, "user_activity": true, "recent_events": true, "list_events": true,
@@ -830,6 +831,41 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		return s.toolPlanExperiment(args, evs)
 	case "experiment_plan":
 		return s.toolExperimentPlan(args, evs)
+	case "people":
+		var a struct {
+			Trait   string    `json:"trait"`
+			Value   string    `json:"value"`
+			Limit   int       `json:"limit"`
+			Filters FilterSet `json:"filters"`
+		}
+		if err := unmarshalArgs(args, &a); err != nil {
+			return "", err
+		}
+		if err := query.Validate(a.Filters); err != nil {
+			return "", err
+		}
+		profiles := person.Compute(query.Apply(query.StampForFilters(evs, a.Filters), a.Filters))
+		limit := a.Limit
+		if limit <= 0 {
+			limit = 50
+		}
+		out := map[string]any{"people": len(profiles), "traits": person.Traits(profiles)}
+		switch {
+		case a.Trait != "" && a.Value != "":
+			ids := person.Matching(profiles, a.Trait, a.Value)
+			list := make([]string, 0, limit)
+			for _, p := range person.List(profiles, 0) {
+				if ids[p.DistinctID] && len(list) < limit {
+					list = append(list, p.DistinctID)
+				}
+			}
+			out["trait"], out["value"], out["matched"], out["distinct_ids"] = a.Trait, a.Value, len(ids), list
+		case a.Trait != "":
+			out["trait"], out["values"] = a.Trait, person.TraitValues(profiles, a.Trait)
+		default:
+			out["recent"] = person.List(profiles, limit)
+		}
+		return jsonText(out)
 	case "errors":
 		var a struct {
 			Days    float64   `json:"days"`

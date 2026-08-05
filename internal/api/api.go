@@ -317,6 +317,9 @@ func (s *Server) Handler() http.Handler {
 	// $exception has been captured since the SDK shipped and read by nothing. Grouped, ranked by
 	// people rather than volume, and joined to the funnel it broke.
 	mux.HandleFunc("GET /v1/errors", s.apiErrors)
+	// person profiles, derived from the log on every request rather than stored, so they can
+	// never drift from the events the way a person table does
+	mux.HandleFunc("GET /v1/people", s.apiPeople)
 	mux.HandleFunc("GET /v1/agent-status", s.apiAgentStatus)
 	// agent observability (computed over agent_tool_call / agent_turn events) — distinct
 	// from /v1/agent-status above (that's the MCP-client presence badge).
