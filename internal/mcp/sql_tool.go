@@ -4,9 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
-	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/query"
 	sqlq "github.com/Arjun0606/smolanalytics/internal/sql"
 )
@@ -54,9 +52,9 @@ func (s *Server) toolRunSQL(args json.RawMessage) (string, error) {
 	// with it and returning a flat zero. Only WHERE counts, so that a GROUP BY prop.env here
 	// answers the same as breakdown(property="env") there.
 	var sc sqlq.Scanner = s.store
-	scoped := !exprTouchesEnv(q.Where)
+	scoped := !sqlq.ExprTouchesEnv(q.Where)
 	if scoped {
-		sc = scopedScanner{inner: s.store, keep: query.Keeper(nil)}
+		sc = sqlq.ScopedScanner{Inner: s.store, Keep: query.Keeper(nil)}
 	}
 	res, err := sqlq.Run(q, sc, lim)
 	if err != nil {
@@ -109,56 +107,6 @@ func (s *Server) toolRunSQL(args json.RawMessage) (string, error) {
 // event belong in a default-scoped query", and a second hand-rolled copy of the env rule here
 // would drift the moment either changed — which is exactly how this tool ended up answering a
 // different number than trends for the same question.
-type scopedScanner struct {
-	inner sqlq.Scanner
-	keep  func(event.Event) bool
-}
-
-func (s scopedScanner) Scan(from, to time.Time, fn func(event.Event) error) error {
-	return s.inner.Scan(from, to, func(e event.Event) error {
-		if !s.keep(e) {
-			return nil
-		}
-		return fn(e)
-	})
-}
-
-// exprTouchesEnv reports whether the expression references the env property anywhere. Walked
-// over the AST rather than matched against Expr.String(): a literal 'prop.env' inside a string
-// comparison would fool a text match into disabling the default scope silently.
-func exprTouchesEnv(e sqlq.Expr) bool {
-	switch t := e.(type) {
-	case nil:
-		return false
-	case sqlq.Prop:
-		return t.Key == "env"
-	case sqlq.Binary:
-		return exprTouchesEnv(t.Left) || exprTouchesEnv(t.Right)
-	case sqlq.Unary:
-		return exprTouchesEnv(t.X)
-	case sqlq.Call:
-		for _, a := range t.Args {
-			if exprTouchesEnv(a) {
-				return true
-			}
-		}
-		return false
-	case sqlq.InList:
-		if exprTouchesEnv(t.X) {
-			return true
-		}
-		for _, v := range t.Vals {
-			if exprTouchesEnv(v) {
-				return true
-			}
-		}
-		return false
-	case sqlq.IsNull:
-		return exprTouchesEnv(t.X)
-	}
-	return false
-}
-
 func sqlScopeNote(scoped bool) string {
 	if scoped {
 		return "production traffic only — events with env development/preview/staging/test/ci are excluded, the same default scope trends/funnel/breakdown and the dashboard use. Add a WHERE on prop.env (e.g. WHERE prop.env = 'development') to include them."

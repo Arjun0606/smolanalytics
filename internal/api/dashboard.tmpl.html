@@ -2132,6 +2132,21 @@
       <div id="live" class="live"><div class="livemuted">waiting for events…</div></div>
     </div>
 
+    <!-- ══ SQL ══════════════════════════════════════════════════════════════════════════
+         The query engine had one door: the run_sql MCP tool. So the deepest thing this
+         product can do was reachable only by someone already talking to it through an
+         agent, and invisible to anyone who just opened the dashboard. ═══════════════════ -->
+    <div class="pane wide" id="pane-sql" style="order:830" data-stratum="raw">
+      <h3>sql
+        <span class="sub">· read-only SELECT straight over your raw events — for the question no report covers · same engine and same production scope as every card above, so it can never disagree with them · computed by /v1/sql</span></h3>
+      <div class="exrow" style="margin-bottom:10px">
+        <input id="sqlQ" autocomplete="off" spellcheck="false" aria-label="SQL query"
+               placeholder="SELECT prop.country AS country, count(*) AS n FROM events GROUP BY country ORDER BY n DESC LIMIT 10">
+        <button id="sqlRun">Run</button>
+      </div>
+      <div id="sqlOut"><div class="agmeta">SELECT only, one table (<b>events</b>). Columns: <b>name</b>, <b>distinct_id</b>, <b>timestamp</b>, <b>id</b>; properties as <b>prop.&lt;key&gt;</b>. Press Run for the full grammar.</div></div>
+    </div>
+
     <div class="pane" id="pane-events" style="order:820" data-stratum="raw">
       <h3>event stream <span class="sub">· latest 200 · computed by /v1/events/recent</span></h3>
       <div class="exrow" style="margin-bottom:8px">
@@ -3932,6 +3947,53 @@
         });
         alOut.innerHTML=h+'</tbody></table>';
       });
+    }
+
+
+    // ══ SQL ═══════════════════════════════════════════════════════════════════════════
+    var sqlRun=document.getElementById('sqlRun'),sqlOut=document.getElementById('sqlOut'),sqlQ=document.getElementById('sqlQ');
+    if(sqlRun&&sqlOut&&sqlQ){
+      function sqlGo(){
+        var q=(sqlQ.value||'').trim();
+        // An empty box asks the endpoint for the grammar rather than erroring: the grammar IS the
+        // documentation, and a query surface whose dialect you cannot see is one you guess at.
+        sqlOut.innerHTML='<div class="exsummary">running…</div>';
+        shipGet('/v1/sql?q='+encodeURIComponent(q)).then(function(r){
+          var j=r.j||{};
+          if(j.error){
+            sqlOut.innerHTML='<div class="inote err">'+esc(j.error)+'</div>'+
+              (j.grammar?'<pre class="agmeta" style="white-space:pre-wrap;margin-top:10px">'+esc(j.grammar)+'</pre>':'');
+            return;
+          }
+          if(!q&&j.grammar){
+            sqlOut.innerHTML='<pre class="agmeta" style="white-space:pre-wrap">'+esc(j.grammar)+'</pre>';
+            return;
+          }
+          var cols=j.columns||[],rows=j.rows||[];
+          var h='<div class="agrow"><span class="proof">'+rows.length+' row'+(rows.length===1?'':'s')+'</span>'+
+            '<span class="agmeta">'+j.scanned+' events scanned in '+esc(j.elapsed||'')+
+            (j.groups?' · '+j.groups+' groups':'')+
+            (j.scoped_to_production?' · production only':' · every env (your WHERE names env)')+'</span></div>';
+          if(j.truncated)h+='<div class="inote" style="margin-top:8px">'+esc(j.note||'truncated')+'</div>';
+          if(!rows.length){
+            sqlOut.innerHTML=h+'<div class="agmeta" style="margin-top:10px">no rows matched. That is an answer, not a failure — the query parsed and ran.</div>';
+            return;
+          }
+          h+='<table class="ctab" style="margin-top:10px"><thead><tr>'+
+            cols.map(function(c){return '<th>'+esc(c)+'</th>'}).join('')+'</tr></thead><tbody>';
+          rows.forEach(function(row){
+            h+='<tr>'+cols.map(function(_,i){
+              var v=row[i];
+              // null is a real answer (the property is absent), and rendering it as an empty cell
+              // makes "missing" and "empty string" the same pixel.
+              return '<td'+(typeof v==='number'?' class="n"':'')+'>'+(v===null||v===undefined?'<span class="mut">null</span>':esc(String(v)))+'</td>';
+            }).join('')+'</tr>';
+          });
+          sqlOut.innerHTML=h+'</tbody></table>';
+        });
+      }
+      sqlRun.addEventListener('click',sqlGo);
+      sqlQ.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();sqlGo();}});
     }
 
     var errOut=document.getElementById('errOut');

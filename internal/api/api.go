@@ -301,6 +301,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/sessions", s.apiSessions)
 	mux.HandleFunc("GET /v1/session", s.apiSession)
 	mux.HandleFunc("GET /v1/groups", s.apiGroups)
+	// The query engine over HTTP. It existed only behind the run_sql MCP tool, so the deepest thing
+	// this product does was reachable only through an agent and absent from the dashboard entirely.
+	mux.HandleFunc("GET /v1/sql", s.apiSQL)
 	mux.HandleFunc("GET /v1/web", s.apiWeb)
 	mux.HandleFunc("GET /v1/meta", s.apiMeta)
 	mux.HandleFunc("GET /v1/usage", s.usage)
