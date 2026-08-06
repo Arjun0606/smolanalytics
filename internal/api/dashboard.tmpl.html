@@ -1447,16 +1447,16 @@
          events it teaches what to send rather than showing a blank panel. It leads the
          deck once those events exist, and sits at the end of it until they do. -->
     <div class="pane wide" id="pane-agent" style="order:{{if .HasAgentEvents}}110{{else}}710{{end}}" data-stratum="agent">
-      <h3>agent observability <span class="sub">· your agent's tool calls and conversations, same window and filters as every zone above · computed by /v1/agent</span></h3>
+      <h3>your AI agent <span class="sub">· only relevant if you are building one · computed by /v1/agent</span></h3>
       <div id="agConv"><div class="exsummary">…</div></div>
 
-      <h3 style="margin-top:18px">tool health <span class="sub">· one row per tool, click a row for its error taxonomy · computed by /v1/agent/tools</span></h3>
+      <h3 style="margin-top:18px">which tools are slow or failing <span class="sub">· one row per tool, click for its failures · computed by /v1/agent/tools</span></h3>
       <div id="agTools"><div class="exsummary">…</div></div>
 
       <h3 style="margin-top:18px">conversation labels
         <input id="agLabel" list="agLabelNames" value="intent" autocomplete="off" aria-label="label name" title="the label name your model wrote with label_conversation" style="margin-left:8px;max-width:150px">
         <datalist id="agLabelNames"><option value="intent"></option><option value="sentiment"></option><option value="frustration"></option><option value="topic"></option></datalist>
-        <span class="sub">· the values are your model's inference, the counts over them are computed · /v1/agent/labels</span></h3>
+        <span class="sub">· what your conversations were about · computed by /v1/agent/labels</span></h3>
       <div id="agLabels"><div class="exsummary">…</div></div>
     </div>
 
@@ -3647,9 +3647,22 @@
         if(j.error){agErr(agConvEl,j);return;}
         agConvEl.dataset.empty=j.conversations?'0':'1';
         if(!j.conversations){
-          agConvEl.innerHTML='<div class="agmeta">'+agNone('agent_turn')+' send one per conversation turn and this row fills in with turns, re-ask rate, abandon rate and time to first token:</div>'+
-            agCode('smolanalytics.track("agent_turn", { conversation_id: "c_1042", role: "user" })\nsmolanalytics.track("agent_turn", { conversation_id: "c_1042", role: "assistant", ttft_ms: 240, resolved: true })')+
-            '<div class="agmeta">plain track() calls, no $ prefix. two user turns in a row is a re-ask, a conversation that ends on a user turn is an abandon, and both are counted from the roles you send.</div>';
+          // ONE sentence, and the manual behind a disclosure.
+          //
+          // This pane used to open with ~1,800 characters of setup documentation for someone who
+          // had sent nothing — code samples, the definition of a re-ask, an explanation of the $
+          // prefix — and the owner's verdict on reading it was that he did not understand any of
+          // it. Most people opening this dashboard are not building an AI agent, and the pane
+          // never said so, so its wall of instructions read as something they were failing to do.
+          agConvEl.innerHTML='<div class="agmeta">' +
+            '<b>Only useful if you are building an AI agent or chatbot.</b> If you are not, skip this — ' +
+            'nothing here is missing from your setup.' +
+            '<details style="margin-top:8px"><summary class="hlink">I am building one — how do I see this?</summary>' +
+            '<div style="margin-top:8px">it would show you how many conversations happen, how often people ' +
+            'have to ask again, how often they give up, and how fast the first token arrives. two calls turn it on:</div>' +
+            agCode('smolanalytics.track("agent_turn", { conversation_id: "c_1042", role: "user" })\nsmolanalytics.track("agent_turn", { conversation_id: "c_1042", role: "assistant", ttft_ms: 240, resolved: true })') +
+            '<div>two user turns in a row counts as asking again; a conversation ending on a user turn counts as giving up.</div>' +
+            '</details></div>';
           return;
         }
         var h='<div class="agrow"><span class="agprov">computed · every conversation, no sampling</span>'+
@@ -3677,9 +3690,14 @@
         var ts=j.tools||[];
         agToolsEl.dataset.empty=ts.length?'0':'1';
         if(!ts.length){
-          agToolsEl.innerHTML='<div class="agmeta">'+agNone('agent_tool_call')+' send one per tool or MCP dispatch and this table fills in with calls, error rate and latency p50/p90/p99 per tool:</div>'+
-            agCode('smolanalytics.track("agent_tool_call", { tool: "search_web", client: "cursor", latency_ms: 412 })\nsmolanalytics.track("agent_tool_call", { tool: "search_web", client: "cursor", latency_ms: 2400, error: true, error_type: "timeout" })')+
-            '<div class="agmeta">plain track() calls, no $ prefix. error and error_type are what the per-tool taxonomy is built from.</div>';
+          agToolsEl.innerHTML='<div class="agmeta">' +
+            'Nothing to show unless your agent calls tools.' +
+            '<details style="margin-top:8px"><summary class="hlink">how do I see which of my tools are slow or failing?</summary>' +
+            '<div style="margin-top:8px">it would show one row per tool with how often it is called, how ' +
+            'often it fails and how slow it is. one call per tool run turns it on:</div>' +
+            agCode('smolanalytics.track("agent_tool_call", { tool: "search_web", client: "cursor", latency_ms: 412 })\nsmolanalytics.track("agent_tool_call", { tool: "search_web", client: "cursor", latency_ms: 2400, error: true, error_type: "timeout" })') +
+            '<div>the error and error_type fields are what the per-tool failure breakdown is built from.</div>' +
+            '</details></div>';
           return;
         }
         var h='<div class="agrow"><span class="agprov">computed · nearest-rank percentiles</span>'+
@@ -3729,7 +3747,15 @@
     function agLoadLabels(){
       if(!agLabelsEl)return;
       var name=(agLabelIn&&agLabelIn.value||'').trim();
-      if(!name){agLabelsEl.innerHTML='<div class="agmeta">name a label to break down, e.g. intent, whatever label your model wrote with label_conversation.</div>';return;}
+      if(!name){agLabelsEl.innerHTML='<div class="agmeta">' +
+        'Group conversations by what they were about — but only if you have asked your own model to ' +
+        'read and label them first.' +
+        '<details style="margin-top:8px"><summary class="hlink">what is this?</summary>' +
+        '<div style="margin-top:8px">your model reads whole conversations and writes back what it thinks ' +
+        'each one was about (a refund, a bug, pricing). we never run a model — we just count how many ' +
+        'conversations carry each label. from your editor: <b>sample_conversations</b> hands your model the ' +
+        'conversations, <b>label_conversation</b> writes its answer back, then type that label name above.</div>' +
+        '</details></div>';return;}
       fetch(agURL('/v1/agent/labels','&label='+encodeURIComponent(name))).then(function(r){return r.json()}).then(function(j){
         if(j.error){agErr(agLabelsEl,j);return;}
         var vals=j.values||[],by=j.labeled_by||[];
@@ -3738,7 +3764,10 @@
           :(j.labeled?'no model name recorded on these labels':'nothing labeled yet');
         var h='<div class="aginfbox"><div class="agrow"><span class="aginf">model-inferred values</span>'+
           '<span class="agmeta">'+who+'</span></div>'+
-          '<div class="agmeta">a label is what your own model inferred when it read the conversation, not something we measured. we never run a model. the conversation counts over those labels are computed from your event log, like every other number on this page.</div>';
+          '<details class="agmeta"><summary class="hlink">where do these labels come from?</summary>' +
+          '<div style="margin-top:8px">your own model read the conversations and wrote what it thought each ' +
+          'one was about. we never run a model — we only count how many conversations carry each answer, ' +
+          'from your event log, like every other number here.</div></details>';
         if(vals.length){
           var mx=vals[0].conversations||1;
           h+='<div style="margin-top:10px">'+vals.map(function(v){
@@ -3747,13 +3776,22 @@
               '<span class="agvalnum">'+v.conversations+'</span></div></div>';
           }).join('')+'</div>';
         }else{
-          h+='<div class="agmeta" style="margin-top:8px">nothing carries the label <b>'+esc(name)+'</b> yet'+
-            (j.conversations?'':', and no conversations to label '+(SA_SCOPED?'match this window and the filters above':'landed in this window'))+
-            '. the loop runs from your editor, not here: <b>sample_conversations</b> hands your model whole conversations to read, <b>label_conversation</b> writes its inference back as one new agent_label event, then <b>agent_labels</b> counts conversations per value. nothing is mutated and no model runs on our side.</div>';
+          // The how-to goes behind a disclosure. Someone with no conversations does not need the
+          // three-step tool loop explained; someone with conversations and no labels does.
+          h+='<div class="agmeta" style="margin-top:8px">nothing is labelled <b>'+esc(name)+'</b> yet.' +
+            (j.conversations?'':' there are also no conversations here to label.') +
+            '<details style="margin-top:6px"><summary class="hlink">how do I label them?</summary>' +
+            '<div style="margin-top:6px">from your editor, not here: <b>sample_conversations</b> gives your ' +
+            'model the conversations, <b>label_conversation</b> writes back what it thought each was about, ' +
+            'and this counts them. nothing is changed and no model runs on our side.</div></details></div>';
         }
-        h+='<div class="agmeta" style="margin-top:10px;border-top:1px dashed var(--line2);padding-top:8px"><b>'+j.labeled+
-          '</b> of <b>'+j.conversations+'</b> conversations in this window carry this label · <b>'+j.unlabeled+
-          '</b> unlabeled, counted in no value above</div></div>';
+        // "0 of 0 ... 0 unlabeled" is a caveat about nothing. It only earns its space once there
+        // is something for it to qualify.
+        h += (j.conversations > 0
+          ? '<div class="agmeta" style="margin-top:10px;border-top:1px dashed var(--line2);padding-top:8px"><b>'+j.labeled+
+            '</b> of <b>'+j.conversations+'</b> conversations carry this label · <b>'+j.unlabeled+
+            '</b> unlabelled, counted in no value above</div>'
+          : '') + '</div>';
         agLabelsEl.innerHTML=h;
       }).catch(function(){agErr(agLabelsEl,null);});
     }
