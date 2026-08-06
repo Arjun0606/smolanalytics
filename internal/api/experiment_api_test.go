@@ -191,7 +191,10 @@ func TestAnUnknownGoalIsRefusedUpFront(t *testing.T) {
 func TestItAsksForBothQuestionsInPlainWords(t *testing.T) {
 	srv := expServer(t, 300, 30, 15)
 	b, _ := json.Marshal(map[string]any{"key": "x"})
-	resp, _ := srv.Client().Post(srv.URL+"/v1/experiments", "application/json", strings.NewReader(string(b)))
+	resp, err := srv.Client().Post(srv.URL+"/v1/experiments", "application/json", strings.NewReader(string(b)))
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer resp.Body.Close()
 	var out map[string]any
 	json.NewDecoder(resp.Body).Decode(&out)

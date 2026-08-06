@@ -168,7 +168,10 @@ func TestExplainCanAnswerAboutOurOwnSamplerEvents(t *testing.T) {
 		}
 	}
 	body, _ := json.Marshal(batch)
-	resp, _ := srv.Client().Post(srv.URL+"/v1/events", "application/json", strings.NewReader(string(body)))
+	resp, err := srv.Client().Post(srv.URL+"/v1/events", "application/json", strings.NewReader(string(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
 	resp.Body.Close()
 
 	got := explain(t, srv, "event=$ai_crawl&days=30")
