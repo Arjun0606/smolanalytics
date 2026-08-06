@@ -1136,7 +1136,11 @@ func buildKPIs(vm *dashVM, evs []event.Event, trendEvent string, days, hours int
 	}
 	sd := vm.SignupsDelta
 	cards = append(cards, kpiCard{
-		Label: vm.StatEventLabel + " · " + rangeWindowLabel(days, hours), Value: comma(vm.Signups), Delta: sd, Dir: dir(sd),
+		// Translated HERE and not at the source, because StatEventLabel is load-bearing twice: it is
+		// this tile's caption AND the raw event name the metric picker and SA_EVENT hand back to
+		// /v1/trends. Translating it at the source would turn "$pageview" into "page view" in a
+		// query string and quietly break the chart.
+		Label: EventLabel(vm.StatEventLabel) + " · " + rangeWindowLabel(days, hours), Value: comma(vm.Signups), Delta: sd, Dir: dir(sd),
 		Spark: buildSpark(dailySeries(evs, func(e event.Event) bool { return e.Name == trendEvent }, days, now, false), endOf(sd)),
 	})
 	if vm.ConvLabel != "" && vm.HasConversion {

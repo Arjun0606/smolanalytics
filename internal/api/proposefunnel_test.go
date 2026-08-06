@@ -194,3 +194,39 @@ func TestADestinationOfOnePersonIsNotConfident(t *testing.T) {
 		t.Errorf("the reason should name the thin sample, got %q", got.Why)
 	}
 }
+
+// The same events must always propose the same funnel.
+//
+// Go randomises map iteration, so picking the entry page with a bare `>` made it a coin flip
+// whenever two pages tied on visitor count — and the entire proposal changed with it. This
+// surfaced as a 1-in-3 flaky test; in production it is a user reloading the page and being shown a
+// different funnel over identical data, which is the exact non-determinism this engine exists to
+// not have.
+func TestTheProposalIsDeterministic(t *testing.T) {
+	base := time.Now().UTC().Add(-24 * time.Hour)
+	var evs []event.Event
+	// Deliberately tied: 40 people touch "/" and 40 touch "/signup".
+	for i := 0; i < 40; i++ {
+		u := fmt.Sprintf("u%d", i)
+		if i%2 == 0 {
+			evs = append(evs, pv(u, "/", base.Add(time.Duration(i)*time.Minute)),
+				pv(u, "/signup", base.Add(time.Duration(i)*time.Minute+time.Minute)))
+		} else {
+			evs = append(evs, pv(u, "/signup", base.Add(time.Duration(i)*time.Minute)),
+				pv(u, "/", base.Add(time.Duration(i)*time.Minute+time.Minute)))
+		}
+	}
+	first := ProposeFunnel(evs)
+	for i := 0; i < 40; i++ { // enough runs that random map order would have shown itself
+		got := ProposeFunnel(evs)
+		if len(got.Steps) != len(first.Steps) {
+			t.Fatalf("run %d proposed %d steps, first run proposed %d", i, len(got.Steps), len(first.Steps))
+		}
+		for j := range got.Steps {
+			if got.Steps[j] != first.Steps[j] {
+				t.Fatalf("run %d step %d = %+v, first run = %+v — the same events proposed a "+
+					"different funnel", i, j, got.Steps[j], first.Steps[j])
+			}
+		}
+	}
+}

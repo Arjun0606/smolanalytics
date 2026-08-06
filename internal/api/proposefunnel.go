@@ -91,7 +91,14 @@ func ProposeFunnel(evs []event.Event) ProposedFunnel {
 	var intents []cand
 	for p, m := range firstAt {
 		c := cand{p, len(m)}
-		if c.n > entry.n {
+		// Ties broken by PATH, never by map order.
+		//
+		// Go randomises map iteration, so `c.n > entry.n` alone makes the entry point a coin flip
+		// whenever two pages have the same visitor count — and the whole proposal changes with it.
+		// The same events would suggest a different funnel on every page load, which is precisely
+		// the non-determinism this engine exists to not have. Caught as a 1-in-3 flaky test; it
+		// would have been a user reloading and seeing a different answer.
+		if c.n > entry.n || (c.n == entry.n && c.path < entry.path) {
 			entry = c
 		}
 		lp := strings.ToLower(p)
