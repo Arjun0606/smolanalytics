@@ -2105,8 +2105,17 @@
          hiding the tool behind having already used it guarantees they keep skipping it.
          This pane exists at zero experiments and says what one would give you. ══════════ -->
     <div class="pane wide" id="pane-experiments" style="order:615" data-stratum="ship">
-      <h3>experiments
-        <span class="sub">· always-valid A/B reads you can check daily without inflating your false-positive rate · computed by /v1/flags/{key}/measure + /health</span></h3>
+      <h3>test a change
+        <span class="sub">· show two versions, find out which one wins — and whether your traffic can even answer that · computed by /v1/experiments</span></h3>
+      <div class="exrow" style="margin-bottom:10px">
+        <input id="expKey" autocomplete="off" placeholder="what are you changing? e.g. pricing_page" aria-label="what are you changing">
+        <select id="expGoal" class="zonesel" aria-label="what counts as a win">
+          <option value="">what counts as a win?</option>
+          {{range .Events}}{{if not (evauto .)}}<option value="{{.}}">{{.}}</option>{{end}}{{end}}
+        </select>
+        <button id="expPlan">How long would it take?</button>
+      </div>
+      <div id="expNew"></div>
       <div id="expOut"><div class="exsummary">…</div></div>
     </div>
 
@@ -4244,6 +4253,63 @@
       e.preventDefault();
       a.click();
     });
+
+
+    // ══ TEST A CHANGE ═════════════════════════════════════════════════════════════════════
+    //
+    // Two questions, and the endpoint derives control, sequential mode, the error guardrail and
+    // the sample size. PostHog's equivalent form asks for control, exposure, goal metric, minimum
+    // detectable effect, statistical method and duration — six decisions a solo developer has no
+    // basis to make, each of which invalidates the result silently when wrong.
+    //
+    // It PLANS first and creates nothing, because the honest answer is often "do not run this" and
+    // a tool that creates before answering has already decided for you.
+    var expKey=document.getElementById('expKey'),expGoal=document.getElementById('expGoal'),
+        expPlanBtn=document.getElementById('expPlan'),expNew=document.getElementById('expNew');
+    // The goal list is server-rendered from .Events with autocapture filtered out, so there is no
+    // fetch and no flash of an empty picker. An instance with no product events gets a select with
+    // only the prompt in it, which is the honest state: you cannot name a win before you track one.
+    if(expGoal && expGoal.options.length <= 1){
+      expGoal.disabled = true;
+      var noGoal = document.createElement('div');
+      noGoal.className = 'agmeta';
+      noGoal.style.marginBottom = '10px';
+      noGoal.innerHTML = 'you have not tracked anything that could count as a win yet. a test needs ' +
+        'one — <b>smolanalytics.track("signup")</b> wherever someone signs up — or there is nothing ' +
+        'for the two versions to compete on.';
+      expGoal.closest('.exrow').parentNode.insertBefore(noGoal, expGoal.closest('.exrow'));
+    }
+    function expPost(start){
+      var key=(expKey.value||'').trim(),goal=expGoal.value;
+      if(!key){expNew.innerHTML='<div class="inote err">name what you are changing — the string your code passes to flag()</div>';expKey.focus();return;}
+      if(!goal){expNew.innerHTML='<div class="inote err">pick what counts as a win, or there is nothing to measure</div>';return;}
+      expNew.innerHTML='<div class="exsummary">working it out from your traffic…</div>';
+      fetch('/v1/experiments',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({key:key,goal:goal,start:!!start})})
+        .then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j};});})
+        .then(function(res){
+          var j=res.j||{};
+          if(!res.ok){expNew.innerHTML='<div class="inote err">'+esc(j.error||'could not plan this')+'</div>';return;}
+          var p=j.plan||{},b=j.baseline||{};
+          if(j.created){
+            expNew.innerHTML='<div class="agrow"><span class="proof">running</span></div>'+
+              '<div class="agmeta" style="margin-top:8px">'+esc(j.read||'')+'</div>';
+            expKey.value='';expLoad();return;
+          }
+          // The verdict LEADS. The sample size is arithmetic; whether to run it is the answer.
+          var refuse=/do not run/.test(j.verdict||'');
+          expNew.innerHTML='<div class="inote'+(refuse?' err':'')+'" style="margin-bottom:10px">'+esc(j.verdict||'')+'</div>'+
+            '<div class="agmeta">at your current rate of <b>'+esc(String(Math.round((b.rate_pct||0)*10)/10))+'%</b>, '+
+            'detecting a <b>'+esc(String(p.mde_pct||5))+'%</b> improvement needs about <b>'+esc(String(p.n_planned||0))+
+            '</b> people. we would use the first version as the baseline, check it in a way that is safe to look at daily, '+
+            'and watch your error rate so a win that broke something does not count as a win.</div>'+
+            '<div class="exrow" style="margin-top:10px"><button id="expGo"'+(refuse?' class="cbtn"':'')+'>'+
+            (refuse?'start it anyway':'Start this test')+'</button></div>';
+          var go=document.getElementById('expGo');
+          if(go)go.onclick=function(){expPost(true);};
+        }).catch(function(){expNew.innerHTML='<div class="inote err">could not reach the server</div>';});
+    }
+    if(expPlanBtn)expPlanBtn.onclick=function(){expPost(false);};
 
     var errOut=document.getElementById('errOut');
     if(errOut){
