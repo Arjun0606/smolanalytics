@@ -151,3 +151,41 @@ func TestDashboardTemplateHygiene(t *testing.T) {
 		}
 	}
 }
+
+// The inventory must cover EVERY pane, not merely name panes that exist.
+//
+// The original check ran one way: each inventoried pane must still be in the template, so a report
+// could not silently disappear. Nothing checked the reverse, so a report could silently APPEAR —
+// and seven did. Every pane added in one session (experiments, accounts, people, derived metrics,
+// alerts, sql, AI crawlers) was unregistered, which means the guard protecting the dashboard was
+// not protecting the newest and least-proven parts of it.
+//
+// A one-directional guard is half a guard, and the half it was missing is the half that matters
+// while a product is being built.
+func TestEveryPaneInTheTemplateIsInventoried(t *testing.T) {
+	var inv struct {
+		Panes []string `json:"panes"`
+	}
+	if err := json.Unmarshal(inventoryJSON, &inv); err != nil {
+		t.Fatalf("inventory json: %v", err)
+	}
+	known := map[string]bool{}
+	for _, p := range inv.Panes {
+		known[p] = true
+	}
+	src, err := os.ReadFile("dashboard.tmpl.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := regexp.MustCompile(`id="(pane-[a-z-]+)"`).FindAllStringSubmatch(string(src), -1)
+	var missing []string
+	for _, m := range found {
+		if !known[m[1]] {
+			missing = append(missing, m[1])
+		}
+	}
+	if len(missing) > 0 {
+		t.Errorf("these panes exist in the template but not in dashboard_inventory.json: %v\n"+
+			"add them, or the loss guard will never notice if they vanish", missing)
+	}
+}

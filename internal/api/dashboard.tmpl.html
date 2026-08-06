@@ -3965,13 +3965,47 @@
           '<th class="n">events</th><th>last seen</th></tr></thead><tbody>';
         people.forEach(function(p){
           var tr=p.traits||{};
-          h+='<tr><td><a class="hlink" href="#" data-user="'+esc(p.distinct_id)+'">'+esc(p.distinct_id)+'</a></td>'+
+          h+='<tr><td><a class="hlink" href="#" data-user="'+esc(p.distinct_id)+'">'+esc(p.distinct_id)+'</a>'+
+            ' <a class="hlink pplerase" href="#" data-erase="'+esc(p.distinct_id)+'" title="erase everything this person ever sent">erase</a></td>'+
             cols.map(function(c){return '<td class="mut">'+(tr[c]!=null?esc(String(tr[c])):'—')+'</td>';}).join('')+
             '<td class="n">'+p.events+'</td><td class="mut">'+esc(String(p.last_seen||'').slice(0,10))+'</td></tr>';
         });
         pplOut.innerHTML=h+'</tbody></table><div class="agmeta" style="margin-top:10px">every value here is the LAST-KNOWN one, decided by timestamp and not by arrival order — a week-old event syncing late from an offline phone cannot overwrite today\'s. nothing is stored: these are recomputed from your events on every load, which is why a profile can never disagree with the log.</div>';
       });
     }
+
+    // GDPR erasure, from the page.
+    //
+    // DELETE /v1/users/{id}/data has existed for a while with no UI anywhere, so answering a
+    // deletion request meant writing curl. That is a legal obligation with a deadline, handed to
+    // someone who may have never used curl — the exact "built but unreachable" gap, with the
+    // highest stakes of any of them.
+    document.addEventListener('click', function (e) {
+      var a = e.target.closest && e.target.closest('[data-erase]');
+      if (!a) return;
+      e.preventDefault();
+      var id = a.getAttribute('data-erase');
+      // Names the person AND the consequence. "Are you sure?" is not informed consent for an
+      // irreversible deletion, and this one cannot be undone from a backup either — the point of
+      // erasure is that the rows are gone.
+      if (!window.confirm('Erase every event ' + id + ' ever sent?\n\nThis rewrites the event log ' +
+        'and cannot be undone. Their events disappear from every report, including past ones.')) return;
+      a.textContent = 'erasing…';
+      fetch('/v1/users/' + encodeURIComponent(id) + '/data', { method: 'DELETE' })
+        .then(function (r) { return r.json().then(function (j) { return { st: r.status, j: j }; }); })
+        .then(function (res) {
+          if (res.st >= 400) { a.textContent = 'failed'; a.title = (res.j && res.j.error) || 'could not erase'; return; }
+          var row = a.closest('tr');
+          if (row) {
+            row.style.opacity = '.45';
+            // Says what happened rather than just vanishing: a row that silently disappears leaves
+            // the operator unable to tell erasure from a rendering bug, on the one action where
+            // they may later have to prove it happened.
+            row.querySelector('td').innerHTML = '<span class="mut">erased · ' + esc(String(res.j && res.j.deleted || 0)) + ' events removed</span>';
+          }
+        })
+        .catch(function () { a.textContent = 'failed'; });
+    });
 
     // ══ DERIVED METRICS ═══════════════════════════════════════════════════════════════
     var fmRun=document.getElementById('fmRun'),fmOut=document.getElementById('fmOut');
