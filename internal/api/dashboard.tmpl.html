@@ -1551,7 +1551,7 @@
           <option value="strict" {{if eq .FunnelOrder "strict"}}selected{{end}}>strictly consecutive</option>
           <option value="unordered" {{if eq .FunnelOrder "unordered"}}selected{{end}}>any order</option>
         </select>
-        <span style="text-transform:none;letter-spacing:0">· each step counts {{if .GrainProp}}<b>accounts</b> (by {{.GrainProp}}) that reached it — an account counts once anyone in it does{{else}}users who reached it{{end}} along this path, so a step can read below that event's raw total in the chart · computed by /v1/funnel</span>{{if .GrainProp}}<a class="hlink" style="margin-left:8px" href="{{.GrainOffHref}}" title="count individual people again, keeping this window and these filters">count people instead</a>{{end}}</h3>
+        <span style="text-transform:none;letter-spacing:0">· each step counts {{if .GrainProp}}<b>accounts</b> (by {{.GrainProp}}) that reached it — an account counts once anyone in it does{{else}}people who reached it{{end}} along this path, so a step can read below that event's raw total in the chart · computed by /v1/funnel</span>{{if .GrainProp}}<a class="hlink" style="margin-left:8px" href="{{.GrainOffHref}}" title="count individual people again, keeping this window and these filters">count people instead</a>{{end}}</h3>
       {{if .FunnelIsGuessed}}
       <div class="agmeta" style="margin-bottom:12px">
         nobody has told us what counts as success here, so these are just the three things the
@@ -1574,7 +1574,7 @@
         {{if not .First}}<div class="fdrop">↓ {{.PctPrev}}% continue · {{.Dropped}} dropped</div>{{end}}
         <div class="fstep"><div class="fbarwrap" data-whostep="{{.Event}}" title="click: the people who reached this step"><div class="fbar" style="width:{{.PctTop}}%"></div><div class="fmeta"><span class="fname">{{ev .Event}}</span><span class="fnums"><span class="c">{{.Count}}</span><span class="p">{{.PctTop}}%</span></span></div></div></div>
       {{else}}
-        <div class="exsummary">no funnel yet. a funnel is two or more named events in the order you expect people to do them, so track at least a second one and this builds itself: signup, activate, checkout are picked up automatically when they exist, and any other pair is one question away in the ask bar above ("funnel from X to Y"). the steps count users who reached each one along this path, never raw event totals.</div>
+        <div class="exsummary">no funnel yet. a funnel is two or more named events in the order you expect people to do them, so track at least a second one and this builds itself: signup, activate, checkout are picked up automatically when they exist, and any other pair is one question away in the ask bar above ("funnel from X to Y"). the steps count people who reached each one along this path, never raw event totals.</div>
       {{end}}
     </div>
 

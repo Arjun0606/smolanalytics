@@ -371,11 +371,11 @@ func GenerateForFunnel(evs []event.Event, pageSteps []funnel.Step) []Finding {
 			sev = "warn"
 		}
 		title := fmt.Sprintf("Day-1 retention %d%%", p1)
-		detail := fmt.Sprintf("of %d users past day 1 (any activity counts as returning).", size1)
+		detail := fmt.Sprintf("of %d people past day 1 (any activity counts as returning).", size1)
 		if size7 >= minSample {
 			p7 := int(float64(d7)/float64(size7)*100 + 0.5)
 			title = fmt.Sprintf("Day-1 retention %d%%, day-7 %d%%", p1, p7)
-			detail = fmt.Sprintf("of %d users past day 1 (%d past day 7), any activity counts as returning.", size1, size7)
+			detail = fmt.Sprintf("of %d people past day 1 (%d past day 7), any activity counts as returning.", size1, size7)
 		}
 		out = append(out, Finding{Severity: sev, Kind: KindRetention, Rate: p1, N: size1,
 			Title: title, Detail: qualify(detail, size1)})

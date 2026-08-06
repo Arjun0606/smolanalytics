@@ -135,11 +135,11 @@ func TestAnUninstrumentedGroupPropertyIsAnErrorNotAnEmptyReport(t *testing.T) {
 func TestTheDashboardNamesTheUnitItActuallyCounted(t *testing.T) {
 	srv := b2bServer(t)
 	plain := getBody(t, srv, "/")
-	if !strings.Contains(plain, "counts users who reached it") {
-		t.Fatal("the ordinary funnel should still say it counts users")
+	if !strings.Contains(plain, "counts people who reached it") {
+		t.Fatal("the ordinary funnel should still say it counts people")
 	}
 	acct := getBody(t, srv, "/?grain=company")
-	if strings.Contains(acct, "counts users who reached it") {
+	if strings.Contains(acct, "counts people who reached it") {
 		t.Fatal("the funnel is counting accounts and still says users")
 	}
 	if !strings.Contains(acct, "counts <b>accounts</b>") {

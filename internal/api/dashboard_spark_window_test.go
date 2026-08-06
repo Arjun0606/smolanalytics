@@ -110,7 +110,15 @@ func TestCustomRangeSparkIsDrawnOverThatRange(t *testing.T) {
 
 	url := fmt.Sprintf("/?from=%s&to=%s", start.Format("2006-01-02"), start.AddDate(0, 0, 6).Format("2006-01-02"))
 	page := renderWindowDash(t, st, url)
-	card := page[strings.Index(page, "Visitors ·"):]
+	// Located by the KPI's label. It read "Visitors ·" until the page settled on ONE noun for a
+	// person — it had been using visitors, users, people and accounts for the same thing across
+	// five different totals. Checked rather than sliced blind: a missing label used to return -1
+	// and panic with "slice bounds out of range", which says nothing about what actually changed.
+	at := strings.Index(page, "People ·")
+	if at < 0 {
+		t.Fatalf("no People KPI card in the rendered page — the tile label moved again")
+	}
+	card := page[at:]
 	if j := strings.Index(card, "</div></div>"); j > 0 {
 		card = card[:j]
 	}

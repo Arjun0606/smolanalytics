@@ -171,8 +171,8 @@ func TestQuietWindowDoesNotClaimTheSDKIsMissing(t *testing.T) {
 	if strings.Contains(page, "no <b>$pageview</b> yet") {
 		t.Error("a six-hour window on a site with 300 pageviews claims no $pageview has ever landed, and tells the operator to reinstall a working SDK")
 	}
-	if !strings.Contains(page, "Visitors ·") {
-		t.Error("the Visitors KPI card vanished because the window was quiet — the row silently loses a card")
+	if !strings.Contains(page, "People ·") {
+		t.Error("the People KPI card vanished because the window was quiet — the row silently loses a card")
 	}
 	if !strings.Contains(page, "no pageviews landed in the last") {
 		t.Error("nothing on the page says the window is simply quiet, which is the one fact the reader needs")

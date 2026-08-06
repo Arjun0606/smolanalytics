@@ -1125,7 +1125,12 @@ func buildKPIs(vm *dashVM, evs []event.Event, trendEvent string, days, hours int
 	if vm.HasWeb {
 		d := vm.VisitorsDelta
 		cards = append(cards, kpiCard{
-			Label: "Visitors · " + rangeWindowLabel(days, hours), Value: comma(vm.Visitors), Delta: d, Dir: dir(d),
+			// "People", not "visitors": the page used four nouns for one thing (visitors, users,
+			// people, accounts) across five totals, and one cold reader answered "how many people
+			// use my product?" with "somewhere between 128 and 136, I think." Reconciling the
+			// NUMBERS is a separate fix; sharing one word is what makes the numbers comparable
+			// enough to notice when they disagree.
+			Label: "People · " + rangeWindowLabel(days, hours), Value: comma(vm.Visitors), Delta: d, Dir: dir(d),
 			Spark: buildSpark(dailySeries(evs, func(e event.Event) bool { return e.Name == "$pageview" }, days, now, true), endOf(d)),
 		})
 	}
@@ -1137,7 +1142,7 @@ func buildKPIs(vm *dashVM, evs []event.Event, trendEvent string, days, hours int
 	if vm.ConvLabel != "" && vm.HasConversion {
 		cards = append(cards, kpiCard{Label: vm.ConvLabel, Value: fmt.Sprintf("%d%%", vm.OverallConv), Accent: true})
 	}
-	cards = append(cards, kpiCard{Label: "Users · all time", Value: comma(vm.TotalUsers), Spark: buildSpark(cumulativeUserSeries(evs, days, now), "")})
+	cards = append(cards, kpiCard{Label: "People · all time", Value: comma(vm.TotalUsers), Spark: buildSpark(cumulativeUserSeries(evs, days, now), "")})
 	vm.KPIs = cards
 }
 
