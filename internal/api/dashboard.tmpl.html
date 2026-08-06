@@ -2800,15 +2800,41 @@
     var SA_RM = !!(window.matchMedia && matchMedia('(prefers-reduced-motion:reduce)').matches);
     function saScrollTo(el){ el.scrollIntoView({behavior:SA_RM?'auto':'smooth',block:'start'}); }
     function saFlash(el){ if(!el)return; el.classList.remove('hit'); void el.offsetWidth; el.classList.add('hit'); }
+    // EVERY RAIL ITEM MUST REVEAL ITS TARGET BEFORE SCROLLING TO IT.
+    //
+    // One-view mode hides every pane outside the current section with display:none, and
+    // scrollIntoView on a display:none element does nothing at all — no scroll, no error, no
+    // feedback. So clicking any report in the rail that lived in a different section was a dead
+    // click. Most of the rail, most of the time.
+    //
+    // That is the worst class of bug this page can have: not a wrong number, a control that
+    // silently ignores you. A number you distrust you can go and check; a button that does
+    // nothing just teaches you the product is broken and there is nothing to check.
+    //
+    // saReveal switches to the section that owns the target first, so the jump lands whether or
+    // not one-view mode is on and whichever section it happens to be showing.
+    function saReveal(el){
+      if(!el)return;
+      var deck=document.querySelector('.deck');
+      if(!deck||!deck.classList.contains('viewmode'))return; // all panes visible already
+      var key=el.getAttribute('data-stratum');
+      if(!key){
+        var owner=el.closest&&el.closest('[data-stratum]');
+        if(owner)key=owner.getAttribute('data-stratum');
+      }
+      if(key&&!el.classList.contains('pane--on'))saSetView(key,true);
+    }
     function saJumpToPane(id){
       var el=document.getElementById(id);
       if(!el)return false;
+      saReveal(el);
       saScrollTo(el); saFlash(el);
       return true;
     }
     function saJumpToSection(id){
       var el=document.getElementById(id);
       if(!el)return false;
+      saReveal(el);
       saScrollTo(el); saFlash(el);
       return true;
     }

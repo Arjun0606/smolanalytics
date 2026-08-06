@@ -2363,7 +2363,10 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		}
 		vm.BySource = rows
 		vm.HasSource = len(rows) > 0
-		vm.SourceTitle = trendEvent + " by channel"
+		// EventLabel, or an autocapture name leaks into a heading: the rail read "$pageview by
+		// channel". Everywhere else on this page $pageview is called "page view", so the one place
+		// a reader meets the raw name is a nav label, with no context to decode it.
+		vm.SourceTitle = EventLabel(trendEvent) + " by channel"
 	}
 
 	if segProp != "" {
