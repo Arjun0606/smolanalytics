@@ -143,3 +143,104 @@ func firstIntAfter(s, pattern string) int {
 	}
 	return n
 }
+
+// THE HEADLINE TOTALS, ON THE TWO SURFACES THAT OPEN A SESSION.
+//
+// The retention check above was written for the verdict-vs-ask-bar divergence and did not reach
+// either of these, so both kept counting the robot long after that was fixed:
+//
+//   - the dashboard's "People · all time" tile, built on distinctUsers(), which counted every
+//     DistinctID including $crawler and $sampler
+//   - the MCP overview tool, whose own description says "Call this first to orient" — so every
+//     agent session opened on inflated total_users and active_users_7d, and everything the agent
+//     reasoned afterwards was anchored to them
+//
+// A sampler identity arrives daily and never misses a day, which is the most flattering possible
+// shape for any actives or retention figure. The assertion is a ceiling of REAL seeded people,
+// because the exact figure is not the point — being above it at all means the robot is in there.
+func TestHeadlineTotalsNeverCountTheSampler(t *testing.T) {
+	st := memory.New()
+	s := New(st)
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+
+	const realPeople = 12
+	now := time.Now().UTC()
+	var batch []map[string]any
+	for i := 0; i < realPeople; i++ {
+		for d := 0; d < 5; d++ {
+			batch = append(batch, map[string]any{
+				"name": "$pageview", "distinct_id": fmt.Sprintf("real%d", i),
+				"timestamp":  now.AddDate(0, 0, -d).Format(time.RFC3339),
+				"properties": map[string]any{"path": "/"},
+			})
+		}
+	}
+	// the robot, every day, under both synthetic identities
+	for d := 0; d < 30; d++ {
+		at := now.AddDate(0, 0, -d).Format(time.RFC3339)
+		batch = append(batch, map[string]any{"name": "$ai_crawl", "distinct_id": "$crawler", "timestamp": at})
+		batch = append(batch, map[string]any{"name": "$geo_check", "distinct_id": "$sampler", "timestamp": at})
+		batch = append(batch, map[string]any{"name": "$site_readable", "distinct_id": "$sampler", "timestamp": at})
+	}
+	body, _ := json.Marshal(batch)
+	res, err := http.Post(srv.URL+"/v1/events", "application/json", strings.NewReader(string(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := res.StatusCode
+	res.Body.Close()
+	if code >= 300 {
+		t.Fatalf("seed ingest failed with %d", code)
+	}
+
+	evs, err := st.Range(time.Time{}, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scoped := query.Apply(evs, nil)
+
+	if got := distinctUsers(scoped); got != realPeople {
+		t.Errorf("distinctUsers counts %d, but only %d real people were seeded — this is what the "+
+			"dashboard's \"People · all time\" tile is built from", got, realPeople)
+	}
+
+	// The MCP tool an agent is told to call first — reached over the real transport, so this
+	// covers the wiring an editor actually uses and not just the function underneath it.
+	call, _ := json.Marshal(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "overview", "arguments": map[string]any{}},
+	})
+	mr, merr := http.Post(srv.URL+"/mcp", "application/json", strings.NewReader(string(call)))
+	if merr != nil {
+		t.Fatal(merr)
+	}
+	defer mr.Body.Close()
+	var env struct {
+		Result struct {
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"result"`
+	}
+	if derr := json.NewDecoder(mr.Body).Decode(&env); derr != nil {
+		t.Fatalf("overview call did not return JSON-RPC: %v", derr)
+	}
+	if len(env.Result.Content) == 0 {
+		t.Fatalf("overview returned no content (status %d)", mr.StatusCode)
+	}
+	var ov struct {
+		TotalUsers    int `json:"total_users"`
+		ActiveUsers7d int `json:"active_users_7d"`
+	}
+	if uerr := json.Unmarshal([]byte(env.Result.Content[0].Text), &ov); uerr != nil {
+		t.Fatalf("overview payload was not JSON: %v (%.120s)", uerr, env.Result.Content[0].Text)
+	}
+	if ov.TotalUsers > realPeople {
+		t.Errorf("MCP overview reports %d total users against %d real people — the first number an "+
+			"agent ever sees is inflated by this tool's own robot", ov.TotalUsers, realPeople)
+	}
+	if ov.ActiveUsers7d > realPeople {
+		t.Errorf("MCP overview reports %d weekly actives against %d real people", ov.ActiveUsers7d, realPeople)
+	}
+}

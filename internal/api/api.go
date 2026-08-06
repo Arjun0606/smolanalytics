@@ -1154,9 +1154,19 @@ func serverError(w http.ResponseWriter, where string, err error) {
 }
 
 // distinctUsers counts unique DistinctIDs across events.
+// distinctUsers counts PEOPLE, which is why it drops this tool's own writes first.
+//
+// It did not, and it is what "People · all time" on the dashboard and the ask bar's people totals
+// are both built from. The GEO runner and crawler recorder write under two synthetic ids
+// ($crawler, $sampler) on a daily schedule, so both were counted as users — and as users who
+// return every single day, which is the most flattering possible shape for a retention number.
+//
+// Filtering by event NAME rather than by id is deliberate and matches every other report: a
+// sampler identity only ever emits sampler events, so dropping those events drops the identity,
+// and a real person is never at risk of being filtered for having an unusual id.
 func distinctUsers(evs []event.Event) int {
 	seen := map[string]bool{}
-	for _, e := range evs {
+	for _, e := range query.WithoutSampler(evs) {
 		seen[e.DistinctID] = true
 	}
 	return len(seen)

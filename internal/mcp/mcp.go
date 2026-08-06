@@ -1455,6 +1455,11 @@ func (s *Server) toolOverview(evs []event.Event) (string, error) {
 	act1, act2 := map[string]bool{}, map[string]bool{}
 	byName1, byName2 := map[string]int{}, map[string]int{}
 	events7 := 0
+	// Not the raw scope. This tool's own writes arrive daily under two synthetic ids, so without
+	// this they were counted here as users AND as weekly-actives that never miss a week — in the
+	// tool whose own description says "Call this first to orient". Every agent session therefore
+	// opened on inflated totals, and everything the agent said afterwards was anchored to them.
+	evs = query.WithoutSampler(evs)
 	for _, e := range evs {
 		seen[e.DistinctID] = true
 		switch {
