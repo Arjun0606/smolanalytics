@@ -34,7 +34,7 @@ func TestThisToolsOwnWritesAreNotPeople(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		batch = append(batch,
 			map[string]any{"name": "$ai_crawl", "distinct_id": "$crawler",
-				"timestamp": now.Add(-time.Duration(i) * time.Minute).Format(time.RFC3339),
+				"timestamp":  now.Add(-time.Duration(i) * time.Minute).Format(time.RFC3339),
 				"properties": map[string]any{"crawler": "GPTBot", "path": "/"}},
 			map[string]any{"name": "$geo_check", "distinct_id": "$sampler",
 				"timestamp": now.Add(-time.Duration(i) * time.Minute).Format(time.RFC3339)},
