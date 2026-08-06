@@ -181,3 +181,66 @@ func TestExplainCanAnswerAboutOurOwnSamplerEvents(t *testing.T) {
 			"input: %v", got["verdict"])
 	}
 }
+
+// ASK == MCP, ON THE ONE TOOL WHERE THEY DID NOT.
+//
+// explain_change read the raw store while /v1/explain applied production scope — the only tool
+// across the entire MCP surface that skipped it. So "why did signup change?" could name a
+// different day, or a different size of move, depending on whether it was asked from an editor or
+// from the page, about the same event on the same instance.
+//
+// It is the footer promise ("ask == dashboard == MCP, all from one report engine") failing on the
+// feature that exists to explain a number, which is the worst possible place for it: a reader who
+// notices the discrepancy learns not to trust the explanation OR the number.
+func TestExplainAgreesBetweenHTTPAndMCP(t *testing.T) {
+	srv := explainServer(t, 40, 10) // a real, detectable drop
+
+	var got map[string]any
+	mustJSON(t, getBody(t, srv, "/v1/explain?event=signup&days=30"), &got)
+	httpChange, _ := got["change"].(map[string]any)
+	if httpChange == nil || httpChange["found"] != true {
+		t.Fatalf("the HTTP side found no change to compare against: %v", got["verdict"])
+	}
+
+	call, _ := json.Marshal(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{
+			"name":      "explain_change",
+			"arguments": map[string]any{"event": "signup", "days": 30},
+		},
+	})
+	resp, err := srv.Client().Post(srv.URL+"/mcp", "application/json", strings.NewReader(string(call)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var env struct {
+		Result struct {
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"result"`
+	}
+	if derr := json.NewDecoder(resp.Body).Decode(&env); derr != nil {
+		t.Fatalf("explain_change did not return JSON-RPC: %v", derr)
+	}
+	if len(env.Result.Content) == 0 {
+		t.Fatalf("explain_change returned no content (status %d)", resp.StatusCode)
+	}
+	var mcpOut map[string]any
+	if uerr := json.Unmarshal([]byte(env.Result.Content[0].Text), &mcpOut); uerr != nil {
+		t.Fatalf("explain_change payload was not JSON: %v", uerr)
+	}
+	mcpChange, _ := mcpOut["change"].(map[string]any)
+	if mcpChange == nil {
+		t.Fatal("explain_change returned no change block")
+	}
+
+	for _, k := range []string{"found", "day", "direction"} {
+		if fmt.Sprint(httpChange[k]) != fmt.Sprint(mcpChange[k]) {
+			t.Errorf("%s disagrees: /v1/explain says %v, MCP explain_change says %v — one question, "+
+				"two answers, decided by which doorway you came through",
+				k, httpChange[k], mcpChange[k])
+		}
+	}
+}

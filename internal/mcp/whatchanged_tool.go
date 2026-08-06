@@ -44,6 +44,12 @@ func (s *Server) toolExplainChange(args json.RawMessage) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// Production scope, like every other tool in this package. This one read the raw store — the
+	// single exception across the whole MCP surface — so asking "why did signup change" from an
+	// editor could name a different day, or a different size of move, than /v1/explain answered
+	// about the same event on the same instance. Two answers to one question, split by which
+	// doorway you came through.
+	evs = applyDefaultScope(evs)
 	if err := s.checkEvents(a.Event); err != nil {
 		return "", err
 	}
