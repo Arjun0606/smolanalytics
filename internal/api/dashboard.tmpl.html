@@ -120,6 +120,27 @@
   .pbctl{display:flex;align-items:center;gap:10px;margin-top:8px}
   .pbscrub{flex:1;accent-color:var(--brand)}
   .pbnote{margin-top:6px}
+  /* ONE THING AT A TIME — the deck is a menu until you pick a section.
+     30 reports rendered at once made this page 21 screens tall. Correct cards, wall of them. */
+  .deck.viewmode > .pane, .deck.viewmode > .stratum{display:none}
+  .deck.viewmode > .pane.pane--on{display:block}
+  .deck.viewmode > .stratum.pane--on{display:flex}
+  .deckmenu{display:none;grid-column:1/-1}
+  .deckmenu.pane--on{display:block}
+  .deckmenu-h{font-family:var(--sans);font-weight:800;font-size:var(--fs-disp);line-height:var(--lh-disp);
+    letter-spacing:-.02em;color:var(--fg);margin:var(--sec-pad) 0 16px;
+    box-shadow:inset 0 -.42em 0 var(--brand-soft);display:inline-block;padding:0 2px}
+  .deckmenu-g{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:var(--gap)}
+  .deckcard{display:flex;flex-direction:column;gap:4px;padding:16px 17px;background:var(--s1);
+    border:var(--bw) solid var(--edge);box-shadow:var(--sh-2);text-decoration:none;
+    transition:box-shadow var(--t-base) var(--ease),transform var(--t-base) var(--ease)}
+  .deckcard:hover{box-shadow:var(--sh-3);transform:translate(-3px,-3px)}
+  .deckcard .dct{font-family:var(--sans);font-weight:800;font-size:var(--fs-lead);color:var(--fg);letter-spacing:-.01em}
+  .deckcard .dcd{font-size:var(--fs-lbl);color:var(--sec);line-height:1.5}
+  .deckcard .dcn{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut)}
+  .backtosummary{display:none}
+  .deck.viewmode .backtosummary{display:inline-flex;grid-column:1/-1;margin:var(--sec-pad) 0 0;align-self:start}
+  .deck.viewmode .deckmenu.pane--on ~ .backtosummary{display:none}
   /* companion globals: keyboard focus, reduced motion, entrances */
   :where(a,button,select,input,summary,[tabindex]):focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   :where(a,button,select,input,summary):focus:not(:focus-visible){outline:none}
@@ -1392,6 +1413,7 @@
        (saBuildDeckIndex) is the ONE map over it: section links that scroll, a scroll-spy
        that reads back where you are. No sticky jump bar, no second router. -->
   <div class="deck">
+    <a class="cbtn backtosummary" href="?" data-view="">&larr; all sections</a>
 
     <!-- SECTION HEADINGS. They are grid SIBLINGS of the cards, never wrappers: every pane
          must stay a direct child of .deck or grid-column and the inline order:N both stop
@@ -4020,6 +4042,100 @@
       sqlRun.addEventListener('click',sqlGo);
       sqlQ.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();sqlGo();}});
     }
+
+
+    // ══ ONE THING AT A TIME ═══════════════════════════════════════════════════════════════
+    //
+    // The deck holds 30 reports. Rendering them all made the page 18,736px — twenty-one screens
+    // — and the owner's verdict after a week of fixes was "it's still a cacophony of info dumped
+    // and I have no clue what's up." He was right, and the individual cards being correct is not
+    // an answer to it: a wall of thirty right answers is still a wall.
+    //
+    // So the default is the SUMMARY — the verdict, the numbers, the chart — and the thirty reports
+    // become a menu. Picking a section shows that section and nothing else. Not a scroll target: a
+    // view. The rail already grouped them; this makes the grouping mean something.
+    //
+    // Panes are hidden with a CLASS, never the hidden attribute, because saBuildDeckIndexGrouped
+    // skips p.hidden — using the attribute would empty the rail of everything you cannot currently
+    // see, which is precisely backwards for navigation.
+    var SA_VIEWS = [
+      { k: 'convert', t: 'did it convert', d: 'funnels, goals, accounts' },
+      { k: 'acquire', t: 'where they came from', d: 'channels, referrers, countries, AI' },
+      { k: 'behave', t: 'what they did here', d: 'pages, journeys, heatmap, sessions' },
+      { k: 'return', t: 'did they come back', d: 'retention, lifecycle, stickiness' },
+      { k: 'ship', t: 'what you shipped', d: 'deploys, flags, experiments, errors' },
+      { k: 'agent', t: 'what your agent did', d: 'tool calls, conversations' },
+      { k: 'raw', t: 'the raw record', d: 'live feed, event stream, SQL' }
+    ];
+
+    function saCountIn(key) {
+      return document.querySelectorAll('.deck > .pane[data-stratum="' + key + '"]').length;
+    }
+
+    // saSetView('' | 'convert' | …). '' is the summary: no reports, just the answer at the top.
+    function saSetView(key, push) {
+      var deck = document.querySelector('.deck');
+      if (!deck) return;
+      deck.classList.add('viewmode');
+      var panes = deck.querySelectorAll('.pane'), heads = deck.querySelectorAll('.stratum');
+      for (var i = 0; i < panes.length; i++) {
+        panes[i].classList.toggle('pane--on', !!key && panes[i].getAttribute('data-stratum') === key);
+      }
+      for (var j = 0; j < heads.length; j++) {
+        heads[j].classList.toggle('pane--on', !!key && heads[j].getAttribute('data-stratum') === key);
+      }
+      var menu = document.getElementById('sadeckmenu');
+      if (menu) menu.classList.toggle('pane--on', !key);
+      // Mark the current section in the rail and the menu, so "where am I" is answerable without
+      // reading the reports themselves.
+      var links = document.querySelectorAll('[data-view]');
+      for (var m = 0; m < links.length; m++) {
+        links[m].classList.toggle('on', links[m].getAttribute('data-view') === (key || ''));
+      }
+      if (push) {
+        var u = new URL(window.location.href);
+        if (key) u.searchParams.set('view', key); else u.searchParams.delete('view');
+        // replaceState, not pushState: switching sections is changing what you are looking at,
+        // not navigating somewhere. Filling the back button with view toggles would make Back
+        // stop meaning "the page I came from".
+        history.replaceState(null, '', u.pathname + u.search);
+      }
+      window.scrollTo({ top: 0, behavior: 'auto' });
+    }
+
+    // The menu that replaces the wall. Rendered once, into the deck, above everything.
+    function saBuildDeckMenu() {
+      var deck = document.querySelector('.deck');
+      if (!deck || document.getElementById('sadeckmenu')) return;
+      var el = document.createElement('div');
+      el.id = 'sadeckmenu';
+      el.className = 'deckmenu';
+      var h = '<div class="deckmenu-h">what do you want to look at?</div><div class="deckmenu-g">';
+      for (var i = 0; i < SA_VIEWS.length; i++) {
+        var v = SA_VIEWS[i], n = saCountIn(v.k);
+        if (!n) continue; // a section with no reports on THIS instance is not an option
+        h += '<a class="deckcard" href="?view=' + v.k + '" data-view="' + v.k + '">' +
+          '<span class="dct">' + esc(v.t) + '</span>' +
+          '<span class="dcd">' + esc(v.d) + '</span>' +
+          '<span class="dcn">' + n + ' report' + (n === 1 ? '' : 's') + '</span></a>';
+      }
+      el.innerHTML = h + '</div>';
+      deck.insertBefore(el, deck.firstChild);
+    }
+
+    (function saInitViews() {
+      saBuildDeckMenu();
+      var start = new URL(window.location.href).searchParams.get('view') || '';
+      saSetView(start, false);
+      // One delegated handler for the menu, the rail's section links, and the back-to-summary
+      // control, so there is a single place that decides what "showing a section" means.
+      document.addEventListener('click', function (e) {
+        var a = e.target.closest && e.target.closest('[data-view]');
+        if (!a) return;
+        e.preventDefault();
+        saSetView(a.getAttribute('data-view'), true);
+      });
+    })();
 
     var errOut=document.getElementById('errOut');
     if(errOut){
