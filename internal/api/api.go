@@ -814,6 +814,15 @@ func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadRequest, "every event needs a name")
 			return
 		}
+		// Size caps, checked BEFORE anything is stored. The write key is public — it ships in the
+		// SDK on every page — so without this, any visitor to a customer's site could post
+		// well-formed authenticated events until the box died. 413 rather than 400: the request is
+		// valid, it is the payload that is too large, and the distinction tells an SDK whether
+		// retrying could ever help.
+		if err := checkEventSize(batch[i]); err != nil {
+			writeErr(w, http.StatusRequestEntityTooLarge, err.Error())
+			return
+		}
 		if uaBrowser != "" || uaOS != "" {
 			if batch[i].Properties == nil {
 				batch[i].Properties = map[string]any{}
