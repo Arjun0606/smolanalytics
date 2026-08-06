@@ -172,16 +172,23 @@ func openServeStore() (store.Store, func() error, error) {
 		return s, s.Close, nil
 	}
 
-	fs, err := file.Open(dataPath())
+	// The cap is read BEFORE the log is opened and passed INTO the replay, not applied after it.
+	// Applying it afterwards meant boot loaded the whole log first, so an oversized log OOM-killed
+	// the process during Open on every restart and the env var meant to prevent exactly that was
+	// read after the crash point.
+	maxEvents := envInt("SMOLANALYTICS_MAX_EVENTS")
+	fs, err := file.OpenCapped(dataPath(), maxEvents)
 	if err != nil {
 		return nil, nil, err
 	}
 	log.Printf("smolanalytics: %d events loaded from %s", fs.Count(), dataPath())
-	if n := envInt("SMOLANALYTICS_MAX_EVENTS"); n > 0 {
-		if err := fs.SetMaxEvents(n); err != nil {
+	if maxEvents > 0 {
+		// Still set it on the store so the cap keeps applying to events that arrive at runtime;
+		// the replay bound above only covers boot.
+		if err := fs.SetMaxEvents(maxEvents); err != nil {
 			return nil, nil, err
 		}
-		log.Printf("smolanalytics: memory cap — keeping the newest %d events resident", n)
+		log.Printf("smolanalytics: memory cap — keeping the newest %d events resident", maxEvents)
 	}
 	return fs, fs.Close, nil
 }

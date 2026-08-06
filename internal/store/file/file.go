@@ -33,7 +33,23 @@ type Store struct {
 
 // Open replays the log at path (creating it and any parent dirs if absent) and
 // returns a store ready to append. Corrupt trailing lines are skipped, not fatal.
-func Open(path string) (*Store, error) {
+// Open replays the log with NO memory bound. Kept for callers that have no cap to apply.
+func Open(path string) (*Store, error) { return OpenCapped(path, 0) }
+
+// OpenCapped replays the log while holding at most ~maxEvents resident.
+//
+// THE BUG THIS FIXES: the cap used to be applied AFTER Open returned, by SetMaxEvents in main.go.
+// So boot loaded the entire log into memory first and only then trimmed it — which means the
+// moment a log grew past what the box could hold, the process OOM-killed during Open, on every
+// single restart, forever. No env var could rescue it, because the env var was read after the
+// crash point. A cap whose whole purpose is surviving an oversized log could not be reached by an
+// oversized log.
+//
+// Trimming matches enforceCapLocked exactly: positional, keeping the newest by log order, with the
+// same slack band so the work is amortised rather than per-event. The trim COPIES into a fresh
+// slice rather than resliceing, because a reslice keeps the original backing array alive and would
+// bound nothing at all — the exact mistake that makes this kind of fix look like it works.
+func OpenCapped(path string, maxEvents int) (*Store, error) {
 	if dir := filepath.Dir(path); dir != "" && dir != "." {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return nil, err
@@ -68,6 +84,7 @@ func Open(path string) (*Store, error) {
 					// newline (the record landed, the '\n' did not). Keep it — dropping it
 					// would lose an event we already acked — and re-terminate it below.
 					s.index(e)
+					s.trimDuringReplay(maxEvents)
 					endOfLastRecord = offset
 					tailUnterminated = !terminated
 				} else if terminated {
@@ -128,6 +145,38 @@ func (s *Store) index(e event.Event) {
 	}
 	s.evs = append(s.evs, e)
 	s.names[e.Name] = true
+}
+
+// trimDuringReplay bounds memory while Open is still reading the log.
+//
+// The copy is load-bearing. `s.evs = s.evs[over:]` would leave the original backing array
+// referenced by the new slice header, so the memory the trim exists to release stays allocated for
+// the life of the process — a bound that measures well and does nothing.
+//
+// The dedupe index is rebuilt from what survives. Dropping an id from `seen` means a re-ingest of
+// that ancient event would be accepted again; that is the same trade compactToLocked already
+// makes, and preferring a bounded map over perfect dedupe of events too old to be resident is the
+// only choice that keeps boot survivable.
+func (s *Store) trimDuringReplay(maxEvents int) {
+	if maxEvents <= 0 {
+		return
+	}
+	slack := maxEvents / 10
+	if slack < 1000 {
+		slack = 1000
+	}
+	if len(s.evs) <= maxEvents+slack {
+		return
+	}
+	kept := make([]event.Event, maxEvents)
+	copy(kept, s.evs[len(s.evs)-maxEvents:])
+	s.evs = kept
+	s.seen = make(map[string]bool, maxEvents)
+	for i := range kept {
+		if kept[i].ID != "" {
+			s.seen[kept[i].ID] = true
+		}
+	}
 }
 
 func (s *Store) Ingest(events ...event.Event) error {

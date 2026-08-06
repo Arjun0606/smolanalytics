@@ -1,6 +1,7 @@
 package file
 
 import (
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -134,4 +135,82 @@ func TestMaxEventsCapBoundsMemoryAndPersists(t *testing.T) {
 		t.Fatalf("reopen mismatch: disk=%d resident-before=%d", s2.Count(), persisted)
 	}
 	_ = s2.Close()
+}
+
+// A log larger than the cap must not be fully resident at boot.
+//
+// THE BUG: SetMaxEvents used to run AFTER Open returned, so boot loaded the entire log and only
+// then trimmed. The moment a log outgrew the box, the process OOM-killed during Open on every
+// restart, forever — and SMOLANALYTICS_MAX_EVENTS, the setting whose entire purpose is surviving
+// that, was read after the crash point. A cap unreachable by the condition it exists for.
+func TestOpenCappedBoundsMemoryDuringReplayNotAfterIt(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "big.log")
+
+	// Write more events than the cap. 12000 against a cap of 500 clears the 1000-event slack band
+	// several times over, so the trim must actually have run more than once.
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := time.Now().UTC().Add(-24 * time.Hour)
+	for i := 0; i < 12000; i++ {
+		if err := s.Ingest(event.Event{
+			ID: fmt.Sprintf("e%d", i), Name: "pageview", DistinctID: "u1",
+			Timestamp: base.Add(time.Duration(i) * time.Second),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.Close()
+
+	reopened, err := OpenCapped(path, 500)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+
+	// Bounded, not exact: the trim fires on the slack band, so the resident count sits between the
+	// cap and cap+slack. What matters is that it is nowhere near 12000.
+	got := reopened.Count()
+	if got > 500+1000 {
+		t.Fatalf("resident count %d — the replay was not bounded, which is the whole bug", got)
+	}
+	if got < 500 {
+		t.Fatalf("resident count %d is below the cap — the trim threw away too much", got)
+	}
+
+	// It must keep the NEWEST, matching enforceCapLocked's positional semantics. If it kept the
+	// oldest, a capped instance would show a dashboard frozen in the past.
+	evs, err := reopened.Range(time.Time{}, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := evs[len(evs)-1]
+	if last.ID != "e11999" {
+		t.Fatalf("newest resident event is %q, want e11999 — the trim kept the wrong end", last.ID)
+	}
+}
+
+// An uncapped Open must behave exactly as it always did.
+func TestOpenWithoutACapKeepsEverything(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "all.log")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3000; i++ {
+		s.Ingest(event.Event{ID: fmt.Sprintf("e%d", i), Name: "e", DistinctID: "u", Timestamp: time.Now().UTC()})
+	}
+	s.Close()
+
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if n := reopened.Count(); n != 3000 {
+		t.Fatalf("uncapped Open kept %d of 3000 — it must not bound anything", n)
+	}
 }
