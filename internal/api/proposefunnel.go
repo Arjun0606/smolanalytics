@@ -166,8 +166,37 @@ func ProposeFunnel(evs []event.Event) ProposedFunnel {
 	if len(steps) > 0 && steps[len(steps)-1].People*4 > steps[0].People {
 		pf.Confident = false // barely narrows: probably navigation, not a funnel
 	}
+	// A FLOOR on the destination, not just a narrowing test.
+	//
+	// Caught by looking at the proposal on a live instance: "/ 87 → /contact 5 → /signup 1" passed
+	// every narrowing check and was presented as confident. One person is not a pattern, it is an
+	// anecdote — and a funnel whose destination has a single visitor produces a conversion rate
+	// that swings from 1% to 2% when one more person arrives. Narrowing says the SHAPE is right;
+	// it says nothing about whether there is enough there to believe.
+	if len(steps) > 0 && steps[len(steps)-1].People < 5 {
+		pf.Confident = false
+	}
 	if !pf.Confident {
-		pf.Why = "these pages do not narrow the way a funnel does, so this is a guess worth checking"
+		// Two different doubts, and conflating them would tell someone to check the wrong thing.
+		if len(steps) > 0 && steps[len(steps)-1].People < 5 {
+			pf.Why = "only " + itoaSmall(steps[len(steps)-1].People) + " reached the last step, which is " +
+				"too few to call a pattern — the shape looks right but there is not enough here to trust yet"
+		} else {
+			pf.Why = "these pages do not narrow the way a funnel does, so this is a guess worth checking"
+		}
 	}
 	return pf
+}
+
+// itoaSmall renders a small count without pulling in strconv for one call site.
+func itoaSmall(n int) string {
+	if n <= 0 {
+		return "nobody"
+	}
+	digits := ""
+	for n > 0 {
+		digits = string(rune('0'+n%10)) + digits
+		n /= 10
+	}
+	return digits
 }

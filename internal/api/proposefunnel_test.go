@@ -161,3 +161,36 @@ func TestArrivingAtTheEndFirstDoesNotCount(t *testing.T) {
 			"there first, which is not conversion", last.People)
 	}
 }
+
+// A destination reached by one person is an anecdote, not a pattern.
+//
+// Caught on the live instance, not in a fixture: "/ 87 → /contact 5 → /signup 1" passed every
+// narrowing check and was presented as confident. A conversion rate resting on one visitor swings
+// from 1% to 2% when a second arrives. Narrowing says the SHAPE is right; it says nothing about
+// whether there is enough there to believe.
+func TestADestinationOfOnePersonIsNotConfident(t *testing.T) {
+	base := time.Now().UTC().Add(-48 * time.Hour)
+	var evs []event.Event
+	for i := 0; i < 87; i++ {
+		u := fmt.Sprintf("u%d", i)
+		evs = append(evs, pv(u, "/", base.Add(time.Duration(i)*time.Minute)))
+		if i < 5 {
+			evs = append(evs, pv(u, "/contact", base.Add(time.Duration(i)*time.Minute+time.Minute)))
+		}
+		if i == 0 { // exactly one person reaches the end
+			evs = append(evs, pv(u, "/signup", base.Add(time.Duration(i)*time.Minute+2*time.Minute)))
+		}
+	}
+	got := ProposeFunnel(evs)
+	if len(got.Steps) < 2 {
+		t.Fatalf("expected a proposal to still be offered: %+v", got)
+	}
+	if got.Confident {
+		t.Errorf("a funnel ending in 1 person was called confident: %+v", got)
+	}
+	// And the reason must name the SAMPLE, not the shape — those are different doubts and they
+	// send the reader to check different things.
+	if !strings.Contains(got.Why, "too few") {
+		t.Errorf("the reason should name the thin sample, got %q", got.Why)
+	}
+}
