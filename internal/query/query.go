@@ -377,6 +377,15 @@ func toNum(v any) float64 {
 	return n
 }
 
+// ToNum exposes the same coercion for callers that must ship Go's parse rather than re-derive it.
+//
+// The flag definitions bundle sends this value to clients precisely so a browser never runs its
+// own Number() over a comparand: Go and JavaScript disagree on "1_000", "0x10", " 5 " and "", and
+// each disagreement quietly moves a user into a different experiment arm. Exporting the real
+// function is the only way that guarantee holds — a reimplementation in flag/ would be the second
+// definition it exists to prevent.
+func ToNum(v any) float64 { return toNum(v) }
+
 // numOf is toNum with an honesty bit: it reports whether the value WAS a number. gt/lt need
 // that, because a bare 0 for "n/a"/true/{"x":1} is indistinguishable from a real 0 and made
 // every non-numeric event match `lt`. Same shapes as trends.numOf (JSON numbers, Go ints,

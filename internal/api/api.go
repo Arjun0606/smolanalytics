@@ -399,6 +399,9 @@ func (s *Server) Handler() http.Handler {
 	// test could pin it, while measure.go's own note told the reader to go check it.
 	mux.HandleFunc("GET /v1/flags/{key}/health", s.flagHealth)
 	mux.HandleFunc("GET /v1/flags/evaluate", s.evaluateFlags) // public: write-key + CORS, for the SDK
+	// Definitions for local/edge evaluation. Only flags opted in with Local:true appear.
+	mux.HandleFunc("GET /v1/flags/definitions", s.flagDefinitions)
+	mux.HandleFunc("OPTIONS /v1/flags/definitions", s.preflight)
 	mux.HandleFunc("OPTIONS /v1/flags/evaluate", s.preflight)
 	mux.HandleFunc("GET /v1/surveys", s.listSurveys)
 	mux.HandleFunc("POST /v1/surveys", s.saveSurvey)

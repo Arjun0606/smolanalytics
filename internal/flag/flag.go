@@ -40,6 +40,14 @@ type Flag struct {
 	Variants    []Variant `json:"variants,omitempty"`
 	Rules       []Rule    `json:"rules,omitempty"`
 	Measured    bool      `json:"measured,omitempty"`
+	// Local publishes this flag's DEFINITION — including the values inside its targeting rules —
+	// so a browser or edge worker can evaluate it without a round-trip.
+	//
+	// Off by default and opted into per flag, because turning it on is a disclosure, not a
+	// performance setting: `plan in ["enterprise","legacy_pro"]` tells anyone who views source
+	// which customers are on a legacy plan. Any UI for this must describe the consequence rather
+	// than the feature.
+	Local bool `json:"local,omitempty"`
 	// Experiment is the pre-registered analysis plan: which arm is control, what the goal is,
 	// the inference mode, alpha, N*, the guardrails and their margins. Nil means "a flag, not an
 	// experiment" — Measure then falls back to documented defaults and SAYS SO in the report,

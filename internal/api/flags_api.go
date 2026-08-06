@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/flag"
@@ -189,4 +190,39 @@ func (s *Server) flagHealth(w http.ResponseWriter, r *http.Request) {
 	// was actually bucketed, and filtering the population before checking it is how a real
 	// mismatch hides behind the very filter that caused it.
 	writeJSON(w, http.StatusOK, flag.CheckSRM(evs, f, days))
+}
+
+// GET /v1/flags/definitions — the bundle a client or edge worker evaluates locally.
+//
+// Only flags explicitly marked Local are published, because publishing a definition publishes the
+// VALUES inside its targeting rules. See internal/flag/bundle.go for why that is opt-in per flag
+// rather than a key scope.
+//
+// Same public write-key auth as /v1/flags/evaluate: a browser has to be able to fetch it, and the
+// write key is already in the page. The gate that matters is the per-flag opt-in, not this one.
+func (s *Server) flagDefinitions(w http.ResponseWriter, r *http.Request) {
+	setCORS(w)
+	if !s.ingestAuth(r) {
+		writeErr(w, http.StatusUnauthorized, "invalid or missing write key — add Authorization: Bearer <write key>")
+		return
+	}
+	if s.flags == nil {
+		writeJSON(w, http.StatusOK, flag.Bundle{V: 1, F: []flag.BundleFlag{}})
+		return
+	}
+	const ttl = 30 // seconds
+	b := flag.BuildBundle(s.flags.List(), ttl)
+
+	// A conditional request is the whole point. Local evaluation is only cheap if the bundle is
+	// fetched once and then revalidated with a 304 — without this every page load pays for the
+	// definitions again and the round-trip we removed comes back wearing a different hat.
+	etag := `"` + b.ETag + `"`
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", "public, max-age=30")
+	w.Header().Set("Vary", "Origin")
+	if match := r.Header.Get("If-None-Match"); match != "" && strings.Contains(match, b.ETag) {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	writeJSON(w, http.StatusOK, b)
 }
