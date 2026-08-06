@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/event"
+	"github.com/Arjun0606/smolanalytics/internal/query"
 )
 
 // Step is one stage of the funnel, matched by event name.
@@ -304,6 +305,12 @@ func stepMatches(e event.Event, steps []Step, i int, opts Options) bool {
 // behavior, and Compute delegates here so there is ONE matching engine (the
 // agreement guarantee depends on that).
 func ComputeOpts(events []event.Event, steps []Step, window time.Duration, opts Options) Result {
+	// This tool's own writes are not product activity. $ai_crawl (under the synthetic id
+	// "$crawler"), $geo_check and $site_readable are this engine measuring itself, and counting
+	// them here is part of why the dashboard could answer "how many people" with four different
+	// numbers depending which pane you read. The AI-crawler and AI-visibility panes read those
+	// events through their own path, so nothing that should see them loses them.
+	events = query.WithoutSampler(events)
 	if opts.Order == "" {
 		opts.Order = Ordered
 	}

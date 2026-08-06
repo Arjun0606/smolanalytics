@@ -44,6 +44,12 @@ type Result struct {
 // to. unique=true counts distinct users per day instead of raw events. Days with
 // no activity are filled with zero so the line/bars are continuous.
 func Compute(events []event.Event, eventName string, from, to time.Time, unique bool) Result {
+	// This tool's own writes are not product activity. $ai_crawl (under the synthetic id
+	// "$crawler"), $geo_check and $site_readable are this engine measuring itself, and counting
+	// them here is part of why the dashboard could answer "how many people" with four different
+	// numbers depending which pane you read. The AI-crawler and AI-visibility panes read those
+	// events through their own path, so nothing that should see them loses them.
+	events = query.WithoutSampler(events)
 	r := Result{Event: eventName, Unique: unique}
 	perDay := map[int64]map[string]int{} // day -> (user->count) or (""->count)
 	windowUsers := map[string]bool{}     // TRENDS-UNIQUE: range total dedups across the WHOLE window

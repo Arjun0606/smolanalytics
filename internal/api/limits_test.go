@@ -175,3 +175,43 @@ func TestEverySdkEndpointAnswersCrossOrigin(t *testing.T) {
 		}
 	}
 }
+
+// "Your app is healthy" and "you never installed this" are opposite conclusions, and an empty list
+// looks identical for both.
+//
+// An hour after pasting a snippet the second is far likelier, and the page used to assert the
+// first: "an empty list here is good news, not a missing integration." Someone could walk away
+// believing their app was fine while nothing was watching it.
+func TestAnEmptyErrorListSaysWhetherAnythingIsWatching(t *testing.T) {
+	// Never received an error.
+	st := memory.New()
+	srv := httptest.NewServer(New(st).Handler())
+	defer srv.Close()
+	body, _ := json.Marshal([]map[string]any{
+		{"name": "$pageview", "distinct_id": "u1", "timestamp": time.Now().UTC().Format(time.RFC3339)},
+	})
+	r1, _ := srv.Client().Post(srv.URL+"/v1/events", "application/json", strings.NewReader(string(body)))
+	r1.Body.Close()
+
+	var out map[string]any
+	mustJSON(t, getBody(t, srv, "/v1/errors?days=30"), &out)
+	if out["ever_received"] != false {
+		t.Fatalf("no error has ever arrived, but ever_received = %v — the pane cannot tell the "+
+			"reader that nothing is watching", out["ever_received"])
+	}
+
+	// Now one arrives, long ago. The window is empty but reporting demonstrably works.
+	old := time.Now().UTC().AddDate(0, 0, -90)
+	body2, _ := json.Marshal([]map[string]any{
+		{"name": "$exception", "distinct_id": "u1", "timestamp": old.Format(time.RFC3339),
+			"properties": map[string]any{"message": "TypeError: x is not a function"}},
+	})
+	r2, _ := srv.Client().Post(srv.URL+"/v1/events", "application/json", strings.NewReader(string(body2)))
+	r2.Body.Close()
+
+	var out2 map[string]any
+	mustJSON(t, getBody(t, srv, "/v1/errors?days=7"), &out2)
+	if out2["ever_received"] != true {
+		t.Fatalf("an error arrived 90 days ago, so reporting works; ever_received = %v", out2["ever_received"])
+	}
+}

@@ -88,3 +88,28 @@ func EventGloss(name string) string {
 // separates "your product has no funnel yet" from "your product's funnel is bad", and the verdict
 // card gets that wrong in the loudest possible way when it cannot tell them apart.
 func EventIsAuto(name string) bool { return strings.HasPrefix(name, "$") }
+
+// everReceived reports whether this instance has EVER seen an event by that name.
+//
+// The distinction between "none in this window" and "none, ever" is the difference between two
+// opposite messages, and the dashboard was printing the same sentence for both. "no $exception
+// events in this window" means either your app is healthy or you never installed error tracking —
+// and an hour after pasting a snippet the second is far likelier, while the page lets the reader
+// walk away believing the first.
+//
+// store.Names() is the all-time index, maintained as events are indexed, so this costs a map
+// lookup rather than a scan.
+func (s *Server) everReceived(name string) bool {
+	names, err := s.store.Names()
+	if err != nil {
+		// Unknown is not the same as never. Claiming "you never installed this" because an index
+		// read failed would be a confident lie, so fall back to the softer branch.
+		return true
+	}
+	for _, n := range names {
+		if n == name {
+			return true
+		}
+	}
+	return false
+}

@@ -57,5 +57,12 @@ func (s *Server) apiErrors(w http.ResponseWriter, r *http.Request) {
 			out["impact_funnel"] = names
 		}
 	}
+	// Whether error tracking is INSTALLED, as distinct from whether errors happened.
+	//
+	// An empty list means either "your app is healthy" or "you never installed this", and those are
+	// opposite conclusions. An hour after pasting a snippet the second is far likelier, and a page
+	// that asserts the first lets someone walk away believing their app is fine when nothing was
+	// ever watching it.
+	out["ever_received"] = s.everReceived("$exception")
 	writeJSON(w, http.StatusOK, out)
 }

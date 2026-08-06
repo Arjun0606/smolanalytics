@@ -4010,11 +4010,17 @@
         if(j.error){errOut.innerHTML='<div class="inote err">'+esc(j.error)+'</div>';return;}
         var gs=j.groups||[];
         if(!gs.length){
-          // "no errors" and "no error tracking" look identical in an empty list and need
-          // opposite reactions, so say which one this is.
-          errOut.innerHTML='<div class="agmeta">no <b>$exception</b> events in this window. '+
-            'the browser SDK reports uncaught errors and rejected promises automatically, so this '+
-            'fills in on its own — an empty list here is good news, not a missing integration.</div>';
+          // "no errors" and "no error tracking" look identical in an empty list and need OPPOSITE
+          // reactions. The comment above this code used to say exactly that while the code went on
+          // to assert the good-news reading anyway. It branches now.
+          errOut.innerHTML = j.ever_received
+            ? '<div class="agmeta">no errors in this window. this instance has recorded errors '+
+              'before, so error reporting is working — an empty list here is good news.</div>'
+            : '<div class="agmeta">we have never received an error from this project, so we cannot '+
+              'tell you whether your app is breaking. this does not mean it is healthy — it means '+
+              'nothing is watching. the browser SDK reports uncaught errors and rejected promises '+
+              'on its own once it is on the page, so if you have installed it and shipped since, '+
+              'this fills in by itself.</div>';
           return;
         }
         var impact={};(j.impact||[]).forEach(function(i){impact[i.fingerprint]=i;});
