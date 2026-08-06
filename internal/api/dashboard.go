@@ -1129,6 +1129,15 @@ func buildKPIs(vm *dashVM, evs []event.Event, trendEvent string, days, hours int
 		}
 		return ""
 	}
+	// The window, phrased the way /v1/rows phrases it. The first version hardcoded days=N, and
+	// the 6h/12h presets force rangeDays to 1 — so on a six-hour window "show the rows" opened a
+	// FULL DAY of rows underneath a six-hour number. A proof link that disagrees with the figure
+	// it proves is worse than no proof link: it spends the trust it was built to earn.
+	proofWindow := "days=" + strconv.Itoa(days)
+	if hours > 0 {
+		proofWindow = "hours=" + strconv.Itoa(hours)
+	}
+
 	var cards []kpiCard
 	if vm.HasWeb {
 		d := vm.VisitorsDelta
@@ -1139,6 +1148,16 @@ func buildKPIs(vm *dashVM, evs []event.Event, trendEvent string, days, hours int
 			// NUMBERS is a separate fix; sharing one word is what makes the numbers comparable
 			// enough to notice when they disagree.
 			Label: "People · " + rangeWindowLabel(days, hours), Value: comma(vm.Visitors), Delta: d, Dir: dir(d),
+			// unique=1, because this tile counts PEOPLE and the default recomputation counts
+			// events. Without it the proof would open 2,336 pageview rows under a figure of
+			// 1,753 people and call it verification.
+			//
+			// This number went unproven while the one beside it was proven, which made the
+			// headline figure — the first thing anyone reads — the one thing they could not
+			// check. It could not be wired earlier for a real reason: web.Compute and /v1/rows
+			// windowed differently, so the link would have contradicted the tile. Unifying the
+			// window (web.CalendarDays) is what made this honest, not a decision to show more.
+			Proof: "event=" + url.QueryEscape("$pageview") + "&" + proofWindow + "&unique=1",
 			Spark: buildSpark(dailySeries(evs, func(e event.Event) bool { return e.Name == "$pageview" }, days, now, true), endOf(d)),
 		})
 	}
@@ -1149,7 +1168,7 @@ func buildKPIs(vm *dashVM, evs []event.Event, trendEvent string, days, hours int
 		// /v1/trends. Translating it at the source would turn "$pageview" into "page view" in a
 		// query string and quietly break the chart.
 		Label: EventLabel(vm.StatEventLabel) + " · " + rangeWindowLabel(days, hours), Value: comma(vm.Signups), Delta: sd, Dir: dir(sd),
-		Proof: "event=" + url.QueryEscape(vm.StatEventLabel) + "&days=" + strconv.Itoa(days),
+		Proof: "event=" + url.QueryEscape(vm.StatEventLabel) + "&" + proofWindow,
 		Spark: buildSpark(dailySeries(evs, func(e event.Event) bool { return e.Name == trendEvent }, days, now, false), endOf(sd)),
 	})
 	if vm.ConvLabel != "" && vm.HasConversion {
@@ -1888,6 +1907,20 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	// "last N days". The old rolling now−N·24h start pulled in a clipped partial leading
 	// day, rendering a phantom bar and a headline that disagreed with /v1 and MCP.
 	curFrom, curTo := endT.AddDate(0, 0, -rangeDays), rangeAsof
+	if !customRange && rangeHours == 0 {
+		// The comment above was AN INTENTION, not the code: endT is nowT untruncated, so
+		// endT.AddDate(0,0,-N) is a rolling now−N·24h — the very thing it says it is not. The
+		// dashboard therefore windowed differently from /v1/trends and /v1/rows, which do
+		// truncate. web.CalendarDays is the one definition now; a preset defers to it instead
+		// of restating it, which is how the two drifted apart in the first place.
+		//
+		// A custom ?from=&to= range is left alone: its bounds are the dates the user typed, and
+		// re-aligning them to "today" would answer a different question than the one asked.
+		curFrom, curTo = web.CalendarDays(rangeDays, endT)
+		if !rangeAsof.IsZero() {
+			curTo = rangeAsof
+		}
+	}
 	if rangeHours > 0 {
 		curFrom = endT.Add(-time.Duration(rangeHours) * time.Hour)
 	}

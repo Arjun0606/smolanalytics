@@ -391,9 +391,15 @@ func parseTrendWindow(r *http.Request) (from, to time.Time, err error) {
 		}
 		// align to whole calendar days: "last N days" is N complete day-buckets ending
 		// today, so the first daily bucket is a full day, never a clipped mid-day window
-		// that renders a phantom leading 0 on the chart. from = midnight, (n-1) days back.
-		today := now.Truncate(24 * time.Hour)
-		return today.AddDate(0, 0, -(n - 1)), now, nil
+		// that renders a phantom leading 0 on the chart.
+		//
+		// web.CalendarDays holds the rule, and this defers to it rather than restating it.
+		// When the two were stated separately they drifted: web.Compute used a rolling N×24h
+		// and /v1/web answered 1,779 visitors where /v1/rows answered 1,753, at the same
+		// instant for the same window. A duplicated definition is a divergence waiting to
+		// happen; there is one now.
+		from, to := web.CalendarDays(n, now)
+		return from, to, nil
 	}
 	parse := func(key string) (time.Time, error) {
 		v := q.Get(key)

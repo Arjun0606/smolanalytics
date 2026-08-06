@@ -5,6 +5,7 @@
 package web
 
 import (
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -86,9 +87,40 @@ const pageview = "$pageview"
 // now, and the two must not be derived from the same clock — see the live block below.
 var wallClock = func() time.Time { return time.Now().UTC() }
 
-// Compute builds the overview over the trailing `days` (default 30) as of `asof`.
+// CalendarDays is THE definition of "the last N days" for this product: N complete calendar day
+// buckets ending today, i.e. [midnight (N-1) days ago, now).
+//
+// It exists because there were TWO definitions, and they disagreed on live data. The dashboard
+// windowed by calendar days (via ComputeRange) while Compute windowed by a rolling N×24h, which
+// reaches back a further (24h - time-of-day) — about ten hours at midday. Measured on the demo at
+// the same instant, same days=30, same event: /v1/web reported 1,779 visitors and 2,371 pageviews
+// while /v1/rows reported 1,753 and 2,336. Same question, two answers.
+//
+// That is not a rounding difference, it is the product's core promise failing: "ask == dashboard
+// == MCP, all from one report engine" is on the footer, and web_overview (MCP), /v1/web (HTTP) and
+// the public share page all used the rolling form while the dashboard beside them used the
+// calendar form. It is the same defect as the sampler leak that once had the verdict card saying
+// 4% retention while the ask bar said 6% three inches above it.
+//
+// Calendar is the correct side to converge on: parseTrendWindow already documents why (a rolling
+// window clips the oldest bucket mid-day and renders a phantom leading partial day on every
+// chart), and every trend, funnel, retention and rows query in the product already uses it. One
+// definition now, so a surface can only diverge on purpose.
+func CalendarDays(days int, asof time.Time) (from, to time.Time) {
+	if asof.IsZero() {
+		asof = wallClock()
+	}
+	asof = asof.UTC()
+	if days <= 0 {
+		days = 30
+	}
+	return asof.Truncate(24*time.Hour).AddDate(0, 0, -(days - 1)), asof
+}
+
+// Compute builds the overview over the last `days` calendar days (default 30) as of `asof`.
 func Compute(evs []event.Event, days int, asof time.Time) Result {
-	return ComputeWindow(evs, time.Duration(days)*24*time.Hour, asof)
+	from, to := CalendarDays(days, asof)
+	return ComputeRange(evs, from, to)
 }
 
 // ComputeWindow is Compute over an arbitrary window rather than a whole number of days, so
@@ -122,7 +154,11 @@ func ComputeRange(evs []event.Event, from, to time.Time) Result {
 	if !from.Before(to) {
 		from = to.Add(-30 * 24 * time.Hour)
 	}
-	days := int(to.Sub(from).Hours() / 24)
+	// Rounded UP, because PeriodDays labels how many day-buckets the window covers, not how many
+	// whole 24h spans have elapsed inside it. A calendar window is (N-1) days plus today-so-far,
+	// so truncating told a user who asked for 30 days that they were looking at 29 — the range
+	// control disagreeing with the caption directly beneath it.
+	days := int(math.Ceil(to.Sub(from).Hours() / 24))
 	if days < 1 {
 		days = 1
 	}
