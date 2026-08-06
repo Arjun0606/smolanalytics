@@ -401,6 +401,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/flags/evaluate", s.evaluateFlags) // public: write-key + CORS, for the SDK
 	// Definitions for local/edge evaluation. Only flags opted in with Local:true appear.
 	mux.HandleFunc("GET /v1/flags/definitions", s.flagDefinitions)
+	// Two questions in, a designed experiment out — or an honest refusal when the traffic cannot
+	// carry one. The statistics were reachable only by hand-writing a plan before this.
+	mux.HandleFunc("POST /v1/experiments", s.apiCreateExperiment)
 	mux.HandleFunc("OPTIONS /v1/flags/definitions", s.preflight)
 	mux.HandleFunc("OPTIONS /v1/flags/evaluate", s.preflight)
 	mux.HandleFunc("GET /v1/surveys", s.listSurveys)
