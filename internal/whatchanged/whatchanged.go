@@ -231,3 +231,30 @@ func Rank(commits []Commit, changeDay string) []Commit {
 	})
 	return out
 }
+
+// TrimLeadingSilence drops the run of zero-days at the START of a window, before the event had
+// ever been sent.
+//
+// THE BUG THIS FIXES IS THE WORST ONE THIS ENDPOINT COULD HAVE. Series deliberately emits a zero
+// for every day with no events, because a metric going to zero is the most important change there
+// is and a series that omits those days cannot see it. That is right — but it means a window that
+// starts before the event existed opens with zeros, and the step detector reads the day the event
+// FIRST APPEARED as a change: "signups jumped 100% on the 11th".
+//
+// Which is to say: everyone in their first month here — every new user, on the day they install —
+// asks why a number changed and gets told a fabricated story about their own install date. That is
+// the single most expensive moment to be confidently wrong in, and it is precisely the "the
+// dashboard tells me things that aren't true" complaint this whole sweep exists to end.
+//
+// Only LEADING zeros go. A zero run in the middle or at the end is a real metric dying, and that
+// must stay detectable — it is the finding people most need.
+func TrimLeadingSilence(pts []Point) []Point {
+	i := 0
+	for i < len(pts) && pts[i].Count == 0 {
+		i++
+	}
+	if i == len(pts) {
+		return nil // never sent in this window at all
+	}
+	return pts[i:]
+}

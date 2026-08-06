@@ -1004,6 +1004,11 @@
   .aginf{display:inline-flex;align-items:center;gap:5px;border:1px dashed var(--line3);color:var(--mut2);
     font-family:var(--mono);font-size:var(--fs-lbl);text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:99px}
   .agmeta{font-family:var(--mono);font-size:var(--fs-body);line-height:1.65;color:var(--mut);max-width:80ch}
+  /* Daily bars under a detected change. Deliberately not the .spark SVG: this one has to mark a
+     single day, and one flagged bar in a row of flat ones is the whole point of the picture. */
+  .whybars{display:flex;align-items:flex-end;gap:2px;height:44px;margin:10px 0 4px}
+  .whybars i{flex:1;min-width:2px;background:var(--line3);display:block}
+  .whybars i.hit{background:var(--accent)}
   .agmeta b{color:var(--fg);font-weight:600}
   .agrow{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0 0 10px}
   .sk.agnull .skv{color:var(--dis)}
@@ -2096,6 +2101,26 @@
     <div class="pane wide" id="pane-errors" style="order:625" data-stratum="ship">
       <h3>errors<span class="sub"> · what broke, ranked by how many people it hit · computed by /v1/errors</span></h3>
       <div id="errOut"><div class="exsummary">…</div></div>
+    </div>
+
+    <!-- ══ WHY DID THIS CHANGE ══════════════════════════════════════════════════════════
+         Root-cause analysis. Mixpanel's version of this is their flagship feature and is
+         metered at ten runs a day on the free plan; ours has existed for versions and was
+         reachable only through the explain_change MCP tool — invisible to anyone who does
+         not drive this product from an editor. A chart that shows a number falling and no
+         way to ask why is the exact "cacophony of info" complaint: information without a
+         next move. This is the next move. ═══════════════════════════════════════════════ -->
+    <div class="pane wide" id="pane-explain" style="order:610" data-stratum="ship">
+      <h3>why did this change?
+        <span class="sub">· pick a number that moved and we find the day it moved, how big the move was, and what shipped near it · computed by /v1/explain</span></h3>
+      <div class="exrow" style="margin-bottom:10px">
+        <select id="expWhat" class="zonesel" aria-label="which number changed">
+          <option value="">which number changed?</option>
+          {{range .Events}}<option value="{{.}}">{{ev .}}</option>{{end}}
+        </select>
+        <button id="expWhy">Find the change</button>
+      </div>
+      <div id="whyOut"></div>
     </div>
 
     <!-- ══ EXPERIMENTS ══════════════════════════════════════════════════════════════════
@@ -4310,6 +4335,58 @@
         }).catch(function(){expNew.innerHTML='<div class="inote err">could not reach the server</div>';});
     }
     if(expPlanBtn)expPlanBtn.onclick=function(){expPost(false);};
+
+    // ── WHY DID THIS CHANGE ────────────────────────────────────────────────────────────
+    // The answer LEADS with the verdict in a sentence, because "signups fell 34% on the
+    // 12th" is the finding and the daily series is only the evidence for it. Mixpanel puts
+    // the chart first and makes you read it; a solo developer at 11pm should not have to.
+    //
+    // And it never claims a cause. Deploys near the change are listed as suspects with the
+    // word "correlation" said out loud — the alternative is a tool that confidently blames
+    // the wrong commit, which is worse than one that says nothing.
+    var whatSel=document.getElementById('expWhat'),whyBtn=document.getElementById('expWhy'),
+        whyOut=document.getElementById('whyOut');
+    if(whyBtn&&whatSel)whyBtn.onclick=function(){
+      var name=whatSel.value;
+      if(!name){whyOut.innerHTML='<div class="inote err">pick which number you want explained</div>';return;}
+      whyOut.innerHTML='<div class="exsummary">looking for the day it moved…</div>';
+      fetch('/v1/explain?event='+encodeURIComponent(name)+'&days='+encodeURIComponent(SA_DAYS))
+        .then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j};});})
+        .then(function(res){
+          var j=res.j||{};
+          if(!res.ok){whyOut.innerHTML='<div class="inote err">'+esc(j.error||'could not check that')+'</div>';return;}
+          var c=j.change||{},h='';
+          if(!c.found){
+            whyOut.innerHTML='<div class="inote">'+esc(j.verdict||'no single day stands out — this number has been steady.')+'</div>';
+            return;
+          }
+          h+='<div class="inote'+(c.direction==='drop'?' err':'')+'" style="margin-bottom:10px">'+esc(c.verdict||'')+'</div>';
+          // The series, as bars, with the day it changed marked. Evidence for the sentence
+          // above it — never the answer on its own, which is the mistake every other tool
+          // makes when it hands you a chart and calls that root-cause analysis.
+          var pts=j.series||[],max=0,i;
+          for(i=0;i<pts.length;i++){if(pts[i].count>max)max=pts[i].count;}
+          if(max>0){
+            h+='<div class="whybars" role="img" aria-label="daily counts, with the day of the change marked">';
+            for(i=0;i<pts.length;i++){
+              var p=pts[i],ht=Math.max(2,Math.round((p.count/max)*40)),hit=(p.day===c.day);
+              h+='<i class="'+(hit?'hit':'')+'" style="height:'+ht+'px" title="'+esc(p.day)+': '+esc(String(p.count))+'"></i>';
+            }
+            h+='</div><div class="agmeta">the marked bar is the day it changed.</div>';
+          }
+          var ds=j.deploys_near||[];
+          if(ds.length){
+            h+='<div class="agmeta" style="margin-top:10px"><b>shipped within two days:</b></div>';
+            for(i=0;i<ds.length&&i<5;i++){
+              var d=ds[i];
+              h+='<div class="agrow"><span class="proof">'+esc((d.sha||'').slice(0,7)||d.source||'deploy')+'</span> '+
+                 esc(d.message||d.ref||'')+'</div>';
+            }
+          }
+          h+='<div class="agmeta" style="margin-top:10px">'+esc(j.read||'')+'</div>';
+          whyOut.innerHTML=h;
+        }).catch(function(){whyOut.innerHTML='<div class="inote err">could not reach the server</div>';});
+    };
 
     var errOut=document.getElementById('errOut');
     if(errOut){

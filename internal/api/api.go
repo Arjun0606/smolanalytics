@@ -386,6 +386,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/goals", s.createGoal)
 	mux.HandleFunc("DELETE /v1/goals/{id}", s.deleteGoal)
 	mux.HandleFunc("GET /v1/deploys", s.listDeploys)
+	// Root-cause analysis over HTTP. Existed for a long time as MCP-only, which meant it was
+	// invisible to anyone not driving this from an editor.
+	mux.HandleFunc("GET /v1/explain", s.apiExplain)
 	mux.HandleFunc("POST /v1/deploys", s.createDeploy)
 	mux.HandleFunc("DELETE /v1/deploys/{id}", s.deleteDeploy)
 	mux.HandleFunc("GET /v1/flags", s.listFlags)

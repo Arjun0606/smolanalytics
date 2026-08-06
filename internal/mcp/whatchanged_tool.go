@@ -49,7 +49,10 @@ func (s *Server) toolExplainChange(args json.RawMessage) (string, error) {
 	}
 
 	now := time.Now().UTC()
-	series := whatchanged.Series(evs, a.Event, a.Days, now)
+	// Trimmed, or the first day this event was ever sent reads as a 100% jump — see
+	// TrimLeadingSilence. That fires for everyone in their first month, which is when they are
+	// least able to tell a real finding from an artefact of the window.
+	series := whatchanged.TrimLeadingSilence(whatchanged.Series(evs, a.Event, a.Days, now))
 	change := whatchanged.Detect(series)
 
 	out := map[string]any{

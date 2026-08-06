@@ -12,6 +12,7 @@
     "pane-errors",
     "pane-events",
     "pane-experiments",
+    "pane-explain",
     "pane-flags",
     "pane-formula",
     "pane-funnel",
