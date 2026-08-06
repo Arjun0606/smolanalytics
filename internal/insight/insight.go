@@ -339,7 +339,32 @@ func GenerateForFunnel(evs []event.Event, pageSteps []funnel.Step) []Finding {
 	// observed day N count (the retention-triangle rule).
 	d1, size1 := retention.DayN(rr, 1, now)
 	d7, size7 := retention.DayN(rr, 7, now)
-	if size1 >= minSample {
+	// WITHOUT identify, a retention number is a measurement of instrumentation, not of the product.
+	//
+	// Every visit from an anonymous browser looks like a brand new person, so someone returning
+	// tomorrow is indistinguishable from a stranger arriving. The rate that produces is a FLOOR,
+	// and it is always terrible. The dashboard was printing "Day-1 retention 4%" as a WARNING —
+	// the second loudest thing on the page — next to a pane quietly admitting that nothing has
+	// ever called identify. Two facts, two panes, never connected, and the reader is left to
+	// conclude their product is failing when the tracker simply cannot see the same person twice.
+	identified := false
+	for _, e := range evs {
+		if e.Name == "$identify" {
+			identified = true
+			break
+		}
+	}
+	if size1 >= minSample && !identified {
+		out = append(out, Finding{
+			Severity: "note", // nothing is wrong; something is unmeasurable
+			Kind:     KindRetention,
+			N:        size1,
+			Title:    "We can't tell yet whether people come back",
+			Detail: "nothing has called identify, so every visit looks like a brand new anonymous " +
+				"browser and someone returning is indistinguishable from a stranger arriving. call " +
+				"identify when someone logs in and this becomes a real number.",
+		})
+	} else if size1 >= minSample {
 		p1 := int(float64(d1)/float64(size1)*100 + 0.5)
 		sev := "info"
 		if p1 < 20 {
