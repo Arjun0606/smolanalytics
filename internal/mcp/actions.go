@@ -72,18 +72,33 @@ func (s *Server) SetAlerts(st *alert.Store)      { s.alerts = st }
 func init() {
 	toolList = append(toolList,
 		map[string]any{
-			"name":        "create_alert",
-			"description": "Set up an alert: fire when an event's count over a rolling window crosses a threshold (checked every 5 minutes, delivered to the instance's webhooks). Use for 'tell me if signups drop below 10 a day' (op=lt, window_hours=24) or 'alert on a checkout spike'. Add a webhook first if none exists or the alert has nowhere to fire.",
+			"name": "create_alert",
+			"description": "Set up an alert (checked every 5 minutes, delivered to the instance's webhooks). " +
+				"PREFER kind=anomaly or kind=relative — they need no threshold, so they do not go stale as the " +
+				"product grows, and the user does not have to already know what the number should be. " +
+				"anomaly: fire when the last 24h deviates hard from the prior baseline (no threshold, no op). " +
+				"relative: fire on a percent change against the previous window (threshold is the percent, " +
+				"e.g. op=lt threshold=30 for 'signups fell 30%'). " +
+				"ratio: watch a share rather than a count — set `against` for the denominator " +
+				"(e.g. event=$exception against=$pageview op=gt threshold=5). " +
+				"count: a fixed threshold, only when the user genuinely knows the number. " +
+				"Add a webhook first if none exists, or the alert has nowhere to fire.",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"name":         map[string]any{"type": "string", "description": "Human label, e.g. 'signup drop'"},
-					"event":        map[string]any{"type": "string", "description": "Exact event name to watch"},
-					"op":           map[string]any{"type": "string", "enum": []string{"gt", "lt"}, "description": "Fire when count is greater-than (spike) or less-than (drop) the threshold"},
-					"threshold":    map[string]any{"type": "number"},
-					"window_hours": map[string]any{"type": "integer", "description": "Rolling window in hours (e.g. 24)"},
+					"name":  map[string]any{"type": "string", "description": "Human label, e.g. 'signup drop'"},
+					"event": map[string]any{"type": "string", "description": "Exact event name to watch"},
+					"kind": map[string]any{"type": "string", "enum": []string{"anomaly", "relative", "ratio", "count"},
+						"description": "Default anomaly. Three of the four need no threshold you have to keep current."},
+					"against":      map[string]any{"type": "string", "description": "ratio only: the denominator event."},
+					"op":           map[string]any{"type": "string", "enum": []string{"gt", "lt"}, "description": "Greater-than (spike) or less-than (drop). Ignored by anomaly."},
+					"threshold":    map[string]any{"type": "number", "description": "count: the raw number. relative: the percent change. ratio: the percent share. Ignored by anomaly."},
+					"window_hours": map[string]any{"type": "integer", "description": "Rolling window in hours (default 24)."},
 				},
-				"required": []string{"name", "event", "op", "threshold", "window_hours"},
+				// Only name and event are required now. Demanding op+threshold forced every alert
+				// into the `count` shape — the one kind that goes stale — and made the other three
+				// impossible to create, while the dashboard advertised all four.
+				"required": []string{"name", "event"},
 			},
 		},
 		map[string]any{
@@ -219,6 +234,8 @@ func (s *Server) callAction(name string, args json.RawMessage) (bool, string, er
 		var p struct {
 			Name        string  `json:"name"`
 			Event       string  `json:"event"`
+			Kind        string  `json:"kind"`
+			Against     string  `json:"against"`
 			Op          string  `json:"op"`
 			Threshold   float64 `json:"threshold"`
 			WindowHours int     `json:"window_hours"`
@@ -226,16 +243,40 @@ func (s *Server) callAction(name string, args json.RawMessage) (bool, string, er
 		if err := unmarshalArgs(args, &p); err != nil {
 			return true, "", err
 		}
-		if p.Op != "gt" && p.Op != "lt" {
-			return true, "", fmt.Errorf(`op must be "gt" (spike) or "lt" (drop), got %q`, p.Op)
+		// Default to anomaly, the kind that asks nothing of the user. The tool previously REQUIRED
+		// op and threshold, which made `count` the only creatable shape — while the dashboard's
+		// own alerts pane advertised all four kinds and told the reader to create one with this
+		// tool. The instruction could not be followed.
+		if p.Kind == "" {
+			p.Kind = alert.KindAnomaly
+		}
+		switch p.Kind {
+		case alert.KindAnomaly:
+			// No threshold, no op: the detector decides what "wrong" looks like from the baseline.
+		case alert.KindCount, alert.KindRelative, alert.KindRatio:
+			if p.Op != "gt" && p.Op != "lt" {
+				return true, "", fmt.Errorf(`kind %q needs op "gt" (rising) or "lt" (falling), got %q`, p.Kind, p.Op)
+			}
+			if p.Kind == alert.KindRatio && p.Against == "" {
+				return true, "", fmt.Errorf("a ratio alert needs `against` — the denominator event, " +
+					"e.g. event=$exception against=$pageview to watch the share of pageviews that errored")
+			}
+		default:
+			return true, "", fmt.Errorf("unknown kind %q (anomaly, relative, ratio or count)", p.Kind)
 		}
 		if p.WindowHours <= 0 {
-			return true, "", fmt.Errorf("window_hours must be positive, got %d", p.WindowHours)
+			p.WindowHours = 24 // the window nobody has an opinion about
 		}
 		if err := s.knownEvent(p.Event); err != nil {
 			return true, "", err
 		}
-		a, err := s.alerts.Add(alert.Alert{Name: p.Name, Event: p.Event, Op: p.Op, Threshold: p.Threshold, WindowHours: p.WindowHours, Enabled: true})
+		if p.Against != "" {
+			if err := s.knownEvent(p.Against); err != nil {
+				return true, "", err
+			}
+		}
+		a, err := s.alerts.Add(alert.Alert{Name: p.Name, Event: p.Event, KindName: p.Kind, Against: p.Against,
+			Op: p.Op, Threshold: p.Threshold, WindowHours: p.WindowHours, Enabled: true})
 		if err != nil {
 			return true, "", err
 		}

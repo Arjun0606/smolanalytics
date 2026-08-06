@@ -185,3 +185,52 @@ func TestMigrateToolIsAdvertisedAndTellsTheModelToDryRunFirst(t *testing.T) {
 		t.Fatal("the description must say the key is not stored — it is the user's first question")
 	}
 }
+
+// Every alert kind the dashboard advertises must actually be creatable.
+//
+// This shipped broken and it is the exact failure this codebase keeps having: the alerts pane
+// says "three of the four kinds ask nothing of you — create one from your editor with
+// create_alert", and create_alert had no `kind` field at all and REQUIRED op+threshold. So the
+// only creatable shape was `count` — the one kind that goes stale — while the page advertised
+// four. The instruction on screen could not be followed.
+func TestEveryAdvertisedAlertKindCanActuallyBeCreated(t *testing.T) {
+	var found map[string]any
+	for _, tl := range toolList {
+		if tl["name"] == "create_alert" {
+			found = tl
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("create_alert is not in the tool list")
+	}
+	schema := found["inputSchema"].(map[string]any)
+	props := schema["properties"].(map[string]any)
+
+	kind, ok := props["kind"].(map[string]any)
+	if !ok {
+		t.Fatal("create_alert has no `kind` — only count alerts can be made, and the dashboard " +
+			"advertises four kinds")
+	}
+	enum, _ := kind["enum"].([]string)
+	for _, want := range []string{"anomaly", "relative", "ratio", "count"} {
+		var has bool
+		for _, e := range enum {
+			if e == want {
+				has = true
+			}
+		}
+		if !has {
+			t.Errorf("kind %q is advertised on the dashboard but not offered by create_alert", want)
+		}
+	}
+	if _, ok := props["against"]; !ok {
+		t.Error("a ratio alert needs `against` for its denominator, and there is no way to send one")
+	}
+	// Requiring op+threshold is what forced everything into the count shape.
+	for _, r := range schema["required"].([]string) {
+		if r == "threshold" || r == "op" {
+			t.Errorf("%q is required, which makes anomaly alerts impossible — they have no threshold", r)
+		}
+	}
+}
