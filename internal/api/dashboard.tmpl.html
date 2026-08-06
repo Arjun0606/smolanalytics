@@ -4189,7 +4189,10 @@
       { k: 'acquire', t: 'where they came from', d: 'channels, referrers, countries, AI' },
       { k: 'behave', t: 'what they did here', d: 'pages, journeys, heatmap, sessions' },
       { k: 'return', t: 'did they come back', d: 'retention, lifecycle, stickiness' },
-      { k: 'ship', t: 'what you shipped', d: 'deploys, flags, experiments, errors' },
+      // "why a number changed" leads this list on purpose: it is the first question anyone asks and
+      // the last one a dashboard usually answers. A card that counts seven reports but names four
+      // has hidden the best one behind arithmetic.
+      { k: 'ship', t: 'what you shipped', d: 'why a number changed, deploys, flags, experiments, errors' },
       { k: 'agent', t: 'what your agent did', d: 'tool calls, conversations' },
       { k: 'raw', t: 'the raw record', d: 'live feed, event stream, SQL' }
     ];
