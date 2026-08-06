@@ -29,11 +29,26 @@ func TestDeltaDirectionSurvivesTheMultipleForm(t *testing.T) {
 			t.Errorf("deltaDir(%q) = %q, want %q", tc.delta, got, tc.want)
 		}
 	}
-	// every form deltaStr can produce has to classify — this is the pair that drifted apart
-	for _, c := range []struct{ cur, prior int }{{558, 8}, {1000, 10}, {100, 10}, {99, 10}, {150, 100}, {50, 100}} {
+	// Every COMPARABLE form deltaStr produces has to classify — this is the pair that drifted apart.
+	// Priors are at or above minPriorForDelta, because below it deltaStr no longer returns a delta
+	// at all: it says the comparison cannot be made. The original fixtures used priors of 8 and 10,
+	// which is precisely the window where "32x growth" is arithmetic on noise.
+	for _, c := range []struct{ cur, prior int }{{5580, 80}, {1000, 100}, {400, 40}, {990, 99}, {150, 100}, {50, 100}} {
 		d := deltaStr(c.cur, c.prior)
 		if deltaDir(d) == "" {
 			t.Errorf("deltaStr(%d, %d) = %q, which deltaDir cannot classify — it will render with no arrow", c.cur, c.prior, d)
+		}
+	}
+	// And the refusal must NOT classify: it is a sentence explaining that there is nothing to
+	// compare against, so rendering an up-arrow beside it would reassert the very claim it declines
+	// to make.
+	for _, c := range []struct{ cur, prior int }{{558, 8}, {1000, 10}, {128, 4}} {
+		d := deltaStr(c.cur, c.prior)
+		if !strings.Contains(d, "no comparison") {
+			t.Errorf("deltaStr(%d, %d) = %q — a prior this small must refuse, not divide", c.cur, c.prior, d)
+		}
+		if deltaDir(d) != "" {
+			t.Errorf("deltaStr(%d, %d) = %q got an arrow; a refusal has no direction", c.cur, c.prior, d)
 		}
 	}
 }

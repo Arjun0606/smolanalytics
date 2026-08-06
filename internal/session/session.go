@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/event"
+	"github.com/Arjun0606/smolanalytics/internal/query"
 )
 
 const gapMinutes = 30 // inactivity gap that starts a new session
@@ -48,6 +49,15 @@ var now = func() time.Time { return time.Now().UTC() }
 
 // Sessions lists recent sessions across users, newest first, capped at limit (0 = 100).
 func Sessions(evs []event.Event, days, limit int) []Session {
+	// This tool's own writes are not visits. $ai_crawl is recorded under the synthetic distinct_id
+	// "$crawler", so without this the sessions list shows "$crawler" in a column headed VISITOR —
+	// which four people reading this dashboard cold all read as a person named $crawler.
+	//
+	// The same filter already guarded retention, lifecycle, stickiness, paths, people and the
+	// account roll-up. Sessions, funnel, trends and cohorts were never wired to it, which is also a
+	// candidate cause for the spread between the four different "how many people" numbers this page
+	// shows. Every new report that counts distinct ids has to opt in, and forgetting is silent.
+	evs = query.WithoutSampler(evs)
 	if limit <= 0 {
 		limit = 100
 	}

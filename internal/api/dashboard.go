@@ -573,13 +573,29 @@ func parseChip(raw string) (prop string, op query.Op, val string, ok bool) {
 //
 // A prior of zero returns nothing at all rather than "+100%" or "∞": there is no percentage
 // change from nothing, and inventing one is the kind of number someone screenshots.
+// minPriorForDelta is the smallest prior-window total worth comparing against.
+//
+// Below it, a "change" is arithmetic on noise. Four visits last week and 128 this week is not
+// 32x growth, it is an empty prior window with a rounding error in it — and on a freshly
+// installed tracker the prior window is ALWAYS nearly empty, so the first thing a new user sees
+// is a flattering number that is not true. Every cold reader flagged it, and one put it exactly
+// right: the honesty is inconsistent, and it is inconsistent in the direction that flatters.
+const minPriorForDelta = 30
+
 func deltaStr(cur, prior int) string {
 	if prior == 0 {
 		return ""
 	}
+	// A prior window too small to compare against is stated as such rather than divided by. The
+	// caller renders this verbatim, so it has to read as a sentence, not a metric.
+	if prior < minPriorForDelta {
+		return fmt.Sprintf("no comparison — only %d before", prior)
+	}
 	ratio := float64(cur) / float64(prior)
 	if ratio >= 10 {
-		return fmt.Sprintf("%.0fx", ratio)
+		// A bare multiplier hides its own baseline. "32x" and "3.2x" look like the same KIND of
+		// claim while resting on wildly different evidence, so the baseline travels with it.
+		return fmt.Sprintf("%.0fx vs %d before", ratio, prior)
 	}
 	d := int(math.Round(float64(cur-prior) / float64(prior) * 100))
 	switch {
@@ -606,7 +622,16 @@ func deltaDir(d string) string {
 	if d == "" {
 		return ""
 	}
-	if strings.HasSuffix(d, "x") {
+	// A refusal has no direction. "no comparison — only 4 before" declines to make a claim, so
+	// pinning an up-arrow beside it would reassert exactly the claim it just declined.
+	if strings.HasPrefix(d, "no comparison") {
+		return ""
+	}
+	// The multiple form. Matched on the "Nx" token rather than a trailing "x", because the string
+	// now carries its baseline ("70x vs 80 before") — and the version of this check that tested
+	// HasSuffix silently stopped classifying the moment that baseline was appended. The polarity
+	// test caught it, which is the second time this exact pair has drifted.
+	if strings.Contains(d, "x vs ") || strings.HasSuffix(d, "x") {
 		return "up"
 	}
 	switch d[0] {

@@ -1,6 +1,7 @@
 package session
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -67,5 +68,42 @@ func TestSessionOneReconstructs(t *testing.T) {
 	}
 	if d.Steps[1].X != 100 || d.Steps[1].Name != "$click" {
 		t.Fatalf("second step wrong: %+v", d.Steps[1])
+	}
+}
+
+// This tool's own writes are not visits.
+//
+// $ai_crawl is recorded under the synthetic distinct_id "$crawler", and without the sampler filter
+// the sessions list showed "$crawler" in a column headed VISITOR. Four people reading the live
+// dashboard cold all read that as a person named $crawler — one of them said so in exactly those
+// words. The same filter already guarded retention, lifecycle, stickiness, paths, people and the
+// account roll-up; sessions was simply never wired to it.
+func TestTheCrawlerIsNotAVisitor(t *testing.T) {
+	base := time.Now().UTC().Add(-time.Hour)
+	evs := []event.Event{
+		{Name: "$pageview", DistinctID: "real1", Timestamp: base, Properties: map[string]any{"path": "/"}},
+		{Name: "$click", DistinctID: "real1", Timestamp: base.Add(time.Minute), Properties: map[string]any{"path": "/"}},
+	}
+	// The tool writing about itself, under every synthetic id it uses.
+	for i := 0; i < 12; i++ {
+		evs = append(evs,
+			event.Event{Name: "$ai_crawl", DistinctID: "$crawler",
+				Timestamp: base.Add(time.Duration(i) * time.Minute), Properties: map[string]any{"path": "/pricing"}},
+			event.Event{Name: "$geo_check", DistinctID: "$sampler",
+				Timestamp: base.Add(time.Duration(i) * time.Minute)},
+		)
+	}
+	got := Sessions(evs, 7, 100)
+	for _, s := range got {
+		if strings.HasPrefix(s.DistinctID, "$") {
+			t.Fatalf("%q is this tool writing about itself and it is listed as a visit (%d events)",
+				s.DistinctID, s.Events)
+		}
+	}
+	if len(got) != 1 {
+		t.Fatalf("want exactly the 1 real visit, got %d — %+v", len(got), got)
+	}
+	if got[0].Events != 2 {
+		t.Fatalf("the real visit should keep both its events, got %d", got[0].Events)
 	}
 }
