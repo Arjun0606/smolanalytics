@@ -719,7 +719,233 @@
   // gates its render on it never rendered), and no $feature_flag_called exposure was ever
   // logged — so an A/B test on a cookieless site reported "no exposures" as though the SDK were
   // fine. Nothing was written to the console. Same shape in fetchSurveys.
+
+  // ── LOCAL FLAG EVALUATION ────────────────────────────────────────────────────────────────
+  //
+  // Flags marked `local` on the server publish their DEFINITIONS, so this evaluates them here
+  // with no round-trip. Everything else still resolves server-side; the bundle's `rest` field
+  // says whether any of those exist, because a client that assumed otherwise would silently
+  // treat every server-evaluated flag as off.
+  //
+  // The bucketing must match Go BIT FOR BIT. Not "closely" — a float that differs in the last
+  // ulp moves whoever sits on the boundary into the other arm, which splits an experiment into
+  // two populations and makes every result unreadable while looking perfectly healthy. The
+  // parity test in internal/api generates a fixture from the real Go engine and runs THESE bytes
+  // against it.
+  //
+  // SHA-256 is implemented here rather than via crypto.subtle because subtle is async and
+  // flag(key, default) is synchronous — an async flag read would change the API for every
+  // existing caller and reintroduce the render-blocking wait local evaluation exists to remove.
+  var K256 = [
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+  ];
+  // utf8Bytes: Go hashes []byte(s), which is UTF-8. Encoding per UTF-16 code unit instead would
+  // diverge on every non-ASCII id — CJK, emoji, any surrogate pair — and those users would be
+  // bucketed differently by the browser than by the server.
+  function utf8Bytes(s) {
+    var out = [], i, c, c2;
+    for (i = 0; i < s.length; i++) {
+      c = s.charCodeAt(i);
+      if (c < 0x80) out.push(c);
+      else if (c < 0x800) out.push(0xc0 | (c >> 6), 0x80 | (c & 63));
+      else if (c >= 0xd800 && c <= 0xdbff && i + 1 < s.length &&
+               (c2 = s.charCodeAt(i + 1)) >= 0xdc00 && c2 <= 0xdfff) {
+        c = 0x10000 + ((c - 0xd800) << 10) + (c2 - 0xdc00); i++;
+        out.push(0xf0 | (c >> 18), 0x80 | ((c >> 12) & 63), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+      } else out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+    }
+    return out;
+  }
+  // sha256First8 returns only the first 8 bytes as two uint32s — the bucket needs nothing else.
+  function sha256First8(str) {
+    var b = utf8Bytes(str), L = b.length, i, j;
+    var withOne = b.concat([0x80]);
+    while (withOne.length % 64 !== 56) withOne.push(0);
+    var bitLen = L * 8;
+    // Length is 64-bit big-endian. bitLen stays exact well past any realistic id length.
+    withOne.push(0, 0, 0, 0,
+      (bitLen / 16777216) & 255, (bitLen / 65536) & 255, (bitLen / 256) & 255, bitLen & 255);
+    var h = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+    var w = new Array(64);
+    for (i = 0; i < withOne.length; i += 64) {
+      for (j = 0; j < 16; j++) {
+        w[j] = (withOne[i + j * 4] << 24) | (withOne[i + j * 4 + 1] << 16) |
+               (withOne[i + j * 4 + 2] << 8) | withOne[i + j * 4 + 3];
+      }
+      for (j = 16; j < 64; j++) {
+        var s0 = ((w[j - 15] >>> 7) | (w[j - 15] << 25)) ^ ((w[j - 15] >>> 18) | (w[j - 15] << 14)) ^ (w[j - 15] >>> 3);
+        var s1 = ((w[j - 2] >>> 17) | (w[j - 2] << 15)) ^ ((w[j - 2] >>> 19) | (w[j - 2] << 13)) ^ (w[j - 2] >>> 10);
+        w[j] = (w[j - 16] + s0 + w[j - 7] + s1) | 0;
+      }
+      var a = h[0], bb = h[1], c = h[2], d = h[3], e = h[4], f = h[5], g = h[6], hh = h[7];
+      for (j = 0; j < 64; j++) {
+        var S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
+        var ch = (e & f) ^ (~e & g);
+        var t1 = (hh + S1 + ch + K256[j] + w[j]) | 0;
+        var S0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
+        var maj = (a & bb) ^ (a & c) ^ (bb & c);
+        var t2 = (S0 + maj) | 0;
+        hh = g; g = f; f = e; e = (d + t1) | 0; d = c; c = bb; bb = a; a = (t1 + t2) | 0;
+      }
+      h[0] = (h[0] + a) | 0; h[1] = (h[1] + bb) | 0; h[2] = (h[2] + c) | 0; h[3] = (h[3] + d) | 0;
+      h[4] = (h[4] + e) | 0; h[5] = (h[5] + f) | 0; h[6] = (h[6] + g) | 0; h[7] = (h[7] + hh) | 0;
+    }
+    return [h[0] >>> 0, h[1] >>> 0];
+  }
+  // saBucket mirrors Go's bucket(): sha256(salt+":"+id), first 8 bytes big-endian, >>4, /2^60.
+  //
+  // No BigInt (it is ES2020; this file is ES5). Taking the top 8 bytes as hi/lo uint32s,
+  // `u >> 4 === hi * 2^28 + (lo >>> 4)`: hi*2^28 is a 32-bit integer scaled by a power of two so
+  // it is exact, lo>>>4 is 28 bits so it is exact, and their sum is under 2^60 — well inside the
+  // float64 integer range. The division by 2^60 is then the identical operation Go performs.
+  function saBucket(salt, id) {
+    var p = sha256First8(salt + ":" + id);
+    return (p[0] * 268435456 + (p[1] >>> 4)) / 1152921504606846976;
+  }
+  function saBucketIn(salt, id, pct) { return saBucket(salt, id) < pct / 100; }
+
+  function saStr(v) {
+    if (v === null || v === undefined) return "";
+    if (typeof v === "string") return v;
+    return String(v);
+  }
+  // saMatch mirrors one query.Filter. Numeric comparands are NOT parsed here — the server ships
+  // its own parse in `n`, because Go's ParseFloat and JS Number() disagree on "1_000", "0x10",
+  // " 5 " and "", and each disagreement moves a user into a different arm.
+  function saMatch(f, ctx) {
+    var has = ctx && Object.prototype.hasOwnProperty.call(ctx, f.p);
+    var raw = has ? ctx[f.p] : undefined;
+    switch (f.o) {
+      case "set": return has && raw !== null && raw !== undefined;
+      case "notset": return !has || raw === null || raw === undefined;
+    }
+    if (!has || raw === null || raw === undefined) {
+      // A missing property matches only the negative operators, exactly as the server treats it.
+      return f.o === "neq" || f.o === "notin" || f.o === "ncontains";
+    }
+    var s = saStr(raw);
+    switch (f.o) {
+      case "eq": return s === saStr(f.v);
+      case "neq": return s !== saStr(f.v);
+      case "contains": return s.indexOf(saStr(f.v)) >= 0;
+      case "ncontains": return s.indexOf(saStr(f.v)) < 0;
+      case "in": case "notin": {
+        var list = f.v, hit = false;
+        if (Object.prototype.toString.call(list) === "[object Array]") {
+          for (var i = 0; i < list.length; i++) if (s === saStr(list[i])) { hit = true; break; }
+        }
+        return f.o === "in" ? hit : !hit;
+      }
+      case "gt": case "lt": {
+        var n = typeof raw === "number" ? raw : parseFloat(s);
+        if (n !== n) return false; // NaN: a non-numeric property never satisfies a numeric compare
+        var cmp = typeof f.n === "number" ? f.n : 0;
+        return f.o === "gt" ? n > cmp : n < cmp;
+      }
+      case "regex": {
+        try { return new RegExp(f.v).test(s); } catch (e) { return false; }
+      }
+    }
+    return false;
+  }
+
+  // saEvalLocal resolves ONE bundled flag. The order is the server's order and the order matters:
+  // holdout and layer decide whether someone may be in an experiment AT ALL, before any targeting
+  // runs, so a client that checked rules first would put held-out users into arms.
+  function saEvalLocal(bf, bucketKey, ctx) {
+    if (bf.h && saBucketIn("holdout:" + bf.h, bucketKey, bf.hp || 0)) return "";
+    if (bf.l && bf.s && bf.s.length === 2) {
+      var pos = saBucket("layer:" + bf.l, bucketKey);
+      if (pos < bf.s[0] || pos >= bf.s[1]) return "";
+    }
+    if (bf.r && bf.r.length) {
+      var matched = null;
+      for (var i = 0; i < bf.r.length; i++) {
+        var rule = bf.r[i], ok = true;
+        var fs = rule.f || [];
+        for (var j = 0; j < fs.length; j++) { if (!saMatch(fs[j], ctx)) { ok = false; break; } }
+        if (ok) { matched = rule; break; } // first match wins, like the server
+      }
+      if (!matched) return "";
+      if (!saBucketIn("rollout:" + bf.k, bucketKey, matched.p)) return "";
+    }
+    return saVariantFor(bf, bucketKey);
+  }
+  // saVariantFor mirrors variantFor: a fixed [0,1) space walked in DECLARED order, so adding an
+  // arm at the end never moves anyone already in an earlier one.
+  function saVariantFor(bf, bucketKey) {
+    var vs = bf.v || [];
+    if (!vs.length) return "on"; // a boolean flag serves "on"
+    var total = 0, i;
+    for (i = 0; i < vs.length; i++) total += vs[i].w > 0 ? vs[i].w : 0;
+    if (total <= 0) return vs[0].k;
+    var x = saBucket("variant:" + bf.k, bucketKey), acc = 0;
+    for (i = 0; i < vs.length; i++) {
+      acc += (vs[i].w > 0 ? vs[i].w : 0) / total;
+      if (x < acc) return vs[i].k;
+    }
+    return vs[vs.length - 1].k;
+  }
+
+  // saApplyBundle evaluates every locally-published flag and returns whether the server still has
+  // to be asked for the rest. A bundle it cannot hash the same way as the server is REFUSED
+  // outright — computing a different answer confidently is worse than not answering.
+  function saApplyBundle(b, bucketKey, ctx) {
+    if (!b || b.v !== 1 || b.hv !== 1) return true; // unknown schema/hash generation: server only
+    var out = {}, meas = {}, fs = b.f || [];
+    for (var i = 0; i < fs.length; i++) {
+      var bf = fs[i], v = saEvalLocal(bf, bucketKey, ctx);
+      if (v) { out[bf.k] = v; if (bf.m) meas[bf.k] = true; }
+    }
+    flagCache = out;
+    flagMeasured = meas;
+    return !!b.rest;
+  }
+
   function fetchFlags() {
+    var id = distinctId();
+    if (!host || !key || !id) return;
+    // Definitions first. The browser caches this by ETag, so the common case is a 304 and the
+    // flags resolve with no data transferred and no bucketing round-trip.
+    try {
+      fetch(host + "/v1/flags/definitions", { headers: { Authorization: "Bearer " + key } })
+        .then(function (r) { return r && r.ok ? r.json() : null; })
+        .then(function (b) {
+          var needServer = saApplyBundle(b, bucketId(), saFlagContext());
+          if (!needServer) {
+            flagsLoaded = true;
+            var ls0 = flagListeners; flagListeners = [];
+            for (var k = 0; k < ls0.length; k++) { try { ls0[k](flagCache); } catch (e) {} }
+            return;
+          }
+          fetchFlagsFromServer();
+        })
+        .catch(function () { fetchFlagsFromServer(); });
+    } catch (e) { fetchFlagsFromServer(); }
+  }
+
+  // saFlagContext is what local rules match against. Only what the page already knows about
+  // itself — never anything read back from storage that the server did not send, so a rule can
+  // never be satisfied by data this browser invented.
+  function saFlagContext() {
+    var c = {};
+    try {
+      c.path = location.pathname;
+      c.referrer = document.referrer || "";
+      if (typeof siteId !== "undefined" && siteId) c.site = siteId;
+      if (typeof env !== "undefined" && env) c.env = env;
+    } catch (e) {}
+    return c;
+  }
+
+  function fetchFlagsFromServer() {
     var id = distinctId();
     if (!host || !key || !id) return;
     try {
@@ -729,8 +955,11 @@
       })
         .then(function (r) { return r && r.ok ? r.json() : null; })
         .then(function (d) {
-          flagCache = (d && d.flags) || {};
-          flagMeasured = {};
+          // Merge, do not replace: locally-evaluated flags are already in flagCache and the
+          // server response only covers the ones NOT in the bundle. Assigning over it would
+          // discard every local answer and undo the round-trip we just saved.
+          var sf = (d && d.flags) || {};
+          for (var sk in sf) if (Object.prototype.hasOwnProperty.call(sf, sk)) flagCache[sk] = sf[sk];
           if (d && d.measured) for (var mi = 0; mi < d.measured.length; mi++) flagMeasured[d.measured[mi]] = true;
           flagsLoaded = true;
           var ls = flagListeners;
@@ -1013,5 +1242,16 @@
     reloadFlags: fetchFlags,
   };
 
+  // Test hook, deliberately exposed and deliberately ugly.
+  //
+  // The flag parity test runs the SHIPPED BYTES of this file against a fixture generated by the Go
+  // engine, and it can only do that if it can reach the evaluator inside this closure. The
+  // alternative is a copy of the bucketing algorithm in the test, which would prove only that the
+  // test agrees with itself while the real file drifted.
+  //
+  // A bucketing divergence between this file and Go has no symptom: nothing errors, and the
+  // experiment silently becomes a mixture of two populations. Being able to assert it on every
+  // build is worth one underscore-prefixed key.
+  smol.__flagInternals = { bucket: saBucket, evalFlag: saEvalLocal, applyBundle: saApplyBundle };
   window.smolanalytics = smol;
 })();
