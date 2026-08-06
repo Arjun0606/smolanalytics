@@ -40,6 +40,19 @@ type Result struct {
 	Truncated bool `json:"truncated,omitempty"`
 }
 
+// dropSampler removes this tool's own writes — UNLESS the caller asked for them by name.
+//
+// The filter is right for "what did users do" and actively wrong for "how much has the AI crawler
+// read my site", which is a real question with its own pane. Filtering unconditionally answered
+// that one with a confident, permanent zero: the events exist, the report says none. The same bug
+// shipped in /v1/explain and was caught there by asking it about $ai_crawl.
+func dropSampler(events []event.Event, eventName string) []event.Event {
+	if query.IsSampler(eventName) {
+		return events
+	}
+	return query.WithoutSampler(events)
+}
+
 // Compute returns daily counts for eventName (empty = all events) between from and
 // to. unique=true counts distinct users per day instead of raw events. Days with
 // no activity are filled with zero so the line/bars are continuous.
@@ -49,7 +62,7 @@ func Compute(events []event.Event, eventName string, from, to time.Time, unique 
 	// them here is part of why the dashboard could answer "how many people" with four different
 	// numbers depending which pane you read. The AI-crawler and AI-visibility panes read those
 	// events through their own path, so nothing that should see them loses them.
-	events = query.WithoutSampler(events)
+	events = dropSampler(events, eventName)
 	r := Result{Event: eventName, Unique: unique}
 	perDay := map[int64]map[string]int{} // day -> (user->count) or (""->count)
 	windowUsers := map[string]bool{}     // TRENDS-UNIQUE: range total dedups across the WHOLE window
@@ -157,6 +170,10 @@ type Series struct {
 // multi-line "signups by source over time" report. Events missing the property
 // fall into "(none)". Series are sorted by total descending.
 func ComputeBreakdown(events []event.Event, eventName, property string, from, to time.Time, unique bool) []Series {
+	// Same reason as Compute: this tool's own writes are not product activity. Compute filtered
+	// them and these five did not, so /v1/trends answered one number at the default daily grain
+	// and a different one at interval=hour, and a breakdown did not sum to the total above it.
+	events = dropSampler(events, eventName)
 	groups := map[string][]event.Event{}
 	// every series must share ONE date span (the overall min..max day) — otherwise each
 	// line starts/ends at its own first/last event and the multi-line chart's x-axes
@@ -254,6 +271,10 @@ type MeasureResult struct {
 // missing the property, or whose value isn't numeric, are skipped (never coerced to 0).
 // Deterministic and storage-agnostic, same as Compute.
 func ComputeMeasure(events []event.Event, eventName, property string, m Measure, from, to time.Time) MeasureResult {
+	// Same reason as Compute: this tool's own writes are not product activity. Compute filtered
+	// them and these five did not, so /v1/trends answered one number at the default daily grain
+	// and a different one at interval=hour, and a breakdown did not sum to the total above it.
+	events = dropSampler(events, eventName)
 	res := MeasureResult{Event: eventName, Property: property, Measure: m}
 	perDay := map[int64][]float64{}
 	var all []float64
@@ -372,6 +393,10 @@ type MeasureSeries struct {
 // used to be silently DROPPED: the un-broken grand total came back with no series and no
 // error, presenting an unsegmented number as if it were the requested split.
 func ComputeMeasureBreakdown(events []event.Event, eventName, property string, m Measure, breakdown string, from, to time.Time) []MeasureSeries {
+	// Same reason as Compute: this tool's own writes are not product activity. Compute filtered
+	// them and these five did not, so /v1/trends answered one number at the default daily grain
+	// and a different one at interval=hour, and a breakdown did not sum to the total above it.
+	events = dropSampler(events, eventName)
 	groups := map[string][]float64{}
 	for _, e := range events {
 		if eventName != "" && e.Name != eventName {
@@ -615,6 +640,10 @@ func backOff(t time.Time, iv Interval, n int) time.Time {
 // with zero so the series is continuous. Hourly output is capped at 31 days of
 // buckets (744) — the guardrail every incumbent applies to keep charts readable.
 func ComputeInterval(events []event.Event, eventName string, from, to time.Time, unique bool, iv Interval) Result {
+	// Same reason as Compute: this tool's own writes are not product activity. Compute filtered
+	// them and these five did not, so /v1/trends answered one number at the default daily grain
+	// and a different one at interval=hour, and a breakdown did not sum to the total above it.
+	events = dropSampler(events, eventName)
 	if iv == Day || iv == "" {
 		return Compute(events, eventName, from, to, unique)
 	}
@@ -718,6 +747,10 @@ func ComputeInterval(events []event.Event, eventName string, from, to time.Time,
 // leading up to the label"). The Total echoes the LAST point (the current
 // value) — summing rolling actives would double-count meaninglessly.
 func ComputeXAU(events []event.Event, eventName string, from, to time.Time, windowDays int) Result {
+	// Same reason as Compute: this tool's own writes are not product activity. Compute filtered
+	// them and these five did not, so /v1/trends answered one number at the default daily grain
+	// and a different one at interval=hour, and a breakdown did not sum to the total above it.
+	events = dropSampler(events, eventName)
 	if windowDays < 1 {
 		windowDays = 1
 	}
