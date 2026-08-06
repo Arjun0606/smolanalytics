@@ -219,11 +219,20 @@ func toStr(v any) string {
 
 type dashVM struct {
 	HasConversion bool // a real funnel (≥2 distinct steps) — gates the conversion KPI/pane
-	TotalUsers    int
-	Signups       int
-	OverallConv   int
-	Funnel        []funnelRow
-	Verdict       []insight.Finding
+	// FunnelIsGuessed is true when every step came from autocapture, i.e. nobody has defined what
+	// success is. The pane must say so rather than presenting the tracker measuring itself as this
+	// product's conversion rate.
+	FunnelIsGuessed bool
+	// Proposal is a funnel read out of the page paths people already walk. Offering it is the
+	// difference between a tool that needs a PM and one that removes the need for one: the journey
+	// is already in the data, so asking the user to declare it is asking them to type back
+	// something we can see.
+	Proposal    ProposedFunnel
+	TotalUsers  int
+	Signups     int
+	OverallConv int
+	Funnel      []funnelRow
+	Verdict     []insight.Finding
 	// Findings is the SAME slice from the second element on, composed into rows that rank.
 	// The template reads Verdict only for the card (element 0) and Findings for the list.
 	Findings []findingLine
@@ -1934,59 +1943,65 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	vm := dashVM{
-		HasConversion:  len(fsteps) >= 2,
-		TotalUsers:     distinctUsers(evs),
-		Signups:        sig30,
-		OverallConv:    pct(fr.OverallConversion),
-		Events:         names,
-		ProductEvents:  productEvents(names, 8),
-		Updated:        time.Now().UTC().Format("Jan 2, 15:04 MST"),
-		HasData:        len(evs) > 0,
-		Verdict:        verdict,
-		Findings:       verdictLines(verdict),
-		DevHidden:      devHidden,
-		ShowingDev:     showDev,
-		Sites:          sites,
-		Site:           site,
-		Base:           baseURL(r),
-		WriteKey:       s.writeKey,
-		CloudURL:       cloudURL,
-		FunnelTitle:    ftitle,
-		ConvLabel:      convLabel,
-		StatEventLabel: trendEvent,
-		TrendLabel:     trendEvent,
-		ConvByTitle:    segProp,
-		HasConvBy:      segProp != "",
-		HasSource:      srcProp != "",
-		SourceTitle:    trendEvent + " by " + srcProp,
-		HasShares:      s.shares != nil,
-		HasGoalsStore:  s.goals != nil,
-		HasAgentEvents: hasAgentEvents,
-		ReportQS:       reportQ.Encode(),
-		RangeDays:      rangeDays,
-		RangeLabel:     rangeWindowLabel(rangeDays, rangeHours),
-		GhostTotal:     trPrior.Total,
-		FunnelOrder:    string(forder),
-		GrainProp:      grainProp,
-		GrainOptions:   grainOptions,
-		GrainMiss:      grainMiss,
-		GrainOffHref:   grainOffHref,
-		RetDays:        rdays,
-		RetBucket:      map[bool]string{true: rbucket, false: "day"}[rbucket != ""],
-		RetRolling:     rroll,
-		CustomRange:    customRange,
-		AnyMode:        anyMode,
-		RangeFrom:      r.URL.Query().Get("from"),
-		RangeTo:        r.URL.Query().Get("to"),
-		Ranges:         []rangeVM{mkHours(6), mkHours(12), mkRange(1), mkRange(7), mkRange(30), mkRange(90)},
-		Chips:          chips,
-		SourceProp:     srcProp,
-		ConvByProp:     segProp,
-		SignupsDelta:   deltaStr(sig30, sigPrior),
-		LastEventSecs:  -1,
+		HasConversion:   len(fsteps) >= 2,
+		TotalUsers:      distinctUsers(evs),
+		Signups:         sig30,
+		OverallConv:     pct(fr.OverallConversion),
+		Events:          names,
+		ProductEvents:   productEvents(names, 8),
+		Updated:         time.Now().UTC().Format("Jan 2, 15:04 MST"),
+		HasData:         len(evs) > 0,
+		Verdict:         verdict,
+		Findings:        verdictLines(verdict),
+		DevHidden:       devHidden,
+		ShowingDev:      showDev,
+		Sites:           sites,
+		Site:            site,
+		Base:            baseURL(r),
+		WriteKey:        s.writeKey,
+		CloudURL:        cloudURL,
+		FunnelTitle:     ftitle,
+		ConvLabel:       convLabel,
+		StatEventLabel:  trendEvent,
+		TrendLabel:      trendEvent,
+		ConvByTitle:     segProp,
+		HasConvBy:       segProp != "",
+		HasSource:       srcProp != "",
+		SourceTitle:     trendEvent + " by " + srcProp,
+		HasShares:       s.shares != nil,
+		HasGoalsStore:   s.goals != nil,
+		HasAgentEvents:  hasAgentEvents,
+		ReportQS:        reportQ.Encode(),
+		RangeDays:       rangeDays,
+		RangeLabel:      rangeWindowLabel(rangeDays, rangeHours),
+		GhostTotal:      trPrior.Total,
+		FunnelOrder:     string(forder),
+		FunnelIsGuessed: funnelIsSynthetic(fsteps),
+		GrainProp:       grainProp,
+		GrainOptions:    grainOptions,
+		GrainMiss:       grainMiss,
+		GrainOffHref:    grainOffHref,
+		RetDays:         rdays,
+		RetBucket:       map[bool]string{true: rbucket, false: "day"}[rbucket != ""],
+		RetRolling:      rroll,
+		CustomRange:     customRange,
+		AnyMode:         anyMode,
+		RangeFrom:       r.URL.Query().Get("from"),
+		RangeTo:         r.URL.Query().Get("to"),
+		Ranges:          []rangeVM{mkHours(6), mkHours(12), mkRange(1), mkRange(7), mkRange(30), mkRange(90)},
+		Chips:           chips,
+		SourceProp:      srcProp,
+		ConvByProp:      segProp,
+		SignupsDelta:    deltaStr(sig30, sigPrior),
+		LastEventSecs:   -1,
 	}
 	if grainInfo != nil {
 		vm.GrainGroups, vm.GrainNote = grainInfo.Groups, grainInfo.Note
+	}
+	// Only worth computing when nobody has defined a funnel: it is a scan, and an instance with a
+	// real funnel has no use for a guess at one.
+	if vm.FunnelIsGuessed {
+		vm.Proposal = ProposeFunnel(evs)
 	}
 	if ags := s.agentStatus(); len(ags) > 0 {
 		a := ags[0]

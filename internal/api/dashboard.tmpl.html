@@ -1545,13 +1545,31 @@
     {{end}}
 
     <div class="pane wide" id="pane-funnel" style="order:210" data-stratum="convert">
-      <h3>{{.FunnelTitle}}
+      <h3>{{if .FunnelIsGuessed}}browsing, not a funnel yet{{else}}{{.FunnelTitle}}{{end}}
         <select id="funnelOrder" class="zonesel" title="step matching discipline" style="margin-left:8px">
           <option value="ordered" {{if eq .FunnelOrder "ordered"}}selected{{end}}>in order</option>
           <option value="strict" {{if eq .FunnelOrder "strict"}}selected{{end}}>strictly consecutive</option>
           <option value="unordered" {{if eq .FunnelOrder "unordered"}}selected{{end}}>any order</option>
         </select>
         <span style="text-transform:none;letter-spacing:0">· each step counts {{if .GrainProp}}<b>accounts</b> (by {{.GrainProp}}) that reached it — an account counts once anyone in it does{{else}}users who reached it{{end}} along this path, so a step can read below that event's raw total in the chart · computed by /v1/funnel</span>{{if .GrainProp}}<a class="hlink" style="margin-left:8px" href="{{.GrainOffHref}}" title="count individual people again, keeping this window and these filters">count people instead</a>{{end}}</h3>
+      {{if .FunnelIsGuessed}}
+      <div class="agmeta" style="margin-bottom:12px">
+        nobody has told us what counts as success here, so these are just the three things the
+        tracker sees most. it shows the tracker working, not your product.
+        {{if .Proposal.Steps}}
+        <div style="margin-top:10px">
+          <b>from the pages people actually walk, your funnel looks like:</b>
+          <div style="margin:8px 0">
+            {{range $i, $s := .Proposal.Steps}}{{if $i}} <span class="mut">→</span> {{end}}<b>{{$s.Path}}</b> <span class="mut">{{$s.People}}</span>{{end}}
+          </div>
+          {{if .Proposal.Confident}}<span class="mut">that narrows the way a real funnel does. it is still a guess — visiting /signup is not the same as signing up — so confirm it by tracking the event itself.</span>
+          {{else}}<span class="mut">{{.Proposal.Why}}</span>{{end}}
+        </div>
+        {{else if .Proposal.Why}}
+        <div style="margin-top:8px" class="mut">{{.Proposal.Why}}</div>
+        {{end}}
+      </div>
+      {{end}}
       {{range .Funnel}}
         {{if not .First}}<div class="fdrop">↓ {{.PctPrev}}% continue · {{.Dropped}} dropped</div>{{end}}
         <div class="fstep"><div class="fbarwrap" data-whostep="{{.Event}}" title="click: the people who reached this step"><div class="fbar" style="width:{{.PctTop}}%"></div><div class="fmeta"><span class="fname">{{ev .Event}}</span><span class="fnums"><span class="c">{{.Count}}</span><span class="p">{{.PctTop}}%</span></span></div></div></div>
