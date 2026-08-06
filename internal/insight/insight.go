@@ -222,7 +222,30 @@ func GenerateForFunnel(evs []event.Event, pageSteps []funnel.Step) []Finding {
 				worstBase = fr.Steps[i-1].Count
 			}
 		}
-		if worstDrop > 0 {
+		// A funnel built entirely from AUTOCAPTURE is not a product fact.
+		//
+		// With no product events instrumented, the dashboard picks the three busiest names — on a
+		// fresh install always page view, engaged and click — and computes the drop between them.
+		// That drop then became a WARNING labelled "FIX FIRST" at the top of the page, in the
+		// loudest style available. Four people reading it cold all stopped there: "the number one
+		// alarm on my dashboard is scaring me about nothing I can act on", and "it is not a wrong
+		// number, it is a number promoted to a priority it has not earned."
+		//
+		// Nothing anyone does to their product moves the gap between "viewed a page" and "clicked
+		// something". So instead of a warning about a funnel they never defined, say the true and
+		// useful thing: we do not know what success looks like here yet.
+		if worstDrop > 0 && allAutocapture(fr.Steps) {
+			out = append(out, Finding{
+				Severity: "note", // never a warning: nothing is wrong, something is undefined
+				Kind:     KindDropoff,
+				Metric:   worstTo,
+				Title:    "We don't know what success looks like for your product yet",
+				Detail: fmt.Sprintf("so far we can only see browsing: %d people viewed a page and %d clicked "+
+					"something. that is this tracker measuring itself, not your product. tell us what counts "+
+					"as success — a signup, a purchase — and this becomes a real funnel.",
+					fr.Steps[0].Count, fr.Steps[len(fr.Steps)-1].Count),
+			})
+		} else if worstDrop > 0 {
 			names := make([]string, 0, len(fr.Steps))
 			for _, s := range fr.Steps {
 				names = append(names, s.Event)
@@ -456,4 +479,21 @@ func Text(findings []Finding) string {
 		s += fmt.Sprintf("%s %s: %s\n", mark, f.Title, f.Detail)
 	}
 	return s
+}
+
+// allAutocapture reports whether every step is an event the SDK writes by itself.
+//
+// The "$" prefix marks events nobody chose to send. A funnel made only of those describes the
+// tracker, not the product — and the distinction is what separates "your conversion is bad" from
+// "you have not defined a conversion", which are opposite messages and need opposite reactions.
+func allAutocapture(steps []funnel.StepResult) bool {
+	if len(steps) == 0 {
+		return true
+	}
+	for _, s := range steps {
+		if !strings.HasPrefix(s.Event, "$") {
+			return false
+		}
+	}
+	return true
 }

@@ -62,6 +62,11 @@ var dashTmpl = template.Must(template.New("dash").Funcs(template.FuncMap{
 	// delta, which is the same bug buildKPIs had: it read as neither up nor down the moment the
 	// delta printed "70x". One definition now, so the two cannot drift apart again.
 	"deltadir": deltaDir,
+	// ev translates an event name for HUMAN display. The SQL pane and the raw event stream keep
+	// the real names, because there the schema IS the interface.
+	"ev":      EventLabel,
+	"evgloss": EventGloss,
+	"evauto":  EventIsAuto,
 }).Parse(dashboardHTML))
 
 type funnelRow struct {
@@ -1887,7 +1892,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 
 	convLabel := ftitle
 	if n := len(fsteps); n >= 2 {
-		convLabel = fsteps[0].Event + " → " + fsteps[n-1].Event
+		convLabel = EventLabel(fsteps[0].Event) + " → " + EventLabel(fsteps[n-1].Event)
 	}
 
 	// the agent-observability section's two inputs. hasAgentEvents comes from the event
@@ -2605,10 +2610,37 @@ func detectFunnel(evs []event.Event, vol []string) ([]funnel.Step, string) {
 	}
 	top = orderByJourney(evs, top)
 	steps := make([]funnel.Step, len(top))
+	labels := make([]string, len(top))
 	for i, n := range top {
 		steps[i] = funnel.Step{Event: n}
+		labels[i] = EventLabel(n)
 	}
-	return steps, strings.Join(top, " → ")
+	return steps, strings.Join(labels, " → ")
+}
+
+// funnelIsSynthetic reports whether every step came from autocapture rather than from events the
+// product deliberately sends.
+//
+// This is the difference between "your funnel is bad" and "you have not told us what a funnel is",
+// and the dashboard was stating the first when only the second was true. With no product events
+// instrumented, detectFunnel picks the three busiest names — which on a fresh install are always
+// page view, engaged and click — computes the drop between them, marks it a WARNING, labels it
+// FIX FIRST, and puts it at the top of the page in the loudest style available.
+//
+// Every one of four cold readers stopped there. One: "the number one alarm on my dashboard is
+// scaring me about nothing I can act on." Another: "it is not a wrong number, it is a number
+// promoted to a priority it has not earned." A drop between two autocapture events is not a
+// product fact, and nothing anybody does to their product will move it.
+func funnelIsSynthetic(steps []funnel.Step) bool {
+	if len(steps) == 0 {
+		return true
+	}
+	for _, st := range steps {
+		if !EventIsAuto(st.Event) {
+			return false // one real product event is enough to make this a real question
+		}
+	}
+	return true
 }
 
 // orderByJourney sorts events by mean delay from each user's first event, so the

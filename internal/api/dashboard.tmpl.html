@@ -1323,7 +1323,7 @@
       <summary>data table · newest first ▾</summary>
       <div class="tscroll">
       <table class="ctab">
-        <thead><tr><th>bucket</th><th class="n">{{.ChartMetric}}</th>{{if gt .GhostTotal 0}}<th class="n">prior</th><th class="n">change</th>{{end}}<th></th></tr></thead>
+        <thead><tr><th>bucket</th><th class="n">{{ev .ChartMetric}}</th>{{if gt .GhostTotal 0}}<th class="n">prior</th><th class="n">change</th>{{end}}<th></th></tr></thead>
         <tbody>
         {{range .ChartTable}}<tr>
           <td>{{.Label}}{{if .Partial}} <span class="mut">· so far</span>{{end}}</td><td class="n">{{.Count}}</td>
@@ -1554,7 +1554,7 @@
         <span style="text-transform:none;letter-spacing:0">· each step counts {{if .GrainProp}}<b>accounts</b> (by {{.GrainProp}}) that reached it — an account counts once anyone in it does{{else}}users who reached it{{end}} along this path, so a step can read below that event's raw total in the chart · computed by /v1/funnel</span>{{if .GrainProp}}<a class="hlink" style="margin-left:8px" href="{{.GrainOffHref}}" title="count individual people again, keeping this window and these filters">count people instead</a>{{end}}</h3>
       {{range .Funnel}}
         {{if not .First}}<div class="fdrop">↓ {{.PctPrev}}% continue · {{.Dropped}} dropped</div>{{end}}
-        <div class="fstep"><div class="fbarwrap" data-whostep="{{.Event}}" title="click: the people who reached this step"><div class="fbar" style="width:{{.PctTop}}%"></div><div class="fmeta"><span class="fname">{{.Event}}</span><span class="fnums"><span class="c">{{.Count}}</span><span class="p">{{.PctTop}}%</span></span></div></div></div>
+        <div class="fstep"><div class="fbarwrap" data-whostep="{{.Event}}" title="click: the people who reached this step"><div class="fbar" style="width:{{.PctTop}}%"></div><div class="fmeta"><span class="fname">{{ev .Event}}</span><span class="fnums"><span class="c">{{.Count}}</span><span class="p">{{.PctTop}}%</span></span></div></div></div>
       {{else}}
         <div class="exsummary">no funnel yet. a funnel is two or more named events in the order you expect people to do them, so track at least a second one and this builds itself: signup, activate, checkout are picked up automatically when they exist, and any other pair is one question away in the ask bar above ("funnel from X to Y"). the steps count users who reached each one along this path, never raw event totals.</div>
       {{end}}
