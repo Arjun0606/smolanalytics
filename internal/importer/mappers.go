@@ -35,6 +35,11 @@ func MapperFor(format string) (func(io.Reader, EmitFn, SkipFn) error, error) {
 		return MapCSV, nil
 	case "posthog":
 		return MapPostHog, nil
+	// The REST shape, used by the paste-a-key remote pull. Distinct from "posthog" because that
+	// reads the CSV their UI exports and the two really do differ — the API nests properties as
+	// real JSON rather than a quoted column, and carries `id` where the CSV carries `uuid`.
+	case "posthog-api":
+		return MapPostHogAPI, nil
 	case "mixpanel":
 		return MapMixpanel, nil
 	case "amplitude":
@@ -42,9 +47,9 @@ func MapperFor(format string) (func(io.Reader, EmitFn, SkipFn) error, error) {
 	case "umami":
 		return MapUmami, nil
 	case "":
-		return nil, fmt.Errorf("--format is required (jsonl, csv, posthog, mixpanel, amplitude or umami)")
+		return nil, fmt.Errorf("--format is required (jsonl, csv, posthog, posthog-api, mixpanel, amplitude or umami)")
 	default:
-		return nil, fmt.Errorf("unknown format %q (want jsonl, csv, posthog, mixpanel, amplitude or umami)", format)
+		return nil, fmt.Errorf("unknown format %q (want jsonl, csv, posthog, posthog-api, mixpanel, amplitude or umami)", format)
 	}
 }
 

@@ -142,7 +142,7 @@ var mutatingTools = map[string]bool{
 	"create_share_link": true, "revoke_share_link": true,
 	"set_retention": true, "set_tracking_plan": true, "regenerate_plan_from_code": true,
 	"set_project": true, "delete_user_data": true,
-	"import_events": true, "record_deploy": true, "delete_deploy": true,
+	"import_events": true, "migrate_from": true, "record_deploy": true, "delete_deploy": true,
 	"label_conversation": true,
 }
 
@@ -1373,6 +1373,9 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 		}
 		if handled, out, gserr := s.callGSC(name, args); handled {
 			return out, gserr
+		}
+		if handled, out, ierr := s.callMigrate(name, args); handled {
+			return out, ierr
 		}
 		if handled, out, ierr := s.callImport(name, args); handled {
 			return out, ierr

@@ -632,7 +632,7 @@ func TestIngestSenderBatching(t *testing.T) {
 // an unknown format errors with the fix in the message before anything is read.
 func TestRunUnknownFormat(t *testing.T) {
 	_, err := Run("xml", false, strings.NewReader("x"), NewIngestSender(func([]event.Event) error { return nil }))
-	if err == nil || !strings.Contains(err.Error(), "jsonl, csv, posthog, mixpanel, amplitude or umami") {
+	if err == nil || !strings.Contains(err.Error(), "jsonl, csv, posthog, posthog-api, mixpanel, amplitude or umami") {
 		t.Fatalf("err = %v, want the format menu", err)
 	}
 }

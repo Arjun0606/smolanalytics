@@ -54,7 +54,7 @@ func (s *Server) callImport(name string, args json.RawMessage) (bool, string, er
 		return true, "", err
 	}
 	if p.Format == "" {
-		return true, "", fmt.Errorf("format is required — one of jsonl, csv, posthog, mixpanel, amplitude, umami")
+		return true, "", fmt.Errorf("format is required — one of jsonl, csv, posthog, posthog-api, mixpanel, amplitude, umami")
 	}
 	if p.Path == "" {
 		return true, "", fmt.Errorf("path is required — the export file's location on the machine the smolanalytics server runs on")
