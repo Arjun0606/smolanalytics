@@ -141,6 +141,12 @@
   .backtosummary{display:none}
   .deck.viewmode .backtosummary{display:inline-flex;grid-column:1/-1;margin:var(--sec-pad) 0 0;align-self:start}
   .deck.viewmode .deckmenu.pane--on ~ .backtosummary{display:none}
+  /* The proof affordance. Visible, not a hover: an advantage nobody can see is not an advantage,
+     and this is the one thing PostHog and Mixpanel structurally cannot offer — they roll up and
+     sample, so their numbers have no rows left to show. */
+  .kproof{display:inline-block;margin-top:6px;font-family:var(--mono);font-size:var(--fs-lbl);
+    color:var(--accent);text-decoration:none;border-bottom:1px solid var(--a45);cursor:pointer;align-self:flex-start}
+  .kproof:hover{color:var(--on-brand);background:var(--brand);border-bottom-color:var(--edge)}
   /* companion globals: keyboard focus, reduced motion, entrances */
   :where(a,button,select,input,summary,[tabindex]):focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   :where(a,button,select,input,summary):focus:not(:focus-visible){outline:none}
@@ -1270,6 +1276,7 @@
       <div class="kk">{{.Label}}</div>
       <div class="kv{{if .Accent}} acc{{end}}">{{.Value}}</div>
       {{if .Delta}}<div class="kd {{.Dir}}">{{if eq .Dir "up"}}&#9650;{{else if eq .Dir "down"}}&#9660;{{end}} {{.Delta}} <span class="kvp">vs prior</span></div>{{else}}<div class="kd"><span class="kvp">&nbsp;</span></div>{{end}}
+      {{if .Proof}}<a class="kproof" role="button" tabindex="0" data-proof="{{.Proof}}" title="see the exact rows this number came from, recomputed">show the rows</a>{{end}}
       {{with .Spark}}<svg class="spark" viewBox="0 0 64 26" fill="none" preserveAspectRatio="none" aria-hidden="true"><polygon points="{{.Area}}" fill="var(--accent)" opacity=".12"/><polyline pathLength="1" points="{{.Line}}" stroke="var(--spark)" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/>{{if .EndClass}}<circle cx="{{.EndX}}" cy="{{.EndY}}" r="2" class="spend {{.EndClass}}"/>{{end}}</svg>{{end}}
     </div>{{end}}
     {{if .HasEngagement}}
@@ -3418,6 +3425,19 @@
     // evidence plus a recomputation over exactly that evidence. The verdict line at the top is the
     // product: "359 rows · recomputes to 359 · matches". If it ever says otherwise, that is a bug
     // here and it says so rather than quietly rendering.
+    function saOpenProof(query, label) {
+      var shade = document.createElement('div'); shade.className = 'jshade';
+      var panel = document.createElement('div'); panel.className = 'journey';
+      panel.innerHTML = '<div class="jh"><span class="jid">' + esc(label) + ' &middot; the rows</span>' +
+        '<span class="jclose">close &times;</span></div><div class="jmeta">loading the rows&hellip;</div>';
+      function close() { shade.remove(); panel.remove(); document.removeEventListener('keydown', onEsc); }
+      function onEsc(ev) { if (ev.key === 'Escape') close(); }
+      shade.onclick = close; document.addEventListener('keydown', onEsc);
+      document.body.appendChild(shade); document.body.appendChild(panel);
+      panel.querySelector('.jclose').onclick = close;
+      openRows(query, label, panel, close);
+    }
+
     function openRows(query,label,panel,close){
       panel.querySelector('.jmeta').textContent='loading the rows…';
       fetch('/v1/rows?'+query).then(function(r){return r.json()}).then(function(j){
@@ -4208,6 +4228,22 @@
         saSetView(a.getAttribute('data-view'), true);
       });
     })();
+
+    // Proof from a KPI tile. Reuses openRows so the chart bar and the tile show the SAME panel —
+    // two proof surfaces that rendered differently would be two claims about the same guarantee.
+    document.addEventListener('click', function (e) {
+      var a = e.target.closest && e.target.closest('[data-proof]');
+      if (!a) return;
+      e.preventDefault();
+      saOpenProof(a.getAttribute('data-proof'), a.closest('.kpi') ? (a.closest('.kpi').querySelector('.kk') || {}).textContent || 'this number' : 'this number');
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      var a = e.target.closest && e.target.closest('[data-proof]');
+      if (!a) return;
+      e.preventDefault();
+      a.click();
+    });
 
     var errOut=document.getElementById('errOut');
     if(errOut){

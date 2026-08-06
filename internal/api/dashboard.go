@@ -11,6 +11,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"strconv"
 	"regexp"
 	"sort"
 	"strings"
@@ -772,6 +773,13 @@ type kpiCard struct {
 	Label, Value, Delta, Dir string // Dir: "up" | "down" | ""
 	Accent                   bool
 	Spark                    *sparkVM
+	// Proof is the /v1/rows query that re-derives this number from its own rows.
+	//
+	// The audit against PostHog and Mixpanel called this the biggest INVISIBLE advantage in the
+	// product: they roll up and sample, so their numbers have no rows left to show, and ours does.
+	// It was reachable from exactly one place — inside a panel, after clicking a chart bar — and
+	// nowhere near a KPI. An advantage nobody can see is a cost already paid.
+	Proof string
 }
 
 // sparkVM holds the precomputed SVG geometry for a sparkline — points are laid out in a
@@ -1141,6 +1149,7 @@ func buildKPIs(vm *dashVM, evs []event.Event, trendEvent string, days, hours int
 		// /v1/trends. Translating it at the source would turn "$pageview" into "page view" in a
 		// query string and quietly break the chart.
 		Label: EventLabel(vm.StatEventLabel) + " · " + rangeWindowLabel(days, hours), Value: comma(vm.Signups), Delta: sd, Dir: dir(sd),
+		Proof: "event=" + url.QueryEscape(vm.StatEventLabel) + "&days=" + strconv.Itoa(days),
 		Spark: buildSpark(dailySeries(evs, func(e event.Event) bool { return e.Name == trendEvent }, days, now, false), endOf(sd)),
 	})
 	if vm.ConvLabel != "" && vm.HasConversion {
