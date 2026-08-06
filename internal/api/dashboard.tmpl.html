@@ -113,6 +113,13 @@
     --warn:#C0271C; --ok:#14713F; --ghost:#8E8570; --grid:#DCD5C0;
     --edge:#17140D; --sh-ink:#17140D; --sh-focus-ink:#17140D; --heat-fg:#17140D;
   }}
+  /* journey playback — a reconstruction from logged events, never a DOM recording */
+  .pbwrap{margin:12px 0 14px}
+  .pbstage{width:100%;max-height:46vh;display:block;background:var(--well)}
+  .pbdot{transition:opacity var(--t-fast) var(--ease)}
+  .pbctl{display:flex;align-items:center;gap:10px;margin-top:8px}
+  .pbscrub{flex:1;accent-color:var(--brand)}
+  .pbnote{margin-top:6px}
   /* companion globals: keyboard focus, reduced motion, entrances */
   :where(a,button,select,input,summary,[tabindex]):focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   :where(a,button,select,input,summary):focus:not(:focus-visible){outline:none}
@@ -4079,13 +4086,122 @@
         }).catch(function(){sesOut.innerHTML='<div class="inote err">could not load sessions</div>';});
     }
 
+
+    // ── JOURNEY PLAYBACK ──────────────────────────────────────────────────────────────────
+    //
+    // A scrubbable reconstruction of one visit, drawn from events already in the log: the click
+    // coordinates the SDK records, the viewport width on each pageview, and the timestamps.
+    //
+    // Deliberately NOT a DOM recording, and it says so. rrweb-style replay stores opaque blobs
+    // that no report can recompute from — a 10-minute session is ~1MB, which against this engine's
+    // memory model is a few hundred sessions before the box is gone. This is the honest version:
+    // every mark on screen is a row you can go read, so the "every number recomputes from raw
+    // events" property survives intact.
+    function saBuildPlayback(steps, panel) {
+      var pts = [];
+      for (var i = 0; i < steps.length; i++) {
+        var s = steps[i];
+        if (s.x || s.y) pts.push(s);
+      }
+      if (pts.length < 2) return ''; // one point is not a path; the step list already says more
+
+      // The stage is sized to the widest viewport the visit reported, so coordinates land where
+      // they actually landed rather than being squeezed into an arbitrary box.
+      var vw = 0, maxY = 0;
+      for (i = 0; i < steps.length; i++) {
+        if (steps[i].VW || steps[i].vw) vw = Math.max(vw, steps[i].vw || steps[i].VW);
+        if (steps[i].y) maxY = Math.max(maxY, steps[i].y);
+      }
+      if (!vw) vw = 1280;
+      var vh = Math.max(maxY + 80, 600);
+
+      var last = steps[steps.length - 1].t || 1;
+      var path = '', dots = '';
+      for (i = 0; i < pts.length; i++) {
+        var p = pts[i], x = p.x || 0, y = p.y || 0;
+        path += (i ? ' L' : 'M') + x + ' ' + y;
+        var rage = p.name === '$rageclick';
+        var dead = p.name === '$deadclick';
+        // Every dot carries its own timestamp so the scrubber can reveal them in order, and its
+        // label so hovering says WHAT was clicked rather than just where.
+        dots += '<circle class="pbdot" data-t="' + (p.t || 0) + '" cx="' + x + '" cy="' + y + '" r="' +
+          (rage ? 13 : 8) + '" fill="' + (rage ? 'var(--warn)' : dead ? 'var(--mut2)' : 'var(--brand)') +
+          '" stroke="var(--edge)" stroke-width="2"><title>' +
+          esc((p.text || p.name) + ' — +' + Math.round((p.t || 0) / 1000) + 's') + '</title></circle>';
+      }
+      return '<div class="pbwrap">' +
+        '<svg class="pbstage" viewBox="0 0 ' + vw + ' ' + vh + '" preserveAspectRatio="xMidYMin meet" role="img" ' +
+        'aria-label="cursor path and clicks for this visit">' +
+        '<rect x="1" y="1" width="' + (vw - 2) + '" height="' + (vh - 2) + '" fill="var(--s1)" stroke="var(--edge)" stroke-width="2"/>' +
+        '<path class="pbpath" d="' + path + '" fill="none" stroke="var(--accent)" stroke-width="3" ' +
+        'stroke-linejoin="round" stroke-linecap="round" opacity=".55"/>' + dots + '</svg>' +
+        '<div class="pbctl"><button class="cbtn pbplay" type="button">play ▶</button>' +
+        '<input class="pbscrub" type="range" min="0" max="' + last + '" value="' + last + '" ' +
+        'aria-label="scrub through this visit"><span class="pbt agmeta">+' + Math.round(last / 1000) + 's</span></div>' +
+        '<div class="agmeta pbnote">reconstructed from the ' + pts.length + ' click' + (pts.length === 1 ? '' : 's') +
+        ' this visit recorded, on a ' + vw + 'px viewport. every mark is an event in your log, not a screen recording — ' +
+        'scrub to see the order.</div></div>';
+    }
+
+    // Wire the scrubber. Kept out of saBuildPlayback so the markup can be rendered without
+    // behaviour and the teardown has one place to live.
+    function saWirePlayback(panel) {
+      var stage = panel.querySelector('.pbstage'), scrub = panel.querySelector('.pbscrub');
+      if (!stage || !scrub) return function () {};
+      var dots = panel.querySelectorAll('.pbdot'), label = panel.querySelector('.pbt');
+      var play = panel.querySelector('.pbplay'), raf = null, lastTs = 0;
+      function apply(t) {
+        for (var i = 0; i < dots.length; i++) {
+          var dt = +dots[i].getAttribute('data-t');
+          // Dots after the playhead are hidden rather than removed, so scrubbing backwards is
+          // instant and the SVG is built once.
+          dots[i].style.opacity = dt <= t ? '1' : '0';
+        }
+        if (label) label.textContent = '+' + Math.round(t / 1000) + 's';
+      }
+      scrub.addEventListener('input', function () { stop(); apply(+scrub.value); });
+      // requestAnimationFrame, not setInterval. rAF stops on its own in a backgrounded tab —
+      // which is the same reason every poller on this page goes through saPoll — and it is the
+      // right primitive for an animation regardless: the browser drives the cadence instead of a
+      // fixed 50ms guess, so playback stays smooth and costs nothing when nobody is looking.
+      function stop() {
+        if (raf) { cancelAnimationFrame(raf); raf = null; }
+        lastTs = 0;
+        if (play) play.textContent = 'play ▶';
+      }
+      function start() {
+        stop();
+        var max = +scrub.max;
+        if (+scrub.value >= max) { scrub.value = 0; apply(0); }
+        play.textContent = 'pause ▮▮';
+        // Replay the visit over ~6 seconds regardless of its real length. A visit that took nine
+        // minutes is unwatchable in real time, and one that took four seconds is a flicker.
+        var perMs = max / 6000;
+        function tick(ts) {
+          if (!lastTs) lastTs = ts;
+          var v = +scrub.value + (ts - lastTs) * perMs;
+          lastTs = ts;
+          if (v >= max) { scrub.value = max; apply(max); stop(); return; }
+          scrub.value = v; apply(v);
+          raf = requestAnimationFrame(tick);
+        }
+        raf = requestAnimationFrame(tick);
+      }
+      if (play) play.addEventListener('click', function () { raf ? stop() : start(); });
+      apply(+scrub.value);
+      // Returned so close() can stop the interval. A slide-over that closes with a timer still
+      // running leaves it ticking against detached nodes for the life of the page.
+      return stop;
+    }
+
     // one session's ordered steps, in the same slide-over the visitor journey uses
     function openSession(did,start){
       var shade=document.createElement('div');shade.className='jshade';
       var panel=document.createElement('div');panel.className='journey';
       var head='<div class="jh"><span class="jid">'+esc(did)+'</span><span class="jclose">close ×</span></div>';
       panel.innerHTML=head+'<div class="jmeta">loading…</div>';
-      function close(){shade.remove();panel.remove();document.removeEventListener('keydown',onEsc);}
+      var pbStop=function(){};
+      function close(){pbStop();shade.remove();panel.remove();document.removeEventListener('keydown',onEsc);}
       function onEsc(e){if(e.key==='Escape')close();}
       shade.onclick=close;document.addEventListener('keydown',onEsc);
       document.body.appendChild(shade);document.body.appendChild(panel);
@@ -4104,9 +4220,12 @@
             var st=s.name==='$rageclick'?' style="color:var(--warn)"':'';
             return '<div class="jrow"'+st+'><span class="jt">+'+at+'</span><span class="je">'+esc(s.name)+'</span><span class="jp">'+esc(d)+'</span></div>';
           }).join('');
-          panel.innerHTML=head+'<div class="jmeta">'+meta+'</div>'+rows+
+          panel.innerHTML=head+'<div class="jmeta">'+meta+'</div>'+saBuildPlayback(steps,panel)+rows+
             '<div class="jmeta" style="margin-top:12px">computed by /v1/session, the ordered events this visit captured. it is an event journey, not a screen recording, so there is no video or DOM here, only what was tracked.</div>';
           panel.querySelector('.jclose').onclick=close;
+          // The teardown matters: a slide-over closed mid-playback would leave the interval
+          // ticking against detached nodes for the life of the page.
+          pbStop=saWirePlayback(panel);
         }).catch(function(){panel.querySelector('.jmeta').textContent='could not load this session';});
     }
 
