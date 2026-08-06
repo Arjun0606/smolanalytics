@@ -97,6 +97,15 @@ func isPublic(r *http.Request) bool {
 		return true
 	case p == "/v1/flags/evaluate": // the SDK reads a user's flags with the public write key (like /v1/events); it has its own write-key check
 		return true
+	// Same contract as /v1/flags/evaluate: the SDK fetches locally-evaluable flag definitions with
+	// the public write key, and the handler makes its own write-key check.
+	//
+	// Missing from this list is what broke it in production: the session gate 401'd the request
+	// BEFORE the handler ran, so the handler's setCORS never executed and the browser reported a
+	// CORS failure rather than an auth one. The symptom named the wrong subsystem entirely — the
+	// endpoint looked misconfigured for cross-origin when it was simply never reached.
+	case p == "/v1/flags/definitions":
+		return true
 	case p == "/v1/surveys/active": // the SDK widget fetches active surveys with the public write key; it has its own write-key check
 		return true
 	case strings.HasPrefix(p, "/share/"): // read-only share pages carry their own token auth

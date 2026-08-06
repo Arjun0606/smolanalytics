@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -135,5 +136,42 @@ func TestOrdinaryEventsStillPass(t *testing.T) {
 	evs, _ := st.Range(time.Time{}, time.Time{})
 	if len(evs) != 3 {
 		t.Fatalf("want all 3 ordinary events stored, got %d", len(evs))
+	}
+}
+
+// The SDK's endpoints must be reachable cross-origin, or the browser reports a CORS failure for
+// what is really a routing mistake — and the symptom names the wrong subsystem entirely.
+//
+// This shipped broken: /v1/flags/definitions was added to the mux but not to isPublic(), so the
+// dashboard session gate 401'd it BEFORE the handler ran. The handler's setCORS never executed,
+// and the live marketing site logged "blocked by CORS policy" for an endpoint whose CORS was fine.
+func TestEverySdkEndpointAnswersCrossOrigin(t *testing.T) {
+	st := memory.New()
+	// The session gate has to be REAL for this to test anything: with no password configured,
+	// isPublic() is never consulted and the test would pass against the exact bug it exists to
+	// catch. The password is read from the environment at request time.
+	t.Setenv("SMOLANALYTICS_PASSWORD", "hunter2")
+	srv := httptest.NewServer(New(st).Handler())
+	defer srv.Close()
+
+	// Every path sdk.js fetches from a customer's page.
+	for _, path := range []string{
+		"/v1/flags/definitions",
+		"/v1/flags/evaluate?distinct_id=u1",
+		"/v1/surveys/active",
+	} {
+		req, _ := http.NewRequest("GET", srv.URL+path, nil)
+		req.Header.Set("Origin", "https://example.com")
+		resp, err := srv.Client().Do(req)
+		if err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		resp.Body.Close()
+		// The status may well be 401 (no write key here). What must NOT happen is a response with
+		// no CORS header, because the browser then cannot even read the status to learn that.
+		if resp.Header.Get("Access-Control-Allow-Origin") == "" {
+			t.Errorf("%s answered %d with no Access-Control-Allow-Origin — a browser sees this as a "+
+				"CORS failure and never learns the real reason", path, resp.StatusCode)
+		}
 	}
 }
