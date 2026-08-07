@@ -898,13 +898,11 @@ func answerSegment(evs []event.Event, m askMetric, s askSeg, win askWindow) stri
 
 // userAttr reports whether a property describes the VISITOR (so a metric filtered by
 // it must scope users, not events — the acquisition/device props aren't on every event).
-func userAttr(prop string) bool {
-	switch prop {
-	case "referrer", "source", "utm_source", "utm_medium", "utm_campaign", "device", "os", "browser", "country":
-		return true
-	}
-	return false
-}
+//
+// Delegates to query.IsUserAttr rather than restating the list. The local 9-case switch had
+// drifted from query's 11 by "channel" and "platform", and the dashboard silently disagreed with
+// /v1 and MCP on exactly those two.
+func userAttr(prop string) bool { return query.IsUserAttr(prop) }
 
 // answerSegVsSeg answers "X vs Y" over the same metric — both numbers, then the verdict.
 func answerSegVsSeg(evs []event.Event, m askMetric, a, b askSeg, win askWindow) string {

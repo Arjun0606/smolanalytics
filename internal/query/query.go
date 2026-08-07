@@ -449,6 +449,19 @@ var acquisitionProps = map[string]bool{
 	"channel": true, "device": true, "os": true, "browser": true, "country": true, "platform": true,
 }
 
+// IsUserAttr reports whether a property describes the VISITOR rather than the event, so a metric
+// filtered by it must scope USERS (any-touch) instead of filtering events.
+//
+// This is the single definition. There were two: this map, and a hand-written 9-case switch in
+// internal/api, and they had drifted apart by "channel" and "platform". On those two properties
+// the dashboard did event-level filtering — the exact failure its own code comment warns about —
+// while /v1 and MCP did user-level. Filtering by platform=ios dropped every signup event, so the
+// headline tile silently changed identity from "signup · 7d" to "page view · 7d" and the
+// conversion number left the page, while /v1/trends answered the real figure at the same instant.
+//
+// A predicate duplicated in two packages is a divergence with a start date.
+func IsUserAttr(prop string) bool { return acquisitionProps[prop] }
+
 // StampForFilters stamps every acquisition/user-attribute property a filter targets onto the
 // user's whole stream, so "signups where device=mobile" (or referrer/utm/country/…) means
 // "signups by users who came in on mobile" — the same number the dashboard and ask bar report —

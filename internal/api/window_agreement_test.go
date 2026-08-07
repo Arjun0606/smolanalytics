@@ -139,3 +139,179 @@ func TestTrendsAndRowsCountTheSameWindow(t *testing.T) {
 		}
 	}
 }
+
+// ONE DEFINITION OF "THIS PROPERTY DESCRIBES THE VISITOR".
+//
+// There were two: an 11-entry map in internal/query and a hand-written 9-case switch in
+// internal/api. They had drifted apart by "channel" and "platform".
+//
+// On those two the dashboard did EVENT-level filtering while /v1 and MCP did USER-level. Since a
+// signup event carries no platform, filtering by platform=ios dropped every signup — so the
+// headline tile silently changed identity from "signup · 7d" to "page view · 7d", the conversion
+// number left the page entirely, and /v1/trends answered the real figure at the same instant.
+//
+// Nothing errored. The dashboard just quietly started measuring a different event.
+func TestTheDashboardAndTheAPIAgreeOnUserAttributes(t *testing.T) {
+	st := memory.New()
+	srv := httptest.NewServer(New(st).Handler())
+	defer srv.Close()
+
+	now := time.Now().UTC()
+	var batch []map[string]any
+	for i := 0; i < 6; i++ {
+		id := fmt.Sprintf("u%d", i)
+		plat := "ios"
+		if i >= 3 {
+			plat = "android"
+		}
+		// the visitor attributes ride the pageview; the signup carries none of them
+		batch = append(batch, map[string]any{
+			"name": "$pageview", "distinct_id": id,
+			"timestamp":  now.Add(-2 * time.Hour).Format(time.RFC3339),
+			"properties": map[string]any{"path": "/", "platform": plat, "channel": "direct"},
+		})
+		batch = append(batch, map[string]any{
+			"name": "signup", "distinct_id": id,
+			"timestamp": now.Add(-time.Hour).Format(time.RFC3339),
+		})
+	}
+	body, _ := json.Marshal(batch)
+	resp, err := srv.Client().Post(srv.URL+"/v1/events", "application/json", strings.NewReader(string(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := resp.StatusCode
+	resp.Body.Close()
+	if code >= 300 {
+		t.Fatalf("seeding failed with %d", code)
+	}
+
+	for _, prop := range []string{"platform", "channel"} {
+		val := map[string]string{"platform": "ios", "channel": "direct"}[prop]
+		want := map[string]int{"platform": 3, "channel": 6}[prop]
+
+		var tr struct {
+			Total int `json:"total"`
+		}
+		mustJSON(t, getBody(t, srv,
+			fmt.Sprintf("/v1/trends?event=signup&days=7&f=%s:eq:%s", prop, val)), &tr)
+		if tr.Total != want {
+			t.Errorf("/v1/trends filtered by %s=%s counts %d signups, expected %d", prop, val, tr.Total, want)
+		}
+
+		// The dashboard must still be measuring SIGNUP, not have fallen back to $pageview.
+		page := getBody(t, srv, fmt.Sprintf("/?days=7&f=%s:eq:%s", prop, val))
+		if !strings.Contains(page, "signup · ") {
+			t.Errorf("filtering the dashboard by %s=%s made the headline tile stop being signup — "+
+				"every signup event was filtered away because the property lives on the pageview, "+
+				"so the conversion number silently left the page", prop, val)
+		}
+	}
+}
+
+// ONE JOURNEY DETECTOR, SO ONE VERDICT.
+//
+// The dashboard's detectFunnel ranked candidate steps by raw VOLUME; insight.Generate — which
+// produces the "fix this first" card at the top of that same page, and answers the MCP
+// whats_notable tool — ranked them by COVERAGE. Two detectors, two funnels, two verdicts about
+// one product, from the two surfaces most likely to be read side by side.
+//
+// The failure needs only a handful of power users: someone hammering one event drags the volume
+// detector onto a funnel the coverage detector rejects outright, and the page then names a
+// different "biggest drop-off" than the editor does.
+func TestNotableAgreesBetweenHTTPAndMCP(t *testing.T) {
+	st := memory.New()
+	srv := httptest.NewServer(New(st).Handler())
+	defer srv.Close()
+
+	now := time.Now().UTC()
+	var batch []map[string]any
+	add := func(name, id string, at time.Time) {
+		batch = append(batch, map[string]any{
+			"name": name, "distinct_id": id, "timestamp": at.Format(time.RFC3339),
+			"properties": map[string]any{"path": "/"}})
+	}
+	// the real journey, wide coverage
+	for i := 0; i < 60; i++ {
+		id := fmt.Sprintf("u%d", i)
+		t0 := now.AddDate(0, 0, -3).Add(time.Duration(i) * time.Minute)
+		add("$pageview", id, t0)
+		if i < 40 {
+			add("read_docs", id, t0.Add(time.Minute))
+		}
+		if i < 12 {
+			add("start_trial", id, t0.Add(2*time.Minute))
+		}
+		if i < 4 {
+			add("subscribe", id, t0.Add(3*time.Minute))
+		}
+	}
+	// three power users hammering one event: huge volume, tiny coverage
+	for p := 0; p < 3; p++ {
+		id := fmt.Sprintf("power%d", p)
+		for k := 0; k < 200; k++ {
+			add("search", id, now.AddDate(0, 0, -2).Add(time.Duration(k)*time.Second))
+		}
+	}
+	body, _ := json.Marshal(batch)
+	resp, err := srv.Client().Post(srv.URL+"/v1/events", "application/json", strings.NewReader(string(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := resp.StatusCode
+	resp.Body.Close()
+	if code >= 300 {
+		t.Fatalf("seeding failed with %d", code)
+	}
+
+	firstFunnelFinding := func(raw string) string {
+		var out struct {
+			Findings []struct {
+				Kind    string `json:"kind"`
+				Verdict string `json:"verdict"`
+				Detail  string `json:"detail"`
+				Title   string `json:"title"`
+			} `json:"findings"`
+		}
+		if uerr := json.Unmarshal([]byte(raw), &out); uerr != nil {
+			t.Fatalf("not JSON: %v (%.100s)", uerr, raw)
+		}
+		for _, f := range out.Findings {
+			if strings.Contains(strings.ToLower(f.Kind), "funnel") || strings.Contains(f.Verdict, "drop") {
+				return f.Kind + "|" + f.Title + "|" + f.Verdict + f.Detail
+			}
+		}
+		return ""
+	}
+
+	httpSide := firstFunnelFinding(getBody(t, srv, "/v1/notable"))
+
+	call, _ := json.Marshal(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "whats_notable", "arguments": map[string]any{}},
+	})
+	mr, merr := srv.Client().Post(srv.URL+"/mcp", "application/json", strings.NewReader(string(call)))
+	if merr != nil {
+		t.Fatal(merr)
+	}
+	defer mr.Body.Close()
+	var env struct {
+		Result struct {
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"result"`
+	}
+	if derr := json.NewDecoder(mr.Body).Decode(&env); derr != nil || len(env.Result.Content) == 0 {
+		t.Fatalf("whats_notable returned nothing usable (err %v, status %d)", derr, mr.StatusCode)
+	}
+	mcpSide := firstFunnelFinding(env.Result.Content[0].Text)
+
+	if httpSide == "" && mcpSide == "" {
+		t.Skip("neither surface produced a funnel finding on this fixture")
+	}
+	if httpSide != mcpSide {
+		t.Errorf("the page and the editor name different drop-offs for the same product:\n"+
+			"  /v1/notable:   %s\n  whats_notable: %s", httpSide, mcpSide)
+	}
+}

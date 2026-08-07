@@ -2693,15 +2693,43 @@ func pickEvent(vol []string, preferred string) string {
 
 // detectFunnel uses the conventional signup→activate→checkout when present, else
 // the top events ordered by how soon users do them after first contact.
-func detectFunnel(evs []event.Event, vol []string) ([]funnel.Step, string) {
-	if hasName(vol, "signup") && hasName(vol, "activate") && hasName(vol, "checkout") {
-		return []funnel.Step{{Event: "signup"}, {Event: "activate"}, {Event: "checkout"}}, "signup → activate → checkout"
+// journeyNames picks the funnel's step names from the one shared detector, falling back to the
+// old volume ordering only when the detector declines to name a journey (too little data), so a
+// thin instance still renders something rather than an empty pane.
+func journeyNames(evs []event.Event, vol []string) []string {
+	if js := insight.DetectJourney(evs); len(js) >= 2 {
+		out := make([]string, len(js))
+		for i, s := range js {
+			out[i] = s.Event
+		}
+		return out
 	}
 	top := vol
 	if len(top) > 3 {
 		top = top[:3]
 	}
-	top = orderByJourney(evs, top)
+	return orderByJourney(evs, top)
+}
+
+func detectFunnel(evs []event.Event, vol []string) ([]funnel.Step, string) {
+	if hasName(vol, "signup") && hasName(vol, "activate") && hasName(vol, "checkout") {
+		return []funnel.Step{{Event: "signup"}, {Event: "activate"}, {Event: "checkout"}}, "signup → activate → checkout"
+	}
+	// ONE JOURNEY DETECTOR. This ranked candidate steps by raw VOLUME while insight.Generate --
+	// which produces the "fix this first" verdict at the top of the same page, and the MCP
+	// whats_notable tool -- ranked them by COVERAGE. Two detectors, two funnels, two verdicts
+	// about one product, from the two surfaces most likely to be compared side by side.
+	//
+	// Measured: 60 users through pageview -> read_docs -> start_trial -> subscribe, plus 3 power
+	// users firing `search` 200x. /v1/notable said "biggest drop-off: after they viewed a page --
+	// only 5% go on to search". MCP whats_notable, at the same instant, said "after they read_docs
+	// -- only 30% go on to start_trial". The volume detector had been captured by three people.
+	//
+	// insight.DetectJourney is the intended semantic and says so in its own comment: order the
+	// widest-COVERAGE events by when users actually first do them, so the funnel follows the
+	// product's real flow rather than whichever event is hammered hardest. This keeps building the
+	// human label, and defers the step choice.
+	top := journeyNames(evs, vol)
 	steps := make([]funnel.Step, len(top))
 	labels := make([]string, len(top))
 	for i, n := range top {
