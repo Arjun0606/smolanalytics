@@ -5,6 +5,17 @@ on:
     branches: [main]
     tags: ["v*"]
 
+# Runs QUEUE, they never cancel each other.
+#
+# A release here is a push to main followed seconds later by a push of the tag, and both
+# trigger this workflow. Without a group they raced; with a cancelling group the tag's run
+# died and GitHub mailed "All jobs were cancelled" for a release that was perfectly fine.
+# Keyed by ref so main and a tag never share a group, and cancel-in-progress is false because
+# a half-published image is worse than a slow one.
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
   packages: write

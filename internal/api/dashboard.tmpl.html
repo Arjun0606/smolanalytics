@@ -3526,7 +3526,31 @@
       }).catch(function(){panel.querySelector('.jmeta').textContent='could not load the rows';});
     }
 
+    // EVERY DRILL-DOWN CARRIES THE PAGE'S SCOPE.
+    //
+    // The who-panel URLs were built from scratch in JS and never carried location.search, so the
+    // filter chips, ?site=, ?env= and ?cohort= were all dropped. On a dashboard filtered to
+    // plan:pro the checkout bar read 11 and the panel that opened from it was headed "32 people ·
+    // computed by /v1/who, same engine as the chart" — three times the bar it claimed to explain,
+    // listing users who are not in the filtered funnel at all.
+    //
+    // site/env become filters because the /v1 surface has no site= or env= parameter; they are
+    // properties there. The window is carried too, now that the funnel pane follows the range
+    // control — before that it deliberately was not, because the pane was all-history.
+    function saScopeQuery(){
+      var here=new URLSearchParams(location.search), out=[];
+      here.getAll('f').forEach(function(v){ out.push('f='+encodeURIComponent(v)); });
+      ['fm','cohort','days','hours','from','to'].forEach(function(k){
+        var v=here.get(k); if(v)out.push(k+'='+encodeURIComponent(v));
+      });
+      ['site','env'].forEach(function(k){
+        var v=here.get(k); if(v)out.push('f='+encodeURIComponent(k+':eq:'+v));
+      });
+      return out.join('&');
+    }
     function openWho(query,label){
+      var scope=saScopeQuery();
+      if(scope)query=query+'&'+scope;
       var shade=document.createElement('div');shade.className='jshade';
       var panel=document.createElement('div');panel.className='journey';
       panel.innerHTML='<div class="jh"><span class="jid">'+esc(label)+'</span><span class="jclose">close ×</span></div><div class="jmeta">loading…</div>';

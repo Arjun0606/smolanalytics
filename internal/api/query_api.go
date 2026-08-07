@@ -877,6 +877,14 @@ func (s *Server) apiWho(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadRequest, oerr.Error())
 			return
 		}
+		// Windowed like every other /v1 report. This branch returns before parseTrendWindow runs
+		// further down the handler, so it was the one /v1/who mode that silently ignored
+		// days/hours/from/to: /v1/who?steps=a,b&days=7 listed all-time users while
+		// /v1/funnel?steps=a,b&days=7 charted the 7-day funnel, and the dashboard drill-down
+		// promised "same engine as the chart" over the top of it.
+		if from, to, werr := parseTrendWindow(r); werr == nil && !from.IsZero() {
+			evs = scopeToWindow(evs, from, to)
+		}
 		outcomes := funnel.Users(evs, steps, window, funnel.Options{Order: order})
 		wanted := map[string]bool{}
 		for _, o := range outcomes {
