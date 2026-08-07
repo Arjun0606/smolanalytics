@@ -231,6 +231,10 @@ func TestAIVisManagedInstanceGetsAButtonNotACurl(t *testing.T) {
 	// main.go wires this from SMOLANALYTICS_CLOUD_URL; the hosted provisioner points it at
 	// the project's own setup page, which is where the GEO switch lives
 	s.SetCloudURL("https://smolanalytics.com/projects/prj_test/setup")
+	// Hosted AND funded. Being hosted was the whole test before, so a trial tenant — whose AI
+	// allowance is structurally zero — was promised a job the cloud had already decided never to
+	// schedule. TestAIVisManagedButUnfundedSaysSo covers the other half.
+	s.SetGeoSampling("managed")
 	if err := st.Ingest(event.Event{
 		Name: "$pageview", DistinctID: "v1", Timestamp: time.Now().UTC(),
 		Properties: map[string]any{"path": "/"},
@@ -252,5 +256,46 @@ func TestAIVisManagedInstanceGetsAButtonNotACurl(t *testing.T) {
 	i, j := strings.Index(body, "This starts by itself"), strings.Index(body, "curl -X POST")
 	if j >= 0 && j < i {
 		t.Error("the curl appears before the button — the hosted reader meets the protocol first")
+	}
+}
+
+// THE PROMISE THAT COULD NEVER COME TRUE.
+//
+// Sampling spends a real model call per question, funded from the plan's AI allowance, which
+// lib/cogs.ts sets to zero for any plan priced at zero. So for every trial tenant — and anyone
+// whose allowance does not cover a sweep — the cloud had already decided it would never schedule
+// this, while the card said "This starts by itself. Nothing to configure."
+//
+// They wait. Nothing ever arrives, on any timescale, and nothing on the page says why. A paying
+// customer concludes the product is broken; a trial user concludes the AI story does not work and
+// does not buy. It is the most expensive sentence on the page.
+func TestAIVisManagedButUnfundedSaysSo(t *testing.T) {
+	t.Setenv("SMOLANALYTICS_PASSWORD", "op-pass-1234")
+	st := memory.New()
+	s := New(st)
+	s.SetCloudURL("https://smolanalytics.com/projects/prj_test/setup")
+	// hosted, but the cloud did not stamp "managed" — this plan does not fund a sweep
+	s.SetGeoSampling("off")
+	if err := st.Ingest(event.Event{
+		Name: "$pageview", DistinctID: "v1", Timestamp: time.Now().UTC(),
+		Properties: map[string]any{"path": "/"},
+	}); err != nil {
+		t.Fatalf("ingest: %v", err)
+	}
+	body := renderDash(t, s, "op-pass-1234")
+
+	if strings.Contains(body, "This starts by itself. We read the site") {
+		t.Error("promised automatic sampling to a tenant the cloud will never schedule it for")
+	}
+	if !strings.Contains(body, "not running on your plan") {
+		t.Error("the card must say why it is empty — an unexplained empty card reads as a broken product")
+	}
+	// and it must not hand a hosted customer a curl as the workaround
+	if strings.Contains(body, "post one <b>$geo_check</b> event per answer you sample") {
+		t.Error("a hosted tenant was given the self-hosting instructions")
+	}
+	// the way forward has to be reachable
+	if !strings.Contains(body, "https://smolanalytics.com/projects/prj_test/setup") {
+		t.Error("no link to the plans page — a dead end instead of a next step")
 	}
 }

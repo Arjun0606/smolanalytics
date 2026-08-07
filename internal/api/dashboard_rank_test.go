@@ -30,7 +30,7 @@ func TestRankIsAbsentWhenWeAreNeverNamed(t *testing.T) {
 		})
 	}
 	var vm dashVM
-	buildAIVis(&vm, evs, []string{"$geo_check"}, 90, asof, false, "", "")
+	buildAIVis(&vm, evs, []string{"$geo_check"}, 90, asof, false, "", "", "")
 	t.Logf("checks=%d share=%d rank=%d count=%d", vm.AIVis.Checks, len(vm.AIVis.Share), vm.AIVis.BrandRank, vm.AIVis.BrandCount)
 	for _, b := range vm.AIVis.Share {
 		t.Logf("  brand=%q us=%v total=%d share=%d", b.Name, b.Us, b.Total, b.SharePct)
@@ -60,7 +60,7 @@ func TestRankClaimMentionedSometimes(t *testing.T) {
 		})
 	}
 	var vm dashVM
-	buildAIVis(&vm, evs, []string{"$geo_check"}, 90, asof, false, "", "")
+	buildAIVis(&vm, evs, []string{"$geo_check"}, 90, asof, false, "", "", "")
 	t.Logf("mentioned-once: rank=%d count=%d", vm.AIVis.BrandRank, vm.AIVis.BrandCount)
 	if vm.AIVis.BrandRank > vm.AIVis.BrandCount {
 		t.Errorf("IMPOSSIBLE RENDER: #%d of %d", vm.AIVis.BrandRank, vm.AIVis.BrandCount)

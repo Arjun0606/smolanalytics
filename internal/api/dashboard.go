@@ -1121,8 +1121,13 @@ type aivisVM struct {
 	// Managed says the cloud runs the sampler for this instance. A hosted customer must be
 	// shown a link to the switch, NEVER a curl: handing someone a POST body for a job we
 	// already do for them reads as "this feature is not finished".
-	Managed  bool
-	CloudURL string
+	Managed bool
+	// SamplingFunded says the cloud will ACTUALLY run the sampler here, not merely that this
+	// instance is hosted. Managed alone was the whole test, so a trial tenant — whose AI
+	// allowance is structurally zero — was told "This starts by itself" about a job the cloud
+	// had already decided never to schedule for them.
+	SamplingFunded bool
+	CloudURL       string
 	// Ships is the join no other tool can make: each release compared against the AI
 	// visibility either side of it. Populated at the call site because it needs the deploy
 	// store, which this builder deliberately does not take — it keeps the pure computation
@@ -1354,14 +1359,15 @@ func buildDepthCards(vm *dashVM, evs []event.Event, fsteps []funnel.Step, trendE
 // filters — the same evs slice, day count and asof web.ComputeWindow gets below — so the
 // card can never quietly answer over a wider range than the toolbar advertises. That
 // covenant is why this pane ships no window control of its own.
-func buildAIVis(vm *dashVM, evs []event.Event, names []string, days int, asof time.Time, scoped bool, widenURL, cloudURL string) {
+func buildAIVis(vm *dashVM, evs []event.Event, names []string, days int, asof time.Time, scoped bool, widenURL, cloudURL, geoSampling string) {
 	av := aivisVM{
-		Result:   aivis.Compute(evs, days, asof),
-		Ever:     hasName(names, "$geo_check"),
-		Scoped:   scoped,
-		WidenURL: widenURL,
-		Managed:  cloudURL != "",
-		CloudURL: cloudURL,
+		Result:         aivis.Compute(evs, days, asof),
+		Ever:           hasName(names, "$geo_check"),
+		Scoped:         scoped,
+		WidenURL:       widenURL,
+		Managed:        cloudURL != "",
+		SamplingFunded: geoSampling == "managed",
+		CloudURL:       cloudURL,
 	}
 	end := asof
 	if end.IsZero() {
@@ -2431,7 +2437,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	// separates "nothing sampled yet" from "your filters exclude the checks" — $geo_check
 	// carries no site or path, so any web-property chip hides every one of them.
 	buildAIVis(&vm, evs, names, rangeDays, rangeAsof,
-		len(chips) > 0 || site != "" || showDev, mkRange(90).URL, s.cloudURL)
+		len(chips) > 0 || site != "" || showDev, mkRange(90).URL, s.cloudURL, s.geoSampling)
 
 	// which ship moved it. Correlation, gated hard on run counts inside ByDeploy — the
 	// window is the SAME one the card above is reporting, so a reader can never be looking

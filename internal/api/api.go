@@ -86,6 +86,7 @@ type Server struct {
 	writeKey     string         // PUBLIC ingest key (embedded in the SDK): authorizes POST /v1/events ONLY. Never reads.
 	readKey      string         // SECRET read/MCP key: authorizes GET /v1/* reports, export, and MCP. Never shipped in client code.
 	cloudURL     string         // where the header's "Cloud ↗" link goes back to. Empty (self-hosted) = smolanalytics.com.
+	geoSampling  string         // "managed" when the cloud funds+schedules AI-visibility sampling here
 	geo          *geo.Resolver  // ingest-time IP→country (IP never stored); nil = disabled
 	anomalyMu    sync.Mutex
 	anomalyFired map[string]time.Time // finding title -> last webhook fire (24h dedup)
@@ -267,6 +268,19 @@ func (s *Server) SetReadKey(k string) { s.readKey = k }
 // back into their account. Empty (every self-hosted install) keeps the default link to
 // smolanalytics.com, so a self-hoster never sees a cloud-specific or broken link.
 func (s *Server) SetCloudURL(u string) { s.cloudURL = strings.TrimSpace(u) }
+
+// SetGeoSampling records whether the CLOUD will actually run AI-visibility sampling for this
+// instance. "managed" means it is funded and scheduled; anything else means it is not.
+//
+// The card said "This starts by itself. Nothing to configure." to every hosted tenant, because
+// the only thing it knew was that the instance was hosted. But sampling spends a real model call
+// per question and the cloud funds it from the plan's AI allowance, which is zero on a trial — so
+// for a trial user, and for anyone whose allowance does not cover a sweep, that card was a promise
+// about something that would never happen, on any timescale, with nothing on the page saying why.
+//
+// A paying customer staring at a permanently empty card decides the product is broken. A trial
+// user decides the AI story does not work, and does not buy.
+func (s *Server) SetGeoSampling(mode string) { s.geoSampling = strings.TrimSpace(mode) }
 
 // SetGeo enables ingest-time country resolution (the IP is used for one lookup
 // and never stored, only the ISO code lands on the event).

@@ -303,6 +303,7 @@ func serve(st store.Store, closeStore func() error, guardPublic bool) {
 	// optional: where the dashboard's "Cloud ↗" link goes back to. The hosted product sets
 	// it to this project's page; unset (self-hosted) keeps the default smolanalytics.com.
 	app.SetCloudURL(os.Getenv("SMOLANALYTICS_CLOUD_URL"))
+	app.SetGeoSampling(os.Getenv("SMOLANALYTICS_GEO_SAMPLING"))
 	if os.Getenv("SMOLANALYTICS_GEO") != "off" {
 		// country resolution from the free DB-IP lite db (CC BY 4.0) — downloads on
 		// first boot, loads in the background, never blocks serving. IPs never stored.

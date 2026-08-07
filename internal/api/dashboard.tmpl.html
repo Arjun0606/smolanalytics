@@ -1878,9 +1878,17 @@
         {{if .Ever}}
         <div class="exsummary">this instance has recorded <b>$geo_check</b> events, but none in this window{{if .Scoped}} that match the filters above{{end}}. visibility is sampled on a schedule rather than continuously, so a short window can hold zero checks — <a href="{{.WidenURL}}">widen to 90 days</a>.{{if .Scoped}} a check event carries <b>engine</b>, <b>prompt</b> and <b>rank</b>; it carries no <b>site</b> or <b>path</b>, so a site or page filter excludes every one of them. clear the filters to see them.{{end}}</div>
         {{else}}
-        {{if .Managed}}
+        {{if and .Managed .SamplingFunded}}
         <div class="exsummary">This starts by itself. We read the site your own traffic already comes from, work out your category and competitors, write 25 questions a real buyer would ask, and put them to the AI engines on a schedule &mdash; recording each answer here. Sampling costs a real model call per question, so how often the set runs is set by your plan rather than promised as a fixed cadence, and the card always says when each reading was taken.</div>
         <div class="agmeta" style="margin-top:8px">Nothing to configure. When you want to change the questions, add your own, or stop the sampling, they live on <a href="{{.CloudURL}}" target="_blank" rel="noopener">your setup page</a>.</div>
+        {{else if .Managed}}
+        <!-- Hosted, but the cloud has already decided it will not schedule sampling here: each
+             question costs a real model call, funded from the plan's AI allowance, which is zero
+             on a trial. Saying "this starts by itself" to someone it will never start for is the
+             single most expensive sentence on the page — they wait, nothing arrives, and they
+             conclude the product does not work rather than that they are on the wrong plan. -->
+        <div class="exsummary">Sampling the AI engines is not running on your plan. Each question here costs a real model call, so it is funded from your plan&rsquo;s AI allowance &mdash; a trial has none, which is what keeps the trial free. It is not something you switch on here.</div>
+        <div class="agmeta" style="margin-top:8px">On a paid plan this starts by itself: we read the site your traffic already comes from, work out your category and competitors, write 25 questions a real buyer would ask, and put them to the AI engines on a schedule. Until then this card stays empty rather than showing you numbers we did not measure. <a href="{{.CloudURL}}" target="_blank" rel="noopener">See plans &rarr;</a></div>
         {{else}}
         <div class="exsummary">Nothing has sampled the AI engines for this product yet. You&rsquo;re self-hosting, so the sampling is yours to run: post one <b>$geo_check</b> event per answer you sample and this card reads them — the same rows <b>/v1/ai-visibility</b> and the <b>ai_visibility</b> MCP tool read, so the three can never disagree.</div>
         <details style="margin-top:8px"><summary class="hlink">the event to post &rarr;</summary>
