@@ -1172,7 +1172,11 @@ func buildKPIs(vm *dashVM, evs []event.Event, trendEvent string, days, hours int
 		Spark: buildSpark(dailySeries(evs, func(e event.Event) bool { return e.Name == trendEvent }, days, now, false), endOf(sd)),
 	})
 	if vm.ConvLabel != "" && vm.HasConversion {
-		cards = append(cards, kpiCard{Label: vm.ConvLabel, Value: fmt.Sprintf("%d%%", vm.OverallConv), Accent: true})
+		// Carries the window like every tile beside it. Without the suffix this sat between
+		// "People · 7d" and "signup · 7d" reading simply "signup → checkout", so the row looked
+		// like one window when this tile was the odd one out.
+		cards = append(cards, kpiCard{Label: vm.ConvLabel + " · " + rangeWindowLabel(days, hours),
+			Value: fmt.Sprintf("%d%%", vm.OverallConv), Accent: true})
 	}
 	cards = append(cards, kpiCard{Label: "People · all time", Value: comma(vm.TotalUsers), Spark: buildSpark(cumulativeUserSeries(evs, days, now), "")})
 	vm.KPIs = cards
@@ -1895,7 +1899,6 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	gq.Del("grain")
 	grainOff.RawQuery = gq.Encode()
 	grainOffHref := grainOff.RequestURI()
-	fr := funnel.ComputeOpts(grainEvs, fsteps, 7*24*time.Hour, fopts)
 	rr := retention.ComputeBucketed(grainEvs, rdays, retEvent, rbucket, rroll)
 	// the chart and the headline stat both follow the selected range, and the stat
 	// carries a delta vs the prior equal window so movement is visible at a glance
@@ -1945,6 +1948,25 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		priorFrom = day0.AddDate(0, 0, -(2*rangeDays - 1))
 		priorTo = day0.AddDate(0, 0, -(rangeDays - 1))
 	}
+	// THE FUNNEL FOLLOWS THE RANGE CONTROL. It is computed here, after curFrom/curTo are final,
+	// and over a WINDOWED slice — it used to run further up the handler on the unwindowed events,
+	// so it was always an all-history number sitting under a range control it ignored.
+	//
+	// Measured: with 7d selected the pane read signup 80 → checkout 32 and the tile beside it read
+	// "signup → checkout 40%", while /v1/funnel?days=7 answered 20 → 2, i.e. 10%. The pane sat
+	// under the words "computed by /v1/funnel", between two tiles labelled "· 7d", and the
+	// grain-off link promised "keeping this window". Four separate claims to a window it did not
+	// have, and a founder reading "we convert at 40% this week" was reading all of time.
+	//
+	// scopeToWindow is the same helper /v1/funnel uses, deliberately, rather than a second
+	// windowing rule stated here — restating it is exactly how "the last N days" came to mean
+	// three different things.
+	//
+	// The 7*24h below is the per-user CONVERSION window (how long someone has to finish), not the
+	// reporting period. Nothing else was bounding this pane.
+	fwin := scopeToWindow(grainEvs, curFrom, curTo)
+	fr := funnel.ComputeOpts(fwin, fsteps, 7*24*time.Hour, fopts)
+
 	tr := trends.ComputeInterval(evs, trendEvent, curFrom, curTo, false, gran)
 	trPrior := trends.ComputeInterval(evs, trendEvent, priorFrom, priorTo, false, gran)
 	sig30 := tr.Total
@@ -2370,7 +2392,9 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if segProp != "" {
-		vm.ConvBySeg, vm.ConvByThin = funnelBySegment(evs, segProp, fsteps, fopts)
+		// Windowed like the funnel above it, or the segments do not add up to the total they are
+		// a breakdown OF — the pane would report all-history segments under a 7d headline.
+		vm.ConvBySeg, vm.ConvByThin = funnelBySegment(scopeToWindow(evs, curFrom, curTo), segProp, fsteps, fopts)
 		if segProp == "country" {
 			decorateCountrySegs(vm.ConvBySeg)
 		}
