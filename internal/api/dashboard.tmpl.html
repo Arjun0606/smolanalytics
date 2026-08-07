@@ -1618,6 +1618,7 @@
       <div class="segconv">
         {{range .ConvBySeg}}<div class="sc"><div class="sc-h"><span class="sc-name"{{if .Code}} data-cc="{{.Code}}"{{end}}>{{if .Flag}}<span class="cflag" aria-hidden="true">{{.Flag}}</span>{{end}}{{.Value}}</span><span class="sc-conv">{{.Conv}}%</span></div><div class="sc-track"><div class="sc-fill" style="width:{{.Conv}}%"></div></div><div class="sc-sub">{{.Users}} user{{if ne .Users 1}}s{{end}}</div></div>{{end}}
         {{if .ConvByThin}}<div class="sc-thin">{{.ConvByThin}} more with fewer than 10 users &mdash; too few to rate</div>{{end}}
+        {{if .ConvByNone}}<div class="sc-thin">{{.ConvByNone}} people carry no {{.ConvByTitle}} at all and are not counted above &mdash; set it on the event, or these rows describe a minority of your users</div>{{end}}
       </div>
     </div>
     {{end}}

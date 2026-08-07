@@ -117,6 +117,19 @@ func Generate(evs []event.Event) []Finding {
 //
 // steps with fewer than 2 entries falls back to detecting, so existing callers are unchanged.
 func GenerateForFunnel(evs []event.Event, pageSteps []funnel.Step) []Finding {
+	return GenerateForFunnelOpts(evs, pageSteps, funnel.Options{})
+}
+
+// GenerateForFunnelOpts is GenerateForFunnel over the page's funnel DISCIPLINE as well as its
+// steps.
+//
+// Passing the steps was only half of it. The pane has an order selector (?forder=ordered|strict|
+// unordered) and the verdict always computed with the default discipline, so on a product where
+// people commonly fire the later event first, selecting "any order" made the pane read
+// "100% continue · 0 dropped" while the card directly above it announced "only 75% go on to
+// signup, so 10 people stop here". The page's headline diagnosis contradicting the pane it is
+// diagnosing, because a control moved one of them and not the other.
+func GenerateForFunnelOpts(evs []event.Event, pageSteps []funnel.Step, fopts funnel.Options) []Finding {
 	var out []Finding
 	if len(evs) == 0 {
 		return out
@@ -209,7 +222,7 @@ func GenerateForFunnel(evs []event.Event, pageSteps []funnel.Step) []Finding {
 		steps = detectJourney(evs)
 	}
 	if len(steps) >= 2 {
-		fr := funnel.Compute(evs, steps, 7*24*time.Hour)
+		fr := funnel.ComputeOpts(evs, steps, 7*24*time.Hour, fopts)
 		worstDrop, worstFrom, worstTo, worstPct, worstBase := -1, "", "", 0, 0
 		for i := 1; i < len(fr.Steps); i++ {
 			if fr.Steps[i-1].Count < minSample {

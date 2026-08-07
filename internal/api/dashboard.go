@@ -167,12 +167,21 @@ type segConv struct {
 // ComputeBreakdown, so "conversion by X" was hardcoded ordered-with-no-exclusions while the
 // funnel above it honoured the toolbar — one page showing two different funnels, with segments
 // that could not add up to the total printed over them.
-func funnelBySegment(evs []event.Event, property string, steps []funnel.Step, opts funnel.Options) ([]segConv, int) {
+// Returns the segments, the count of segments hidden for being too thin, and the number of people
+// who carry no value for the property at all.
+//
+// That third number used to be dropped on the floor. The pane disclosed the small segments it was
+// hiding and said nothing about the (none) bucket, so on an instance where 170 of 200 signups have
+// no `plan` set it rendered two rows — "free 0% · 15 users", "pro 53% · 15 users" — and a reader
+// reasonably concluded they were looking at conversion across their users. They were looking at
+// 15% of them, and the biggest group was invisible. Hiding a majority while itemising a minority
+// is worse than showing nothing.
+func funnelBySegment(evs []event.Event, property string, steps []funnel.Step, opts funnel.Options) ([]segConv, int, int) {
 	// a real funnel needs ≥2 distinct steps — a degenerate 1-step "funnel" reports a
 	// meaningless 100% conversion for every segment ("conversion by plan — pro 100%") on a
 	// brand-new instance that has only sent one event type. Suppress it entirely.
 	if len(steps) < 2 {
-		return nil, 0
+		return nil, 0, 0
 	}
 	// StampFirstTouch so a segment property that lives only on the acquisition event
 	// (source/referrer/device on the landing pageview, not on later funnel steps) still
@@ -180,10 +189,15 @@ func funnelBySegment(evs []event.Event, property string, steps []funnel.Step, op
 	// stamp. Without it this card rendered empty while those surfaces reported the segment.
 	segs := funnel.ComputeBreakdownOpts(query.StampFirstTouch(evs, property), steps, 7*24*time.Hour, property, opts)
 	out := make([]segConv, 0, len(segs))
-	thin := 0
+	thin, none := 0, 0
 	for _, s := range segs {
 		if s.Value == "(none)" {
-			continue // preserve prior behavior: only show segments where the property is set
+			// Still not shown as a row — "(none)" is not a segment anyone chose. But it IS counted
+			// and reported, so the pane can say how much of the population it is leaving out.
+			if len(s.Steps) > 0 {
+				none = s.Steps[0].Count
+			}
+			continue
 		}
 		users := 0
 		if len(s.Steps) > 0 {
@@ -195,7 +209,7 @@ func funnelBySegment(evs []event.Event, property string, steps []funnel.Step, op
 		}
 		out = append(out, segConv{Value: s.Value, Users: users, Conv: pct(s.OverallConversion)})
 	}
-	return out, thin // ComputeBreakdown already sorts by step-0 users descending
+	return out, thin, none // ComputeBreakdown already sorts by step-0 users descending
 }
 
 // segConvMinUsers is the floor under which this card refuses to state a conversion rate.
@@ -255,6 +269,7 @@ type dashVM struct {
 	BySource       []segRow
 	ConvBySeg      []segConv
 	ConvByThin     int // segments held back for being too thin to state a rate — said on screen, never silent
+	ConvByNone     int // people carrying no value for the property — the majority, on most instances
 	Events         []string
 	ProductEvents  []string // real named events (no $-prefixed internals) for the "your events" ask chips
 	Updated        string
@@ -1774,7 +1789,13 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	// run insight's own journey detection while the funnel pane ran detectFunnel, and the page
 	// could contradict itself about which funnel it was even talking about.
 	verdictSteps, _ := detectFunnel(evs, eventsByVolume(evs))
-	verdict := insight.GenerateForFunnel(evs, verdictSteps)
+	// Parsed HERE, above the verdict, because the verdict and the funnel pane must share one
+	// funnel definition. It used to be read further down, after the card had already been
+	// computed with the default discipline, so moving the order selector changed the pane and
+	// left the headline diagnosis describing a different funnel.
+	forder, _ := funnel.ParseOrder(r.URL.Query().Get("forder"))
+	fopts := funnel.Options{Order: forder}
+	verdict := insight.GenerateForFunnelOpts(evs, verdictSteps, fopts)
 
 	// the range switcher links, preserving site + filters
 	// every preset link must clear BOTH range params, or clicking 7d after 6h leaves
@@ -1818,7 +1839,6 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	segProp := detectProp(evs, "plan")
 	srcProp := detectProp(evs, "source")
 
-	forder, _ := funnel.ParseOrder(r.URL.Query().Get("forder"))
 	rdays := 7
 	switch r.URL.Query().Get("rdays") {
 	case "30":
@@ -1872,7 +1892,6 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	// One Options value for BOTH the funnel pane and the "conversion by X" pane below it, so the
 	// two cannot drift into rendering different funnel definitions on the same page.
-	fopts := funnel.Options{Order: forder}
 	// ?grain=company switches the funnel and retention panes to ACCOUNT grain — the B2B
 	// question, where an account converts if anyone in it converts.
 	//
@@ -2394,7 +2413,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	if segProp != "" {
 		// Windowed like the funnel above it, or the segments do not add up to the total they are
 		// a breakdown OF — the pane would report all-history segments under a 7d headline.
-		vm.ConvBySeg, vm.ConvByThin = funnelBySegment(scopeToWindow(evs, curFrom, curTo), segProp, fsteps, fopts)
+		vm.ConvBySeg, vm.ConvByThin, vm.ConvByNone = funnelBySegment(scopeToWindow(evs, curFrom, curTo), segProp, fsteps, fopts)
 		if segProp == "country" {
 			decorateCountrySegs(vm.ConvBySeg)
 		}
