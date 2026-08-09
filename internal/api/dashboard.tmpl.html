@@ -1929,6 +1929,20 @@
           <div class="sk"><div class="skv">{{comma .Training}}</div><div class="skl">training</div></div>
           {{if .Errors}}<div class="sk"><div class="skv" style="color:var(--warn)">{{comma .Errors}}</div><div class="skl">served an error</div></div>{{end}}
         </div>
+        {{if $.HasWeb}}
+        {{/* The comparison, in the product and not only on the marketing site. Two counts of the
+             same window side by side is the whole argument, and a reader who has to do the
+             division themselves will not do it. */}}
+        <div class="agmeta" style="margin-top:10px">
+          Over this same window <b>{{comma $.Visitors}}</b> {{if eq $.Visitors 1}}person{{else}}people{{end}}
+          visited, and <b>{{comma .Hits}}</b> machine {{if eq .Hits 1}}read{{else}}reads{{end}} happened.
+          Every analytics tool that counts with a JavaScript pixel &mdash; including this one, until the
+          reporter below started reporting from your server &mdash; sees only the first number.
+          {{if and .User (not $.AIVisitors)}} And <b>{{comma .User}}</b> of those reads happened because
+          someone asked an assistant about you, of whom <b>none</b> then arrived: the answer was the
+          destination, so there was no visit to record.{{end}}
+        </div>
+        {{end}}
         <div class="agmeta" style="margin-top:6px">A <b>live assistant fetch</b> is a person asking ChatGPT, Claude or Perplexity something right now and it pulling your page to answer them{{if .UserPct}} — {{.UserPct}}% of the fetches here{{end}}. That is a human intent signal, not a robot, and it is the reason these three are counted apart instead of lumped into "bot traffic".</div>
 
         {{if .Bars}}
