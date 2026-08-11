@@ -15,6 +15,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/aivis"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/insight"
+	"github.com/Arjun0606/smolanalytics/internal/investigate"
 )
 
 // Brief is the computed digest.
@@ -27,6 +28,13 @@ type Brief struct {
 	PriorEvents   int               `json:"prior_events"`
 	Sites         []SiteLine        `json:"sites,omitempty"`
 	Findings      []insight.Finding `json:"findings"`
+	// Investigation is the PM half: conclusions, each with a size, a cause and a next move,
+	// ranked so the most expensive thing leads.
+	//
+	// The pulse above tells you traffic moved. That is the raw material a PM would then spend a
+	// morning slicing. This is the slicing, already done — which is the difference between a
+	// digest someone skims and one they act on.
+	Investigation investigate.Investigation `json:"investigation"`
 }
 
 // SiteLine is one product's slice of the pulse. The SDK stamps every event's
@@ -52,6 +60,10 @@ type siteAgg struct {
 // so week-over-week and retention reads stay correct even when days narrows the pulse.
 func Build(evs []event.Event, days int, now time.Time) Brief {
 	b := Brief{GeneratedAt: now, Days: days, Findings: []insight.Finding{}} // [] not null in JSON
+	// The investigation sees the FULL history, like the verdict engine below, because a step
+	// change is only visible against what came before it. Handing it the pulse window would
+	// leave the detector with no "before" and it would find nothing, every time.
+	b.Investigation = investigate.Run(evs, investigate.Opts{Now: now})
 	cur := now.AddDate(0, 0, -days)
 	prior := now.AddDate(0, 0, -2*days)
 	seen, priorSeen := map[string]bool{}, map[string]bool{}
@@ -151,6 +163,7 @@ func Format(b Brief) string {
 	fmt.Fprintf(&s, "%-*s %s · %s\n", len(priorLbl), lastLbl, plural(b.Visitors, "visitor"), plural(b.Events, "event"))
 	fmt.Fprintf(&s, "%s %s · %s%s\n", priorLbl, plural(b.PriorVisitors, "visitor"), plural(b.PriorEvents, "event"), pulseDelta(b))
 	formatSites(&s, b.Sites)
+	formatInvestigation(&s, b.Investigation)
 	s.WriteString("\nWhat to look at:\n")
 	if len(b.Findings) == 0 {
 		s.WriteString("  nothing notable, no big swings, funnel leaks, or retention flags.\n")
@@ -244,4 +257,37 @@ func plural(n int, word string) string {
 		return fmt.Sprintf("%d %s", n, word)
 	}
 	return fmt.Sprintf("%d %ss", n, word)
+}
+
+// formatInvestigation renders the PM section: the triage line, then one block per finding.
+//
+// The triage line ("3 things changed. 1 needs you.") is the most important string in the whole
+// digest. Without it every line reads as equally urgent, which is the same as none of them being
+// urgent, and the reader goes back to opening the dashboard.
+func formatInvestigation(s *strings.Builder, inv investigate.Investigation) {
+	if inv.Quiet {
+		// A calm product is a real answer, and saying it plainly is what earns the reader's
+		// trust on the day the brief DOES have something. Naming what was scanned separates
+		// "nothing happened" from "nothing ran".
+		fmt.Fprintf(s, "\nNothing needs you today. Checked %d metric(s) for step changes.\n", len(inv.Scanned))
+		return
+	}
+	n := inv.NeedsYouCount()
+	fmt.Fprintf(s, "\n%s changed. %d needs you.\n\n", plural(len(inv.Findings), "thing"), n)
+	for i, f := range inv.Findings {
+		fmt.Fprintf(s, "%d. %s", i+1, f.Headline)
+		if f.Cost.People > 0 {
+			// "people", not plural(n,"person") — that renders "1260 persons", which reads as
+			// machine output and undercuts a line whose whole job is to sound like a colleague.
+			fmt.Fprintf(s, "   ~%s people/mo", group(f.Cost.People))
+		}
+		s.WriteString("\n")
+		if f.Cause != "" {
+			fmt.Fprintf(s, "   %s\n", f.Cause)
+		}
+		if f.NextMove != "" {
+			fmt.Fprintf(s, "   → %s\n", f.NextMove)
+		}
+		s.WriteString("\n")
+	}
 }
