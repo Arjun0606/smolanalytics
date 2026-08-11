@@ -276,3 +276,102 @@ func TestAnUnreadableArmIsNeverCalledADud(t *testing.T) {
 			kl[0].Headline, kl[0].Cause)
 	}
 }
+
+// segSeed: a drop where `share` of the lost volume is concentrated in one browser.
+func segSeed(t *testing.T, now time.Time, share float64) []event.Event {
+	t.Helper()
+	var evs []event.Event
+	add := func(d, i int, browser string) {
+		u := fmt.Sprintf("%s%d_%d", browser, d, i)
+		evs = append(evs, event.Event{
+			ID: u, Name: "checkout", DistinctID: u,
+			Timestamp:  now.AddDate(0, 0, -d).Add(time.Duration(i) * time.Minute),
+			Properties: map[string]any{"browser": browser},
+		})
+	}
+	for d := 27; d >= 0; d-- {
+		saf, chr := 30, 30
+		if d < 14 {
+			saf = 30 - int(30*share)
+			chr = 30 - int(30*(1-share))
+		}
+		for i := 0; i < saf; i++ {
+			add(d, i, "Safari")
+		}
+		for i := 0; i < chr; i++ {
+			add(d, i+1000, "Chrome")
+		}
+	}
+	return evs
+}
+
+// THE LINE THAT MAKES IT A COLLEAGUE. "checkout fell" is an alert; "and it is only Safari" turns
+// an unbounded investigation into a twenty-minute one.
+func TestItNamesTheSegmentCarryingTheLoss(t *testing.T) {
+	now := time.Now().UTC()
+	inv := WithContext(segSeed(t, now, 1.0), nil, nil, Opts{Now: now})
+	if len(inv.Findings) == 0 {
+		t.Fatal("no finding at all on a clear drop")
+	}
+	c := inv.Findings[0].Cause
+	if !strings.Contains(c, "Safari") {
+		t.Errorf("the cause does not name the browser carrying the whole drop: %q", c)
+	}
+	if !strings.Contains(c, "%") {
+		t.Errorf("the cause must quantify the concentration, or it is an assertion: %q", c)
+	}
+}
+
+// AND IT MUST STAY QUIET WHEN THE LOSS IS EVEN. Naming the biggest slice of an even spread sends
+// someone down a wrong path with confidence, which is worse than saying nothing.
+func TestItRefusesToBlameASegmentWhenTheLossIsEven(t *testing.T) {
+	now := time.Now().UTC()
+	inv := WithContext(segSeed(t, now, 0.5), nil, nil, Opts{Now: now})
+	if len(inv.Findings) == 0 {
+		t.Fatal("no finding at all on a clear drop")
+	}
+	c := inv.Findings[0].Cause
+	if strings.Contains(c, "Safari") || strings.Contains(c, "Chrome") {
+		t.Errorf("blamed a browser for a loss spread evenly across both: %q", c)
+	}
+	if c == "" {
+		t.Error("an empty cause reads as though nobody looked; it must say what it could not find")
+	}
+}
+
+// With nothing to attribute, the line must still tell the reader what would make attribution
+// possible next time.
+func TestAnUnattributableDropSaysWhatIsMissing(t *testing.T) {
+	now := time.Now().UTC()
+	inv := WithContext(seed(t, now, "signup", 40, 10), nil, nil, Opts{Now: now})
+	if len(inv.Findings) == 0 {
+		t.Fatal("no finding")
+	}
+	if c := inv.Findings[0].Cause; !strings.Contains(c, "record deploys") {
+		t.Errorf("the unattributed line must name the fix that would attribute it next time: %q", c)
+	}
+}
+
+// A SHARE CANNOT EXCEED THE WHOLE.
+//
+// The tests above asserted the cause "contains Safari" and "contains %", and both passed while
+// the line read "117% of the loss is browser=Safari" — because before and after were measured
+// over windows of different lengths, so the earlier side was inflated by however much longer it
+// happened to be. Only rendering it caught that.
+//
+// An impossible number is worse than a missing one: it tells the reader the arithmetic is not
+// being checked, and everything else on the page inherits that doubt.
+func TestAShareIsNeverImpossible(t *testing.T) {
+	now := time.Now().UTC()
+	for _, share := range []float64{1.0, 0.8, 0.6} {
+		inv := WithContext(segSeed(t, now, share), nil, nil, Opts{Now: now})
+		for _, f := range inv.Findings {
+			var pct float64
+			if n, _ := fmt.Sscanf(f.Cause, "%f%% of the loss", &pct); n == 1 {
+				if pct > 100 || pct < 0 {
+					t.Errorf("share=%.1f produced an impossible concentration: %q", share, f.Cause)
+				}
+			}
+		}
+	}
+}

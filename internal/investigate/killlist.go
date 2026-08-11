@@ -3,8 +3,10 @@ package investigate
 import (
 	"fmt"
 
+	"github.com/Arjun0606/smolanalytics/internal/deploys"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/flag"
+	"github.com/Arjun0606/smolanalytics/internal/query"
 )
 
 // The review almost nobody runs: what did we ship that moved nothing?
@@ -115,7 +117,16 @@ func readFlat(rep flag.Report, control string) (verdict string, exposed int, ok 
 // store is a different dependency than the event log, and Run must stay usable by callers that
 // only hold events.
 func WithFlags(evs []event.Event, flags []flag.Flag, o Opts) Investigation {
+	return WithContext(evs, flags, nil, o)
+}
+
+// WithContext is the full pass: change findings, cause attribution, and the kill list.
+//
+// Deploys are optional. Most instances record none, and the segment half of the attribution works
+// without them — "61% of the loss is browser=Safari" needs nothing but the events.
+func WithContext(evs []event.Event, flags []flag.Flag, deps []deploys.Deploy, o Opts) Investigation {
 	inv := Run(evs, o)
+	Attribute(query.WithoutSampler(query.Apply(evs, nil)), inv.Findings, deps, o)
 	if kl := KillList(evs, flags, o); len(kl) > 0 {
 		inv.Findings = append(inv.Findings, kl...)
 		inv.Quiet = false
