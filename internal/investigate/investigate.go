@@ -232,8 +232,12 @@ func productEvents(evs []event.Event) []string {
 	return out
 }
 
-// rank orders the brief. Money first where we have it, then people, then the ones needing
-// attention — so the top line is always the most expensive thing happening.
+// rank orders the brief: money where we have it, then things needing attention, then size.
+//
+// NOT simply "biggest first", and the live output is what made that precise. A 480-people SURGE
+// sorts below a 210-people regression, because a surge is good news that keeps until someone
+// reads the brief and a regression is costing money now. Urgency outranks magnitude among
+// equally-sized findings; magnitude decides between findings of equal urgency.
 func rank(fs []Finding) {
 	sort.SliceStable(fs, func(i, j int) bool {
 		a, b := fs[i], fs[j]
