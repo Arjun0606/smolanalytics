@@ -129,6 +129,10 @@ type Experiment struct {
 	// The guardrails on every experiment this product created went unevaluated for months while
 	// the UI said they were watched, which nobody could see precisely because there was nowhere
 	// for "we have not looked" to be written down.
+	// RevertedAt / RevertedReason record an AUTOMATIC pull. Observations like the guardrail
+	// status, never plan — and a reverted experiment stays reverted until a human says otherwise.
+	RevertedAt         time.Time         `json:"reverted_at,omitempty"`
+	RevertedReason     string            `json:"reverted_reason,omitempty"`
 	GuardrailStatus    []GuardrailResult `json:"guardrail_status,omitempty"`
 	GuardrailCheckedAt time.Time         `json:"guardrail_checked_at,omitempty"`
 	PlanHash           string            `json:"plan_hash"`

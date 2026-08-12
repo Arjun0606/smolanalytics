@@ -49,6 +49,11 @@ func (s *Server) EvaluateGuardrails() []GuardrailBreach {
 	evs := query.Apply(all, nil) // production scope, like every other report
 	now := time.Now().UTC()
 
+	// The PREVIOUS verdict, captured before this pass overwrites it. Auto-revert needs two
+	// consecutive failures, so the only place that history exists is right here.
+	prevStatus := map[string][]flag.GuardrailResult{}
+	prevAt := map[string]time.Time{}
+
 	var breaches []GuardrailBreach
 	for _, f := range s.flags.List() {
 		exp := f.Experiment
@@ -59,6 +64,8 @@ func (s *Server) EvaluateGuardrails() []GuardrailBreach {
 		if results == nil {
 			continue
 		}
+		prevStatus[f.Key] = exp.GuardrailStatus
+		prevAt[f.Key] = exp.GuardrailCheckedAt
 		// Persist so the pane can say WHEN it was last checked. An unchecked guardrail must never
 		// render as PASS — the defect being fixed here is precisely a safety claim nobody verified,
 		// and "no news" reading as "good news" is how it survived.
@@ -72,6 +79,9 @@ func (s *Server) EvaluateGuardrails() []GuardrailBreach {
 				breaches = append(breaches, GuardrailBreach{Flag: f.Key, Variant: r.Variant, Result: r})
 			}
 		}
+	}
+	if n := s.applyAutoRevert(breaches, prevStatus, prevAt, now); n > 0 {
+		log.Printf("[guardrails] auto-reverted %d flag(s)", n)
 	}
 	return breaches
 }

@@ -41,6 +41,13 @@ func TestTheGuardrailEvaluatorIsActuallyScheduled(t *testing.T) {
 // expServerWithGuardrail seeds an experiment where the treatment arm throws far more exceptions.
 func guardrailServer(t *testing.T, ctrlErrs, testErrs int) (*Server, flag.Flag) {
 	t.Helper()
+	return guardrailServerStarted(t, ctrlErrs, testErrs, 7*24*time.Hour)
+}
+
+// guardrailServerStarted packs the same traffic into a window that began `ago` in the past, so a
+// fresh experiment can still be given enough events to fail a guardrail.
+func guardrailServerStarted(t *testing.T, ctrlErrs, testErrs int, ago time.Duration) (*Server, flag.Flag) {
+	t.Helper()
 	st := memory.New()
 	s := New(st)
 	fs, err := flag.Open("")
@@ -49,7 +56,7 @@ func guardrailServer(t *testing.T, ctrlErrs, testErrs int) (*Server, flag.Flag) 
 	}
 	s.SetFlags(fs)
 
-	started := time.Now().UTC().AddDate(0, 0, -7)
+	started := time.Now().UTC().Add(-ago)
 	f := flag.Flag{
 		Key: "risky", Enabled: true, Measured: true,
 		Variants: []flag.Variant{{Key: "control", Weight: 50}, {Key: "treatment", Weight: 50}},
@@ -72,14 +79,14 @@ func guardrailServer(t *testing.T, ctrlErrs, testErrs int) (*Server, flag.Flag) 
 		if i%2 == 1 {
 			arm, errs = "treatment", testErrs
 		}
-		ts := started.Add(time.Duration(i) * time.Minute)
+		ts := started.Add(time.Duration(i) * ago / (per * 2))
 		evs = append(evs, event.Event{
 			ID: "x" + u, Name: flag.ExposureEvent, DistinctID: u, Timestamp: ts,
 			Properties: map[string]any{flag.PropFlag: "risky", flag.PropVariant: arm},
 		})
 		if i%100 < errs {
 			evs = append(evs, event.Event{
-				ID: "e" + u, Name: "$exception", DistinctID: u, Timestamp: ts.Add(time.Minute),
+				ID: "e" + u, Name: "$exception", DistinctID: u, Timestamp: ts.Add(ago / (per * 8)),
 			})
 		}
 	}
@@ -186,5 +193,168 @@ func TestTheDefaultErrorGuardrailForbidsErrorsRISING(t *testing.T) {
 	if g["direction"] != flag.GuardrailNotBetter {
 		t.Errorf("the $exception guardrail this endpoint attaches has direction %v — it would "+
 			"forbid errors falling, and could never catch the spike it exists for", g["direction"])
+	}
+}
+
+// AUTO-REVERT. The first thing here that acts on its own, so the bar is: never pull something
+// that was fine, always pull something that is hurting, and leave a receipt either way.
+
+// One failing check is NOT enough. The statistics allow it — the sequential test is always-valid —
+// but trust does not. A flappy revert makes someone disable the feature, which costs them the
+// safety net entirely, so waiting one more cycle is far cheaper than being wrong once.
+func TestOneFailingCheckDoesNotRevert(t *testing.T) {
+	s, f := guardrailServer(t, 20, 60)
+
+	// A previous check that is old enough to count as independent, but PASSED. Only the
+	// consecutive-failure rule can stop the revert here.
+	//
+	// The first version of this test simply called Evaluate once, and passed even with that rule
+	// deleted — the "checks must be 5 minutes apart" gate was catching it instead. A test that
+	// holds for a reason other than the one it names is not a test of that reason.
+	cur, _ := s.flags.Get(f.Key)
+	cur.Experiment.GuardrailCheckedAt = time.Now().UTC().Add(-10 * time.Minute)
+	cur.Experiment.GuardrailStatus = []flag.GuardrailResult{
+		{Event: "$exception", Variant: "treatment", Status: "PASS"},
+	}
+	if _, err := s.flags.Save(cur); err != nil {
+		t.Fatal(err)
+	}
+
+	s.EvaluateGuardrails() // the FIRST failing check
+
+	after, _ := s.flags.Get(f.Key)
+	if !after.Enabled {
+		t.Error("reverted on a single failing check, after a passing one")
+	}
+	if !after.Experiment.RevertedAt.IsZero() {
+		t.Error("recorded a revert after one failing check")
+	}
+}
+
+// Two consecutive failures, far enough apart, past the warm-up: pull it.
+func TestTwoConsecutiveFailuresRevert(t *testing.T) {
+	s, f := guardrailServer(t, 20, 60)
+	s.EvaluateGuardrails()
+
+	// age the first verdict so the second counts as an independent check
+	cur, _ := s.flags.Get(f.Key)
+	cur.Experiment.GuardrailCheckedAt = time.Now().UTC().Add(-10 * time.Minute)
+	if _, err := s.flags.Save(cur); err != nil {
+		t.Fatal(err)
+	}
+
+	s.EvaluateGuardrails() // second FAIL
+
+	after, _ := s.flags.Get(f.Key)
+	if after.Enabled {
+		t.Fatal("two confirmed guardrail failures did not disable the flag")
+	}
+	if after.Experiment.RevertedAt.IsZero() {
+		t.Error("no RevertedAt recorded — the pane cannot say when or why")
+	}
+	if !strings.Contains(after.Experiment.RevertedReason, "$exception") {
+		t.Errorf("the reason must name the guardrail that failed: %q", after.Experiment.RevertedReason)
+	}
+}
+
+// THE RECEIPT. An autonomous act that leaves no trace where people look is indistinguishable from
+// a bug. The revert lands on the operator's own timeline, beside the traffic it reacted to.
+func TestARevertWritesItselfIntoTheEventLog(t *testing.T) {
+	s, f := guardrailServer(t, 20, 60)
+	s.EvaluateGuardrails()
+	cur, _ := s.flags.Get(f.Key)
+	cur.Experiment.GuardrailCheckedAt = time.Now().UTC().Add(-10 * time.Minute)
+	if _, err := s.flags.Save(cur); err != nil {
+		t.Fatal(err)
+	}
+	s.EvaluateGuardrails()
+
+	all, err := s.store.Range(time.Time{}, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found *event.Event
+	for i := range all {
+		if all[i].Name == RevertEvent {
+			found = &all[i]
+		}
+	}
+	if found == nil {
+		t.Fatal("no $experiment_reverted event — the revert is invisible to every tool that reads events")
+	}
+	if found.Properties["flag"] != "risky" {
+		t.Errorf("the event does not name the flag: %+v", found.Properties)
+	}
+	if fmt.Sprint(found.Properties["reason"]) == "" {
+		t.Error("the event carries no reason")
+	}
+}
+
+// A healthy experiment is never touched, however many times it is checked.
+func TestAHealthyExperimentIsNeverReverted(t *testing.T) {
+	s, f := guardrailServer(t, 20, 20)
+	for i := 0; i < 3; i++ {
+		s.EvaluateGuardrails()
+		cur, _ := s.flags.Get(f.Key)
+		if cur.Experiment != nil {
+			cur.Experiment.GuardrailCheckedAt = time.Now().UTC().Add(-10 * time.Minute)
+			if _, err := s.flags.Save(cur); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if after, _ := s.flags.Get(f.Key); !after.Enabled {
+		t.Fatal("disabled a flag whose arms had identical error rates")
+	}
+}
+
+// THE KILL SWITCH FOR THE KILL SWITCH. Anyone who does not want software turning their flags off
+// must be able to say so in one variable — otherwise they switch off the whole feature and lose
+// the safety net too. Reporting continues; only the acting stops.
+func TestAutoRevertCanBeTurnedOff(t *testing.T) {
+	t.Setenv("SMOLANALYTICS_AUTO_REVERT", "off")
+	s, f := guardrailServer(t, 20, 60)
+	s.EvaluateGuardrails()
+	cur, _ := s.flags.Get(f.Key)
+	cur.Experiment.GuardrailCheckedAt = time.Now().UTC().Add(-10 * time.Minute)
+	if _, err := s.flags.Save(cur); err != nil {
+		t.Fatal(err)
+	}
+	breaches := s.EvaluateGuardrails()
+
+	after, _ := s.flags.Get(f.Key)
+	if !after.Enabled {
+		t.Fatal("reverted while SMOLANALYTICS_AUTO_REVERT=off")
+	}
+	// reporting must be unaffected — the operator still needs to know
+	if len(breaches) == 0 {
+		t.Error("switching off ACTING also switched off REPORTING; the breach must still surface")
+	}
+	if len(after.Experiment.GuardrailStatus) == 0 {
+		t.Error("no status recorded with acting disabled")
+	}
+}
+
+// A brand-new rollout sees the least representative traffic it will ever see. A breach inside the
+// warm-up must not pull it.
+func TestABreachInsideTheWarmupDoesNotRevert(t *testing.T) {
+	// Started two minutes ago AND the traffic sits inside those two minutes, so the guardrail
+	// genuinely fails. The first version moved Started without moving the events, so the window
+	// was empty, there was no breach at all, and the test passed with the warm-up deleted — it
+	// was asserting nothing.
+	s, f := guardrailServerStarted(t, 20, 60, 2*time.Minute)
+	cur, _ := s.flags.Get(f.Key)
+	cur.Experiment.GuardrailCheckedAt = time.Now().UTC().Add(-10 * time.Minute)
+	cur.Experiment.GuardrailStatus = []flag.GuardrailResult{
+		{Event: "$exception", Variant: "treatment", Status: "FAIL"},
+	}
+	if _, err := s.flags.Save(cur); err != nil {
+		t.Fatal(err)
+	}
+	if b := s.EvaluateGuardrails(); len(b) == 0 {
+		t.Fatal("fixture produced no breach, so the warm-up is not what is being tested")
+	}
+	if after, _ := s.flags.Get(f.Key); !after.Enabled {
+		t.Fatal("pulled an experiment two minutes after launch")
 	}
 }

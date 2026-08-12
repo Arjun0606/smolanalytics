@@ -217,6 +217,7 @@ func TestEveryPlanFieldIsHashedOrExplicitlyExcluded(t *testing.T) {
 	excluded := map[string]bool{
 		"stopped": true, "plan_hash": true, "locked": true, "amendments": true,
 		"guardrail_status": true, "guardrail_checked_at": true,
+		"reverted_at": true, "reverted_reason": true,
 	}
 	// n_tune_source is derived, so it is hashed without being a settable field of its own.
 	derived := map[string]bool{"n_tune_source": true}
