@@ -209,7 +209,7 @@ func (s *Server) toolExperimentPlan(args json.RawMessage, evs []event.Event) (st
 		}
 		// DirectionFor, so naming "$exception" as a guardrail does not silently produce one that
 		// forbids errors falling. An explicit direction in the request still wins.
-		plan.Guardrails = append(plan.Guardrails, flag.Guardrail{Event: g, Direction: flag.DirectionFor(g)})
+		plan.Guardrails = append(plan.Guardrails, flag.GuardrailFor(g))
 	}
 
 	// Measured, not assumed: it decides whether a layer may still be set (setting one on an

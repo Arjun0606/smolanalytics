@@ -385,3 +385,69 @@ func TestGuardrailCriticalZMatchesKnownQuantiles(t *testing.T) {
 		prev = z
 	}
 }
+
+// THE LOW-BASE CASE: the one an error guardrail exists for, and the one it could never answer.
+//
+// A relative margin needs a control rate far from zero for a ratio to mean anything. A healthy
+// product's error rate is nowhere near it, so the relative test returned liftCtrlNearZero and the
+// guardrail read INCONCLUSIVE at every sample size, forever. The safety net was quietest exactly
+// where it should have been loudest.
+func TestALowBaseErrorGuardrailCanFinallyAnswer(t *testing.T) {
+	pp := 0.1
+	in := grBase()
+	in.Guardrail = Guardrail{Event: "$exception", Direction: GuardrailNotBetter, MarginPP: &pp}
+	// 0.1% control, 2% treatment — a twentyfold rise, and far more than a tenth of a point.
+	in.ConvCtrl, in.ExpCtrl = 5, 5000
+	in.ConvTest, in.ExpTest = 100, 5000
+
+	got, err := EvaluateGuardrail(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != GuardrailFail {
+		t.Fatalf("a twentyfold rise in errors read %q: %s", got.Status, got.Read)
+	}
+	if !got.AbsoluteScale {
+		t.Error("the result does not say it is on the percentage-point scale — a reader would " +
+			"compare a 1.9 against a relative 10 and conclude everything is fine")
+	}
+	if !strings.Contains(got.MarginSource, "absolute") {
+		t.Errorf("MarginSource does not name the scale that answered: %q", got.MarginSource)
+	}
+}
+
+// NO SAFE DEFAULT. Without an explicit margin the evaluator must stay INCONCLUSIVE rather than
+// invent one: at a 1-in-5000 control rate, even half a percentage point would wave through a
+// SIXFOLD rise in errors, because half a point is enormous next to a 0.02% base.
+func TestWithoutAnExplicitMarginTheLowBaseCaseStaysInconclusive(t *testing.T) {
+	in := grBase()
+	in.Guardrail = Guardrail{Event: "$exception", Direction: GuardrailNotBetter} // no MarginPP
+	in.ConvCtrl, in.ExpCtrl = 1, 5000
+	in.ConvTest, in.ExpTest = 6, 5000
+
+	got, err := EvaluateGuardrail(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status == GuardrailPass {
+		t.Fatalf("passed a sixfold rise in errors by guessing a margin: %s", got.Read)
+	}
+	if !strings.Contains(got.Read, "not a pass") {
+		t.Errorf("the non-verdict must say it is not a pass: %q", got.Read)
+	}
+}
+
+// And the creation helper must produce a guardrail that can actually fire.
+func TestGuardrailForGivesAnErrorMetricBothDirectionAndMargin(t *testing.T) {
+	g := GuardrailFor("$exception")
+	if g.Direction != GuardrailNotBetter {
+		t.Errorf("direction %q would forbid errors falling", g.Direction)
+	}
+	if g.MarginPP == nil || *g.MarginPP <= 0 {
+		t.Error("no absolute margin: this guardrail reads INCONCLUSIVE forever on a healthy product")
+	}
+	// a conversion metric keeps the relative margin — percentage points are the wrong unit there
+	if c := GuardrailFor("checkout"); c.MarginPP != nil {
+		t.Error("a conversion guardrail should not be given a percentage-point margin")
+	}
+}

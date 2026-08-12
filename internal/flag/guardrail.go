@@ -60,6 +60,23 @@ func DirectionFor(event string) string {
 	return GuardrailNotWorse
 }
 
+// GuardrailFor builds a sensible guardrail for `event`: the right direction, plus an absolute
+// margin when the metric is one whose base rate is normally near zero.
+//
+// The absolute margin matters because without it a low-base error guardrail reads INCONCLUSIVE at
+// every sample size, forever — the relative test cannot form a ratio against a near-zero control,
+// so the safety net stays silent precisely on the healthy products where an error spike is most
+// worth catching. Both values are visible in the plan and can be changed; the point is that the
+// common path produces a guardrail that can actually fire.
+func GuardrailFor(event string) Guardrail {
+	g := Guardrail{Event: event, Direction: DirectionFor(event)}
+	if upIsBad[strings.ToLower(event)] {
+		pp := SuggestedMarginPP
+		g.MarginPP = &pp
+	}
+	return g
+}
+
 // DefaultGuardrailMarginPct is the relative non-inferiority margin used when a guardrail does not
 // state one: 10% relative.
 //
@@ -69,6 +86,15 @@ func DirectionFor(event string) string {
 // experiment. A check that cannot pass, presented as a check that failed to pass, is the most
 // expensive kind of wrong. See Guardrail.Validate.
 const DefaultGuardrailMarginPct = 10.0
+
+// SuggestedMarginPP is the absolute margin the creation sites attach to a low-base error
+// guardrail: a tenth of a percentage point.
+//
+// NOT a default applied inside the evaluator. It is offered at creation, where the operator can
+// see and change it, because no fixed percentage-point figure is right at every base rate — at a
+// 1-in-5000 control rate even half a point would wave through a sixfold rise in errors. Absent an
+// explicit margin the evaluator stays INCONCLUSIVE rather than guessing.
+const SuggestedMarginPP = 0.1
 
 // Guardrail is one metric an experiment promises not to break, with the size of the degradation it
 // must be able to rule out. It is part of the pre-registered plan, so it is hashed with it.
@@ -83,6 +109,14 @@ type Guardrail struct {
 	// MarginPct is δ: the RELATIVE degradation, in percent, this guardrail must rule out. 2 means
 	// "I will accept up to a 2% relative loss; prove it is no worse than that".
 	MarginPct *float64 `json:"margin_pct"`
+	// MarginPP is an ABSOLUTE margin in percentage points, and it is the right instrument for a
+	// low-base metric. A relative margin needs a control rate far from zero for a ratio to mean
+	// anything; a healthy product's error rate is nowhere near it, so the relative test reads
+	// INCONCLUSIVE forever and the safety net is quietest exactly where it should be loudest.
+	//
+	// "No more than half a percentage point more of your users hitting an error" is answerable at
+	// any base rate, and is what a person actually means when they set an error guardrail.
+	MarginPP *float64 `json:"margin_pp,omitempty"`
 }
 
 // Margin resolves δ. The safe accessor for anything holding a guardrail that may not have been
@@ -217,6 +251,9 @@ type GuardrailResult struct {
 	MarginPct    float64 `json:"margin_pct"`
 	MarginSource string  `json:"margin_source"`
 	Status       string  `json:"status"` // PASS | FAIL | INCONCLUSIVE
+	// AbsoluteScale says Bound and ThresholdPct are PERCENTAGE POINTS, not relative percent.
+	// Without it a reader compares a 0.4 against a 10 and concludes everything is fine.
+	AbsoluteScale bool `json:"absolute_scale,omitempty"`
 
 	Alpha    float64 `json:"alpha"`     // one-sided
 	OneSided bool    `json:"one_sided"` // always true; stated so nobody assumes 1.96
@@ -332,6 +369,30 @@ func EvaluateGuardrail(in GuardrailInput) (GuardrailResult, error) {
 	}
 
 	ci, why := liftInterval(in.ConvTest, in.ExpTest, in.ConvCtrl, in.ExpCtrl, z)
+	// THE LOW-BASE FALLBACK. A near-zero control is not a reason to have no opinion — it is the
+	// normal state of an error metric on a working product, and the case the guardrail exists for.
+	// Switch to the absolute scale, and say so: MarginSource carries which scale answered, so
+	// nobody reads a percentage-point bound as a relative one.
+	//
+	// ONLY when the operator asked for the absolute scale. There is no safe default here, which
+	// the test suite proved: at 1-in-5000 control, a 0.5pp default would PASS a treatment arm
+	// running SIX TIMES the errors, because half a point is enormous next to a 0.02% base. Any
+	// fixed percentage-point figure is far too loose at some base rate and far too tight at
+	// another, so the number has to come from someone who knows the metric. Absent that we stay
+	// INCONCLUSIVE, which is the honest answer and says so out loud.
+	if why == liftCtrlNearZero && g.MarginPP != nil && *g.MarginPP > 0 {
+		if dci, dwhy := diffInterval(in.ConvTest, in.ExpTest, in.ConvCtrl, in.ExpCtrl, z); dwhy == liftOK {
+			ppMargin := *g.MarginPP
+			res.MarginPct = ppMargin
+			res.MarginSource = "absolute (percentage points) — the control rate is too near zero for a relative margin"
+			res.ThresholdPct = ppMargin
+			if g.Direction == GuardrailNotWorse {
+				res.ThresholdPct = -ppMargin
+			}
+			ci, why = dci, dwhy
+			res.AbsoluteScale = true
+		}
+	}
 	if why != liftOK {
 		// No relative comparison exists, so no non-inferiority claim exists either. Never PASS
 		// here: the degenerate shapes — an arm that recorded nothing, a control indistinguishable

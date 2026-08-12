@@ -224,3 +224,36 @@ func itoa(n int) string {
 	}
 	return string(b[i:])
 }
+
+// diffInterval is the RISK DIFFERENCE — test minus control, in percentage points — with a
+// Newcombe hybrid-score interval.
+//
+// It exists because the relative interval above honestly refuses the most important case this
+// product has: an error-rate guardrail. A relative margin needs a control rate far enough from
+// zero for a ratio to mean anything, and a healthy product's error rate is nowhere near it — so
+// liftInterval returns liftCtrlNearZero and the guardrail reads INCONCLUSIVE forever. The safety
+// net was quietest exactly where it should have been loudest.
+//
+// "No more than half a percentage point more of your users hitting an error" is answerable at any
+// base rate, and is what a person actually means. Newcombe rather than Wald because Wald's
+// interval misbehaves near zero, which is the entire region of interest here.
+func diffInterval(cTest, nTest, cCtrl, nCtrl int, z float64) (Interval, liftBlock) {
+	if nTest <= 0 || nCtrl <= 0 {
+		return Interval{}, liftNoSample
+	}
+	p1 := float64(cTest) / float64(nTest)
+	p2 := float64(cCtrl) / float64(nCtrl)
+	// Wilson bounds per arm, then combined — this is the part that stays sane at a 0% rate,
+	// where a Wald interval would produce a zero-width interval and a confident wrong answer.
+	w1 := wilson(cTest, nTest, z)
+	w2 := wilson(cCtrl, nCtrl, z)
+	l1, u1 := w1.Lo/100, w1.Hi/100
+	l2, u2 := w2.Lo/100, w2.Hi/100
+	lo := (p1 - p2) - math.Sqrt((p1-l1)*(p1-l1)+(u2-p2)*(u2-p2))
+	hi := (p1 - p2) + math.Sqrt((u1-p1)*(u1-p1)+(p2-l2)*(p2-l2))
+	return Interval{
+		Point: round1(100 * (p1 - p2)),
+		Lo:    round1(100 * lo),
+		Hi:    round1(100 * hi),
+	}, liftOK
+}
