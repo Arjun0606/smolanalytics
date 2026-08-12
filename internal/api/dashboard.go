@@ -20,13 +20,16 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/agent"
 	"github.com/Arjun0606/smolanalytics/internal/aicrawl"
 	"github.com/Arjun0606/smolanalytics/internal/aivis"
+	"github.com/Arjun0606/smolanalytics/internal/deploys"
 	"github.com/Arjun0606/smolanalytics/internal/engagement"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/fixbrief"
+	"github.com/Arjun0606/smolanalytics/internal/flag"
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
 	"github.com/Arjun0606/smolanalytics/internal/goal"
 	"github.com/Arjun0606/smolanalytics/internal/groups"
 	"github.com/Arjun0606/smolanalytics/internal/insight"
+	"github.com/Arjun0606/smolanalytics/internal/investigate"
 	"github.com/Arjun0606/smolanalytics/internal/paths"
 	"github.com/Arjun0606/smolanalytics/internal/query"
 	"github.com/Arjun0606/smolanalytics/internal/retention"
@@ -247,7 +250,11 @@ type dashVM struct {
 	Signups     int
 	OverallConv int
 	Funnel      []funnelRow
-	Verdict     []insight.Finding
+	// Investigation is the PM half of the page: conclusions, sized, ranked by how much they
+	// cost, each with a cause and a next move. The verdict below it is the health read; this is
+	// the "so what". It renders ABOVE the verdict because a conclusion outranks context.
+	Investigation investigate.Investigation
+	Verdict       []insight.Finding
 	// Findings is the SAME slice from the second element on, composed into rows that rank.
 	// The template reads Verdict only for the card (element 0) and Findings for the list.
 	Findings []findingLine
@@ -2041,15 +2048,18 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	vm := dashVM{
-		HasConversion:   len(fsteps) >= 2,
-		TotalUsers:      distinctUsers(evs),
-		Signups:         sig30,
-		OverallConv:     pct(fr.OverallConversion),
-		Events:          names,
-		ProductEvents:   productEvents(names, 8),
-		Updated:         time.Now().UTC().Format("Jan 2, 15:04 MST"),
-		HasData:         len(evs) > 0,
-		Verdict:         verdict,
+		HasConversion: len(fsteps) >= 2,
+		TotalUsers:    distinctUsers(evs),
+		Signups:       sig30,
+		OverallConv:   pct(fr.OverallConversion),
+		Events:        names,
+		ProductEvents: productEvents(names, 8),
+		Updated:       time.Now().UTC().Format("Jan 2, 15:04 MST"),
+		HasData:       len(evs) > 0,
+		Verdict:       verdict,
+		// The full history, and the flags, so the kill list can see what shipped. Same inputs
+		// the CLI brief uses, so the page and the email cannot tell different stories.
+		Investigation:   investigate.WithContext(evs, flagsFor(s), deploysFor(s), investigate.Opts{Now: nowT}),
 		Findings:        verdictLines(verdict),
 		DevHidden:       devHidden,
 		ShowingDev:      showDev,
@@ -2880,4 +2890,20 @@ func detectProp(evs []event.Event, preferred string) string {
 		}
 	}
 	return best
+}
+
+// flagsFor and deploysFor are nil-safe accessors: both stores are optional on a self-hosted
+// instance, and the investigation degrades to the change findings rather than failing.
+func flagsFor(s *Server) []flag.Flag {
+	if s.flags == nil {
+		return nil
+	}
+	return s.flags.List()
+}
+
+func deploysFor(s *Server) []deploys.Deploy {
+	if s.deploys == nil {
+		return nil
+	}
+	return s.deploys.List()
 }

@@ -1004,6 +1004,26 @@
   .aginf{display:inline-flex;align-items:center;gap:5px;border:1px dashed var(--line3);color:var(--mut2);
     font-family:var(--mono);font-size:var(--fs-lbl);text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:99px}
   .agmeta{font-family:var(--mono);font-size:var(--fs-body);line-height:1.65;color:var(--mut);max-width:80ch}
+  /* The brief. Deliberately plainer than the verdict callout beside it: this is meant to read
+     like a colleague's note, and a heavy card would make it look like another widget. */
+  .pmbrief{border:1px solid var(--line);border-left:3px solid var(--accent);padding:14px 16px;margin-bottom:14px;background:var(--bg2)}
+  .pmhead{font-family:var(--mono);font-size:var(--fs-body);color:var(--mut);margin-bottom:10px}
+  .pmhead b{color:var(--fg)}
+  .pmrow{padding:8px 0;border-top:1px solid var(--line)}
+  .pmrow:first-of-type{border-top:0}
+  .pmtop{display:flex;gap:10px;align-items:baseline;justify-content:space-between}
+  .pmh{font-family:var(--mono);font-size:var(--fs-body);color:var(--fg)}
+  .pmrow.you .pmh{font-weight:700}
+  .pmcost{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);white-space:nowrap}
+  .pmwhy,.pmnext{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);line-height:1.6;margin-top:3px}
+  .pmev{color:var(--accent);text-decoration:none;border-bottom:1px solid var(--line2)}
+  .pmev:hover{border-bottom-color:var(--accent)}
+  .pmbasis{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);margin-top:10px;padding-top:8px;border-top:1px solid var(--line)}
+  .pmq{font-family:var(--mono);font-size:var(--fs-body);color:var(--fg)}
+  .grail{font-family:var(--mono);font-size:var(--fs-lbl);line-height:1.6;margin-top:4px}
+  .grail.ok{color:var(--ok)} .grail.warn{color:var(--mut)} .grail.err{color:var(--warn)}
+  .grailwhen{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);margin-top:2px}
+  .pmqs{color:var(--mut)}
   /* Daily bars under a detected change. Deliberately not the .spark SVG: this one has to mark a
      single day, and one flagged bar in a row of flat ones is the whole point of the picture. */
   .whybars{display:flex;align-items:flex-end;gap:2px;height:44px;margin:10px 0 4px}
@@ -1217,6 +1237,29 @@
        leaves informed after the first two blocks; everything below is evidence.
        The verdict as sentences: empty verdict = one calm line, never a card -->
   <div class="verdict">
+    <!-- ══ THE BRIEF ═══════════════════════════════════════════════════════════════════════
+         A PM's Monday output, not a dashboard: what changed, what it cost, why, and what to
+         do — ranked so the most expensive thing is first. It sits ABOVE the verdict because
+         a conclusion outranks context, and it renders even on a quiet day, where saying
+         "nothing needs you" plainly is what earns the reader's trust on the day it does. ══ -->
+    {{with .Investigation}}
+    <div class="pmbrief" id="pmbrief">
+      {{if .Quiet}}
+      <div class="pmq">Nothing needs you today.<span class="pmqs"> {{len .Scanned}} metric(s) checked for step changes.</span></div>
+      {{else}}
+      <div class="pmhead">{{len .Findings}} thing{{if ne (len .Findings) 1}}s{{end}} changed.
+        <b>{{.NeedsYouCount}} need{{if eq .NeedsYouCount 1}}s{{end}} you.</b></div>
+      {{range .Findings}}
+      <div class="pmrow{{if .NeedsYou}} you{{end}}">
+        <div class="pmtop"><span class="pmh">{{.Headline}}</span>{{if .Cost.People}}<span class="pmcost">~{{.Cost.People}} people/mo</span>{{end}}</div>
+        {{if .Cause}}<div class="pmwhy">{{.Cause}}</div>{{end}}
+        <div class="pmnext">&rarr; {{.NextMove}}{{if .Evidence}} <a class="pmev" href="{{.Evidence}}" target="_blank" rel="noopener">check it</a>{{end}}</div>
+      </div>
+      {{end}}
+      <div class="pmbasis">sized by people affected — no revenue is tracked on these events, so this is not a dollar figure.</div>
+      {{end}}
+    </div>
+    {{end}}
     <div id="verdict">
       {{if .Verdict}}{{$first := index .Verdict 0}}<div class="callout{{if eq $first.Severity "warn"}} warn{{end}}">
         <div class="co-tag"><span class="co-ic">{{if eq $first.Severity "warn"}}!{{else}}&#10022;{{end}}</span>{{if eq $first.Severity "warn"}}Fix first{{else}}Today&rsquo;s read{{end}}</div>
@@ -4030,9 +4073,37 @@
             if(m.error){cell.innerHTML='<span class="mut">'+esc(m.error)+'</span>';return;}
             var read=m.read||m.verdict||m.summary;
             cell.innerHTML=read?esc(String(read)):'<span class="mut">no read yet</span>';
+            // THE GUARDRAIL LINE. Never omitted, and "not checked yet" is never rendered as
+            // health — silence reading as a pass is exactly how a guardrail that had never once
+            // executed went unnoticed for the whole life of the feature.
+            cell.innerHTML += guardrailLine(e);
           });
         });
       });
+    }
+
+    // guardrailLine renders what the safety net actually saw, and when.
+    //
+    // Three states, never two. An unchecked guardrail says so; collapsing that into PASS is how
+    // a decorative check survives — a check somebody relies on that has never been able to fail.
+    function guardrailLine(e){
+      if(!e||!e.guardrails||!e.guardrails.length)return '';
+      if(!e.guardrail_checked_at){
+        return '<div class="grail warn">guardrail not checked yet — this is not a pass</div>';
+      }
+      var st=e.guardrail_status||[];
+      if(!st.length)return '<div class="grail warn">guardrail not checked yet — this is not a pass</div>';
+      var out='';
+      for(var i=0;i<st.length;i++){
+        var r=st[i],cls=r.status==='FAIL'?'err':(r.status==='PASS'?'ok':'warn');
+        out+='<div class="grail '+cls+'"><b>'+esc(r.event||'guardrail')+'</b> '+esc(r.status||'?')+
+             (r.read?' — '+esc(r.read):'')+'</div>';
+      }
+      out+='<div class="grailwhen">checked '+ago(e.guardrail_checked_at)+' ago</div>';
+      if(e.reverted_at){
+        out+='<div class="grail err"><b>reverted automatically</b> — '+esc(e.reverted_reason||'')+'</div>';
+      }
+      return out;
     }
 
     // ══ ACCOUNTS ══════════════════════════════════════════════════════════════════════
