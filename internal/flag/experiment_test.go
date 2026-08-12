@@ -210,7 +210,14 @@ func hashedKeys(t *testing.T) []string {
 // deliberately excluded.
 func TestEveryPlanFieldIsHashedOrExplicitlyExcluded(t *testing.T) {
 	// Excluded on purpose; see canonicalPlan's comment for why each one is.
-	excluded := map[string]bool{"stopped": true, "plan_hash": true, "locked": true, "amendments": true}
+	// guardrail_status / guardrail_checked_at are OBSERVATIONS, not plan. They record what the
+	// evaluator saw and when, and they change on every five-minute pass — hashing them would make
+	// each routine check look like the pre-registered plan had been amended after start, which is
+	// the precise signal the hash exists to make trustworthy.
+	excluded := map[string]bool{
+		"stopped": true, "plan_hash": true, "locked": true, "amendments": true,
+		"guardrail_status": true, "guardrail_checked_at": true,
+	}
 	// n_tune_source is derived, so it is hashed without being a settable field of its own.
 	derived := map[string]bool{"n_tune_source": true}
 

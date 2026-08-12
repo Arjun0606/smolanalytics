@@ -516,12 +516,23 @@ func dailyBrief(st store.Store, wh *webhook.Store) {
 // alertLoop evaluates alerts on boot and every 5 minutes, firing webhooks for any
 // whose condition is met.
 func alertLoop(app *api.Server) {
-	app.EvaluateAlerts()
+	safetyPass(app)
 	t := time.NewTicker(5 * time.Minute)
 	defer t.Stop()
 	for range t.C {
-		app.EvaluateAlerts()
+		safetyPass(app)
 	}
+}
+
+// safetyPass runs everything that must happen unprompted: the alert conditions, and the
+// experiment guardrails.
+//
+// The guardrails were attached to every experiment this product created and evaluated by nothing —
+// flag.EvaluateGuardrails had zero callers while the UI said "$exception is watched". A safety
+// claim that runs on nobody's schedule is not a safety feature, it is a sentence.
+func safetyPass(app *api.Server) {
+	app.EvaluateAlerts()
+	app.EvaluateGuardrails()
 }
 
 // runMCP serves the analytics over MCP on stdio for a local Claude Desktop / Cursor,

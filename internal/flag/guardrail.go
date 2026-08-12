@@ -37,6 +37,29 @@ const (
 	GuardrailNotBetter = "not_better"
 )
 
+// upIsBad names the events where a RISE is the harm, so a guardrail on them must forbid a rise
+// (GuardrailNotBetter) rather than a fall.
+//
+// This map exists because the mistake the doc comment above warns about was live: every
+// experiment this product created carried {Event: "$exception"} with no direction, which defaults
+// to not_worse — a guardrail forbidding errors from FALLING. It could not have caught an error
+// spike under any circumstances, and would have fired on an improvement.
+var upIsBad = map[string]bool{
+	"$exception": true, "$rageclick": true, "$deadclick": true,
+	"refund": true, "churn": true, "support_ticket": true, "error": true,
+}
+
+// DirectionFor is the sensible default direction for a guardrail on `event`.
+//
+// It is only a default. A caller that knows better states the direction explicitly, and it is part
+// of the plan hash either way — the point is that the common path stops being wrong by omission.
+func DirectionFor(event string) string {
+	if upIsBad[strings.ToLower(event)] {
+		return GuardrailNotBetter
+	}
+	return GuardrailNotWorse
+}
+
 // DefaultGuardrailMarginPct is the relative non-inferiority margin used when a guardrail does not
 // state one: 10% relative.
 //

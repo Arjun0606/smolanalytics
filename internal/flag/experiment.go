@@ -118,14 +118,22 @@ type Experiment struct {
 	// (0..100). Its purpose is the question nobody can otherwise answer: after six months of
 	// individually-significant wins, did any of it add up? Held-out users are the control for
 	// everything you shipped.
-	Holdout     string      `json:"holdout,omitempty"`
-	HoldoutPct  float64     `json:"holdout_pct,omitempty"`
-	HashVersion int         `json:"hash_version"`
-	Started     time.Time   `json:"started"`
-	Stopped     time.Time   `json:"stopped,omitempty"`
-	PlanHash    string      `json:"plan_hash"`
-	Locked      bool        `json:"locked"`
-	Amendments  []Amendment `json:"amendments,omitempty"`
+	Holdout     string    `json:"holdout,omitempty"`
+	HoldoutPct  float64   `json:"holdout_pct,omitempty"`
+	HashVersion int       `json:"hash_version"`
+	Started     time.Time `json:"started"`
+	Stopped     time.Time `json:"stopped,omitempty"`
+	// GuardrailStatus is the last evaluation of each guardrail, and GuardrailCheckedAt is when.
+	//
+	// Both exist so a surface can say "not checked yet" rather than rendering silence as health.
+	// The guardrails on every experiment this product created went unevaluated for months while
+	// the UI said they were watched, which nobody could see precisely because there was nowhere
+	// for "we have not looked" to be written down.
+	GuardrailStatus    []GuardrailResult `json:"guardrail_status,omitempty"`
+	GuardrailCheckedAt time.Time         `json:"guardrail_checked_at,omitempty"`
+	PlanHash           string            `json:"plan_hash"`
+	Locked             bool              `json:"locked"`
+	Amendments         []Amendment       `json:"amendments,omitempty"`
 }
 
 // Resolve returns the plan with every default filled in. This is also the ECHO form: what gets

@@ -128,7 +128,13 @@ func (s *Server) apiCreateExperiment(w http.ResponseWriter, r *http.Request) {
 		NPlanned: plan.NPlanned,
 		// The question nobody remembers to ask. A conversion win that doubled your error rate is
 		// not a win, and by default nobody would have checked.
-		Guardrails: []flag.Guardrail{{Event: "$exception"}},
+		// Direction stated, not defaulted. Without it this took not_worse, which on an error
+		// metric forbids errors FALLING — a guardrail that could never catch the thing it was
+		// added to catch, on every experiment this endpoint has ever created.
+		Guardrails: []flag.Guardrail{{
+			Event:     "$exception",
+			Direction: flag.DirectionFor("$exception"),
+		}},
 	}
 	started, serr := flag.StartExperiment(f.Experiment, f.Variants, 0, time.Now().UTC())
 	if serr != nil {
