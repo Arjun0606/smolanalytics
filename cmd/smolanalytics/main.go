@@ -84,6 +84,8 @@ func main() {
 		instrumentCmd(os.Args[2:])
 	case "brief":
 		briefCmd(os.Args[2:])
+	case "backtest":
+		backtestCmd(os.Args[2:])
 	case "deploy":
 		deployCmd(os.Args[2:])
 	case "plan":
