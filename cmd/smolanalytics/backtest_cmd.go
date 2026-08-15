@@ -101,8 +101,8 @@ func formatReplay(r investigate.Replay) string {
 
 	for _, f := range r.Findings {
 		s += fmt.Sprintf("%s   %s\n", f.FirstSeen, f.Headline)
-		if f.Cost.People > 0 {
-			s += fmt.Sprintf("             ~%d people/mo", f.Cost.People)
+		if sz := f.Cost.Size(); sz != "" {
+			s += "             " + sz
 			if f.LagDays > 0 {
 				s += fmt.Sprintf(" · %d day(s) after it started", f.LagDays)
 			}

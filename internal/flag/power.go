@@ -713,18 +713,13 @@ func sampleSkewness(xs []float64) float64 {
 	return m3 / math.Pow(m2, 1.5)
 }
 
+// Same coercion as everywhere else, with this caller's existing 0-on-miss contract preserved.
+// The lossy shape is kept deliberately local: a non-number contributing 0 to a variance estimate
+// is tolerable, whereas a non-number contributing 0 to a REVENUE total would be a fabricated
+// figure, which is why revenue sizing uses event.Numeric's ok directly.
 func numericProp(v any) float64 {
-	switch t := v.(type) {
-	case float64:
-		return t
-	case float32:
-		return float64(t)
-	case int:
-		return float64(t)
-	case int64:
-		return float64(t)
-	}
-	return 0
+	n, _ := event.Numeric(v)
+	return n
 }
 
 // powerZ is the inverse standard normal CDF: the z with P(Z <= z) = p.

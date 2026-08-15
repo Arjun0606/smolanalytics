@@ -640,16 +640,5 @@ func BuildRatioUnits(evs []event.Event, spec RatioSpec) ([]RatioUnit, string, er
 // ratioNumericValue accepts the shapes a JSON number arrives in. A string that looks like a number is
 // deliberately NOT accepted: silently coercing "12.50" would make a typo in the SDK indistinguish-
 // able from a real amount, and the sum would be wrong with nothing logged.
-func ratioNumericValue(v any) (float64, bool) {
-	switch n := v.(type) {
-	case float64:
-		return n, true
-	case float32:
-		return float64(n), true
-	case int:
-		return float64(n), true
-	case int64:
-		return float64(n), true
-	}
-	return 0, false
-}
+// One definition of "is this a number", shared with every other caller. See event.Numeric.
+func ratioNumericValue(v any) (float64, bool) { return event.Numeric(v) }

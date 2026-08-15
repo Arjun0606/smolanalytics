@@ -138,5 +138,8 @@ func WithContext(evs []event.Event, flags []flag.Flag, deps []deploys.Deploy, o 
 		inv.Movements = Movements(evs, deps, MovementOpts{Now: o.Now})
 	}
 	rank(inv.Findings)
+	// Re-stamped: WithContext adds kill-list findings after Run, and a finding whose SizeText was
+	// never filled would render blank on a JSON consumer while rendering fine in Go.
+	StampSizes(inv.Findings)
 	return inv
 }

@@ -1256,7 +1256,7 @@
         <b>{{.NeedsYouCount}} need{{if eq .NeedsYouCount 1}}s{{end}} you.</b></div>
       {{range .Findings}}
       <div class="pmrow{{if .NeedsYou}} you{{end}}">
-        <div class="pmtop"><span class="pmh">{{.Headline}}</span>{{if .Cost.People}}<span class="pmcost">~{{.Cost.People}} people/mo</span>{{end}}</div>
+        <div class="pmtop"><span class="pmh">{{.Headline}}</span>{{with .Cost.Size}}<span class="pmcost">{{.}}</span>{{end}}</div>
         {{if .Cause}}<div class="pmwhy">{{.Cause}}</div>{{end}}
         <div class="pmnext">&rarr; {{.NextMove}}{{if .Evidence}} <a class="pmev" href="{{.Evidence}}" target="_blank" rel="noopener">check it</a>{{end}}</div>
       </div>

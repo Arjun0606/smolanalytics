@@ -278,10 +278,10 @@ func formatInvestigation(s *strings.Builder, inv investigate.Investigation) {
 	fmt.Fprintf(s, "\n%s changed. %d needs you.\n\n", plural(len(inv.Findings), "thing"), n)
 	for i, f := range inv.Findings {
 		fmt.Fprintf(s, "%d. %s", i+1, f.Headline)
-		if f.Cost.People > 0 {
-			// "people", not plural(n,"person") — that renders "1260 persons", which reads as
-			// machine output and undercuts a line whose whole job is to sound like a colleague.
-			fmt.Fprintf(s, "   ~%s people/mo", group(f.Cost.People))
+		// One shared renderer, so this cannot drift from the share page, the dashboard and the
+		// backtest — which is precisely what happened while only People was ever printed.
+		if sz := f.Cost.Size(); sz != "" {
+			fmt.Fprintf(s, "   %s", sz)
 		}
 		s.WriteString("\n")
 		if f.Cause != "" {

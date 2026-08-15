@@ -63,12 +63,27 @@ const (
 	BasisUnknown Basis = "not enough data to size this"
 )
 
+// BasisRevenue names the property the money figure was computed from. The basis travels with the
+// number everywhere it is shown, so a reader can see that "$14,880/mo" came from summing
+// `amount` on their own checkout events rather than from a model somebody fitted.
+func BasisRevenue(prop string) Basis {
+	return Basis("people affected × mean revenue per person, from the " + prop + " property on this event")
+}
+
 // Cost is how big a finding is. UsdPerMonth is only ever set when revenue is genuinely
 // instrumented; the zero value means "we did not estimate money", never "zero money".
 type Cost struct {
 	UsdPerMonth float64 `json:"usd_per_month,omitempty"`
 	People      int     `json:"people"`
 	Basis       Basis   `json:"basis"`
+	// Size is the rendered figure, computed by Cost.Size() and carried in the JSON.
+	//
+	// It is serialized rather than left to each consumer because the consumers are not all Go:
+	// the marketing site renders findings from this JSON in TypeScript, and a Go-only "everyone
+	// must call Size()" test cannot reach across that boundary. Shipping the rendered string is
+	// the only way the one-renderer property survives the language change — otherwise the web
+	// would quietly keep printing the people half after the engine learned to price things.
+	SizeText string `json:"size,omitempty"`
 }
 
 // Finding is one line of the brief.
@@ -155,6 +170,7 @@ func Run(evs []event.Event, opts Opts) Investigation {
 	inv.Movements = Movements(evs, nil, MovementOpts{Now: o.Now})
 
 	rank(inv.Findings)
+	StampSizes(inv.Findings)
 	inv.Quiet = len(inv.Findings) == 0
 	return inv
 }
@@ -210,6 +226,10 @@ func changeFinding(evs []event.Event, name string, o Opts) (Finding, bool) {
 	default:
 		return Finding{}, false
 	}
+	// Size it in money if — and only if — this metric genuinely carries revenue. Silently leaves
+	// the people figure in place otherwise, which is a real answer rather than a fallback.
+	sizeInMoney(evs, &f, o)
+
 	// No cause yet. Saying "unexplained" out loud is better than an empty field, which reads as
 	// though nobody looked.
 	f.Cause = "cause not yet attributed — no deploy or channel has been matched to this day"

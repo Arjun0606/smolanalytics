@@ -1,6 +1,7 @@
 package api
 
 import (
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -174,6 +175,49 @@ func TestEverySurfaceRendersBothHalvesOfTheInvestigation(t *testing.T) {
 		}
 		if !strings.Contains(src, "Findings") {
 			t.Errorf("%s never renders Findings", name)
+		}
+	}
+}
+
+// NO SURFACE MAY RENDER A COST ITS OWN WAY.
+//
+// Four surfaces — the CLI brief, the share page, the dashboard and the backtest output — each
+// formatted Cost by hand, and all four printed only People. That was invisible for as long as
+// UsdPerMonth was never set: the day it became reachable, it would have appeared on zero of them,
+// and the feature would have been "shipped" and unfindable. Cost.Size() is now the one renderer,
+// and this forbids anyone reintroducing a hand-rolled one.
+//
+// Source-level, because no rendered assertion can catch it: a surface printing only the people
+// half looks exactly like a surface whose finding had no money on it.
+func TestNoSurfaceFormatsACostByHand(t *testing.T) {
+	// Files that render a finding's cost to a human, and the repo-relative path of each.
+	surfaces := []string{
+		"../brief/brief.go",
+		"share_api.go",
+		"dashboard.tmpl.html",
+		"../../cmd/smolanalytics/backtest_cmd.go",
+	}
+	// The tell: reaching into the struct's fields in a formatting context instead of calling Size.
+	banned := []string{
+		"Cost.People}}",       // template interpolation of the raw field
+		"Cost.UsdPerMonth}}",  //
+		"f.Cost.People)",      // Go formatting of the raw field
+		"f.Cost.UsdPerMonth)", //
+	}
+	for _, rel := range surfaces {
+		b, err := os.ReadFile(rel)
+		if err != nil {
+			t.Fatalf("cannot read %s, which this guard exists to watch: %v", rel, err)
+		}
+		src := string(b)
+		if !strings.Contains(src, "Cost.Size") {
+			t.Errorf("%s renders findings but never calls Cost.Size() — it is formatting the cost "+
+				"itself, which is how four surfaces came to print only the people half", rel)
+		}
+		for _, bad := range banned {
+			if strings.Contains(src, bad) {
+				t.Errorf("%s formats %q by hand; use Cost.Size() so every surface says the same thing", rel, bad)
+			}
 		}
 	}
 }
