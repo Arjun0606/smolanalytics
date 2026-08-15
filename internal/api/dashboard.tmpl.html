@@ -1020,6 +1020,11 @@
   .pmev:hover{border-bottom-color:var(--accent)}
   .pmbasis{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);margin-top:10px;padding-top:8px;border-top:1px solid var(--line)}
   .pmq{font-family:var(--mono);font-size:var(--fs-body);color:var(--fg)}
+  .pmquarter{margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
+  .pmqh{display:block;font-family:var(--mono);font-size:var(--fs-lbl);letter-spacing:.06em;
+        text-transform:uppercase;color:var(--mut);margin-bottom:6px}
+  .pmmv{font-family:var(--mono);font-size:var(--fs-lbl);line-height:1.65;color:var(--fg);padding:2px 0}
+  .pmmv.bad{color:var(--warn)} .pmmv.good{color:var(--ok)}
   .grail{font-family:var(--mono);font-size:var(--fs-lbl);line-height:1.6;margin-top:4px}
   .grail.ok{color:var(--ok)} .grail.warn{color:var(--mut)} .grail.err{color:var(--warn)}
   .grailwhen{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);margin-top:2px}
@@ -1256,7 +1261,18 @@
         <div class="pmnext">&rarr; {{.NextMove}}{{if .Evidence}} <a class="pmev" href="{{.Evidence}}" target="_blank" rel="noopener">check it</a>{{end}}</div>
       </div>
       {{end}}
-      <div class="pmbasis">sized by people affected — no revenue is tracked on these events, so this is not a dollar figure.</div>
+      <div class="pmbasis">sized by people affected &mdash; no revenue is tracked on these events, so this is not a dollar figure.</div>
+      {{end}}
+      {{with .Movements}}
+      <!-- THE QUARTER, under the week, and OUTSIDE the quiet/busy branch on purpose. The findings
+           above are what changed in the last few days; this is whether any of it added up. A calm
+           week is exactly when the second half matters most: "nothing needs you today" is
+           comfortable reading right until it sits beside "and conversion has not moved across 23
+           ships". Either alone lets someone feel fine. -->
+      <div class="pmquarter"><span class="pmqh">across the last 90 days</span>
+        {{range .}}<div class="pmmv{{if eq (printf "%s" .Verdict) "moved down"}} bad{{else if eq (printf "%s" .Verdict) "moved up"}} good{{end}}">{{.Headline}}</div>{{end}}
+        <div class="pmbasis" style="border-top:0;padding-top:4px">a share of active people, so growth in traffic alone does not move it.</div>
+      </div>
       {{end}}
     </div>
     {{end}}
@@ -1971,6 +1987,10 @@
           <div class="sk"><div class="skv">{{comma .Search}}</div><div class="skl">search indexing</div></div>
           <div class="sk"><div class="skv">{{comma .Training}}</div><div class="skl">training</div></div>
           {{if .Errors}}<div class="sk"><div class="skv" style="color:var(--warn)">{{comma .Errors}}</div><div class="skl">served an error</div></div>{{end}}
+          {{/* Shown rather than silently dropped. A total that quietly shrank is one nobody can
+               reconcile against their own server logs, and "we ignored 11 fake requests" reads as
+               more trustworthy than a number that merely happens to be right. */}}
+          {{if .Probes}}<div class="sk"><div class="skv">{{comma .Probes}}</div><div class="skl">scans ignored</div></div>{{end}}
         </div>
         {{if $.HasWeb}}
         {{/* The comparison, in the product and not only on the marketing site. Two counts of the
@@ -2176,7 +2196,7 @@
          not drive this product from an editor. A chart that shows a number falling and no
          way to ask why is the exact "cacophony of info" complaint: information without a
          next move. This is the next move. ═══════════════════════════════════════════════ -->
-    <div class="pane wide" id="pane-explain" style="order:610" data-stratum="ship">
+    <div class="pane wide" id="pane-explain" style="order:605" data-stratum="ship">
       <h3>why did this change?
         <span class="sub">· pick a number that moved and we find the day it moved, how big the move was, and what shipped near it · computed by /v1/explain</span></h3>
       <div class="exrow" style="margin-bottom:10px">

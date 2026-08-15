@@ -942,3 +942,64 @@ func TestPrivateRouteMatchesWholeSegmentsOnly(t *testing.T) {
 		}
 	}
 }
+
+// A USER-AGENT IS A CLAIM, NOT AN IDENTITY.
+//
+// Measured on a live instance: ClaudeBot's most recent request was /@fs/etc/passwd and CCBot's was
+// /.aws/config. Neither Anthropic nor Common Crawl fetches those. Something is scanning for
+// secrets while wearing a bot's user-agent, and counting it means the pane reports "Anthropic read
+// your site" about a request Anthropic never made.
+//
+// Worse than an ordinary wrong number, because it is attributed to a named company on a page the
+// customer might screenshot.
+func TestAScannerWearingABotUserAgentIsNotCounted(t *testing.T) {
+	now := time.Now().UTC()
+	mk := func(path string) event.Event {
+		return event.Event{
+			ID: path, Name: CrawlEvent, DistinctID: "$crawler", Timestamp: now.Add(-time.Hour),
+			Properties: map[string]any{
+				"crawler": "ClaudeBot", "operator": "Anthropic", "purpose": "training",
+				"path": path, "status": float64(200),
+			},
+		}
+	}
+	evs := []event.Event{
+		mk("/pricing"),
+		mk("/@fs/etc/passwd"),
+		mk("/.aws/config"),
+		mk("/.env"),
+		mk("/wp-admin/setup-config.php"),
+	}
+	r := Compute(evs, 30, now)
+
+	if r.Hits != 1 {
+		t.Errorf("counted %d hits; only /pricing is a real fetch", r.Hits)
+	}
+	if r.Probes != 4 {
+		t.Errorf("reported %d probes, expected 4", r.Probes)
+	}
+	// and the scan must not become the operator's "last page read"
+	for _, c := range r.Crawlers {
+		if strings.Contains(c.LastPath, "passwd") || strings.Contains(c.LastPath, ".aws") {
+			t.Errorf("a scanner path became %s's last read: %q", c.Crawler, c.LastPath)
+		}
+	}
+}
+
+// Dropped, but never silently. A total that quietly shrank is one nobody can reconcile against
+// their own server logs.
+func TestProbesAreReportedNotHidden(t *testing.T) {
+	now := time.Now().UTC()
+	evs := []event.Event{{
+		ID: "p", Name: CrawlEvent, DistinctID: "$crawler", Timestamp: now.Add(-time.Hour),
+		Properties: map[string]any{"crawler": "CCBot", "operator": "Common Crawl",
+			"purpose": "training", "path": "/.env", "status": float64(404)},
+	}}
+	r := Compute(evs, 30, now)
+	if r.Probes != 1 {
+		t.Fatalf("probe not reported: %+v", r.Probes)
+	}
+	if r.Hits != 0 {
+		t.Errorf("a scan counted as a fetch: hits=%d", r.Hits)
+	}
+}

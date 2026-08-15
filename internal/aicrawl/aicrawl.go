@@ -176,10 +176,15 @@ type GapRow struct {
 // "no crawler has ever fetched this site" and "nobody has installed the reporter"
 // look identical in the data and mean opposite things, so they are never conflated.
 type Result struct {
-	Days      int           `json:"days"`
-	Reporting bool          `json:"reporting"` // any $ai_crawl event ever seen
-	Hits      int           `json:"hits"`
-	Pages     int           `json:"pages"`
+	Days      int  `json:"days"`
+	Reporting bool `json:"reporting"` // any $ai_crawl event ever seen
+	Hits      int  `json:"hits"`
+	Pages     int  `json:"pages"`
+	// Probes are requests dropped as vulnerability scans wearing a bot user-agent (/.env,
+	// /@fs/etc/passwd and friends). Reported rather than silently discarded: an operator whose
+	// total quietly shrank is a number nobody can reconcile, and "we ignored 11 fake requests" is
+	// a more trustworthy line than a total that happens to be right.
+	Probes    int           `json:"probes"`
 	Crawlers  []CrawlerRow  `json:"crawlers"`
 	Operators []OperatorRow `json:"operators"`
 	Paths     []PathRow     `json:"paths"`
@@ -275,6 +280,12 @@ func Compute(evs []event.Event, days int, asof time.Time) Result {
 			}
 			purpose := asStr(e.Properties["purpose"])
 			path := normPath(asStr(e.Properties["path"]))
+			// A scanner wearing a bot's user-agent is not that bot. Dropped before counting, so it
+			// cannot inflate an operator's total or become that operator's "last page read".
+			if probePath(path) {
+				r.Probes++
+				continue
+			}
 			status := int(asNum(e.Properties["status"]))
 			bad := status >= 400
 
@@ -549,6 +560,30 @@ func asNum(v any) float64 {
 //
 // Matched on the FIRST segment only. A blog post at /app-store-analytics is public and must not
 // be suppressed just because it starts with the letters "app"; /app/settings is not.
+// probePath reports whether a request is a vulnerability scanner rather than a crawl.
+//
+// Measured on a live instance: ClaudeBot's most recent request was /@fs/etc/passwd and CCBot's was
+// /.aws/config. Neither Anthropic nor Common Crawl fetches those. Something is sending a bot
+// user-agent while scanning for secrets, and counting it means the pane reports "Anthropic read
+// your site" about a request Anthropic never made.
+//
+// That is a wrong number of exactly the kind this product exists not to ship, and it is worse than
+// most because it is attributed to a named company. A user-agent header is a claim, not an
+// identity, and the paths are the cheapest available lie detector.
+func probePath(path string) bool {
+	p := strings.ToLower(path)
+	for _, frag := range []string{
+		"/.env", "/.git", "/.aws", "/.ssh", "/@fs/", "/etc/passwd", "/wp-admin", "/wp-login",
+		"/phpmyadmin", "/.well-known/security", "/config.json", "/credentials", "/id_rsa",
+		"/actuator", "/.svn", "/vendor/phpunit", "/xmlrpc.php", "/shell", "/cgi-bin/",
+	} {
+		if strings.Contains(p, frag) {
+			return true
+		}
+	}
+	return false
+}
+
 func privateRoute(path string) bool {
 	seg := strings.TrimPrefix(path, "/")
 	if i := strings.IndexByte(seg, '/'); i >= 0 {

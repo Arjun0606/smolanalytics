@@ -2,6 +2,7 @@ package api
 
 import (
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -110,5 +111,69 @@ func TestChannelHeadingIsLabelled(t *testing.T) {
 	if !strings.Contains(got, `EventLabel(trendEvent) + " by channel"`) {
 		t.Error("SourceTitle must use EventLabel — otherwise autocapture names like $pageview " +
 			"appear verbatim in the reports rail")
+	}
+}
+
+// TWO PANES CANNOT SHARE AN ORDER.
+//
+// pane-deploys and pane-explain were both order:610, so which appeared first was decided by
+// document order rather than by anyone's intent — and the deck menu, the rail and the printed page
+// could each have resolved it differently. A layout whose sequence is accidental is one nobody can
+// reason about, and it is invisible until someone notices two cards swapped between reloads.
+func TestNoTwoPanesShareAnOrder(t *testing.T) {
+	src := dashSource(t)
+	re := regexp.MustCompile(`id="(pane-[a-z0-9-]+)"\s+style="order:(\d+)"`)
+	byOrder := map[string][]string{}
+	for _, m := range re.FindAllStringSubmatch(src, -1) {
+		byOrder[m[2]] = append(byOrder[m[2]], m[1])
+	}
+	// Panes that share an order DELIBERATELY because they sit in opposite branches of the same
+	// {{if}} and can never render together. Listed by name rather than detected, so adding a pair
+	// is a decision someone writes down instead of a collision that slips through.
+	exempt := map[string]bool{"pane-pages|pane-web-empty": true}
+
+	for order, ids := range byOrder {
+		uniq := map[string]bool{}
+		for _, id := range ids {
+			uniq[id] = true
+		}
+		if len(uniq) > 1 {
+			names := make([]string, 0, len(uniq))
+			for id := range uniq {
+				names = append(names, id)
+			}
+			sort.Strings(names)
+			if exempt[strings.Join(names, "|")] {
+				continue
+			}
+			t.Errorf("order:%s is claimed by %v — their relative position is undefined", order, names)
+		}
+	}
+}
+
+// EVERY COMPUTED SECTION REACHES EVERY SURFACE.
+//
+// The Investigation carries findings AND movements. I shipped movements to the share page and the
+// CLI brief and forgot the dashboard, so the product told a forwarded stranger something it would
+// not tell the person who owned the account. That is the same one-question-two-answers defect this
+// codebase keeps producing, wearing a new hat.
+//
+// Source-level because it is a wiring property: each surface either references the section or it
+// does not, and no rendered test would notice the absence — a page missing a card looks exactly
+// like a page whose card had nothing to say.
+func TestEverySurfaceRendersBothHalvesOfTheInvestigation(t *testing.T) {
+	surfaces := map[string]string{
+		"dashboard":  dashSource(t),
+		"share page": readFileForTest(t, "share_api.go"),
+		"cli brief":  readFileForTest(t, "../brief/brief.go"),
+	}
+	for name, src := range surfaces {
+		if !strings.Contains(src, "Movements") {
+			t.Errorf("%s never renders Movements — it shows what changed this week and hides "+
+				"whether any of it added up", name)
+		}
+		if !strings.Contains(src, "Findings") {
+			t.Errorf("%s never renders Findings", name)
+		}
 	}
 }
