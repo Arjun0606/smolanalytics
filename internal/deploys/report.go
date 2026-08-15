@@ -26,7 +26,7 @@ func Report(evs []event.Event, deps []Deploy, eventName string, days, window int
 	for i, p := range res.Points {
 		series[i] = Point{Date: p.Date, Count: p.Count}
 	}
-	impacts := ComputeImpact(series, deps, window, 0.25)
+	impacts := ComputeImpact(series, deps, window, SignificantChange)
 	return map[string]any{
 		"event":    eventName,
 		"days":     days,

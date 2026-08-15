@@ -32,6 +32,12 @@ const day = "2006-01-02"
 // the `window` days AFTER the deploy against the `window` days BEFORE. This is correlation,
 // not proof, so a deploy is only flagged Significant when BOTH windows are fully populated
 // AND the move is at least `threshold` (e.g. 0.25). Returned newest-first.
+// SignificantChange is the default `threshold` for ComputeImpact, and it is a FRACTION: 0.25 is
+// twenty-five percent. It exists because the units were guessable and someone guessed wrong —
+// internal/investigate passed 25, silently demanding a 2,500% move, and its ship attribution
+// never fired once. A named constant makes the unit un-guessable at every call site.
+const SignificantChange = 0.25
+
 func ComputeImpact(series []Point, deps []Deploy, window int, threshold float64) []Impact {
 	if window <= 0 {
 		window = 3

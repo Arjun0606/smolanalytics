@@ -9,6 +9,7 @@ import (
 	"time"
 
 	alias2 "github.com/Arjun0606/smolanalytics/internal/alias"
+	"github.com/Arjun0606/smolanalytics/internal/deploys"
 	flagpkg "github.com/Arjun0606/smolanalytics/internal/flag"
 	"github.com/Arjun0606/smolanalytics/internal/investigate"
 	"github.com/Arjun0606/smolanalytics/internal/store"
@@ -54,11 +55,18 @@ func backtestCmd(args []string) {
 	if fstore, ferr := flagpkg.Open(dataPath() + ".flags.json"); ferr == nil {
 		flags = fstore.List()
 	}
+	// Deploys let a replayed finding name the ship behind it. Optional, like everywhere else:
+	// without them the replay still says what changed, it just cannot say what did it.
+	var deps []deploys.Deploy
+	if dp, derr := deploys.Open(dataPath() + ".deploys.json"); derr == nil {
+		deps = dp.List()
+	}
 
 	rep := investigate.Backtest(evs, flags, investigate.BacktestOpts{
 		Opts:       investigate.Opts{Now: time.Now().UTC()},
 		WindowDays: *days,
 		StepDays:   *step,
+		Deploys:    deps,
 	})
 
 	if *asJSON {

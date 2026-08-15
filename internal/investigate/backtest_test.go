@@ -2,8 +2,11 @@ package investigate
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/Arjun0606/smolanalytics/internal/deploys"
 
 	"github.com/Arjun0606/smolanalytics/internal/event"
 )
@@ -141,5 +144,75 @@ func TestAFlatHistoryProducesNoFindings(t *testing.T) {
 	}
 	if len(rep.Scanned) == 0 {
 		t.Error("no record of what was scanned — an empty result is then indistinguishable from a broken run")
+	}
+}
+
+// A REPLAYED FINDING MUST NOT CITE A SHIP THAT HAD NOT HAPPENED.
+//
+// Deploys reached the replay for the first time in this change, and they are the one input that
+// can make it lie in a way a reader would never catch. The sweep dated 14 June has to attribute
+// using only what had shipped by 14 June; hand it the whole deploy list and it will cheerfully
+// explain a June regression with a July release, because ComputeImpact is happy to correlate
+// anything within its window.
+//
+// The control half matters as much as the guard: a test that only asserts "does not name a ship"
+// passes just as well when attribution is broken outright.
+func TestAReplayedFindingNeverCitesAShipFromTheFuture(t *testing.T) {
+	now := time.Now().UTC()
+	dropAt := now.AddDate(0, 0, -40)
+	evs := btSeed(t, now, 90, 40, 60, 15)
+
+	// The only ship in the log lands two days AFTER the collapse it would be blamed for.
+	rep := Backtest(evs, nil, BacktestOpts{
+		Opts: Opts{Now: now}, WindowDays: 90, StepDays: 2,
+		Deploys: []deploys.Deploy{{ID: "d1", SHA: "cafebabe1234", Message: "shipped after the drop",
+			At: dropAt.AddDate(0, 0, 2), Source: "cli"}},
+	})
+	if len(rep.Findings) == 0 {
+		t.Fatalf("the collapse itself was never surfaced across %d sweeps", rep.Sweeps)
+	}
+	for _, f := range rep.Findings {
+		seen, err := time.Parse("2006-01-02", f.FirstSeen)
+		if err != nil {
+			t.Fatalf("unparseable first-seen %q", f.FirstSeen)
+		}
+		// Any sweep dated before the ship must not mention it.
+		if seen.Before(dropAt.AddDate(0, 0, 2)) && strings.Contains(f.Cause, "cafebab") {
+			t.Errorf("sweep on %s cited a ship that landed on %s: %q",
+				f.FirstSeen, dropAt.AddDate(0, 0, 2).Format("2006-01-02"), f.Cause)
+		}
+	}
+
+	// Control: the same ship placed ON the drop is available to every later sweep, so
+	// attribution is reachable and the guard above is not passing by being inert.
+	rep2 := Backtest(evs, nil, BacktestOpts{
+		Opts: Opts{Now: now}, WindowDays: 90, StepDays: 2,
+		Deploys: []deploys.Deploy{{ID: "d2", SHA: "deadbeef5678", Message: "the one that did it",
+			At: dropAt, Source: "cli"}},
+	})
+	cited := false
+	for _, f := range rep2.Findings {
+		if strings.Contains(f.Cause, "deadbee") {
+			cited = true
+			t.Logf("attributed on %s: %s", f.FirstSeen, f.Cause)
+		}
+	}
+	if !cited {
+		t.Error("a ship landing exactly on the drop was never named — attribution is not reachable " +
+			"from the replay at all, so the future-ship guard above proves nothing")
+	}
+}
+
+// deploysBefore is the whole guard, so test it directly too: the boundary is exclusive for the
+// same reason `before` is — an event at exactly `at` has not happened as of `at`.
+func TestDeploysBeforeExcludesTheBoundary(t *testing.T) {
+	at := time.Date(2026, 6, 14, 0, 0, 0, 0, time.UTC)
+	got := deploysBefore([]deploys.Deploy{
+		{ID: "past", At: at.Add(-time.Second)},
+		{ID: "exactly", At: at},
+		{ID: "future", At: at.Add(time.Second)},
+	}, at)
+	if len(got) != 1 || got[0].ID != "past" {
+		t.Fatalf("expected only the past ship, got %+v", got)
 	}
 }

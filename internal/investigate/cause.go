@@ -80,7 +80,12 @@ func shipNear(evs []event.Event, name string, day time.Time, deps []deploys.Depl
 	if len(series) == 0 {
 		return ""
 	}
-	impacts := deploys.ComputeImpact(series, deps, 3, 25)
+	// THE THRESHOLD IS A FRACTION, NOT A PERCENTAGE. This read 25 — meaning a 2,500% swing —
+	// so Significant was never true and shipNear returned "" for every customer who had gone to
+	// the trouble of recording deploys. The dashboard's own fallback line invites them to do
+	// exactly that ("record deploys and this line becomes 'which ship did it'"), so the product
+	// was asking for work it could not pay off. Every other caller passes 0.25; so does this one.
+	impacts := deploys.ComputeImpact(series, deps, 3, deploys.SignificantChange)
 	var best *deploys.Impact
 	for i := range impacts {
 		im := impacts[i]

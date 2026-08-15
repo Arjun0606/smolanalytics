@@ -4,6 +4,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/deploys"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/flag"
 )
@@ -63,6 +64,10 @@ type BacktestOpts struct {
 	// would understate how early it would have caught something, and understating is the wrong
 	// direction to be wrong in a sales artefact. Raise it on a very large log.
 	StepDays int
+	// Deploys let a replayed finding name the ship that caused it, exactly as the live
+	// investigation does. Optional: without them the replay still reports what changed, it just
+	// cannot attribute it, which is the same degradation the live path has.
+	Deploys []deploys.Deploy
 }
 
 // Backtest replays the investigation across history and returns each finding dated by when it
@@ -108,7 +113,7 @@ func Backtest(evs []event.Event, flags []flag.Flag, o BacktestOpts) Replay {
 		}
 		step := o.Opts
 		step.Now = at
-		inv := WithContext(past, flagsBefore(flags, at), nil, step)
+		inv := WithContext(past, flagsBefore(flags, at), deploysBefore(o.Deploys, at), step)
 
 		for _, s := range inv.Scanned {
 			seenScanned[s] = true
@@ -150,6 +155,19 @@ func before(evs []event.Event, at time.Time) []event.Event {
 	for _, e := range evs {
 		if e.Timestamp.Before(at) {
 			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// deploysBefore drops ships that had not happened by `at`. Without this the replay could
+// attribute a June regression to a July release — the finding would look sharper and be a lie,
+// and a sales artefact caught inventing one attribution loses every other line with it.
+func deploysBefore(deps []deploys.Deploy, at time.Time) []deploys.Deploy {
+	out := make([]deploys.Deploy, 0, len(deps))
+	for _, d := range deps {
+		if d.At.Before(at) {
+			out = append(out, d)
 		}
 	}
 	return out

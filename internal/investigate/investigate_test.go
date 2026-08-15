@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/deploys"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/flag"
 )
@@ -349,6 +350,45 @@ func TestAnUnattributableDropSaysWhatIsMissing(t *testing.T) {
 	}
 	if c := inv.Findings[0].Cause; !strings.Contains(c, "record deploys") {
 		t.Errorf("the unattributed line must name the fix that would attribute it next time: %q", c)
+	}
+}
+
+// AND WHEN THE DEPLOY IS THERE, IT MUST ACTUALLY BE NAMED.
+//
+// The test above asserted the FALLBACK — "record deploys and this line becomes 'which ship did
+// it'" — and passed happily for months while the paid-off version was unreachable: shipNear
+// passed 25 to a threshold measured in fractions, so Significant demanded a 2,500% swing and no
+// deploy was ever named. Every customer who did the work the fallback asks for got the fallback
+// anyway.
+//
+// A test for the graceful degradation and none for the capability is how that survives. This is
+// the missing half: an ordinary regression with a deploy sitting on it names the deploy.
+func TestARecordedShipOnTheDropIsNamed(t *testing.T) {
+	now := time.Now().UTC()
+	evs := seed(t, now, "signup", 40, 10)
+	// The drop day the fixture creates, taken from the finding itself rather than assumed, so
+	// this cannot drift if seed() changes.
+	base := WithContext(evs, nil, nil, Opts{Now: now})
+	if len(base.Findings) == 0 {
+		t.Fatal("the fixture produces no finding, so there is nothing to attribute")
+	}
+	day, err := time.Parse("2006-01-02", base.Findings[0].Day)
+	if err != nil {
+		t.Fatalf("unparseable change day %q", base.Findings[0].Day)
+	}
+
+	inv := WithContext(evs, nil, []deploys.Deploy{{
+		ID: "d1", SHA: "abc1234def", Message: "rewrote the signup form", At: day, Source: "cli",
+	}}, Opts{Now: now})
+	if len(inv.Findings) == 0 {
+		t.Fatal("no finding once a deploy was added")
+	}
+	c := inv.Findings[0].Cause
+	if !strings.Contains(c, "abc1234") {
+		t.Errorf("a ship landing on the drop day was not named — attribution is unreachable: %q", c)
+	}
+	if !strings.Contains(c, "correlation") {
+		t.Errorf("attribution must be hedged as correlation, not asserted as cause: %q", c)
 	}
 }
 
