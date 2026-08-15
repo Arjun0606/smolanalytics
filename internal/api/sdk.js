@@ -1071,6 +1071,29 @@
         if (window.console) console.warn("smolanalytics: init() called more than once — ignoring the repeat. Include the snippet in exactly one place, or every event is recorded twice.");
         return;
       }
+      // THE FIRST ARGUMENT IS A WRITE KEY, NOT A CONFIG OBJECT.
+      //
+      // Three framework landing pages shipped `init({ site: "..." })` for months. Because a
+      // non-empty object is truthy, `key` became the object, `opts` stayed undefined so `host`
+      // became "", and the install sent NOTHING — with one console warning about the host and
+      // nothing at all about the key. A person following our own documentation got a silent
+      // zero and had every reason to conclude the product was broken.
+      //
+      // Docs drift; code does not. Refusing here means the next time a snippet goes wrong, the
+      // person who pastes it is told exactly what is wrong within a second, by the SDK itself.
+      if (writeKey && typeof writeKey !== "string") {
+        if (window.console) {
+          console.error(
+            "smolanalytics: init() takes your WRITE KEY as a string first, then options — " +
+            'init("sa_...", { host: "https://YOUR_HOST" }). You passed a ' + typeof writeKey +
+            ". Nothing will be recorded until this is fixed."
+          );
+        }
+        return;
+      }
+      if (!writeKey && window.console) {
+        console.error('smolanalytics: init() called with no write key — nothing will be recorded. Pass init("sa_...", { host: "https://YOUR_HOST" }).');
+      }
       inited = true;
       opts = opts || {};
       key = writeKey || "";

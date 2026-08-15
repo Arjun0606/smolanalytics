@@ -22,9 +22,24 @@ import (
 	"time"
 )
 
-// FormatSlack marks an endpoint whose deliveries use Slack's incoming-webhook
-// contract: {"text": "<plain-text rendering>"} instead of signed JSON.
-const FormatSlack = "slack"
+// Chat formats. Each is a receiver that will NOT accept our signed-JSON contract: it wants its
+// own tiny envelope and rejects anything else, so an endpoint on one of these hosts gets the
+// human rendering and no signature (there is nowhere to put one).
+const (
+	// FormatSlack — {"text": "<plain-text rendering>"}. Also matches Mattermost and Rocket.Chat,
+	// both of which implement Slack's incoming-webhook contract deliberately.
+	FormatSlack = "slack"
+	// FormatDiscord — {"content": ...}. Discord 400s on {"text": ...}, so a Discord URL pasted
+	// into the webhook box was rejected on every single delivery, forever, silently: the send is
+	// fire-and-forget, so the failure went nowhere. Discord is where this ICP actually is, which
+	// made it the most expensive missing line in the file.
+	FormatDiscord = "discord"
+)
+
+// discordLimit is Discord's hard cap on `content`. Over it the whole message is rejected, so a
+// long brief has to be truncated rather than dropped — a clipped alert is worth vastly more than
+// a 400 nobody sees.
+const discordLimit = 2000
 
 // Endpoint is one registered webhook target.
 type Endpoint struct {
@@ -45,9 +60,38 @@ func (e Endpoint) SlackFormat() bool {
 	return e.Format == FormatSlack || isSlackURL(e.URL)
 }
 
+// DiscordFormat reports whether deliveries use Discord's {"content": ...} contract, either
+// because the endpoint says so or because the URL is plainly a Discord webhook — the host check
+// also covers endpoints persisted before this format existed, which is every one of them.
+func (e Endpoint) DiscordFormat() bool {
+	return e.Format == FormatDiscord || isDiscordURL(e.URL)
+}
+
+// Chat reports whether this endpoint takes a chat envelope rather than signed JSON.
+func (e Endpoint) Chat() bool { return e.SlackFormat() || e.DiscordFormat() }
+
 func isSlackURL(raw string) bool {
 	u, err := neturl.Parse(raw)
-	return err == nil && strings.EqualFold(u.Hostname(), "hooks.slack.com")
+	if err != nil {
+		return false
+	}
+	h := strings.ToLower(u.Hostname())
+	// Mattermost and Rocket.Chat implement Slack's contract on the operator's own domain, so
+	// they cannot be host-detected; those users pick the format explicitly.
+	return h == "hooks.slack.com"
+}
+
+func isDiscordURL(raw string) bool {
+	u, err := neturl.Parse(raw)
+	if err != nil {
+		return false
+	}
+	h := strings.ToLower(u.Hostname())
+	// discord.com is current; discordapp.com is the legacy host and still live, and ptb/canary
+	// are the public beta rings — a user on any of them pasted a real webhook.
+	return (h == "discord.com" || h == "discordapp.com" ||
+		h == "ptb.discord.com" || h == "canary.discord.com") &&
+		strings.Contains(u.Path, "/api/webhooks/")
 }
 
 type Store struct {
@@ -227,12 +271,19 @@ var httpClient = &http.Client{
 // rendering of body; if a caller passes none, the raw JSON body is used as the
 // text so a Slack message still carries the facts instead of failing.
 func Send(ep Endpoint, body []byte, text string) (int, error) {
-	slack := ep.SlackFormat()
-	if slack {
+	chat := ep.Chat()
+	if chat {
 		if text == "" {
 			text = string(body)
 		}
-		body, _ = json.Marshal(map[string]string{"text": text})
+		if ep.DiscordFormat() {
+			if len(text) > discordLimit {
+				text = text[:discordLimit-1] + "\u2026"
+			}
+			body, _ = json.Marshal(map[string]string{"content": text})
+		} else {
+			body, _ = json.Marshal(map[string]string{"text": text})
+		}
 	}
 	req, err := http.NewRequest(http.MethodPost, ep.URL, bytes.NewReader(body))
 	if err != nil {
@@ -240,7 +291,7 @@ func Send(ep Endpoint, body []byte, text string) (int, error) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "smolanalytics-webhooks")
-	if !slack {
+	if !chat {
 		req.Header.Set("X-Smolanalytics-Signature", sign(ep.Secret, body))
 	}
 	resp, err := httpClient.Do(req)

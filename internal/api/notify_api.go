@@ -30,7 +30,25 @@ func (s *Server) createWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.rec("webhook.created", ep.Name)
-	writeJSON(w, http.StatusCreated, ep)
+	// Return the RESOLVED format, not the stored one. Stored is "" for an auto-detected endpoint,
+	// so a Discord URL added without picking a format would have been labelled "signed json" in
+	// the row the user is looking at, while actually delivering Discord messages. The UI must be
+	// told what will happen, not what was typed.
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"id": ep.ID, "name": ep.Name, "url": ep.URL, "secret": ep.Secret,
+		"format": resolvedFormat(ep), "enabled": ep.Enabled, "created": ep.Created,
+	})
+}
+
+// resolvedFormat names what an endpoint will ACTUALLY send, auto-detection included.
+func resolvedFormat(ep webhook.Endpoint) string {
+	switch {
+	case ep.DiscordFormat():
+		return "discord"
+	case ep.SlackFormat():
+		return "slack"
+	}
+	return "signed json"
 }
 
 func (s *Server) deleteWebhook(w http.ResponseWriter, r *http.Request) {
@@ -109,7 +127,20 @@ func (s *Server) listAlerts(w http.ResponseWriter, _ *http.Request) {
 		writeErr(w, http.StatusNotFound, "alerts are not enabled on this instance")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"alerts": s.alerts.List()})
+	// Describe() renders the rule in words, and the list returned the bare struct — so the
+	// dashboard's "fires when" column printed an em dash for every alert ever created, and
+	// list_alerts told an agent a threshold and an op with no way to know what they meant for
+	// the kind in question. An alert nobody can read is an alert nobody trusts at 3am.
+	out := make([]map[string]any, 0)
+	for _, a := range s.alerts.List() {
+		out = append(out, map[string]any{
+			"id": a.ID, "name": a.Name, "event": a.Event, "kind": a.Kind(),
+			"op": a.Op, "threshold": a.Threshold, "window_hours": a.WindowHours,
+			"against": a.Against, "created": a.Created, "last_fired": a.LastFired,
+			"describe": a.Describe(),
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"alerts": out})
 }
 
 func (s *Server) listWebhooks(w http.ResponseWriter, _ *http.Request) {

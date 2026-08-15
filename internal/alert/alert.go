@@ -70,11 +70,25 @@ func (s *Store) List() []Alert {
 }
 
 func (s *Store) Add(a Alert) (Alert, error) {
-	if a.Name == "" || a.Event == "" {
-		return Alert{}, fmt.Errorf("name and event are required")
+	// PER-KIND VALIDATION. This demanded an event AND a gt/lt op from every alert, which made two
+	// of the four kinds impossible to create: an anomaly alert has no event and no direction by
+	// design — that is the entire point of it, "tell me when something is unusual" — and the MCP
+	// tool's own schema documents both as ignored for that kind. So the documented minimal call,
+	// create_alert{name}, failed with "op must be gt or lt", and the detector that internal/insight
+	// has had all along stayed unreachable from the one surface built to reach it.
+	if a.Name == "" {
+		return Alert{}, fmt.Errorf("an alert needs a name")
 	}
-	if a.Op != "gt" && a.Op != "lt" {
-		return Alert{}, fmt.Errorf("op must be gt or lt")
+	if a.Kind() != KindAnomaly {
+		if a.Event == "" {
+			return Alert{}, fmt.Errorf("a %s alert needs an event to watch", a.Kind())
+		}
+		if a.Op != "gt" && a.Op != "lt" {
+			return Alert{}, fmt.Errorf("a %s alert needs op=gt or op=lt", a.Kind())
+		}
+	}
+	if a.Kind() == KindRatio && a.Against == "" {
+		return Alert{}, fmt.Errorf("a ratio alert needs `against`: the event to divide by")
 	}
 	if a.WindowHours <= 0 {
 		a.WindowHours = 24

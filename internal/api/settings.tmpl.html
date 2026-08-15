@@ -40,7 +40,7 @@
   .note code{background:var(--surface2);padding:1px 5px;font-family:var(--mono);font-size:12px}
   .keyrow,.evrow{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:12px}
   .keyrow:last-child,.evrow:last-child{border-bottom:none}
-  .keyrow .nm,.evrow .nm{color:var(--fg)}.keyrow .kv{color:var(--mut);flex:1;overflow:hidden;text-overflow:ellipsis}
+  .keyrow .nm,.evrow .nm{color:var(--fg)}.keyrow .kv{color:var(--mut);flex:1;overflow:hidden;text-overflow:ellipsis}.keyrow .fmt{color:var(--mut);font-size:12px;border:1px solid var(--line);padding:1px 6px;white-space:nowrap}
   .evrow .nm{flex:1}.evrow .ct{color:var(--mut)}
   .keyrow .x{color:var(--mut2);cursor:pointer}.keyrow .x:hover{color:var(--warn)}
   pre.code{background:#0D0D0D;border:1px solid var(--line);padding:13px;overflow:auto;font-family:var(--mono);font-size:12px;line-height:1.6;margin:0;white-space:pre-wrap;word-break:break-word}
@@ -231,16 +231,22 @@
   {{if eq .Section "webhooks"}}
     <div class="card">
       <h2>Webhooks</h2>
-      <div class="note">smolanalytics POSTs signed JSON here when an alert fires. Verify with the <code>X-Smolanalytics-Signature</code> header (HMAC-SHA256 of the body, using the secret).</div>
+      <div class="note">smolanalytics POSTs here when an alert fires, and again with the daily digest. A Slack or Discord URL is detected automatically and gets that service's plain-message format; everything else gets signed JSON, verified with the <code>X-Smolanalytics-Signature</code> header (HMAC-SHA256 of the body, using the secret shown when you add it).</div>
       <div id="hooks" style="margin-top:12px">
-        {{range .Webhooks}}<div class="keyrow" data-id="{{.ID}}"><span class="nm">{{.Name}}</span><span class="kv">{{.URL}}</span><span class="x test" title="send test">test</span><span class="x" title="delete">delete</span></div>
+        {{range .Webhooks}}<div class="keyrow" data-id="{{.ID}}"><span class="nm">{{.Name}}</span><span class="kv">{{.URL}}</span><span class="fmt">{{if .DiscordFormat}}discord{{else if .SlackFormat}}slack{{else}}signed json{{end}}</span><span class="x test" title="send test">test</span><span class="x" title="delete">delete</span></div>
         {{else}}<div class="note" id="noHooks">no webhooks yet</div>{{end}}
       </div>
       <div class="row" style="margin-top:14px">
-        <div><label>Name</label><input id="hName" placeholder="slack alerts"></div>
-        <div><label>URL</label><input id="hUrl" placeholder="https://hooks.example.com/..."></div>
+        <div><label>Name</label><input id="hName" placeholder="team alerts"></div>
+        <div><label>URL</label><input id="hUrl" placeholder="https://discord.com/api/webhooks/..."></div>
+        <div><label>Format</label><select id="hFormat">
+          <option value="">auto-detect</option>
+          <option value="slack">Slack format</option>
+          <option value="discord">Discord format</option>
+        </select></div>
         <button id="hCreate" class="ghost">Add</button>
       </div>
+      <div class="note" style="margin-top:8px">Pick a format explicitly for a self-hosted receiver that speaks someone else's contract on your own domain &mdash; Mattermost and Rocket.Chat both implement Slack's, and cannot be detected from the URL.</div>
       <span class="msg" id="hMsg"></span>
     </div>
   {{end}}
@@ -402,13 +408,19 @@
   if(hooks)Array.prototype.forEach.call(hooks.querySelectorAll('.keyrow'),bindHook);
   on('hCreate',function(){
     var name=document.getElementById('hName').value.trim(),url=document.getElementById('hUrl').value.trim();
+    var fsel=document.getElementById('hFormat'),format=fsel?fsel.value:'';
     if(!url){flash('hMsg','url required',true);return;}
-    J('/v1/webhooks','POST',{name:name,url:url}).then(function(r){
+    J('/v1/webhooks','POST',{name:name,url:url,format:format}).then(function(r){
       if(!r.ok){flash('hMsg',r.j.error||'failed',true);return;}
       var no=document.getElementById('noHooks');if(no)no.remove();
       var row=document.createElement('div');row.className='keyrow';row.setAttribute('data-id',r.j.id);
-      row.innerHTML='<span class="nm">'+esc(r.j.name)+'</span><span class="kv">'+esc(r.j.url)+'</span><span class="x test" title="send test">test</span><span class="x" title="delete">delete</span>';
-      hooks.appendChild(row);bindHook(row);document.getElementById('hName').value='';document.getElementById('hUrl').value='';flash('hMsg','added ✓');
+      row.innerHTML='<span class="nm">'+esc(r.j.name)+'</span><span class="kv">'+esc(r.j.url)+'</span><span class="fmt">'+esc(r.j.format||'signed json')+'</span><span class="x test" title="send test">test</span><span class="x" title="delete">delete</span>';
+      hooks.appendChild(row);bindHook(row);document.getElementById('hName').value='';document.getElementById('hUrl').value='';
+      // The secret is shown exactly once, here, because it is never retrievable again — and the
+      // note above tells people to verify deliveries "using the secret", which for signed-JSON
+      // endpoints this page had never once displayed.
+      if(r.j.format==='signed json'){flash('hMsg','added ✓ — signing secret (shown once): '+r.j.secret);}
+      else{flash('hMsg','added ✓ — '+r.j.format+' format, plain messages, no signature to verify');}
     });
   });
 

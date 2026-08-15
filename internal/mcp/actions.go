@@ -312,12 +312,12 @@ func (s *Server) callAction(name string, args json.RawMessage) (bool, string, er
 			return true, "", err
 		}
 		created := map[string]any{"id": ep.ID, "name": ep.Name, "url": ep.URL, "format": formatOf(ep)}
-		if ep.SlackFormat() {
-			// no secret: Slack can't verify signature headers, so deliveries are plain
-			// {"text": ...} messages and there is nothing for the user to store.
+		if ep.Chat() {
+			// no secret: a chat receiver can't verify signature headers, so deliveries are plain
+			// messages and there is nothing for the user to store.
 			return true, jsonStr(map[string]any{
 				"created": created,
-				"note":    "Slack-format endpoint — deliveries are sent as Slack {\"text\": ...} messages (alerts and the daily digest rendered as plain text), not signed JSON. Run test_webhook with this id next to confirm the channel receives it.",
+				"note":    chatNote(ep),
 			}), nil
 		}
 		return true, jsonStr(map[string]any{
@@ -357,15 +357,22 @@ func (s *Server) callAction(name string, args json.RawMessage) (bool, string, er
 		}
 		status, err := webhook.SendTest(ep)
 		who := "the endpoint"
-		if ep.SlackFormat() {
+		switch {
+		case ep.DiscordFormat():
+			who = "Discord"
+		case ep.SlackFormat():
 			who = "Slack"
 		}
 		if err != nil {
 			if status == 0 {
 				return true, "", fmt.Errorf("test delivery to %q got no HTTP response (%v) — check the URL is reachable from this server", ep.Name, err)
 			}
-			if ep.SlackFormat() && status == 404 {
-				return true, "", fmt.Errorf("404: the URL looks revoked — recreate it in Slack (workspace settings → Incoming Webhooks), then add_webhook the new URL and delete_webhook %s", ep.ID)
+			if status == 404 && ep.Chat() {
+				where := "Slack (workspace settings → Incoming Webhooks)"
+				if ep.DiscordFormat() {
+					where = "Discord (channel → Edit Channel → Integrations → Webhooks)"
+				}
+				return true, "", fmt.Errorf("404: the URL looks revoked — recreate it in %s, then add_webhook the new URL and delete_webhook %s", where, ep.ID)
 			}
 			return true, "", fmt.Errorf("%s said %d — the delivery reached it but was rejected; check the receiver's logs (delete_webhook + add_webhook if the URL changed)", who, status)
 		}
@@ -500,13 +507,31 @@ func (s *Server) callAction(name string, args json.RawMessage) (bool, string, er
 	return false, "", nil
 }
 
-// formatOf names an endpoint's delivery contract for tool output: "slack"
-// ({"text": ...} plain-text messages) or "json" (signed JSON).
+// formatOf names an endpoint's delivery contract for tool output: "slack" ({"text": ...}),
+// "discord" ({"content": ...}) or "json" (signed JSON).
 func formatOf(e webhook.Endpoint) string {
-	if e.SlackFormat() {
+	switch {
+	case e.DiscordFormat():
+		return "discord"
+	case e.SlackFormat():
 		return "slack"
 	}
 	return "json"
+}
+
+// chatNote is the one-line explanation an agent relays about a chat endpoint. Chat receivers
+// cannot verify a signature header, so there is deliberately no secret to store, and saying so
+// is better than leaving an agent to wonder why the created endpoint has no secret.
+func chatNote(e webhook.Endpoint) string {
+	name := "Slack"
+	shape := `{"text": ...}`
+	if e.DiscordFormat() {
+		name, shape = "Discord", `{"content": ...}`
+	}
+	return name + "-format endpoint — deliveries are sent as " + name + " " + shape +
+		" messages (alerts and the daily digest rendered as plain text), not signed JSON. There " +
+		"is no secret to store because a chat receiver cannot verify a signature header. Run " +
+		"test_webhook with this id next to confirm the channel receives it."
 }
 
 // removal describes one delete/revoke tool so its answer can be honest about what
