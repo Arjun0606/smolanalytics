@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -85,5 +86,73 @@ func TestShareLinkAccess(t *testing.T) {
 	}
 	if w6 := get(created.Path); w6.Code != http.StatusNotFound {
 		t.Fatalf("revoked link must 404, got %d", w6.Code)
+	}
+}
+
+// THE FORWARDABLE ARTEFACT MUST CARRY THE UPDATE, AND IT MUST BE THE SAME UPDATE.
+//
+// This page is the only surface a stranger reads. A dashboard is opened by the person who bought
+// it; a share link gets sent to a team, which is the whole distribution argument for a product
+// with no sales motion.
+//
+// So it has to carry the same Investigation the dashboard and the weekly email carry, computed by
+// the same call. A share page that computed its own version would be a marketing artefact rather
+// than a report, and the first reader to check it against the dashboard would discover that.
+func TestTheSharePageCarriesTheSameUpdateAsTheDashboard(t *testing.T) {
+	t.Setenv("SMOLANALYTICS_PASSWORD", "operator-pass-123")
+	st := memory.New()
+
+	now := time.Now().UTC()
+	var evs []event.Event
+	for d := 89; d >= 0; d-- {
+		for i := 0; i < 40; i++ {
+			u := fmt.Sprintf("d%d_%d", d, i)
+			ts := now.AddDate(0, 0, -d).Add(time.Duration(i) * time.Minute)
+			evs = append(evs, event.Event{ID: "p" + u, Name: "$pageview", DistinctID: u, Timestamp: ts,
+				Properties: map[string]any{"path": "/"}})
+			if i < 4 {
+				evs = append(evs, event.Event{ID: "c" + u, Name: "checkout", DistinctID: u,
+					Timestamp: ts.Add(time.Minute)})
+			}
+		}
+	}
+	if err := st.Ingest(evs...); err != nil {
+		t.Fatal(err)
+	}
+
+	s := New(st)
+	s.SetReadKey(readKeyForTest)
+	sh, err := share.Open(filepath.Join(t.TempDir(), "shares.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetShares(sh)
+	_, tok, err := sh.Create("weekly")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w := httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, httptest.NewRequest("GET", "/share/"+tok, nil))
+	if w.Code != 200 {
+		t.Fatalf("share page returned %d", w.Code)
+	}
+	body := w.Body.String()
+
+	if !strings.Contains(body, "did any of it add up") {
+		t.Error("the share page has no movement section — a forwarded link that shows only " +
+			"visitor counts is a traffic widget, not an update")
+	}
+	if !strings.Contains(body, "checkout") {
+		t.Error("the metric is missing from the forwarded page")
+	}
+	// the honesty line travels with the number, because a stranger reads this without context
+	if !strings.Contains(body, "share of active people") {
+		t.Error("no basis stated: a rate on a forwarded page with no explanation is either " +
+			"over-trusted or ignored, and both are worse than a smaller number that explains itself")
+	}
+	// and it must not leak the operator's console
+	if strings.Contains(body, "operator-pass-123") || strings.Contains(body, readKeyForTest) {
+		t.Fatal("the public share page leaked a credential")
 	}
 }
