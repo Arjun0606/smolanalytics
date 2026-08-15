@@ -415,3 +415,35 @@ func TestAShareIsNeverImpossible(t *testing.T) {
 		}
 	}
 }
+
+// A RISE IS NOT A DROP.
+//
+// The unattributed-cause line hardcoded the word "drop", so a metric that rose 34% was explained
+// with a sentence about a drop — and on a healthy product most findings are rises, which made the
+// most-repeated line on the page the one visibly describing something else. Every reader who
+// noticed learned the copy is templated, and doubted the numbers next to it.
+func TestTheUnattributedLineMatchesTheDirectionOfTheFinding(t *testing.T) {
+	now := time.Now().UTC()
+	// A surge: 10/day for the first half, 40/day for the second.
+	rise := WithContext(seed(t, now, "signup", 10, 40), nil, nil, Opts{Now: now})
+	if len(rise.Findings) == 0 {
+		t.Fatal("a 4x surge produced no finding")
+	}
+	for _, f := range rise.Findings {
+		if f.Kind != KindSurge {
+			continue
+		}
+		if strings.Contains(f.Cause, "the drop is spread") {
+			t.Errorf("a rise is explained as a drop: %q\n  headline: %s", f.Cause, f.Headline)
+		}
+	}
+
+	// And the drop still says drop, so the fix is not just deleting the word.
+	fall := WithContext(seed(t, now, "signup", 40, 10), nil, nil, Opts{Now: now})
+	if len(fall.Findings) == 0 {
+		t.Fatal("a 4x collapse produced no finding")
+	}
+	if c := fall.Findings[0].Cause; !strings.Contains(c, "the drop is spread") {
+		t.Errorf("a drop no longer reads as a drop: %q", c)
+	}
+}

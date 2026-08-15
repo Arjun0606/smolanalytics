@@ -1769,7 +1769,7 @@
          question than the page says it is.
          (Do not write template actions in these comments: html/template parses actions
          inside HTML comments, so an unpaired one here is a parse error at EOF.) -->
-    <div class="pane wide" id="pane-aivis" style="order:360" data-stratum="acquire">
+    <div class="pane wide" id="pane-aivis" style="order:361" data-stratum="acquire">
       <h3>AI visibility
         <span class="sub">· what the AI engines say about you, next to what they send you · same window and filters as every zone above · computed by /v1/ai-visibility</span></h3>
       {{with .AIVis}}
@@ -1972,7 +1972,7 @@
       {{end}}
     </div>
 
-    <div class="pane wide" id="pane-aicrawl" style="order:361" data-stratum="acquire">
+    <div class="pane wide" id="pane-aicrawl" style="order:360" data-stratum="acquire">
       <h3>AI crawlers
         <span class="sub">· who actually fetched your pages, from your own server · a JavaScript pixel cannot see any of this · computed by /v1/ai-crawlers</span></h3>
       {{with .AICrawl}}
@@ -3168,7 +3168,7 @@
       retention:'pane-retention', channels:'pane-sources', sources:'pane-sources',
       toppages:'pane-pages', entrypages:'pane-pages', web:'pane-pages', webdim:'pane-devices',
       geo:'pane-geo', paths:'pane-paths', lifecycle:'pane-lifecycle', stickiness:'pane-stickiness',
-      live:'pane-live', convby:'pane-conversion', ai:'pane-aivis',
+      live:'pane-live', convby:'pane-conversion', ai:'pane-aicrawl',
       goals:'pane-goals', search_console:'pane-search', event_stream:'pane-events'
     };
     // the engine's ask intent → the chart that should render under the answer

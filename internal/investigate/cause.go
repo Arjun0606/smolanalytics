@@ -61,7 +61,20 @@ func Attribute(evs []event.Event, findings []Finding, deps []deploys.Deploy, o O
 		case seg != "":
 			f.Cause = seg
 		default:
-			f.Cause = "no deploy recorded near this day and the drop is spread evenly across " +
+			// "the drop" was hardcoded, so a metric that ROSE 34% was explained with a sentence
+			// about a drop. On the busiest instances most findings are rises, which made the
+			// single most-repeated line on the page the one visibly describing something else.
+			// The word follows the finding.
+			// Taken from Kind, not from the headline text: the kind is the structured fact the
+			// headline itself is rendered from, so the two cannot drift apart.
+			word := "change"
+			switch f.Kind {
+			case KindRegression:
+				word = "drop"
+			case KindSurge:
+				word = "rise"
+			}
+			f.Cause = "no deploy recorded near this day and the " + word + " is spread evenly across " +
 				"browsers, devices and pages — record deploys and this line becomes 'which ship did it'"
 		}
 	}
