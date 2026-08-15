@@ -270,8 +270,10 @@ func formatInvestigation(s *strings.Builder, inv investigate.Investigation) {
 		// trust on the day the brief DOES have something. Naming what was scanned separates
 		// "nothing happened" from "nothing ran".
 		fmt.Fprintf(s, "\nNothing needs you today. Checked %d metric(s) for step changes.\n", len(inv.Scanned))
+		formatMovements(s, inv.Movements)
 		return
 	}
+	formatMovements(s, inv.Movements)
 	n := inv.NeedsYouCount()
 	fmt.Fprintf(s, "\n%s changed. %d needs you.\n\n", plural(len(inv.Findings), "thing"), n)
 	for i, f := range inv.Findings {
@@ -289,5 +291,20 @@ func formatInvestigation(s *strings.Builder, inv investigate.Investigation) {
 			fmt.Fprintf(s, "   → %s\n", f.NextMove)
 		}
 		s.WriteString("\n")
+	}
+}
+
+// formatMovements renders the quarter: did any of it add up.
+//
+// Printed even on a calm week, and especially then — "nothing needed you this week" beside
+// "conversion is unchanged across 23 ships" is the pair of sentences that makes someone act.
+// Either alone is comfortable; together they are not.
+func formatMovements(s *strings.Builder, ms []investigate.Movement) {
+	if len(ms) == 0 {
+		return
+	}
+	s.WriteString("\nAcross the last 90 days:\n")
+	for _, m := range ms {
+		fmt.Fprintf(s, "  %s\n", m.Headline)
 	}
 }

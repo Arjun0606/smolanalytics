@@ -97,6 +97,10 @@ type Investigation struct {
 	// Scanned is what was looked at, so "nothing to report" can be distinguished from
 	// "nothing was checked" — the difference between a calm product and a broken sweep.
 	Scanned []string `json:"scanned"`
+	// Movements is the quarter-level reading: per metric, did it move at all across everything
+	// that shipped. The findings above are what changed THIS WEEK; this is whether any of it
+	// added up. It is the half a founder forwards.
+	Movements []Movement `json:"movements,omitempty"`
 }
 
 // Opts configures a pass.
@@ -142,6 +146,13 @@ func Run(evs []event.Event, opts Opts) Investigation {
 			inv.Findings = append(inv.Findings, f)
 		}
 	}
+
+	// The quarter-level reading belongs on EVERY caller, not just the one with a deploy store.
+	// Wiring it into WithContext alone meant brief.Build — the CLI, the email and the dashboard —
+	// silently rendered no movements at all, which is the same "two paths, one question" split
+	// this package exists to stop. Deploys are optional: without them the ship count is zero and
+	// the sentence says so rather than implying nothing shipped.
+	inv.Movements = Movements(evs, nil, MovementOpts{Now: o.Now})
 
 	rank(inv.Findings)
 	inv.Quiet = len(inv.Findings) == 0

@@ -257,3 +257,22 @@ func diffInterval(cTest, nTest, cCtrl, nCtrl int, z float64) (Interval, liftBloc
 		Hi:    round1(100 * hi),
 	}, liftOK
 }
+
+// ProportionsDiffer is the exported two-proportion test, for callers outside this package that
+// need to ask "did this rate actually change" with the SAME arithmetic the experiment reports use.
+//
+// Exported rather than reimplemented because the recurring defect in this codebase is two
+// surfaces computing one question differently and disagreeing in front of a customer. The weekly
+// update's "unchanged across 23 ships" claim has to be the same statistic as everything else, or
+// it is a fourth definition waiting to drift.
+//
+// Returns whether the difference clears alpha, and the two-sided p-value. Under-powered inputs
+// return false with a p near 1, which reads as "cannot tell" rather than "no change" — the caller
+// must keep those apart, because they are opposite findings.
+func ProportionsDiffer(c1, n1, c2, n2 int, alpha float64) (bool, float64) {
+	if alpha <= 0 || alpha >= 1 {
+		alpha = 0.05
+	}
+	p := twoProportionP(c1, n1, c2, n2)
+	return p < alpha, p
+}
