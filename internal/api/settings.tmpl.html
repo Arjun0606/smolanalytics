@@ -40,7 +40,7 @@
   .note code{background:var(--surface2);padding:1px 5px;font-family:var(--mono);font-size:12px}
   .keyrow,.evrow{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:12px}
   .keyrow:last-child,.evrow:last-child{border-bottom:none}
-  .keyrow .nm,.evrow .nm{color:var(--fg)}.keyrow .kv{color:var(--mut);flex:1;overflow:hidden;text-overflow:ellipsis}.keyrow .fmt{color:var(--mut);font-size:12px;border:1px solid var(--line);padding:1px 6px;white-space:nowrap}
+  .keyrow .nm,.evrow .nm{color:var(--fg)}.keyrow .kv{color:var(--mut);flex:1;overflow:hidden;text-overflow:ellipsis}.keyrow .fmt{color:var(--mut);font-size:12px;border:1px solid var(--line);padding:1px 6px;white-space:nowrap}.keyrow .hl{color:var(--mut);font-size:12px;max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.keyrow .hl.bad{color:var(--warn)}
   .evrow .nm{flex:1}.evrow .ct{color:var(--mut)}
   .keyrow .x{color:var(--mut2);cursor:pointer}.keyrow .x:hover{color:var(--warn)}
   pre.code{background:#0D0D0D;border:1px solid var(--line);padding:13px;overflow:auto;font-family:var(--mono);font-size:12px;line-height:1.6;margin:0;white-space:pre-wrap;word-break:break-word}
@@ -233,7 +233,7 @@
       <h2>Webhooks</h2>
       <div class="note">smolanalytics POSTs here when an alert fires, and again with the daily digest. A Slack or Discord URL is detected automatically and gets that service's plain-message format; everything else gets signed JSON, verified with the <code>X-Smolanalytics-Signature</code> header (HMAC-SHA256 of the body, using the secret shown when you add it).</div>
       <div id="hooks" style="margin-top:12px">
-        {{range .Webhooks}}<div class="keyrow" data-id="{{.ID}}"><span class="nm">{{.Name}}</span><span class="kv">{{.URL}}</span><span class="fmt">{{if .DiscordFormat}}discord{{else if .SlackFormat}}slack{{else}}signed json{{end}}</span><span class="x test" title="send test">test</span><span class="x" title="delete">delete</span></div>
+        {{range .Webhooks}}<div class="keyrow" data-id="{{.ID}}"><span class="nm">{{.Name}}</span><span class="kv">{{.URL}}</span><span class="fmt">{{if .DiscordFormat}}discord{{else if .SlackFormat}}slack{{else}}signed json{{end}}</span><span class="hl {{if not .Healthy}}bad{{end}}" title="{{.Health}}">{{.Health}}</span><span class="x pause" title="{{if .Enabled}}pause deliveries{{else}}resume deliveries{{end}}">{{if .Enabled}}pause{{else}}resume{{end}}</span><span class="x test" title="send test">test</span><span class="x" title="delete">delete</span></div>
         {{else}}<div class="note" id="noHooks">no webhooks yet</div>{{end}}
       </div>
       <div class="row" style="margin-top:14px">
@@ -404,6 +404,17 @@
       });
     };
     if(test)test.onclick=function(){test.textContent='…';J('/v1/webhooks/'+row.getAttribute('data-id')+'/test','POST').then(function(r){test.textContent='test';flash('hMsg',r.ok?'delivered ✓':(r.j.error||'failed'),!r.ok);});};
+    var pause=row.querySelector('.x.pause');
+    if(pause)pause.onclick=function(){
+      var on=pause.textContent==='resume';
+      pause.textContent='…';
+      J('/v1/webhooks/'+row.getAttribute('data-id'),'PATCH',{enabled:on}).then(function(r){
+        if(!r.ok){pause.textContent=on?'resume':'pause';flash('hMsg',r.j.error||'failed',true);return;}
+        pause.textContent=r.j.enabled?'pause':'resume';
+        var hl=row.querySelector('.hl');if(hl){hl.textContent=r.j.health;hl.title=r.j.health;hl.className='hl';}
+        flash('hMsg',r.j.enabled?'resumed ✓':'paused — deliveries stop, the signing secret is kept');
+      });
+    };
   }
   if(hooks)Array.prototype.forEach.call(hooks.querySelectorAll('.keyrow'),bindHook);
   on('hCreate',function(){
@@ -414,7 +425,7 @@
       if(!r.ok){flash('hMsg',r.j.error||'failed',true);return;}
       var no=document.getElementById('noHooks');if(no)no.remove();
       var row=document.createElement('div');row.className='keyrow';row.setAttribute('data-id',r.j.id);
-      row.innerHTML='<span class="nm">'+esc(r.j.name)+'</span><span class="kv">'+esc(r.j.url)+'</span><span class="fmt">'+esc(r.j.format||'signed json')+'</span><span class="x test" title="send test">test</span><span class="x" title="delete">delete</span>';
+      row.innerHTML='<span class="nm">'+esc(r.j.name)+'</span><span class="kv">'+esc(r.j.url)+'</span><span class="fmt">'+esc(r.j.format||'signed json')+'</span><span class="hl">no deliveries yet</span><span class="x pause" title="pause deliveries">pause</span><span class="x test" title="send test">test</span><span class="x" title="delete">delete</span>';
       hooks.appendChild(row);bindHook(row);document.getElementById('hName').value='';document.getElementById('hUrl').value='';
       // The secret is shown exactly once, here, because it is never retrievable again — and the
       // note above tells people to verify deliveries "using the secret", which for signed-JSON

@@ -148,5 +148,50 @@ func (s *Server) listWebhooks(w http.ResponseWriter, _ *http.Request) {
 		writeErr(w, http.StatusNotFound, "webhooks are not enabled on this instance")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"webhooks": s.webhooks.List()})
+	// Health and the RESOLVED format, not the bare struct. The secret is deliberately omitted:
+	// it is shown once at creation and is not retrievable, so echoing it in a list every
+	// dashboard load would undo that.
+	out := make([]map[string]any, 0)
+	for _, ep := range s.webhooks.List() {
+		out = append(out, map[string]any{
+			"id": ep.ID, "name": ep.Name, "url": ep.URL,
+			"format": resolvedFormat(ep), "enabled": ep.Enabled,
+			"created": ep.Created, "health": ep.Health(), "healthy": ep.Healthy(),
+			"last_status": ep.LastStatus, "consecutive_failures": ep.Failures,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"webhooks": out})
+}
+
+// PATCH /v1/webhooks/{id} — pause or resume an endpoint.
+//
+// The Enabled field shipped with the store and no method ever wrote it, so the only way to stop
+// deliveries was to DELETE the endpoint, which destroys the signing secret and forces every
+// receiver to be reconfigured. A pause that costs you your secret is not a pause.
+func (s *Server) patchWebhook(w http.ResponseWriter, r *http.Request) {
+	if s.webhooks == nil {
+		writeErr(w, http.StatusNotFound, "webhooks are not enabled on this instance")
+		return
+	}
+	var req struct {
+		Enabled *bool `json:"enabled"`
+	}
+	body, _ := io.ReadAll(io.LimitReader(r.Body, 4<<10))
+	if err := json.Unmarshal(body, &req); err != nil || req.Enabled == nil {
+		writeErr(w, http.StatusBadRequest, `send {"enabled": true} or {"enabled": false}`)
+		return
+	}
+	ep, found, err := s.webhooks.SetEnabled(r.PathValue("id"), *req.Enabled)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !found {
+		writeErr(w, http.StatusNotFound, "no webhook with that id")
+		return
+	}
+	s.rec("webhook.enabled", ep.Name)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id": ep.ID, "enabled": ep.Enabled, "health": ep.Health(),
+	})
 }

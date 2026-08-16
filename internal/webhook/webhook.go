@@ -50,6 +50,46 @@ type Endpoint struct {
 	Format  string    `json:"format,omitempty"`
 	Enabled bool      `json:"enabled"`
 	Created time.Time `json:"created"`
+
+	// DELIVERY HEALTH. Every outbound delivery was `go func(ep){ _, _ = Send(...) }` — the status
+	// and the error both discarded, on a goroutine nobody waited for. A webhook that started
+	// 500ing, or whose URL was revoked, simply stopped working and said nothing anywhere: no log
+	// line, no dashboard state, no field to inspect. That is how a Discord endpoint could reject
+	// every single delivery for as long as the feature existed without one person noticing.
+	//
+	// "silence = bug" is a rule this product states out loud, and this was the largest violation
+	// of it in the codebase.
+	LastStatus    int       `json:"last_status,omitempty"`
+	LastError     string    `json:"last_error,omitempty"`
+	LastAttempt   time.Time `json:"last_attempt,omitempty"`
+	LastDelivered time.Time `json:"last_delivered,omitempty"`
+	// Failures counts CONSECUTIVE failures; any success resets it to zero. A webhook that fails
+	// once a week is a flaky receiver, not a dead one, and auto-disabling on a cumulative count
+	// would eventually switch off every endpoint that has ever hiccuped.
+	Failures int `json:"consecutive_failures,omitempty"`
+	// DisabledAt is set when consecutive failures crossed the limit and delivery was stopped.
+	// Recorded rather than just flipping Enabled, so the row can say WHY it is off — an endpoint
+	// that silently turned itself off is a second invisible failure on top of the first.
+	DisabledAt time.Time `json:"disabled_at,omitempty"`
+}
+
+// Healthy reports whether the last attempt succeeded. A brand-new endpoint with no attempt yet
+// is healthy: never-tried and known-broken must not render the same.
+func (e Endpoint) Healthy() bool { return e.Failures == 0 }
+
+// Health renders the delivery state in words, for the settings row and list_webhooks. One
+// renderer, for the same reason Cost has one.
+func (e Endpoint) Health() string {
+	switch {
+	case !e.DisabledAt.IsZero():
+		return fmt.Sprintf("auto-disabled after %d consecutive failures — %s", e.Failures, e.LastError)
+	case e.LastAttempt.IsZero():
+		return "no deliveries yet"
+	case e.Failures > 0:
+		return fmt.Sprintf("failing (%d in a row) — %s", e.Failures, e.LastError)
+	default:
+		return "delivered " + e.LastDelivered.UTC().Format("2006-01-02 15:04") + " UTC"
+	}
 }
 
 // SlackFormat reports whether deliveries to e use Slack's {"text": ...} contract:
@@ -325,8 +365,100 @@ func (s *Store) DeliverAll(payload any, text string) {
 		if !ep.Enabled {
 			continue
 		}
-		go func(ep Endpoint) { _, _ = Send(ep, body, text) }(ep)
+		go func(ep Endpoint) { s.deliver(ep, body, text) }(ep)
 	}
+}
+
+// maxAttempts and maxFailures are deliberately small. Retrying is for the transient case — a
+// receiver restarting, a momentary 502 — and three tries over ~7 seconds covers that. Anything
+// still failing after four consecutive DELIVERIES is broken rather than busy, and continuing to
+// POST at it forever is how you end up rate-limited or blocked by the receiver.
+const (
+	maxAttempts = 3
+	maxFailures = 4
+)
+
+// backoff is the pause before retry N. A var rather than a literal so tests can shrink it:
+// with real timings this package's delivery tests took 36 seconds, and a slow suite is a suite
+// people start skipping — which would leave exactly this code, the code whose entire job is to
+// notice silent failure, as the least-exercised in the tree.
+var backoff = func(attempt int) time.Duration { return time.Duration(1<<attempt) * time.Second }
+
+// deliver sends with backoff and records what happened.
+//
+// 4xx is NOT retried, with one exception. A 400 or a 404 means the receiver understood us and
+// said no — a revoked Slack URL, a wrong body shape — and hammering it changes nothing. 429 is
+// the exception because it explicitly means "later".
+func (s *Store) deliver(ep Endpoint, body []byte, text string) {
+	var status int
+	var err error
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		if attempt > 0 {
+			time.Sleep(backoff(attempt)) // 2s, 4s in production
+		}
+		status, err = Send(ep, body, text)
+		if err == nil {
+			break
+		}
+		if status >= 400 && status < 500 && status != 429 {
+			break // a definite no; retrying is noise
+		}
+	}
+	s.recordDelivery(ep.ID, status, err)
+}
+
+// recordDelivery persists the outcome and auto-disables an endpoint that keeps failing.
+func (s *Store) recordDelivery(id string, status int, sendErr error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.items {
+		if s.items[i].ID != id {
+			continue
+		}
+		e := &s.items[i]
+		now := time.Now().UTC()
+		e.LastAttempt, e.LastStatus = now, status
+		if sendErr == nil {
+			e.LastDelivered, e.Failures, e.LastError = now, 0, ""
+		} else {
+			e.Failures++
+			e.LastError = sendErr.Error()
+			if e.Failures >= maxFailures && e.Enabled {
+				// Turn it off rather than POSTing forever. Recorded with a reason, because an
+				// endpoint that silently switched itself off is a second invisible failure
+				// stacked on the first.
+				e.Enabled, e.DisabledAt = false, now
+			}
+		}
+		_ = s.persist()
+		return
+	}
+}
+
+// SetEnabled turns an endpoint on or off, clearing the failure state when it is re-enabled.
+//
+// The field existed from the beginning and no method ever wrote it, so `enabled` was reported to
+// agents as if false were reachable while the only way to stop deliveries was to DELETE the
+// endpoint — which destroys the signing secret and forces every receiver to be reconfigured. Now
+// pausing is a pause.
+func (s *Store) SetEnabled(id string, on bool) (Endpoint, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.items {
+		if s.items[i].ID != id {
+			continue
+		}
+		e := &s.items[i]
+		e.Enabled = on
+		if on {
+			// Re-enabling is a statement that the receiver is fixed. Keeping the old failure
+			// count would auto-disable it again after one more blip.
+			e.Failures, e.DisabledAt, e.LastError = 0, time.Time{}, ""
+		}
+		err := s.persist()
+		return *e, true, err
+	}
+	return Endpoint{}, false, nil
 }
 
 func token(n int) string {

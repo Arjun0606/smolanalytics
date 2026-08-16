@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fakeSlack mimics a Slack incoming webhook: it accepts ONLY bodies with a
@@ -266,4 +267,185 @@ func TestALongMessageIsClippedRatherThanRejected(t *testing.T) {
 	if !strings.HasSuffix(got[0], "…") {
 		t.Error("clipped without saying so; the reader cannot tell the message is incomplete")
 	}
+}
+
+// A WEBHOOK MUST NOT BE ABLE TO DIE IN SILENCE.
+//
+// Delivery was `go func(ep){ _, _ = Send(...) }` — status and error both discarded, on a
+// goroutine nobody waited for. An endpoint that started 500ing, or whose URL was revoked, simply
+// stopped working and said nothing anywhere: no log line, no dashboard state, no field to
+// inspect. That is exactly how a Discord endpoint rejected every delivery for as long as the
+// feature existed without one person noticing.
+func TestAFailingEndpointRecordsWhyAndEventuallyDisablesItself(t *testing.T) {
+	defer shrinkBackoff()()
+	t.Setenv("SMOLANALYTICS_ALLOW_PRIVATE_WEBHOOKS", "1")
+	var attempts int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	st, err := Open(t.TempDir() + "/hooks.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ep, err := st.Add("broken", srv.URL, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A 5xx is retried; four consecutive failed DELIVERIES then disable it.
+	for i := 0; i < maxFailures; i++ {
+		st.deliver(ep, []byte(`{"a":1}`), "a")
+	}
+	got, _ := st.Get(ep.ID)
+
+	if got.Failures < maxFailures {
+		t.Errorf("consecutive failures = %d, want >= %d", got.Failures, maxFailures)
+	}
+	if got.LastError == "" {
+		t.Error("no last error recorded — the operator has nothing to look at")
+	}
+	if got.LastAttempt.IsZero() {
+		t.Error("no last attempt time recorded")
+	}
+	if got.Enabled {
+		t.Error("still enabled after repeated failure; it will POST at a dead receiver forever")
+	}
+	if got.DisabledAt.IsZero() {
+		t.Error("disabled with no timestamp, so the row cannot say WHY it turned itself off — " +
+			"a silent auto-disable is a second invisible failure on top of the first")
+	}
+	if h := got.Health(); !strings.Contains(h, "auto-disabled") {
+		t.Errorf("health reads %q, which does not tell the operator it stopped", h)
+	}
+	if attempts < maxFailures*maxAttempts {
+		t.Errorf("only %d HTTP attempts across %d deliveries — 5xx is not being retried", attempts, maxFailures)
+	}
+}
+
+// A DEFINITE NO IS NOT RETRIED. A 400 or 404 means the receiver understood and refused — a
+// revoked URL, a wrong body shape — and hammering it changes nothing except the odds of being
+// rate-limited or blocked. 429 is the exception, because it explicitly means "later".
+func TestA4xxIsNotRetriedButA429Is(t *testing.T) {
+	defer shrinkBackoff()()
+	t.Setenv("SMOLANALYTICS_ALLOW_PRIVATE_WEBHOOKS", "1")
+	for _, c := range []struct {
+		code        int
+		wantRetries bool
+	}{
+		{http.StatusNotFound, false},
+		{http.StatusBadRequest, false},
+		{http.StatusTooManyRequests, true},
+	} {
+		var n int
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			n++
+			w.WriteHeader(c.code)
+		}))
+		st, _ := Open(t.TempDir() + "/h.json")
+		ep, _ := st.Add("x", srv.URL, "")
+		st.deliver(ep, []byte(`{}`), "x")
+		srv.Close()
+
+		if c.wantRetries && n < 2 {
+			t.Errorf("%d: %d attempt(s) — 429 means try later and must be retried", c.code, n)
+		}
+		if !c.wantRetries && n != 1 {
+			t.Errorf("%d: %d attempts — a definite refusal must not be retried", c.code, n)
+		}
+	}
+}
+
+// A SUCCESS CLEARS THE STREAK. A receiver that hiccups once a week is flaky, not dead; counting
+// failures cumulatively would eventually switch off every endpoint that has ever wobbled.
+func TestOneSuccessResetsTheFailureStreak(t *testing.T) {
+	defer shrinkBackoff()()
+	t.Setenv("SMOLANALYTICS_ALLOW_PRIVATE_WEBHOOKS", "1")
+	fail := true
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if fail {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	st, _ := Open(t.TempDir() + "/h.json")
+	ep, _ := st.Add("flaky", srv.URL, "")
+	st.deliver(ep, []byte(`{}`), "x")
+	if got, _ := st.Get(ep.ID); got.Failures == 0 {
+		t.Fatal("a failed delivery was not counted")
+	}
+	fail = false
+	st.deliver(ep, []byte(`{}`), "x")
+
+	got, _ := st.Get(ep.ID)
+	if got.Failures != 0 {
+		t.Errorf("failures = %d after a success, want 0", got.Failures)
+	}
+	if got.LastDelivered.IsZero() {
+		t.Error("no successful-delivery timestamp recorded")
+	}
+	if got.LastError != "" {
+		t.Errorf("stale error %q survives a successful delivery", got.LastError)
+	}
+	if h := got.Health(); !strings.Contains(h, "delivered") {
+		t.Errorf("health reads %q after a success", h)
+	}
+}
+
+// PAUSING MUST NOT COST THE SIGNING SECRET. Enabled shipped with the store and no method ever
+// wrote it, so the only way to stop deliveries was to DELETE the endpoint — which destroys the
+// secret and forces every receiver to be reconfigured. A pause that costs you your secret is
+// not a pause.
+func TestPausingKeepsTheSecretAndResumingClearsTheFailures(t *testing.T) {
+	st, _ := Open(t.TempDir() + "/h.json")
+	ep, _ := st.Add("x", "https://example.com/hook", "")
+	secret := ep.Secret
+	if secret == "" {
+		t.Fatal("no secret generated")
+	}
+
+	paused, found, err := st.SetEnabled(ep.ID, false)
+	if err != nil || !found {
+		t.Fatalf("pause failed: found=%v err=%v", found, err)
+	}
+	if paused.Enabled {
+		t.Error("still enabled after being paused")
+	}
+	if paused.Secret != secret {
+		t.Error("pausing changed the signing secret, so every receiver would need reconfiguring")
+	}
+
+	// A paused endpoint receives nothing.
+	st.recordDelivery(ep.ID, 500, errFake{})
+	before, _ := st.Get(ep.ID)
+
+	resumed, _, _ := st.SetEnabled(ep.ID, true)
+	if !resumed.Enabled {
+		t.Error("resume did not re-enable")
+	}
+	if resumed.Failures != 0 || !resumed.DisabledAt.IsZero() {
+		t.Errorf("resuming kept the old failure state (%d failures) — one more blip would "+
+			"auto-disable it again immediately", before.Failures)
+	}
+
+	if _, found, _ := st.SetEnabled("nope", true); found {
+		t.Error("reported success for an id that does not exist")
+	}
+}
+
+type errFake struct{}
+
+func (errFake) Error() string { return "boom" }
+
+// shrinkBackoff makes retry pauses negligible for the duration of a test, and restores them.
+// Without it these four tests sleep for 36 real seconds between them.
+func shrinkBackoff() func() {
+	prev := backoff
+	backoff = func(int) time.Duration { return time.Millisecond }
+	return func() { backoff = prev }
 }
