@@ -15,6 +15,8 @@ type Store struct {
 	mu    sync.Mutex
 	path  string
 	items []Flag
+	// onFlip, when wired, records an enable/disable as a deploy marker. See OnFlip.
+	onFlip func(key string, on bool)
 }
 
 var now = func() time.Time { return time.Now().UTC() }
@@ -135,15 +137,51 @@ func (s *Store) SaveWithExposure(f Flag, exposedUsers int) (Flag, error) {
 	return f, nil
 }
 
-// SetEnabled toggles a flag on/off by key (the common flip). Returns the updated flag. A future
-// increment records this flip as a deploy marker so its impact is measured automatically.
+// OnFlip registers a callback fired after a flag is successfully enabled or disabled.
+//
+// It lives on the STORE rather than at each call site because there were two call sites already
+// (the MCP tool and the auto-reverter) and no reason to think there would not be a third. The
+// hook is optional and nil-safe: a self-hosted instance without a deploy store keeps working
+// exactly as before.
+//
+// No import of internal/deploys here — a plain function keeps the dependency pointing one way,
+// and the wiring happens once at startup where both stores already exist.
+func (s *Store) OnFlip(fn func(key string, on bool)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onFlip = fn
+}
+
+// SetEnabled toggles a flag on/off by key (the common flip). Returns the updated flag, and
+// records the flip as a deploy marker when a recorder is wired.
+//
+// FEATURES.md has claimed "flag → deploy marker: auto-recorded" under "Only we have" for
+// months, while the comment here said "a future increment records this flip". It was a straight
+// contradiction in the strongest-worded part of the comparison table. Making it true was the
+// right resolution rather than deleting the claim: flipping a flag IS a ship, and it is the one
+// kind of ship this tool can detect with no CI setup at all.
 func (s *Store) SetEnabled(key string, on bool) (Flag, error) {
 	f, ok := s.Get(key)
 	if !ok {
 		return Flag{}, fmt.Errorf("flag %q not found", key)
 	}
+	// No-op flips are not ships. Toggling an already-on flag on happens routinely (a retry, an
+	// idempotent config apply, a UI double-click), and recording each one would fill the deploy
+	// list with releases that never happened and give the investigation ships to blame that do
+	// not exist.
+	changed := f.Enabled != on
 	f.Enabled = on
-	return s.Save(f)
+	saved, err := s.Save(f)
+	if err != nil || !changed {
+		return saved, err
+	}
+	s.mu.Lock()
+	fn := s.onFlip
+	s.mu.Unlock()
+	if fn != nil {
+		fn(key, on)
+	}
+	return saved, nil
 }
 
 // Delete removes a flag by key. found is true only when a flag actually went away,

@@ -372,8 +372,10 @@ func serve(st store.Store, closeStore func() error, guardPublic bool) {
 	} else {
 		log.Printf("smolanalytics: share links disabled (%v)", err)
 	}
+	var flagDeploys *deploys.Store
 	if dp, err := deploys.Open(sp(".deploys.json")); err == nil {
 		app.SetDeploys(dp)
+		flagDeploys = dp
 		if demoMode {
 			demo.SeedDeploys(dp)
 		}
@@ -382,6 +384,7 @@ func serve(st store.Store, closeStore func() error, guardPublic bool) {
 	}
 	if fs, err := flag.Open(sp(".flags.json")); err == nil {
 		app.SetFlags(fs)
+		wireFlipMarkers(fs, flagDeploys)
 		if demoMode {
 			demo.SeedFlagDef(fs)
 		}
@@ -593,11 +596,14 @@ func runMCP() {
 	if sh, err := share.Open(dataPath() + ".shares.json"); err == nil {
 		m.SetShares(sh)
 	}
+	var mcpDeploys *deploys.Store
 	if dp, err := deploys.Open(dataPath() + ".deploys.json"); err == nil {
 		m.SetDeploys(dp)
+		mcpDeploys = dp
 	}
 	if fs, err := flag.Open(dataPath() + ".flags.json"); err == nil {
 		m.SetFlags(fs)
+		wireFlipMarkers(fs, mcpDeploys)
 	}
 	if sv, err := survey.Open(dataPath() + ".surveys.json"); err == nil {
 		m.SetSurveys(sv)
@@ -608,4 +614,34 @@ func runMCP() {
 	if err := m.ServeStdio(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// wireFlipMarkers records every feature-flag flip as a deploy marker.
+//
+// Flipping a flag is a ship — often the only kind a team does between releases — and it is the
+// one ship this tool can detect with no CI setup whatsoever. Wired here rather than inside the
+// flag store so internal/flag keeps no dependency on internal/deploys.
+//
+// Marker source is "flag" so the deploy list distinguishes a config change from a code release;
+// they behave identically for impact analysis and read very differently to a human.
+func wireFlipMarkers(fs *flag.Store, dp *deploys.Store) {
+	if fs == nil || dp == nil {
+		return
+	}
+	fs.OnFlip(func(key string, on bool) {
+		state := "off"
+		if on {
+			state = "on"
+		}
+		if _, err := dp.Record(deploys.Deploy{
+			Message: "flag " + key + " turned " + state,
+			Ref:     key,
+			Source:  "flag",
+			At:      time.Now().UTC(),
+		}); err != nil {
+			// Never fail a flag flip over its marker: the flip is the operation the user asked
+			// for, and the marker is bookkeeping about it.
+			log.Printf("smolanalytics: flag flip not recorded as a deploy marker (%v)", err)
+		}
+	})
 }

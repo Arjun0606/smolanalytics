@@ -56,7 +56,7 @@ else, badly-named events stay bad forever.
 | deterministic bucketing | ✅ SHA-256, fixed space | ✅ SHA-1 | ✅ |
 | **SRM detection** | ✅ `experiment_health`, p<0.001 | ✅ | ✅ |
 | **SRM culprit segment** | ✅ names the skewed segment | ⚠️ | ⚠️ |
-| flag → deploy marker | ✅ auto-recorded | ❌ | ❌ |
+| flag → deploy marker | ✅ auto-recorded on every flip (v0.61.0) | ❌ | ❌ |
 | bucket granularity | ⚠️ 1% floor | ✅ 100,000 | ✅ 10,000 |
 | device-id bucketing across login | ✅ **shipped v0.24.0** | ✅ | ⚠️ |
 | local/zero-latency evaluation | ❌ server-side | ✅ SSE | ⚠️ |

@@ -1,0 +1,71 @@
+# Record a deploy marker in smolanalytics on every push to main.
+#
+# COPY THIS INTO YOUR OWN REPO. It is here as a working reference, and it also runs for this
+# repository — the README, main.go and the CHANGELOG have all described "one line in CI" for
+# months while no .yml anywhere in the tree actually contained it, which is the kind of gap that
+# only closes when the artefact exists.
+#
+# Set two repository secrets: SMOLANALYTICS_HOST and SMOLANALYTICS_WRITE_KEY. The write key is
+# the public one from your browser snippet, not an admin key: a deploy marker is a fact about
+# your own release, and requiring a privileged credential in CI is how this stops getting done.
+#
+# See docs/deploys.md for Vercel, Netlify, Fly, Railway, Render and Cloudflare Pages.
+name: deploy marker
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Non-cancelling: two pushes in quick succession are two ships, and cancelling the first would
+# silently lose a marker for a release that really happened.
+concurrency:
+  group: deploy-marker-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  mark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2 # enough for `git log -1`
+
+      - name: Record the deploy
+        # Never fail a release over a marker. Analytics that can break a deploy is analytics
+        # that gets deleted after the first outage.
+        continue-on-error: true
+        env:
+          HOST: ${{ secrets.SMOLANALYTICS_HOST }}
+          KEY: ${{ secrets.SMOLANALYTICS_WRITE_KEY }}
+        run: |
+          set -u
+          # A fork, or a repo that has not configured this, does nothing and says so once.
+          if [ -z "${HOST}" ]; then
+            echo "SMOLANALYTICS_HOST is not set — skipping the deploy marker."
+            exit 0
+          fi
+          # jq, not string interpolation: a commit subject containing a quote or a backslash
+          # produces invalid JSON, and the commits most worth marking are the interesting ones.
+          payload=$(jq -n \
+            --arg sha    "${GITHUB_SHA}" \
+            --arg msg    "$(git log -1 --format=%s)" \
+            --arg author "$(git log -1 --format=%an)" \
+            --arg ref    "${GITHUB_REF_NAME}" \
+            --arg url    "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}" \
+            '{sha:$sha, message:$msg, author:$author, ref:$ref, url:$url, source:"github"}')
+
+          code=$(curl -sS -o /tmp/out.txt -w '%{http_code}' \
+            -X POST "${HOST%/}/v1/deploys" \
+            -H "Authorization: Bearer ${KEY}" \
+            -H "Content-Type: application/json" \
+            -d "${payload}")
+
+          # Report the outcome either way. A marker that silently fails to record is worse than
+          # no marker: the investigation then says "no deploy recorded near this day" and you
+          # believe it.
+          if [ "${code}" -ge 300 ]; then
+            echo "::warning::deploy marker not recorded (HTTP ${code}): $(cat /tmp/out.txt)"
+          else
+            echo "recorded deploy ${GITHUB_SHA:0:7}"
+          fi
