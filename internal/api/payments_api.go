@@ -28,6 +28,20 @@ import (
 // every backup and export.
 func (s *Server) revenueWebhook(w http.ResponseWriter, r *http.Request) {
 	provider := strings.ToLower(r.PathValue("provider"))
+
+	// UNKNOWN PROVIDER IS 404, NOT 501. Without this, POSTing to /v1/revenue/paypal answered
+	// "set SMOLANALYTICS_PAYPAL_SECRET and restart" — instructions for work that could never pay
+	// off, since no env var enables a provider this build cannot parse. Sending someone to edit
+	// their deployment config for nothing is the same defect as the deploy line that said
+	// "record deploys and this becomes which ship did it" while attribution was broken.
+	if !supported(provider) {
+		writeErr(w, http.StatusNotFound, fmt.Sprintf(
+			"no revenue receiver for %q — supported: %s. Ask for another and it can be added; "+
+				"there is no environment variable that enables one.",
+			provider, strings.Join(payments.Supported, ", ")))
+		return
+	}
+
 	secret := providerSecret(provider)
 	if secret == "" {
 		// 501, not 401: nothing is wrong with the request. The operator has not turned this on,
@@ -121,11 +135,18 @@ func secretEnvName(provider string) string {
 	return "SMOLANALYTICS_" + strings.ToUpper(provider) + "_SECRET"
 }
 
-func providerSecret(provider string) string {
+func supported(provider string) bool {
 	for _, p := range payments.Supported {
 		if p == provider {
-			return os.Getenv(secretEnvName(provider))
+			return true
 		}
 	}
-	return "" // unknown provider: no env var can enable it
+	return false
+}
+
+func providerSecret(provider string) string {
+	if !supported(provider) {
+		return "" // no env var can enable a provider this build cannot parse
+	}
+	return os.Getenv(secretEnvName(provider))
 }

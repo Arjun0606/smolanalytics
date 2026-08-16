@@ -199,3 +199,30 @@ func TestASignedNonPaymentEventIsAcceptedAndNotStored(t *testing.T) {
 		t.Error("no reason given, so an operator cannot tell a deliberate skip from a silent bug")
 	}
 }
+
+// AN UNKNOWN PROVIDER MUST NOT BE HANDED A VARIABLE NAME.
+//
+// The first version of this endpoint answered /v1/revenue/paypal with "set
+// SMOLANALYTICS_PAYPAL_SECRET and restart". No env var enables a provider the build cannot
+// parse, so that sent an operator to edit their deployment config for nothing — the same defect
+// as the cause line that read "record deploys and this becomes which ship did it" while ship
+// attribution was broken. Found by curling the deployed instance, not by reading the code.
+func TestAnUnknownProviderIsNotToldToSetAVariable(t *testing.T) {
+	srv := httptest.NewServer(New(memory.New()).Handler())
+	defer srv.Close()
+	resp, err := http.Post(srv.URL+"/v1/revenue/paypal", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("status %d, want 404 — 501 reads as \"not switched on yet\", which is false", resp.StatusCode)
+	}
+	raw, _ := io.ReadAll(resp.Body)
+	if strings.Contains(string(raw), "SMOLANALYTICS_PAYPAL_SECRET") {
+		t.Errorf("told the operator to set a variable that does nothing: %s", raw)
+	}
+	if !strings.Contains(string(raw), "stripe") {
+		t.Errorf("does not say which providers ARE supported: %s", raw)
+	}
+}
