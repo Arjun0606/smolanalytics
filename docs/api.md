@@ -31,6 +31,18 @@ curl -H "Authorization: Bearer $KEY" "$HOST/v1/surveys/<id>/results"            
 curl -H "Authorization: Bearer $KEY" "$HOST/v1/notable"
 curl -H "Authorization: Bearer $KEY" "$HOST/v1/usage"
 
+# deploy markers: record a ship, then read before/after per metric. See docs/deploys.md.
+curl -X POST -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
+  -d '{"sha":"a3f91c2","message":"rewrite the payment form","source":"ci"}' "$HOST/v1/deploys"
+curl -H "Authorization: Bearer $KEY" "$HOST/v1/deploys?event=checkout"
+
+# what this WOULD have told you, dated, over history you already lived through (docs: /backtest)
+curl -H "Authorization: Bearer $KEY" "$HOST/v1/backtest?days=90&step=1"
+
+# revenue in, from your payment provider — signature-authenticated, NOT key-authenticated,
+# because the provider sends what it sends. See docs/revenue.md.
+#   POST /v1/revenue/{stripe|lemonsqueezy|polar|dodo}
+
 # the morning brief as JSON: pulse + findings, per-site breakdown (?days=1..90, default 7)
 curl -H "Authorization: Bearer $KEY" "$HOST/v1/brief?days=7"
 

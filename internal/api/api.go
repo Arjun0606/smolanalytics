@@ -295,6 +295,7 @@ func (s *Server) Handler() http.Handler {
 		writeJSON(w, http.StatusOK, map[string]string{"name": "smolanalytics", "version": Version})
 	})
 	mux.HandleFunc("POST /v1/events", s.ingest)
+	mux.HandleFunc("POST /v1/revenue/{provider}", s.revenueWebhook)
 	mux.HandleFunc("OPTIONS /v1/events", s.preflight) // browser SDK CORS preflight
 	mux.HandleFunc("GET /sdk.js", s.serveSDK)
 	mux.HandleFunc("GET /install.md", s.serveInstallMD) // AGENTS.md tells self-hosting agents to fetch this
