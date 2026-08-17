@@ -458,7 +458,13 @@
   .charttable summary{cursor:pointer;list-style:none;font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2);padding:4px 0}
   .charttable summary:hover{color:var(--accent)}
   .tscroll{overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch}
-  table.ctab{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:var(--fs-body);margin-top:10px}
+  table.ctab{border-collapse:collapse;width:100%;font-size:var(--fs-body);line-height:var(--lh-body);margin-top:10px}
+  /* The face rule inside a two-column table: the left cell names a thing (mono), the right cell
+     explains it in sentences (sans). Declaring mono on the table put entire paragraphs about
+     always-valid inference and non-inferiority in a typewriter face — the same defect as the
+     brief, in the panes nobody had opened. */
+  table.ctab td:first-child,table.ctab th:first-child{font-family:var(--mono)}
+  table.ctab td.mut,table.ctab td:last-child{font-family:var(--sans);max-width:64ch}
   table.ctab th{color:var(--mut);font-weight:600;text-align:left;padding:6px 14px 6px 0;border-bottom:1px solid var(--line2);font-size:var(--fs-lbl);text-transform:uppercase;letter-spacing:.06em}
   table.ctab td{padding:8px 14px 8px 0;border-bottom:1px solid var(--line)}
   table.ctab .n{font-variant-numeric:tabular-nums}
