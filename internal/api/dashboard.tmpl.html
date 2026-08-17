@@ -817,10 +817,18 @@
     .sa-inner{max-width:1560px}
     /* the deck index becomes the rail's spine: one report per line, grouped, always visible */
     .sa-nav .deckindex{display:flex;flex-direction:column;align-items:stretch;gap:1px;padding:0}
-    .sa-nav .deckindex .jsec{border-left:none;padding:14px 2px 5px;color:var(--fg);
-      box-shadow:inset 0 -.35em 0 var(--brand-soft);align-self:flex-start}
-    .sa-nav .deckindex .jsec:first-child{padding-top:2px}
-    .sa-nav .deckindex a.jcard{padding:5px 7px;border-bottom:none;border-radius:0;color:var(--sec)}
+    /* GROUP HEADINGS ARE LABELS, NOT HIGHLIGHTS.
+       Six of these carried the brand highlight — the same device the page uses to mark the one
+       thing that matters — so a rail of section names was the most yellow surface on screen and
+       the highlight meant nothing anywhere. They read as what they are now: quiet uppercase mono
+       labels with a hairline above, which is also what every other label in this system looks
+       like. The yellow goes back to meaning "this is the answer, or this is where you are". */
+    .sa-nav .deckindex .jsec{border-left:none;border-top:1px solid var(--line);
+      margin-top:14px;padding:10px 2px 4px;color:var(--mut2);box-shadow:none;
+      font-family:var(--mono);font-size:var(--fs-lbl);font-weight:400;text-transform:uppercase;
+      letter-spacing:var(--track-lbl);align-self:stretch}
+    .sa-nav .deckindex .jsec:first-child{margin-top:0;border-top:none;padding-top:2px}
+    .sa-nav .deckindex a.jcard{padding:4px 7px;border-bottom:none;border-radius:0;color:var(--sec)}
     .sa-nav .deckindex a.jcard:hover{color:var(--on-brand);background:var(--brand);border-bottom:none}
     .sa-nav .deckindex a.jcard.cur{color:var(--accent)}
     .sa-lbl{font-family:var(--mono);font-weight:400;font-size:var(--fs-lbl);line-height:1;
@@ -1085,8 +1093,12 @@
     .slab-grid{grid-template-columns:1fr}
     .slab-act{flex-direction:row}
   }
-  .pmbrief{border:1px solid var(--line);border-left:3px solid var(--accent);padding:14px 16px;margin-bottom:14px;background:var(--bg2)}
-  .pmhead{font-size:var(--fs-body);color:var(--mut);margin-bottom:10px}
+  /* No chrome of its own any more. This carried a 1px border, a 3px accent stripe and a tinted
+     ground back when it WAS the object; now it is the container the slab sits in, and a frame
+     around a framed thing reads as a rendering mistake. The slab brings its own edge and plate;
+     everything under it is plain content on the page ground. */
+  .pmbrief{padding:0;margin-bottom:22px;background:transparent}
+  .pmhead{font-family:var(--mono);font-size:var(--fs-lbl);text-transform:uppercase;letter-spacing:var(--track-lbl);color:var(--mut2);margin:0 0 10px;padding-top:2px}
   .pmhead b{color:var(--fg)}
   .pmrow{padding:8px 0;border-top:1px solid var(--line)}
   .pmrow:first-of-type{border-top:0}
