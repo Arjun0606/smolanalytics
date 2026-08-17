@@ -62,6 +62,31 @@ type Movement struct {
 	Evidence string  `json:"evidence"`
 	// Headline is the whole finding in one line, ready to render.
 	Headline string `json:"headline"`
+	// Label is the verdict in one or two words, for a table cell.
+	//
+	// Carried in the JSON rather than derived per surface. The marketing site was reducing the
+	// verdict to a chip in TypeScript while the dashboard printed the whole sentence, so the same
+	// reading rendered as a scannable four-column table in one place and as seven near-identical
+	// prose lines in the other — five of them ending "statistically unchanged across 2 ships".
+	// The product had the worse version of its own component.
+	Label string `json:"label"`
+}
+
+// label reduces a verdict to the one or two words a table cell can hold, without losing the
+// distinction that matters most: "unchanged" and "can't tell" are opposite findings.
+func label(v Verdict) string {
+	switch v {
+	case MovedUp:
+		return "up"
+	case MovedDown:
+		return "down"
+	case CannotTell:
+		return "can't tell"
+	case NeverFired:
+		return "not recorded"
+	default:
+		return "unchanged"
+	}
 }
 
 // MovementOpts configures the reading.
@@ -177,6 +202,7 @@ func Movements(evs []event.Event, deps []deploys.Deploy, o MovementOpts) []Movem
 			}
 		}
 		m.Headline = headline(m, o.Days)
+		m.Label = label(m.Verdict)
 		out = append(out, m)
 	}
 

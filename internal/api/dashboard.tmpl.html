@@ -1023,8 +1023,25 @@
   .pmquarter{margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
   .pmqh{display:block;font-family:var(--mono);font-size:var(--fs-lbl);letter-spacing:.06em;
         text-transform:uppercase;color:var(--mut);margin-bottom:6px}
-  .pmmv{font-family:var(--mono);font-size:var(--fs-lbl);line-height:1.65;color:var(--fg);padding:2px 0}
-  .pmmv.bad{color:var(--warn)} .pmmv.good{color:var(--ok)}
+  /* The quarter reading as a TABLE. It was seven prose lines, five of them ending
+     "statistically unchanged across 2 ships" — the same data the marketing site already
+     rendered as a scannable four-column table. Numbers right-aligned and tabular so the
+     eye can compare a column; "now" carries the emphasis because it is the answer. */
+  .pmtbl{width:100%;border-collapse:collapse;margin-top:6px}
+  .pmtbl th{font-family:var(--mono);font-size:var(--fs-lbl);font-weight:400;color:var(--mut2);
+    text-align:left;padding:0 0 4px;border-bottom:1px solid var(--line)}
+  .pmtbl td{font-size:var(--fs-lbl);padding:4px 0;border-bottom:1px solid var(--line)}
+  .pmtbl tr:last-child td{border-bottom:0}
+  .pmtbl td.m{font-family:var(--mono);color:var(--fg)}
+  .pmtbl th.n,.pmtbl td.n{text-align:right;padding-right:18px;font-variant-numeric:tabular-nums;
+    font-family:var(--mono);color:var(--mut)}
+  .pmtbl td.n.hi{color:var(--fg)}
+  .pmtbl th.v,.pmtbl td.v{text-align:right;font-family:var(--mono);color:var(--mut)}
+  .pmtbl tr.bad td.v{color:var(--warn)} .pmtbl tr.good td.v{color:var(--ok)}
+  /* three words, not two lines: on an instance with no deploys recorded, most findings are
+     unattributed, and printing the whole instruction per row put the identical paragraph on
+     screen twice in the first 1000px. Said once, underneath, instead. */
+  .pmwhy.pmun{color:var(--mut2);font-style:italic}
   .grail{font-family:var(--mono);font-size:var(--fs-lbl);line-height:1.6;margin-top:4px}
   .grail.ok{color:var(--ok)} .grail.warn{color:var(--mut)} .grail.err{color:var(--warn)}
   .grailwhen{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);margin-top:2px}
@@ -1257,11 +1274,12 @@
       {{range .Findings}}
       <div class="pmrow{{if .NeedsYou}} you{{end}}">
         <div class="pmtop"><span class="pmh">{{.Headline}}</span>{{with .Cost.Size}}<span class="pmcost">{{.}}</span>{{end}}</div>
-        {{if .Cause}}<div class="pmwhy">{{.Cause}}</div>{{end}}
+        {{if .Attributed}}<div class="pmwhy">{{.Cause}}</div>{{else}}<div class="pmwhy pmun">cause not narrowed</div>{{end}}
         <div class="pmnext">&rarr; {{.NextMove}}{{if .Evidence}} <a class="pmev" href="{{.Evidence}}" target="_blank" rel="noopener">check it</a>{{end}}</div>
       </div>
       {{end}}
-      <div class="pmbasis">sized by people affected &mdash; no revenue is tracked on these events, so this is not a dollar figure.</div>
+      <div class="pmbasis">sized by people affected &mdash; no revenue is tracked on these events, so this is not a dollar figure. <a href="/docs/revenue" target="_blank" rel="noopener">connect a payment provider</a> and these become money.</div>
+      {{if .AnyUnattributed}}<div class="pmbasis" style="border-top:0;padding-top:0">the rows marked <i>cause not narrowed</i> had no deploy recorded near the day and no single segment carrying the change &mdash; record deploys and that line becomes which ship did it.</div>{{end}}
       {{end}}
       {{with .Movements}}
       <!-- THE QUARTER, under the week, and OUTSIDE the quiet/busy branch on purpose. The findings
@@ -1270,8 +1288,10 @@
            comfortable reading right until it sits beside "and conversion has not moved across 23
            ships". Either alone lets someone feel fine. -->
       <div class="pmquarter"><span class="pmqh">across the last 90 days</span>
-        {{range .}}<div class="pmmv{{if eq (printf "%s" .Verdict) "moved down"}} bad{{else if eq (printf "%s" .Verdict) "moved up"}} good{{end}}">{{.Headline}}</div>{{end}}
-        <div class="pmbasis" style="border-top:0;padding-top:4px">a share of active people, so growth in traffic alone does not move it.</div>
+        <table class="pmtbl"><thead><tr><th>metric</th><th class="n">then</th><th class="n">now</th><th class="v">verdict</th></tr></thead><tbody>
+        {{range .}}<tr class="{{if eq (printf "%s" .Verdict) "moved down"}}bad{{else if eq (printf "%s" .Verdict) "moved up"}}good{{end}}"><td class="m">{{.Metric}}</td><td class="n">{{printf "%.1f" .Before}}%</td><td class="n hi">{{printf "%.1f" .After}}%</td><td class="v">{{.Label}}</td></tr>{{end}}
+        </tbody></table>
+        <div class="pmbasis" style="border-top:0;padding-top:6px">a share of active people, so growth in traffic alone does not move it.</div>
       </div>
       {{end}}
     </div>

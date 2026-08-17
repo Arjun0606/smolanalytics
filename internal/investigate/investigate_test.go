@@ -447,3 +447,73 @@ func TestTheUnattributedLineMatchesTheDirectionOfTheFinding(t *testing.T) {
 		t.Errorf("a drop no longer reads as a drop: %q", c)
 	}
 }
+
+// THE SAME PARAGRAPH MUST NOT PRINT ON EVERY ROW.
+//
+// The unattributed cause is one long sentence ending in an instruction, and on an instance with
+// no deploys recorded it is the cause for MOST findings — so the dashboard printed the identical
+// two-line paragraph twice inside its first 1000px. The marketing panel already rendered it as
+// three words per row plus the instruction once underneath; the product had the worse version.
+//
+// Renderers need to tell the two apart WITHOUT matching on prose, or the next copy edit silently
+// breaks the distinction.
+func TestARendererCanTellAnExplainedFindingFromAnUnexplainedOne(t *testing.T) {
+	now := time.Now().UTC()
+
+	// Nothing to attribute: no deploys, and the loss spread evenly across browsers.
+	plain := WithContext(seed(t, now, "signup", 40, 10), nil, nil, Opts{Now: now})
+	if len(plain.Findings) == 0 {
+		t.Fatal("no finding")
+	}
+	if plain.Findings[0].Attributed() {
+		t.Errorf("an unexplained finding reports itself as attributed: %q", plain.Findings[0].Cause)
+	}
+	if !plain.AnyUnattributed() {
+		t.Error("AnyUnattributed is false while a finding is unexplained — the renderer would " +
+			"omit the one line telling the reader how to fix it")
+	}
+	if !strings.HasPrefix(plain.Findings[0].Cause, Unattributed) {
+		t.Errorf("the fallback no longer starts with the exported prefix, so Attributed() is "+
+			"silently broken: %q", plain.Findings[0].Cause)
+	}
+
+	// A named segment IS an explanation.
+	seg := WithContext(segSeed(t, now, 1.0), nil, nil, Opts{Now: now})
+	if len(seg.Findings) == 0 {
+		t.Fatal("no finding on the segmented fixture")
+	}
+	if !seg.Findings[0].Attributed() {
+		t.Errorf("a finding naming the browser carrying the whole drop reports as unattributed: %q",
+			seg.Findings[0].Cause)
+	}
+	if seg.AnyUnattributed() {
+		t.Error("AnyUnattributed is true when every finding is explained — the renderer would " +
+			"print an instruction that applies to nothing on screen")
+	}
+}
+
+// The quarter table renders from a structured label, not by parsing the headline. "unchanged" and
+// "can't tell" are opposite findings and must stay distinguishable in one table cell.
+func TestEveryMovementCarriesAShortLabel(t *testing.T) {
+	for v, want := range map[Verdict]string{
+		MovedUp:    "up",
+		MovedDown:  "down",
+		Unchanged:  "unchanged",
+		CannotTell: "can't tell",
+		NeverFired: "not recorded",
+	} {
+		if got := label(v); got != want {
+			t.Errorf("label(%q) = %q, want %q", v, got, want)
+		}
+	}
+	now := time.Now().UTC()
+	ms := Movements(seed(t, now, "signup", 40, 10), nil, MovementOpts{Now: now})
+	if len(ms) == 0 {
+		t.Fatal("no movements")
+	}
+	for _, m := range ms {
+		if m.Label == "" {
+			t.Errorf("%q carries no label, so a table cell has nothing to render", m.Metric)
+		}
+	}
+}

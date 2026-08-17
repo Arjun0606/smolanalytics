@@ -3,6 +3,7 @@ package investigate
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/deploys"
@@ -31,6 +32,21 @@ import (
 // segment carries 30% of a drop it is not "where the problem is", it is just the biggest slice of
 // an even spread — and pointing at it would send someone down a wrong path with confidence.
 const minSegmentShare = 0.55
+
+// Unattributed is the prefix of the cause line written when nothing could be narrowed.
+//
+// Exported so a RENDERER can tell an explained finding from an unexplained one without matching
+// on prose. Every surface used to print this whole two-line sentence per finding, and on an
+// instance with no deploys recorded that is most of them — the dashboard showed the identical
+// paragraph twice in its first screen. The marketing panel already renders it as three words
+// per row plus the instruction once underneath; this is what lets the product do the same.
+const Unattributed = "no deploy recorded near this day"
+
+// Attributed reports whether this finding's cause narrows it to something specific — a ship, a
+// segment — rather than saying nothing could be found.
+func (f Finding) Attributed() bool {
+	return f.Cause != "" && !strings.HasPrefix(f.Cause, Unattributed)
+}
 
 // causeProps are the dimensions worth blaming, in the order a person would check them. Browser
 // and device first because a regression concentrated there is almost always a real front-end bug;
@@ -74,7 +90,7 @@ func Attribute(evs []event.Event, findings []Finding, deps []deploys.Deploy, o O
 			case KindSurge:
 				word = "rise"
 			}
-			f.Cause = "no deploy recorded near this day and the " + word + " is spread evenly across " +
+			f.Cause = Unattributed + " and the " + word + " is spread evenly across " +
 				"browsers, devices and pages — record deploys and this line becomes 'which ship did it'"
 		}
 	}

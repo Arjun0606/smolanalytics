@@ -292,6 +292,21 @@ func absPct(v float64) float64 {
 	return v
 }
 
+// AnyUnattributed reports whether any finding could not be narrowed to a ship or a segment.
+//
+// Lets a renderer state the "record deploys and this becomes which ship did it" instruction ONCE,
+// underneath, instead of printing it inside every unexplained row. On an instance with no deploys
+// recorded that is most rows, and the dashboard was showing the identical two-line paragraph
+// twice inside its first screen.
+func (inv Investigation) AnyUnattributed() bool {
+	for _, f := range inv.Findings {
+		if f.Kind != KindDeadShip && !f.Attributed() {
+			return true
+		}
+	}
+	return false
+}
+
 // NeedsYouCount is the triage line at the top of the brief: "3 things changed. 1 needs you."
 func (inv Investigation) NeedsYouCount() int {
 	n := 0
