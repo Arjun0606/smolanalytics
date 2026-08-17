@@ -616,7 +616,9 @@
   .segconv .sc{margin-bottom:10px}
   /* what was held back, and why — a card that quietly truncates reads as one that covered
      everything, which is the more expensive of the two mistakes */
-  .segconv .sc-thin{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);padding-top:4px;border-top:1px solid var(--line)}
+  /* a caveat about who is missing from the rows above: a sentence, so sans. The earlier sweep
+     stripped mono from .sc-thin and this more specific rule put it back. */
+  .segconv .sc-thin{font-size:var(--fs-body);line-height:var(--lh-body);color:var(--mut);padding-top:6px;border-top:1px solid var(--line);max-width:68ch}
   .sc-h{display:flex;justify-content:space-between;font-size:var(--fs-body)}
   .sc-h .sc-conv{font-family:var(--mono);color:var(--accent)}
   .sc-track{height:6px;background:var(--s2);border-radius:3px;margin:5px 0 3px;overflow:hidden}
