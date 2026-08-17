@@ -1098,6 +1098,12 @@
      around a framed thing reads as a rendering mistake. The slab brings its own edge and plate;
      everything under it is plain content on the page ground. */
   .pmbrief{padding:0;margin-bottom:22px;background:transparent}
+  /* The slab spans the full width because it is the focal object. Everything under it is
+     reading, and reading does not want 1560px: the quarter table had four columns floating
+     apart across the whole viewport, so comparing "then" against "now" meant a saccade across
+     half a metre of screen. 1080px puts the columns in one field of view and leaves the deck
+     below free to use the full width for charts, which genuinely want it. */
+  .pmbrief .pmrow,.pmbrief .pmbasis,.pmbrief .pmquarter,.pmbrief .pmhead{max-width:1080px}
   .pmhead{font-family:var(--mono);font-size:var(--fs-lbl);text-transform:uppercase;letter-spacing:var(--track-lbl);color:var(--mut2);margin:0 0 10px;padding-top:2px}
   .pmhead b{color:var(--fg)}
   .pmrow{padding:8px 0;border-top:1px solid var(--line)}
@@ -1128,7 +1134,8 @@
   .pmtbl td{font-size:var(--fs-lbl);padding:4px 0;border-bottom:1px solid var(--line)}
   .pmtbl tr:last-child td{border-bottom:0}
   .pmtbl td.m{font-family:var(--mono);color:var(--fg)}
-  .pmtbl th.n,.pmtbl td.n{text-align:right;padding-right:18px;font-variant-numeric:tabular-nums;
+  .pmtbl th.m,.pmtbl td.m{width:42%}
+  .pmtbl th.n,.pmtbl td.n{width:16%;text-align:right;padding-right:18px;font-variant-numeric:tabular-nums;
     font-family:var(--mono);color:var(--mut)}
   .pmtbl td.n.hi{color:var(--fg)}
   .pmtbl th.v,.pmtbl td.v{text-align:right;font-family:var(--mono);color:var(--mut)}
