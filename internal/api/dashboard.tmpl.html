@@ -237,9 +237,13 @@
   .hero{padding:16px 0 0}
   .ask{position:relative}
   .ask input{width:100%;height:var(--ask-h);background:var(--s1);border:1px solid var(--line2);color:var(--fg);border-radius:var(--r-card);
-    font:400 var(--fs-lead)/var(--lh-lead) var(--mono);padding:0 84px 0 44px;outline:none;transition:border-color var(--t-base) var(--ease), box-shadow var(--t-base) var(--ease)}
+    /* SANS, not mono. The placeholder read "ask anything about your" — clipped mid-sentence on
+       the flagship interaction — because 19px mono is roughly 45% wider per character than sans
+       and the box carries 128px of padding for the affordances. Same prominence, and the whole
+       sentence fits. This is also the face rule: a prompt to a human is prose, not an identifier. */
+    font:400 var(--fs-claim)/var(--lh-claim) var(--sans);padding:0 84px 0 44px;outline:none;transition:border-color var(--t-base) var(--ease), box-shadow var(--t-base) var(--ease)}
   .ask input:focus{border-color:var(--edge);box-shadow:var(--sh-focus)}
-  .ask .k{position:absolute;left:17px;top:50%;transform:translateY(-50%);color:var(--accent);font-family:var(--mono);font-size:var(--fs-lead)}
+  .ask .k{position:absolute;left:17px;top:50%;transform:translateY(-50%);color:var(--accent);font-family:var(--mono);font-size:var(--fs-claim)}
   .ask .hint{position:absolute;right:12px;top:50%;transform:translateY(-50%);display:flex;gap:4px;align-items:center}
   /* chips WRAP — a hidden-scrollbar side-scroll reads as content amputated at the edge
      (no affordance that more exists), the exact "cut off in a box" complaint */
