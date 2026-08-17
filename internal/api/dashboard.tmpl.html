@@ -1031,10 +1031,14 @@
   .pmrow{padding:8px 0;border-top:1px solid var(--line)}
   .pmrow:first-of-type{border-top:0}
   .pmtop{display:flex;gap:10px;align-items:baseline;justify-content:space-between}
-  .pmh{font-size:var(--fs-claim);line-height:var(--lh-claim);font-family:var(--mono);font-size:var(--fs-body);color:var(--fg)}
-  .pmrow.you .pmh{font-weight:700}
+  /* The finding headline is the sentence the screen is about, so it gets the claim rung. Mono
+     stays on purpose: it leads with the operator's own event name, which is exactly the case the
+     face rule keeps in mono. Weight 600 — mono faces on macOS and Windows ship no 800, so 700+
+     is faux-bold and varies by platform. */
+  .pmh{font-family:var(--mono);font-size:var(--fs-claim);line-height:var(--lh-claim);font-weight:600;color:var(--fg)}
+  .pmrow.you .pmh{font-weight:600}
   .pmcost{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);white-space:nowrap}
-  .pmwhy,.pmnext{font-size:var(--fs-lbl);color:var(--mut);line-height:1.6;margin-top:3px}
+  .pmwhy,.pmnext{font-size:var(--fs-body);line-height:var(--lh-body);color:var(--mut);margin-top:4px;max-width:68ch}
   .pmev{color:var(--accent);text-decoration:none;border-bottom:1px solid var(--line2)}
   .pmev:hover{border-bottom-color:var(--accent)}
   .pmbasis{font-size:var(--fs-lbl);color:var(--mut);margin-top:10px;padding-top:8px;border-top:1px solid var(--line)}
