@@ -1,0 +1,20 @@
+Archivo
+Copyright (c) 2011-2023, Omnibus-Type (omnibus.type@gmail.com)
+
+Licensed under the SIL Open Font License, Version 1.1.
+Full text: https://openfontlicense.org
+Upstream: https://github.com/Omnibus-Type/Archivo
+
+WHY THIS FILE IS HERE
+---------------------
+archivo-latin.woff2 is compiled into the smolanalytics binary and served from
+/fonts/archivo-latin.woff2 so the dashboard and the marketing site render in the
+same typeface. The binary is MIT; this font is not, and the OFL requires the
+notice to travel with the file. Bundling and redistribution are expressly
+permitted by the OFL, including inside a larger work under a different licence,
+provided the font itself is not sold on its own and this notice is retained.
+
+Only the latin subset of the variable font is included (34KB, weights 400-800 on
+one axis). No webfont CDN is contacted at runtime: a dashboard that phones a
+third party for its typeface would leak every page view of a self-hosted analytics
+tool to Google, which is the opposite of the reason people self-host this.

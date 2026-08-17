@@ -13,6 +13,18 @@
      labels — the values in --fs-* below, which this comment used to contradict. 12px is
      the floor; there is no 9px, 10px or 10.5px anywhere. If you need something quieter
      than a 12px label, take it down a tone, not a size. */
+  /* THE DISPLAY FACE, SERVED BY THIS INSTANCE.
+     Compiled into the binary and served from /fonts — never a CDN. A self-hosted analytics tool
+     that fetches its typeface from Google leaks every dashboard page view, including which
+     instance and when, to a third party; that is the opposite of the reason anyone self-hosts
+     this. font-display:swap so a cold cache renders in the system stack immediately rather than
+     showing nothing. Variable, one axis, 400-800. */
+  @font-face{
+    font-family:"Archivo";
+    src:url("/fonts/archivo-latin.woff2") format("woff2-variations"),
+        url("/fonts/archivo-latin.woff2") format("woff2");
+    font-weight:400 800; font-style:normal; font-display:swap;
+  }
   :root{
     /* surfaces — one ladder, strays named. Warmed toward the brand's paper: the neutral greys
        became warm near-blacks so cream and yellow sit on the same temperature instead of
@@ -56,12 +68,19 @@
     /* border weights, named. 3px is the card/object weight the reference sites use; 2px is for
        controls, which would look clownish at 3. */
     --bw:3px; --bw-ctl:2px;
-    /* type — exactly four sizes, weights 400/500/600 */
+    /* type — six rungs, weights 400/600/800. Every rule that sets a --fs-* must set its
+       companion --lh-*: that pairing is what collapsed seventeen ad-hoc line-heights to six. */
     --fs-lbl:13px; --lh-lbl:19px; --fs-body:15px; --lh-body:23px;
     --fs-lead:19px; --lh-lead:27px; --fs-num:40px; --lh-num:44px;
     /* display: section headings. New rung at the top, because the ladder previously stopped at
        the KPI number and left headings competing with body copy for attention. */
     --fs-disp:30px; --lh-disp:34px;
+    /* The two rungs the ladder was still missing. --fs-read is the single largest thing on the
+       page, spent exactly once: the figure the whole screen is about. --fs-claim is the sentence
+       that explains a figure — at 22/15 = 1.47x body it reads as a decision, where the old 19px
+       read as 1.27x and therefore as a mistake. */
+    --fs-read:64px; --lh-read:60px;
+    --fs-claim:22px; --lh-claim:30px;
     --track-lbl:.06em; --track-num:-.02em; --track-body:-.01em;
     /* space — 4px base */
     --sp1:4px; --sp2:8px; --sp3:12px; --sp4:16px; --sp6:24px; --sp8:32px;
@@ -85,7 +104,7 @@
     --ease:cubic-bezier(.4,0,.2,1); --ease-out:cubic-bezier(.215,.61,.355,1);
     --ring:0 0 0 3px var(--a14);
     --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Cascadia Mono",monospace;
-    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --sans:"Archivo",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     font-variant-numeric:tabular-nums;
   }
   /* ═══ LIGHT ════════════════════════════════════════════════════════════════════════════════
@@ -281,7 +300,7 @@
   .fixsheet .fxclose:hover,.fixsheet .fxclose:focus-visible{color:var(--warn)}
   .fixsheet .fxtitle{font-size:var(--fs-lead);font-weight:600;line-height:1.4}
   .fixsheet .fxdetail{color:var(--mut);font-size:var(--fs-body);line-height:1.7;margin-top:4px}
-  .fixsheet .fxnote{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--warn);margin-top:8px;line-height:1.7}
+  .fixsheet .fxnote{font-size:var(--fs-lbl);color:var(--warn);margin-top:8px;line-height:1.7}
   .fixsheet .fxsec{font-family:var(--mono);font-size:var(--fs-lbl);text-transform:uppercase;letter-spacing:var(--track-lbl);color:var(--mut2);margin:20px 0 6px;border-top:1px solid var(--line);padding-top:12px}
   .fxrow{padding:8px 0;border-bottom:1px solid var(--line)}
   .fxrow .fxlbl{font-size:var(--fs-lbl);color:var(--mut)}
@@ -409,7 +428,7 @@
   .zonelbl{font-family:var(--mono);font-size:var(--fs-body);text-transform:uppercase;letter-spacing:.08em;color:var(--sec);margin-bottom:10px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;max-width:100%;font-weight:600}
   /* dimmer AND smaller than the heading it explains. Same size and colour made the two
      read as one run-on line. */
-  .zonelbl .sub{flex-basis:100%;text-transform:none;letter-spacing:0;color:var(--mut);font-size:var(--fs-lbl);font-weight:400;line-height:1.55;margin-top:4px}
+  .zonelbl .sub{font-family:var(--sans);flex-basis:100%;text-transform:none;letter-spacing:0;color:var(--mut);font-size:var(--fs-lbl);font-weight:400;line-height:1.55;margin-top:4px}
   .zonesel{background:var(--s1);border:1px solid var(--line);color:var(--fg);font-family:var(--mono);font-size:var(--fs-lbl);padding:2px 6px;border-radius:4px;margin-right:6px}
   /* A flag is an icon, not a word: it sits on the label's own line at label size, with a
      fixed gutter so a two-letter code and a longer name still start at the same x. */
@@ -533,7 +552,7 @@
   .pane h3{font-size:var(--fs-lead);font-family:var(--sans);text-transform:none;letter-spacing:-.01em;color:var(--fg);margin:0 0 14px;font-weight:800}
   /* the subtitle is a full sentence and was being asked to sit inline after the title,
      where it wrapped into the title's own letter-spacing and uppercase rhythm */
-  .pane h3 .sub{display:block;margin:7px 0 0;font-size:var(--fs-lbl);line-height:1.6;font-weight:400;
+  .pane h3 .sub{font-family:var(--sans);display:block;margin:7px 0 0;font-size:var(--fs-lbl);line-height:1.6;font-weight:400;
     text-transform:none;letter-spacing:0;color:var(--mut);max-width:80ch}
 
   /* rows with share-of-total bars behind them */
@@ -633,7 +652,7 @@
   .exrow button.btn2{background:transparent;color:var(--mut);border-color:var(--line)}
   .exrow button.btn2:hover{color:var(--accent);border-color:var(--accent)}
   .exout{margin-top:6px}
-  .exsummary{font-family:var(--mono);font-size:var(--fs-body);line-height:1.65;color:var(--mut);margin:8px 0;max-width:80ch}
+  .exsummary{font-size:var(--fs-body);line-height:1.65;color:var(--mut);margin:8px 0;max-width:80ch}
   .exbar{position:relative;height:30px;margin-bottom:4px;background:var(--s2);border:1px solid var(--line);border-radius:5px;overflow:hidden}
   .exfill{position:absolute;inset:0 auto 0 0;background:var(--a14);border-right:2px solid var(--a45)}
   .exmeta{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 11px;font-family:var(--mono);font-size:var(--fs-lbl)}
@@ -680,14 +699,14 @@
   .cbtn:hover{border-color:var(--accent);color:var(--accent)}
   .cbtn.primary{border-color:var(--accent);color:var(--accent)}
   .ccode{background:var(--well);border:1px solid var(--line);border-radius:var(--r-ctl);padding:6px 12px;font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);overflow:auto;white-space:nowrap;flex:1;min-width:200px}
-  .cnote{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2);padding:10px 0 0;line-height:1.7}
+  .cnote{font-size:var(--fs-lbl);color:var(--mut2);padding:10px 0 0;line-height:1.7}
   .cnote em{color:var(--mut);font-style:normal}
 
   /* onboarding takeover (fresh install only) */
   .takeover{max-width:760px;margin:20px auto 0}
   .obcard{background:var(--s1);border:1px solid var(--line);border-radius:8px;padding:20px;margin-bottom:14px}
   .obh{font-size:var(--fs-lead);font-weight:600;margin-bottom:10px}
-  .obsub{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2);margin-bottom:10px}
+  .obsub{font-size:var(--fs-lbl);color:var(--mut2);margin-bottom:10px}
   pre.code{background:var(--well);border:1px solid var(--line);border-radius:var(--r-ctl);padding:13px;overflow:auto;font-family:var(--mono);font-size:var(--fs-lbl);line-height:1.6;color:var(--fg);margin:0;white-space:pre-wrap;word-break:break-word}
   .copy{margin-top:8px;background:transparent;border:1px solid var(--line);border-radius:4px;color:var(--mut);font-family:var(--mono);font-size:var(--fs-lbl);padding:5px 12px;cursor:pointer}
   .copy:hover{border-color:var(--accent);color:var(--accent)}
@@ -705,7 +724,7 @@
   .journey .jid{font-family:var(--mono);font-size:var(--fs-body);font-weight:700;word-break:break-all}
   .journey .jclose{color:var(--mut2);cursor:pointer;font-family:var(--mono);font-size:var(--fs-lbl);white-space:nowrap}
   .journey .jclose:hover{color:var(--warn)}
-  .journey .jmeta{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2);margin-bottom:14px;line-height:1.8}
+  .journey .jmeta{font-size:var(--fs-lbl);color:var(--mut2);margin-bottom:14px;line-height:1.8}
   .journey .jrow{display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:var(--fs-lbl)}
   .journey .jrow .jt{color:var(--mut2);min-width:52px}
   .journey .jrow .je{color:var(--accent);min-width:110px}
@@ -723,7 +742,7 @@
   .live .who:hover{color:var(--accent);text-decoration:underline}
 
   /* zone 9 — the covenant */
-  .foot{color:var(--mut2);font-size:var(--fs-lbl);text-align:left;padding:32px 0 40px;font-family:var(--mono);line-height:1.8;border-top:1px solid var(--line);margin-top:var(--zone)}
+  .foot{color:var(--mut2);font-size:var(--fs-lbl);text-align:left;padding:32px 0 40px;line-height:1.8;border-top:1px solid var(--line);margin-top:var(--zone)}
   .foot a{color:var(--mut2)}
   .foot a:hover{color:var(--accent)}
 
@@ -750,7 +769,7 @@
   /* AT EVERY WIDTH, not just inside the shell. These lived in the >=1081px block, so on a
      phone the note fell back to its default display and told the user "reports appear here as
      soon as your first events land" directly beneath a populated list of 22 reports. */
-  .railnote{font-family:var(--mono);font-weight:400;font-size:var(--fs-lbl);line-height:1.5;color:var(--mut2);display:none}
+  .railnote{font-weight:400;font-size:var(--fs-lbl);line-height:1.5;color:var(--mut2);display:none}
   .deckindex:empty + .railnote{display:block}
   .sa-nav,#sa-top{display:flex;flex-direction:column;gap:14px;padding:14px 0}
   /* stacked, the topbar's children stretch to full width and #lastev (a long "seconds since
@@ -990,8 +1009,8 @@
   .inprompt button:active{background:var(--accent-dim)}
   .inprompt button.ipx{background:transparent;border-color:var(--line2);color:var(--mut);font-weight:500}
   .inprompt button.ipx:hover{border-color:var(--accent);color:var(--accent)}
-  .inprompt .iphint{flex-basis:100%;font-family:var(--mono);font-size:var(--fs-lbl);line-height:var(--lh-lbl);color:var(--mut2)}
-  .inote{margin:10px 0 0;font-family:var(--mono);font-size:var(--fs-body);line-height:1.6;color:var(--mut);max-width:80ch}
+  .inprompt .iphint{flex-basis:100%;font-size:var(--fs-lbl);line-height:var(--lh-lbl);color:var(--mut2)}
+  .inote{margin:10px 0 0;font-size:var(--fs-body);line-height:1.6;color:var(--mut);max-width:80ch}
   .inote.err{color:var(--warn)}
 
   /* ═══ AGENT OBSERVABILITY. two kinds of number share this card and they must never
@@ -1003,23 +1022,23 @@
     font-family:var(--mono);font-size:var(--fs-lbl);text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:99px}
   .aginf{display:inline-flex;align-items:center;gap:5px;border:1px dashed var(--line3);color:var(--mut2);
     font-family:var(--mono);font-size:var(--fs-lbl);text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:99px}
-  .agmeta{font-family:var(--mono);font-size:var(--fs-body);line-height:1.65;color:var(--mut);max-width:80ch}
+  .agmeta{font-size:var(--fs-body);line-height:1.65;color:var(--mut);max-width:80ch}
   /* The brief. Deliberately plainer than the verdict callout beside it: this is meant to read
      like a colleague's note, and a heavy card would make it look like another widget. */
   .pmbrief{border:1px solid var(--line);border-left:3px solid var(--accent);padding:14px 16px;margin-bottom:14px;background:var(--bg2)}
-  .pmhead{font-family:var(--mono);font-size:var(--fs-body);color:var(--mut);margin-bottom:10px}
+  .pmhead{font-size:var(--fs-body);color:var(--mut);margin-bottom:10px}
   .pmhead b{color:var(--fg)}
   .pmrow{padding:8px 0;border-top:1px solid var(--line)}
   .pmrow:first-of-type{border-top:0}
   .pmtop{display:flex;gap:10px;align-items:baseline;justify-content:space-between}
-  .pmh{font-family:var(--mono);font-size:var(--fs-body);color:var(--fg)}
+  .pmh{font-size:var(--fs-claim);line-height:var(--lh-claim);font-family:var(--mono);font-size:var(--fs-body);color:var(--fg)}
   .pmrow.you .pmh{font-weight:700}
   .pmcost{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);white-space:nowrap}
-  .pmwhy,.pmnext{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);line-height:1.6;margin-top:3px}
+  .pmwhy,.pmnext{font-size:var(--fs-lbl);color:var(--mut);line-height:1.6;margin-top:3px}
   .pmev{color:var(--accent);text-decoration:none;border-bottom:1px solid var(--line2)}
   .pmev:hover{border-bottom-color:var(--accent)}
-  .pmbasis{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);margin-top:10px;padding-top:8px;border-top:1px solid var(--line)}
-  .pmq{font-family:var(--mono);font-size:var(--fs-body);color:var(--fg)}
+  .pmbasis{font-size:var(--fs-lbl);color:var(--mut);margin-top:10px;padding-top:8px;border-top:1px solid var(--line)}
+  .pmq{font-size:var(--fs-body);color:var(--fg)}
   .pmquarter{margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
   .pmqh{display:block;font-family:var(--mono);font-size:var(--fs-lbl);letter-spacing:.06em;
         text-transform:uppercase;color:var(--mut);margin-bottom:6px}
@@ -1042,7 +1061,7 @@
      unattributed, and printing the whole instruction per row put the identical paragraph on
      screen twice in the first 1000px. Said once, underneath, instead. */
   .pmwhy.pmun{color:var(--mut2);font-style:italic}
-  .grail{font-family:var(--mono);font-size:var(--fs-lbl);line-height:1.6;margin-top:4px}
+  .grail{font-size:var(--fs-lbl);line-height:1.6;margin-top:4px}
   .grail.ok{color:var(--ok)} .grail.warn{color:var(--mut)} .grail.err{color:var(--warn)}
   .grailwhen{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);margin-top:2px}
   .pmqs{color:var(--mut)}

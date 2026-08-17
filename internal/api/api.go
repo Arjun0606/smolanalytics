@@ -62,6 +62,34 @@ var installMD string
 //go:embed llms.txt
 var llmsTxt string
 
+// The dashboard's display face, compiled in.
+//
+// A self-hosted analytics tool must not fetch its typeface from a CDN: that would leak every
+// page view of the dashboard — including which instance and when — to a third party, which is
+// the opposite of the reason anyone self-hosts this. So the latin subset of Archivo variable
+// (34KB, weights 400-800 on one axis) ships inside the binary and is served from here.
+//
+// It exists at all because the marketing site moved off Inter and onto Archivo, and two surfaces
+// that merely agree about colour are not one product. Licence and the reasoning for bundling an
+// OFL font inside an MIT binary: internal/api/fonts/LICENSE-Archivo.txt.
+//
+//go:embed fonts/archivo-latin.woff2
+var archivoWoff2 []byte
+
+// serveArchivo serves the compiled-in display face.
+//
+// Immutable and cached for a year: the bytes are baked into the binary, so a new build is a new
+// binary and there is nothing to invalidate. No CORS header — the dashboard is the only consumer,
+// and a font that any origin may pull is a font any origin may fingerprint the instance with.
+func serveArchivo(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "font/woff2")
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	// Zero modtime: ServeContent then skips Last-Modified entirely rather than claiming a date,
+	// which is right — the file has no meaningful timestamp, it is part of the executable.
+	http.ServeContent(w, r, "archivo-latin.woff2", time.Time{}, bytes.NewReader(archivoWoff2))
+}
+
 // Version is the build version (overridable at build time via -ldflags).
 var Version = "0.1.0"
 
@@ -298,6 +326,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/revenue/{provider}", s.revenueWebhook)
 	mux.HandleFunc("OPTIONS /v1/events", s.preflight) // browser SDK CORS preflight
 	mux.HandleFunc("GET /sdk.js", s.serveSDK)
+	mux.HandleFunc("GET /fonts/archivo-latin.woff2", serveArchivo)
 	mux.HandleFunc("GET /install.md", s.serveInstallMD) // AGENTS.md tells self-hosting agents to fetch this
 	mux.HandleFunc("GET /llms.txt", s.serveLLMs)
 	mux.HandleFunc("GET /docs", s.serveInstallMD) // /docs → the same agent guide
