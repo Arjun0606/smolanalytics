@@ -27,6 +27,22 @@ func (c Cost) Size() string {
 	return ""
 }
 
+// Readout is the figure alone, for the one place on a screen that shows a figure alone.
+//
+// The slab sets this at 64px with the unit printed beside it, so it must NOT carry a unit or a
+// second quantity. It exists here rather than as {{comma .Cost.People}} in a template because
+// this package already owns how a cost is rendered, and a second renderer growing in the HTML is
+// exactly how four surfaces came to print only the people half.
+//
+// ALWAYS People, in every state including zero on a quiet day. A readout whose unit changes when
+// revenue happens to be instrumented is a readout nobody can compare week to week — so money,
+// when it exists, prints in the support line via Size() and never displaces this.
+func (c Cost) Readout() string { return group(c.People) }
+
+// HasMoney reports whether a dollar figure was computed, so a renderer can decide whether to show
+// the money line without reaching into the field and formatting it itself.
+func (c Cost) HasMoney() bool { return c.UsdPerMonth > 0 }
+
 // money renders whole dollars with thousands separators. No cents: a figure derived from a mean
 // times a count is precise to about the nearest hundred, and printing "$14,880.37" claims an
 // accuracy the arithmetic does not have.

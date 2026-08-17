@@ -62,6 +62,9 @@ func comma(n int) string {
 
 var dashTmpl = template.Must(template.New("dash").Funcs(template.FuncMap{
 	"comma": comma,
+	// sub exists so the slab can say "3 more findings" — a COUNT, never the bare word "more".
+	// "more" is the thing a reader cannot decide whether to click.
+	"sub": func(a, b int) int { return a - b },
 	// the chart table classified its own CHANGE column by slicing the first character off the
 	// delta, which is the same bug buildKPIs had: it read as neither up nor down the moment the
 	// delta printed "70x". One definition now, so the two cannot drift apart again.

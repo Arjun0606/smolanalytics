@@ -221,3 +221,30 @@ func TestNoSurfaceFormatsACostByHand(t *testing.T) {
 		}
 	}
 }
+
+// THE SLAB'S PRIMARY ACTION MUST BE WIRED.
+//
+// It is the largest, highest-contrast control on the first screen. A button that looks like the
+// most important thing on the page and silently ignores a click is worse than no button, and this
+// codebase has shipped exactly that shape before — 31 rail links that scrolled nowhere.
+//
+// Source-level, because a rendered assertion cannot tell a handler that never fires from one that
+// fires and finds nothing to do.
+func TestTheSlabPrimaryActionIsWired(t *testing.T) {
+	src, err := os.ReadFile("dashboard.tmpl.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(src)
+	if !strings.Contains(s, `class="slab-go"`) {
+		t.Fatal("no .slab-go in the template; this guard is watching something that no longer exists")
+	}
+	if !strings.Contains(s, ".slab-go[data-q]") {
+		t.Error("the slab's primary action is not in the ASKABLE selector list, so clicking it " +
+			"does nothing at all")
+	}
+	// And the readout must come from the one renderer, not from formatting the field here.
+	if strings.Contains(s, "comma $lead.Cost.People") || strings.Contains(s, "$lead.Cost.People}}") {
+		t.Error("the slab formats Cost.People itself; use Cost.Readout so the figure has one definition")
+	}
+}

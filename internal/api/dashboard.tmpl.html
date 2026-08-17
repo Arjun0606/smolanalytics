@@ -1046,6 +1046,45 @@
   .agmeta{font-size:var(--fs-body);line-height:1.65;color:var(--mut);max-width:80ch}
   /* The brief. Deliberately plainer than the verdict callout beside it: this is meant to read
      like a colleague's note, and a heavy card would make it look like another widget. */
+  /* ═══ THE SLAB ═══════════════════════════════════════════════════════════════════════════
+     One conclusion, on the brand's own ground, figure first. Byte-identical in light and dark:
+     #FFC900 with #17140D on it is 11.9:1 either way, so this is the one component that does not
+     need a theme. It is deliberately the same object as the landing page's yellow band — the two
+     surfaces should read as one product, and what they share is that a measured figure leads.
+     3px border and a hard ink plate: this is the one focal object on the screen, so it gets the
+     heaviest stroke in the system and the only e2 above the fold. ═══ */
+  .slab{background:var(--brand);color:var(--on-brand);border:3px solid var(--edge);
+    box-shadow:6px 6px 0 var(--on-brand);padding:28px 32px;margin-bottom:22px}
+  .slab-eyebrow{font-family:var(--mono);font-size:var(--fs-lbl);font-weight:600;
+    text-transform:uppercase;letter-spacing:var(--track-lbl);opacity:.72}
+  /* The figure column is fixed rather than fluid so the readout's left edge and the claim's left
+     edge never move between findings — a column that reflows per finding makes the page look
+     like it is recalculating. */
+  .slab-grid{display:grid;grid-template-columns:minmax(180px,220px) minmax(0,1fr) auto;
+    gap:24px;align-items:start;margin-top:18px}
+  .slab-read{font-family:var(--mono);font-weight:600;font-size:var(--fs-read);
+    line-height:var(--lh-read);letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .slab-subj{margin-top:8px;font-family:var(--mono);font-size:var(--fs-lbl);opacity:.72}
+  .slab-claim{font-size:var(--fs-claim);line-height:var(--lh-claim);font-weight:600;
+    letter-spacing:-.015em;max-width:46ch}
+  .slab-support{margin-top:12px;font-size:var(--fs-body);line-height:var(--lh-body);
+    opacity:.82;max-width:68ch}
+  .slab-next{display:block;margin-top:4px}
+  .slab-money{display:inline-block;margin-top:6px;font-family:var(--mono);font-weight:600}
+  .slab-act{display:flex;flex-direction:column;gap:8px}
+  /* On the yellow ground the primary inverts: ink fill, brand text. Same plate-collapse press as
+     every other primary in the system, so the idiom survives the colour change. */
+  .slab-go,.slab-ghost{display:inline-flex;align-items:center;justify-content:center;height:36px;
+    padding:0 16px;font-family:var(--mono);font-size:var(--fs-lbl);font-weight:600;
+    white-space:nowrap;cursor:pointer;border:2px solid var(--on-brand);text-decoration:none}
+  .slab-go{background:var(--on-brand);color:var(--brand);box-shadow:4px 4px 0 var(--on-brand)}
+  .slab-go:active{transform:translate(4px,4px);box-shadow:none}
+  .slab-ghost{background:transparent;color:var(--on-brand)}
+  .slab-ghost:hover{background:rgba(23,20,13,.08)}
+  @media(max-width:1100px){
+    .slab-grid{grid-template-columns:1fr}
+    .slab-act{flex-direction:row}
+  }
   .pmbrief{border:1px solid var(--line);border-left:3px solid var(--accent);padding:14px 16px;margin-bottom:14px;background:var(--bg2)}
   .pmhead{font-size:var(--fs-body);color:var(--mut);margin-bottom:10px}
   .pmhead b{color:var(--fg)}
@@ -1313,9 +1352,40 @@
       {{if .Quiet}}
       <div class="pmq">Nothing needs you today.<span class="pmqs"> {{len .Scanned}} metric(s) checked for step changes.</span></div>
       {{else}}
-      <div class="pmhead">{{len .Findings}} thing{{if ne (len .Findings) 1}}s{{end}} changed.
-        <b>{{.NeedsYouCount}} need{{if eq .NeedsYouCount 1}}s{{end}} you.</b></div>
-      {{range .Findings}}
+      {{$inv := .}}{{$lead := index .Findings 0}}
+      <!-- THE SLAB. One conclusion, on the brand's own ground, with its figure at 64px.
+           The first screen used to be ~1000px of monospace paragraphs in which nothing was
+           larger than anything else — in an analytics tool. This is the same component as the
+           landing page's yellow band, deliberately: the two surfaces should read as one product,
+           and the thing they have in common is that a measured figure leads.
+           The readout is always Cost.People, in every state including 0 on a quiet day, so the
+           unit never changes under the reader. Money, when revenue is instrumented, prints in the
+           support line and never displaces the figure — a unit that moves is a unit nobody
+           trusts. The headline renders verbatim: no string surgery, so it cannot drift from what
+           the CLI and the share page say. -->
+      <div class="slab">
+        <div class="slab-eyebrow">needs you &middot; {{.NeedsYouCount}} of {{len .Findings}} &middot; computed by /v1/brief</div>
+        <div class="slab-grid">
+          <div class="slab-figure">
+            <div class="slab-read">{{$lead.Cost.Readout}}</div>
+            <div class="slab-subj">people affected{{if $lead.Event}} &middot; {{$lead.Event}}{{end}}{{if $lead.Day}} &middot; {{$lead.Day}}{{end}}</div>
+          </div>
+          <div class="slab-body">
+            <div class="slab-claim">{{$lead.Headline}}</div>
+            <div class="slab-support">
+              {{if $lead.Attributed}}{{$lead.Cause}}{{else}}<i>cause not narrowed</i> &mdash; no deploy recorded near the day, and no single segment carrying it.{{end}}
+              {{if $lead.NextMove}}<span class="slab-next">&rarr; {{$lead.NextMove}}</span>{{end}}
+              {{if $lead.Cost.HasMoney}}<span class="slab-money">{{$lead.Cost.Size}}</span>{{end}}
+            </div>
+          </div>
+          <div class="slab-act">
+            <a class="slab-go" data-q="{{$lead.Headline}}" role="button" tabindex="0">show me &rarr;</a>
+            {{if $lead.Evidence}}<a class="slab-ghost" href="{{$lead.Evidence}}" target="_blank" rel="noopener">check the rows &rarr;</a>{{end}}
+          </div>
+        </div>
+      </div>
+      {{if gt (len .Findings) 1}}<div class="pmhead">{{sub (len .Findings) 1}} more finding{{if ne (len .Findings) 2}}s{{end}}</div>{{end}}
+      {{range slice .Findings 1 (len .Findings)}}
       <div class="pmrow{{if .NeedsYou}} you{{end}}">
         <div class="pmtop"><span class="pmh">{{.Headline}}</span>{{with .Cost.Size}}<span class="pmcost">{{.}}</span>{{end}}</div>
         {{if .Attributed}}<div class="pmwhy">{{.Cause}}</div>{{else}}<div class="pmwhy pmun">cause not narrowed</div>{{end}}
@@ -2799,7 +2869,10 @@
     // anchors, so they take no focus of their own: the markup carries role="button"
     // tabindex="0" and Enter/Space has to be wired by hand, or the dashboard's primary
     // call to action is reachable with a mouse and nothing else.
-    var ASKABLE='.chip[data-q],.vwhy[data-q],.co-go[data-q]';
+    // .slab-go is in this list or the slab's primary action does nothing — a button that looks
+    // like the most important control on the page and silently ignores a click is worse than no
+    // button. This codebase has shipped that exact shape before (31 dead rail links).
+    var ASKABLE='.chip[data-q],.vwhy[data-q],.co-go[data-q],.slab-go[data-q]';
     function saAsk(c){
       q.value=c.getAttribute('data-q');f.dispatchEvent(new Event('submit',{cancelable:true}));
       q.scrollIntoView({behavior:'smooth',block:'center'});
