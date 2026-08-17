@@ -249,7 +249,9 @@
      (no affordance that more exists), the exact "cut off in a box" complaint */
   .askchips{display:flex;flex-wrap:wrap;justify-content:flex-start;align-items:center;gap:8px;padding:12px 0 0}
   .chiplbl{font-family:var(--mono);font-size:var(--fs-lbl);text-transform:uppercase;letter-spacing:.06em;color:var(--mut2)}
-  .chip{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);border:1px solid var(--line);padding:4px 11px;border-radius:99px;cursor:pointer;transition:.15s;background:transparent}
+  /* .chip lives in the control kit further down (one height token, one pill radius). The
+     definition that used to sit here was superseded by it property-for-property and only survived
+     because nothing checked; a duplicate top-level font declaration is now a test failure. */
   .chip:hover{color:var(--accent);border-color:var(--accent)}
 
   /* zone 2 — the answer slot: one card, zero height when unused */
@@ -992,9 +994,13 @@
     text-transform:uppercase;letter-spacing:var(--track-lbl);color:var(--mut2);font-weight:500}
   .gtile .v,.skv,.gnum{font:600 var(--fs-num)/var(--lh-num) var(--mono);letter-spacing:var(--track-num)}
   kbd{border-color:var(--line2);border-radius:3px}
-  /* the hero input outranks the kit: it is the page's one 46px control */
+  /* The hero input outranks the kit: it is the page's one 46px control. Metrics only — the FONT
+     is declared once, up at the .ask input rule, and was declared here too, later, in mono. The
+     later declaration silently won, so setting sans up there changed nothing and the placeholder
+     stayed clipped. Third time today that two rules answered one question and the loser was the
+     one I had just edited. */
   .ask input{height:var(--ask-h);padding:0 84px 0 44px;background:var(--s1);border:1px solid var(--line2);
-    border-radius:var(--r-card);font:400 var(--fs-lead)/var(--lh-lead) var(--mono);color:var(--fg)}
+    border-radius:var(--r-card);color:var(--fg)}
 
   /* ═══ ASKING AND TELLING. the page never opens a browser dialog: a question
      ("name this") is a row that appears next to the control that asked it; an

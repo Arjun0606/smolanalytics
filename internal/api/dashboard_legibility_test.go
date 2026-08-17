@@ -234,9 +234,47 @@ func TestTileGridsCannotOrphanTheLastRow(t *testing.T) {
 	}
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
+// ONE QUESTION, ONE RULE — for the properties that decide legibility.
+//
+// Three times in one day a font declaration I had just edited did nothing, because a SECOND rule
+// for the same selector, later in the file, redeclared the same property: .pmh set font-size
+// twice inside one block, .ask input was declared twice ~750 lines apart, and the site-wide
+// anchor reset sat unlayered where it beat every utility. Each time the source read correctly and
+// the rendered page disagreed.
+//
+// This does not forbid multiple rules per selector — a media query legitimately overrides. It
+// forbids the same selector declaring `font` or `font-size` more than once at the SAME nesting
+// depth, which is never intentional and always invisible.
+func TestNoSelectorDeclaresItsFontTwiceAtTopLevel(t *testing.T) {
+	src, err := os.ReadFile("dashboard.tmpl.html")
+	if err != nil {
+		t.Fatal(err)
 	}
-	return b
+	// INDENTATION IS THE DISCRIMINATOR, not position in the file.
+	//
+	// My first version truncated at the first "@media" — which appears at line 125, ~870 lines
+	// above the duplicate it was written to catch. It passed when I reintroduced the exact bug,
+	// which makes it worse than no guard: a green test that proves nothing.
+	//
+	// Top-level rules in this file are indented two spaces; anything inside a media query is
+	// indented four or more. So match exactly two, anywhere in the file. Verified by putting the
+	// duplicate back and watching this fail.
+	rule := regexp.MustCompile(`(?m)^  (\.[A-Za-z0-9_.\- >]+?)\{([^}]*)\}`)
+	seen := map[string][]string{}
+	for _, m := range rule.FindAllStringSubmatch(string(src), -1) {
+		sel, body := strings.TrimSpace(m[1]), m[2]
+		if strings.Count(body, "font-size:") > 1 || strings.Count(body, "font:") > 1 {
+			t.Errorf("%s declares its font twice inside ONE block; only the last applies", sel)
+		}
+		if strings.Contains(body, "font:") || strings.Contains(body, "font-size:") {
+			seen[sel] = append(seen[sel], strings.TrimSpace(body[:min(48, len(body))]))
+		}
+	}
+	for sel, bodies := range seen {
+		if len(bodies) > 1 {
+			t.Errorf("%s sets its font in %d separate top-level rules — whichever is later wins, "+
+				"so editing the other silently does nothing:\n    %s", sel, len(bodies),
+				strings.Join(bodies, "\n    "))
+		}
+	}
 }
