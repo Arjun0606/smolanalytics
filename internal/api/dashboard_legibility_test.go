@@ -259,7 +259,7 @@ func TestNoSelectorDeclaresItsFontTwiceAtTopLevel(t *testing.T) {
 	// Top-level rules in this file are indented two spaces; anything inside a media query is
 	// indented four or more. So match exactly two, anywhere in the file. Verified by putting the
 	// duplicate back and watching this fail.
-	rule := regexp.MustCompile(`(?m)^  (\.[A-Za-z0-9_.\- >]+?)\{([^}]*)\}`)
+	rule := regexp.MustCompile(`(?m)^  ([.#][A-Za-z0-9_.#\- >]+?)\{([^}]*)\}`)
 	seen := map[string][]string{}
 	for _, m := range rule.FindAllStringSubmatch(string(src), -1) {
 		sel, body := strings.TrimSpace(m[1]), m[2]
