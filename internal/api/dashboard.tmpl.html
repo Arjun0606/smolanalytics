@@ -808,7 +808,11 @@
     #sa-top{display:flex;flex-direction:row;position:fixed;top:0;left:var(--nav-w);right:0;height:var(--top-h);z-index:45;
       align-items:center;gap:12px;padding:0 clamp(20px,2.2vw,40px);
       background:var(--bg);border-bottom:1px solid var(--line)}
-    #sa-top .ask{flex:1;max-width:660px;margin:0}
+    /* flex-BASIS 660, not flex:1. The top bar also contains a .spacer at flex:1, so with the ask
+       bar also growing they split the free space equally — 392px each at 1440 — and the
+       placeholder had 262px of room for 279px of text. The spacer's whole job is to absorb slack;
+       the ask bar's is to be 660px. It shrinks below that only when the viewport makes it. */
+    #sa-top .ask{flex:0 1 660px;max-width:660px;min-width:0;margin:0}
     .sa-main{margin-left:var(--nav-w);padding:calc(var(--top-h) + 20px) clamp(20px,2.2vw,40px) 120px;max-width:none}
     .sa-inner{max-width:1560px}
     /* the deck index becomes the rail's spine: one report per line, grouped, always visible */
