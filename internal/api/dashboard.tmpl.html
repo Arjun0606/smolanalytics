@@ -1879,7 +1879,7 @@
 
     {{if .HasLifecycle}}
     <div class="pane wide" id="pane-lifecycle" style="order:520" data-stratum="return">
-      <h3>lifecycle <span class="sub">· who's active each day: new vs loyal</span></h3>
+      <h3>lifecycle <span class="sub">· who's active each day: new vs loyal · a fixed 14-day window, not the range selected above</span></h3>
       <div style="display:flex;gap:14px;flex-wrap:wrap;font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);margin:2px 0 10px">
         <span><i style="display:inline-block;width:8px;height:8px;background:var(--accent);vertical-align:middle;margin-right:5px"></i>new</span>
         <span><i style="display:inline-block;width:8px;height:8px;background:var(--ok);vertical-align:middle;margin-right:5px"></i>returning</span>
@@ -1900,7 +1900,7 @@
 
     {{with .Stickiness}}
     <div class="pane" id="pane-stickiness" style="order:530" data-stratum="return">
-      <h3>stickiness <span class="sub">· do they come back?</span></h3>
+      <h3>stickiness <span class="sub">· do they come back? · DAU, WAU and MAU are fixed 1, 7 and 30-day windows by definition, so the range above does not apply</span></h3>
       <div style="display:flex;align-items:baseline;gap:10px;margin:10px 0 2px">
         <span style="font-size:var(--fs-num);line-height:1.14;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums;letter-spacing:-.02em">{{.Ratio}}%</span>
         <span style="font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut)">DAU/MAU</span>
@@ -2261,7 +2261,7 @@
     </div>
 
     <div class="pane" id="pane-goals" style="order:230" data-stratum="convert">
-      <h3>goals</h3>
+      <h3>goals<span class="sub">· conversions against the goals you defined · a fixed 30-day window, not the range selected above · computed by /v1/goals</span></h3>
       {{if .Goals}}
       <div class="goalrow">
         {{range .Goals}}<div class="goalcard"><div class="gname">{{.Name}}</div><div class="gnum">{{.Conversions}} <span class="gpct">{{.Pct}}%</span></div>{{if .TopChannel}}<div class="gchan">top channel: {{.TopChannel}}</div>{{end}}</div>{{end}}
@@ -2403,7 +2403,7 @@
          at a fifty-seat customer is 100% account conversion and 2% user conversion. ═════ -->
     <div class="pane wide" id="pane-accounts" style="order:240" data-stratum="convert">
       <h3>accounts
-        <span class="sub">· your customers as companies, not seats — and the funnel + retention recounted per account · computed by /v1/groups</span></h3>
+        <span class="sub">· your customers as companies, not seats — and the funnel + retention recounted per account · across all recorded history, not the range selected above · computed by /v1/groups</span></h3>
       <div id="acctOut"><div class="exsummary">…</div></div>
     </div>
 
@@ -2413,7 +2413,7 @@
          profile table for the events to disagree with. ═══════════════════════════════════ -->
     <div class="pane wide" id="pane-people" style="order:460" data-stratum="behave">
       <h3>people
-        <span class="sub">· last-known traits, derived from your events at query time — nothing stored, so a profile can never disagree with the log it came from · computed by /v1/people</span></h3>
+        <span class="sub">· last-known traits, derived from your events at query time — nothing stored, so a profile can never disagree with the log it came from · across all recorded history, not the range selected above · computed by /v1/people</span></h3>
       <div id="pplOut"><div class="exsummary">…</div></div>
     </div>
 
@@ -2479,7 +2479,7 @@
          agent, and invisible to anyone who just opened the dashboard. ═══════════════════ -->
     <div class="pane wide" id="pane-sql" style="order:830" data-stratum="raw">
       <h3>sql
-        <span class="sub">· read-only SELECT straight over your raw events — for the question no report covers · same engine and same production scope as every card above, so it can never disagree with them · computed by /v1/sql</span></h3>
+        <span class="sub">· read-only SELECT straight over your raw events — for the question no report covers · same engine and same production scope as every card above · it does NOT apply the range selected above: a console is for the question a report cannot answer, so it reads all recorded history unless your own WHERE says otherwise · computed by /v1/sql</span></h3>
       <div class="exrow" style="margin-bottom:10px">
         <input id="sqlQ" autocomplete="off" spellcheck="false" aria-label="SQL query"
                placeholder="SELECT prop.country AS country, count(*) AS n FROM events GROUP BY country ORDER BY n DESC LIMIT 10">

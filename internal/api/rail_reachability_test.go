@@ -248,3 +248,51 @@ func TestTheSlabPrimaryActionIsWired(t *testing.T) {
 		t.Error("the slab formats Cost.People itself; use Cost.Readout so the figure has one definition")
 	}
 }
+
+// A PANE THAT IGNORES THE RANGE CONTROL MUST SAY SO.
+//
+// The toolbar shows a range and the reader reasonably assumes every pane honours it. Several do
+// not, and said nothing: goals is hardcoded to 30 days (dashboard.go:2479), lifecycle to 14
+// (dashboard.go:1320), and accounts / people / retention read `evs`, which is
+// store.Scan(zero, zero) filtered by chips only — all recorded history.
+//
+// Silence means "the toolbar applies", so silence from a pane that ignores it is a false
+// statement made by omission, on a product whose entire pitch is that its numbers are traceable.
+//
+// The worst was sql, whose subtitle promised "the same production scope as every card above, so
+// it can never disagree with them" while applying no window at all — in the one pane a sceptic
+// would use to check the others.
+func TestPanesThatIgnoreTheRangeSaySo(t *testing.T) {
+	src, err := os.ReadFile("dashboard.tmpl.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(src)
+	// pane id -> a phrase its subtitle must contain, because its window is not the toolbar's.
+	must := map[string]string{
+		"pane-goals":      "not the range selected above",
+		"pane-lifecycle":  "not the range selected above",
+		"pane-accounts":   "not the range selected above",
+		"pane-people":     "not the range selected above",
+		"pane-stickiness": "does not apply",
+		"pane-sql":        "does NOT apply the range",
+	}
+	for id, phrase := range must {
+		i := strings.Index(s, `id="`+id+`"`)
+		if i < 0 {
+			t.Errorf("%s no longer exists; this guard is watching nothing", id)
+			continue
+		}
+		// the pane's own header, up to the end of its <h3>
+		end := strings.Index(s[i:], "</h3>")
+		if end < 0 || !strings.Contains(s[i:i+end], phrase) {
+			t.Errorf("%s answers over a different window than the toolbar shows and does not say so "+
+				"(expected its subtitle to contain %q)", id, phrase)
+		}
+	}
+	// And the sentence that was actively false must not come back.
+	if strings.Contains(s, "so it can never disagree with them") {
+		t.Error("the sql pane again claims it can never disagree with the cards above, while " +
+			"applying no time window at all")
+	}
+}
