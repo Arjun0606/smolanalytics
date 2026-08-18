@@ -1068,6 +1068,20 @@
   .agmeta{font-size:var(--fs-body);line-height:1.65;color:var(--mut);max-width:80ch}
   /* The brief. Deliberately plainer than the verdict callout beside it: this is meant to read
      like a colleague's note, and a heavy card would make it look like another widget. */
+  /* ═══ THE EMPTY PANE ══════════════════════════════════════════════════════════════════════
+     Five panes were wrapped in a data guard with no else branch, so on an instance with no
+     traffic they DELETED THEMSELVES — the card vanished from the grid entirely. Every new
+     instance starts empty, so the first dashboard every customer ever sees was a grid with holes
+     in it, and there is no way to tell a hole from a feature that does not exist.
+     A pane that is merely empty must LOOK empty, not absent.
+     Deliberately not a generic "no data yet": each one says what specifically would fill it,
+     because the useful half of an empty state is the instruction, not the apology. ═══ */
+  .paneempty{opacity:.75}
+  .paneempty .pe{font-size:var(--fs-body);line-height:var(--lh-body);color:var(--mut);
+    max-width:56ch;margin:2px 0 12px}
+  .paneempty .pehint{font-family:var(--mono);font-size:var(--fs-lbl);line-height:1.65;
+    color:var(--mut2);border-top:1px solid var(--line);padding-top:9px}
+  .paneempty .pehint code{color:var(--fg)}
   /* ═══ THE SLAB ═══════════════════════════════════════════════════════════════════════════
      One conclusion, on the brand's own ground, figure first. Byte-identical in light and dark:
      #FFC900 with #17140D on it is 11.9:1 either way, so this is the one component that does not
@@ -1847,12 +1861,24 @@
         {{if .ConvByNone}}<div class="sc-thin">{{.ConvByNone}} people carry no {{.ConvByTitle}} at all and are not counted above &mdash; set it on the event, or these rows describe a minority of your users</div>{{end}}
       </div>
     </div>
+    {{else}}
+    <div class="pane paneempty" id="pane-conversion" style="order:220" data-stratum="convert">
+      <h3>conversion by property</h3>
+      <div class="pe">no property on your events has enough distinct values yet to split a conversion rate by.</div>
+      <div class="pehint">send a property like <code>plan</code> or <code>source</code> on the events in your funnel and this splits by it automatically.</div>
+    </div>
     {{end}}
 
     {{if .HasSource}}
     <div class="pane" id="pane-sources" style="order:310" data-stratum="acquire">
       <h3>{{.SourceTitle}}</h3>
       {{range .BySource}}<div class="seg"{{if .FilterProp}} data-fp="{{.FilterProp}}" data-fv="{{.FilterVal}}" title="click to filter every zone to this channel"{{end}}><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}
+    </div>
+    {{else}}
+    <div class="pane paneempty" id="pane-sources" style="order:310" data-stratum="acquire">
+      <h3>where they came from</h3>
+      <div class="pe">nothing has arrived with a referrer or a utm tag yet, so there is no channel to break down.</div>
+      <div class="pehint">channels appear on their own once someone reaches you from a link. nothing to configure.</div>
     </div>
     {{end}}
 
@@ -1896,6 +1922,12 @@
         <span style="width:92px;font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2);flex:none;text-align:right">{{if .Dormant}}-{{.Dormant}} dormant{{else}}none lost{{end}}</span>
       </div>{{end}}
     </div>
+    {{else}}
+    <div class="pane wide paneempty" id="pane-lifecycle" style="order:520" data-stratum="return">
+      <h3>lifecycle</h3>
+      <div class="pe">not enough days of history yet to split new from returning.</div>
+      <div class="pehint">this reads a fixed 14-day window, so it fills in about two weeks.</div>
+    </div>
     {{end}}
 
     {{with .Stickiness}}
@@ -1912,12 +1944,24 @@
         <span>MAU <b style="color:var(--accent)">{{comma .MAU}}</b></span>
       </div>
     </div>
+    {{else}}
+    <div class="pane paneempty" id="pane-stickiness" style="order:530" data-stratum="return">
+      <h3>stickiness</h3>
+      <div class="pe">not enough distinct days of activity yet to compute DAU over MAU.</div>
+      <div class="pehint">DAU, WAU and MAU are fixed 1, 7 and 30-day windows, so this needs about a month before the ratio means anything.</div>
+    </div>
     {{end}}
 
     {{if .HasSearch}}
     <div class="pane" id="pane-search" style="order:350" data-stratum="acquire">
       <h3>google search queries · 28d clicks</h3>
       {{range .SearchRows}}<div class="seg"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
+    </div>
+    {{else}}
+    <div class="pane paneempty" id="pane-search" style="order:350" data-stratum="acquire">
+      <h3>google search queries</h3>
+      <div class="pe">google search console is not connected on this instance.</div>
+      <div class="pehint">run <code>smolanalytics gsc auth</code> once; queries, impressions and positions appear here afterwards.</div>
     </div>
     {{end}}
 

@@ -296,3 +296,90 @@ func TestPanesThatIgnoreTheRangeSaySo(t *testing.T) {
 			"applying no time window at all")
 	}
 }
+
+// NO PANE MAY DELETE ITSELF.
+//
+// Five panes were wrapped in a data guard with no else branch, so on an instance with no traffic
+// the whole card vanished from the grid. Every new instance starts empty, which means the first
+// dashboard every customer ever saw was a grid with holes in it — and a hole is indistinguishable
+// from a feature that does not exist. The populated state is the one we all look at; the empty
+// state is the one every customer sees first.
+//
+// TWO WRONG VERSIONS OF THIS TEST CAME FIRST, and both were wrong in an instructive way.
+// Looking for an {{else}} "near" the pane reported three false positives, because those panes
+// have an else that sits AFTER their closing div. Walking to the first {{end}} reported every
+// pane, because it found the PAGE-level wrapper rather than the pane's own guard.
+//
+// The property that actually distinguishes them: a pane's own guard wraps EXACTLY ONE pane.
+// Anything wrapping several is a section or page wrapper, and its else is not this pane's
+// business.
+func TestNoPaneDeletesItselfWhenEmpty(t *testing.T) {
+	src, err := os.ReadFile("dashboard.tmpl.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(src)
+	tok := regexp.MustCompile(`\{\{-?\s*(range|if|with|block|define|end|else)\b`)
+	pane := regexp.MustCompile(`<div class="pane[^"]*" id="(pane-[a-z0-9-]+)"`)
+
+	for _, pm := range pane.FindAllStringSubmatchIndex(s, -1) {
+		id, divPos := s[pm[2]:pm[3]], pm[0]
+
+		// innermost unclosed control token before this pane
+		type open struct{ pos int }
+		var stack []open
+		for _, m := range tok.FindAllStringSubmatchIndex(s[:divPos], -1) {
+			switch s[m[2]:m[3]] {
+			case "end":
+				if len(stack) > 0 {
+					stack = stack[:len(stack)-1]
+				}
+			case "else":
+			default:
+				stack = append(stack, open{m[0]})
+			}
+		}
+		if len(stack) == 0 {
+			continue
+		}
+		gPos := stack[len(stack)-1].pos
+		close := strings.Index(s[gPos:], "}}")
+		if close < 0 {
+			continue
+		}
+
+		// forward to that guard's matching end, noting a depth-0 else on the way
+		j, d, hasElse, end := gPos+close+2, 0, false, -1
+		for j < len(s) {
+			m := tok.FindStringSubmatchIndex(s[j:])
+			if m == nil {
+				break
+			}
+			kind, at := s[j+m[2]:j+m[3]], j+m[0]
+			if kind == "end" {
+				if d == 0 {
+					end = at
+					break
+				}
+				d--
+			} else if kind == "else" {
+				if d == 0 {
+					hasElse = true
+				}
+			} else {
+				d++
+			}
+			j = at + (m[1] - m[0])
+		}
+		if end < 0 {
+			continue
+		}
+		// A guard wrapping more than one pane is a section wrapper, not this pane's guard.
+		if len(pane.FindAllString(s[gPos:end], -1)) != 1 || hasElse {
+			continue
+		}
+		t.Errorf("%s renders NOTHING when its data guard is false — the card vanishes from the grid, "+
+			"and a hole is indistinguishable from a feature that was never built. Give it an "+
+			"{{else}} carrying a title, one sentence saying what would fill it, and the hint.", id)
+	}
+}
