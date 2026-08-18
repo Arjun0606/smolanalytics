@@ -517,3 +517,48 @@ func TestEveryMovementCarriesAShortLabel(t *testing.T) {
 		}
 	}
 }
+
+// EVERY SURFACE ATTRIBUTES, NOT JUST THE ONE WITH A DEPLOY STORE.
+//
+// Attribute() was reached only from WithContext, which only the dashboard and the share page
+// call. So the CLI brief, GET /v1/brief and the cloud daily email — every surface a person reads
+// WITHOUT opening a browser — printed the raw "cause not yet attributed" placeholder on every
+// finding, forever, while the dashboard said "62% of the loss is os=Android" about the same event
+// on the same instance. Measured on the live demo before the fix.
+//
+// The deploy half needs a store. The SEGMENT half needs only the events already in hand, so
+// there was never a reason to withhold it — it was a call site nobody added.
+func TestRunAttributesTheSegmentWithoutADeployStore(t *testing.T) {
+	now := time.Now().UTC()
+
+	// segSeed concentrates the whole drop in one browser, which is exactly what worstSegment
+	// exists to find.
+	inv := Run(segSeed(t, now, 1.0), Opts{Now: now})
+	if len(inv.Findings) == 0 {
+		t.Fatal("no finding on a clear drop")
+	}
+	c := inv.Findings[0].Cause
+	if strings.Contains(c, "cause not yet attributed") {
+		t.Errorf("Run() left the raw placeholder on a finding whose loss is entirely one browser: %q\n"+
+			"  every unprompted surface reads this, and they all said nothing while the dashboard "+
+			"named the segment", c)
+	}
+	if !strings.Contains(c, "Safari") {
+		t.Errorf("Run() did not name the browser carrying the whole drop: %q", c)
+	}
+
+	// And the honest absence still reads as an absence, not as a placeholder: an evenly-spread
+	// loss must say what it could not find, in the words the renderers key on.
+	even := Run(segSeed(t, now, 0.5), Opts{Now: now})
+	if len(even.Findings) == 0 {
+		t.Fatal("no finding on the even fixture")
+	}
+	if ec := even.Findings[0].Cause; strings.Contains(ec, "cause not yet attributed") {
+		t.Errorf("an unattributable finding still carries the placeholder rather than the "+
+			"renderable fallback: %q", ec)
+	}
+	if !even.AnyUnattributed() {
+		t.Error("AnyUnattributed is false on an evenly-spread loss, so no surface would print " +
+			"the line explaining how to make attribution possible")
+	}
+}

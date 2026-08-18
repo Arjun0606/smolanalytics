@@ -162,6 +162,23 @@ func Run(evs []event.Event, opts Opts) Investigation {
 		}
 	}
 
+	// ATTRIBUTE HERE, NOT ONLY IN WithContext.
+	//
+	// Attribute() was reached only from WithContext, which only the dashboard and the share page
+	// call. So the CLI brief, GET /v1/brief and the cloud daily email — every unprompted surface,
+	// the ones a person reads without opening a browser — printed the raw placeholder "cause not
+	// yet attributed" on every finding for as long as they have existed, while the dashboard said
+	// "62% of the loss is os=Android" about the same event on the same instance.
+	//
+	// The deploy half genuinely needs a store and is passed nil here; the SEGMENT half needs
+	// nothing but the events already in hand, works on every instance, and is frequently the more
+	// useful of the two — "it is only mobile Safari" turns an unbounded investigation into a
+	// twenty-minute one. Withholding it from the surfaces people actually read was not a design
+	// decision, it was a call site nobody added.
+	//
+	// WithContext re-runs this with real deploys, which overwrites rather than duplicates.
+	Attribute(evs, inv.Findings, nil, o)
+
 	// The quarter-level reading belongs on EVERY caller, not just the one with a deploy store.
 	// Wiring it into WithContext alone meant brief.Build — the CLI, the email and the dashboard —
 	// silently rendered no movements at all, which is the same "two paths, one question" split
