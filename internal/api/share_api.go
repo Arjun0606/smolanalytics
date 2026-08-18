@@ -93,7 +93,7 @@ var shareTmpl = template.Must(template.New("share").Parse(`<!doctype html>
 /* the bar's track stops before the value column — spanning the whole row put the 2px
    end-marker inside the digits on any bar over ~90%. Same fix as the dashboard's .segtrack. */
 .track{position:absolute;inset:0 var(--num-col) 0 0;overflow:hidden}
-.bar{position:absolute;inset:0 auto 0 0;background:rgba(245,166,35,.16);border-right:2px solid rgba(245,166,35,.5)}
+.bar{position:absolute;inset:0 auto 0 0;background:rgba(255,201,0,.18);border-right:2px solid rgba(255,201,0,.55)}
 .meta{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 10px;font-size:12px;gap:10px}
 .meta>span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .meta .n{font-family:var(--mono);color:var(--mut);flex:none;min-width:calc(var(--num-col) - 20px);text-align:right}

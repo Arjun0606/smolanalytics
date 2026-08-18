@@ -261,15 +261,30 @@ func TestNoSelectorDeclaresItsFontTwiceAtTopLevel(t *testing.T) {
 	// Top-level rules in this file are indented two spaces; anything inside a media query is
 	// indented four or more. So match exactly two, anywhere in the file. Verified by putting the
 	// duplicate back and watching this fail.
-	rule := regexp.MustCompile(`(?m)^  ([.#][A-Za-z0-9_.#\- >]+?)\{([^}]*)\}`)
+	// The comma is the point. Without it a grouped selector never matched at all, so the
+	// split-the-group logic below had nothing to split and the guard was inert — it passed with
+	// the .pane h3 duplicate put back deliberately. Second time one of these was green and
+	// useless; both were found the same way, by reintroducing the bug on purpose.
+	rule := regexp.MustCompile(`(?m)^  ([.#][A-Za-z0-9_.#,\- >]+?)\{([^}]*)\}`)
 	seen := map[string][]string{}
 	for _, m := range rule.FindAllStringSubmatch(string(src), -1) {
-		sel, body := strings.TrimSpace(m[1]), m[2]
-		if strings.Count(body, "font-size:") > 1 || strings.Count(body, "font:") > 1 {
-			t.Errorf("%s declares its font twice inside ONE block; only the last applies", sel)
-		}
-		if strings.Contains(body, "font:") || strings.Contains(body, "font-size:") {
-			seen[sel] = append(seen[sel], strings.TrimSpace(body[:min(48, len(body))]))
+		group, body := strings.TrimSpace(m[1]), m[2]
+		// SPLIT THE GROUP. This compared whole selector LISTS, so `.pane h3` and
+		// `.zonelbl,.chiplbl,.gtile .l,.dcard h3,.pane h3` were two different keys and the
+		// duplicate between them was invisible — which is exactly how all 33 pane titles came to
+		// render as 13px uppercase mono labels while a correct 19px sans rule sat 450 lines above,
+		// losing on source order. A selector is a selector wherever it appears in a list.
+		for _, sel := range strings.Split(group, ",") {
+			sel = strings.TrimSpace(sel)
+			if sel == "" {
+				continue
+			}
+			if strings.Count(body, "font-size:") > 1 || strings.Count(body, "font:") > 1 {
+				t.Errorf("%s declares its font twice inside ONE block; only the last applies", group)
+			}
+			if strings.Contains(body, "font:") || strings.Contains(body, "font-size:") {
+				seen[sel] = append(seen[sel], strings.TrimSpace(body[:min(48, len(body))]))
+			}
 		}
 	}
 	for sel, bodies := range seen {

@@ -255,7 +255,7 @@
   /* chips WRAP — a hidden-scrollbar side-scroll reads as content amputated at the edge
      (no affordance that more exists), the exact "cut off in a box" complaint */
   .askchips{display:flex;flex-wrap:wrap;justify-content:flex-start;align-items:center;gap:8px;padding:12px 0 0}
-  .chiplbl{font-family:var(--mono);font-size:var(--fs-lbl);text-transform:uppercase;letter-spacing:.06em;color:var(--mut2)}
+  .chiplbl{text-transform:uppercase;letter-spacing:.06em;color:var(--mut2)}
   /* .chip lives in the control kit further down (one height token, one pill radius). The
      definition that used to sit here was superseded by it property-for-property and only survived
      because nothing checked; a duplicate top-level font declaration is now a test failure. */
@@ -273,7 +273,7 @@
   .amethod{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2)}
   .amethod summary{cursor:pointer;list-style:none;display:inline}
   .amethod summary:hover{color:var(--accent)}
-  .abtn{margin-left:auto;background:transparent;border:1px solid var(--line);color:var(--mut);font-family:var(--mono);font-size:var(--fs-lbl);padding:3px 10px;border-radius:4px;cursor:pointer}
+  .abtn{margin-left:auto;background:transparent;border:1px solid var(--line);color:var(--mut);padding:3px 10px;border-radius:4px;cursor:pointer}
   .abtn:hover{border-color:var(--accent);color:var(--accent)}
   .abtn.pinned{border-color:var(--accent);color:var(--accent)}
 
@@ -438,7 +438,7 @@
   /* separates stacked sections inside one pane; the first heading in a pane keeps its
      own spacing so the card does not open with a stray rule under its title */
   .pane .zonelbl.zsep{border-top:1px solid var(--line);padding-top:20px;margin-top:26px}
-  .zonelbl{font-family:var(--mono);font-size:var(--fs-body);text-transform:uppercase;letter-spacing:.08em;color:var(--sec);margin-bottom:10px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;max-width:100%;font-weight:600}
+  .zonelbl{text-transform:uppercase;letter-spacing:.08em;color:var(--sec);margin-bottom:10px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;max-width:100%;font-weight:600}
   /* dimmer AND smaller than the heading it explains. Same size and colour made the two
      read as one run-on line. */
   .zonelbl .sub{font-family:var(--sans);flex-basis:100%;text-transform:none;letter-spacing:0;color:var(--mut);font-size:var(--fs-lbl);font-weight:400;line-height:1.55;margin-top:4px}
@@ -648,7 +648,7 @@
   .goalrow{display:flex;flex-wrap:wrap;gap:12px}
   .goalcard{border:1px solid var(--line);border-radius:6px;background:var(--s1);padding:12px 16px;min-width:150px}
   .gname{font-size:var(--fs-lbl);color:var(--mut)}
-  .gnum{font-family:var(--mono);font-size:var(--fs-num);font-weight:700;margin-top:2px}
+  .gnum{margin-top:2px}
   .gpct{font-size:var(--fs-lbl);color:var(--accent)}
   .gchan{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2);margin-top:2px}
 
@@ -669,7 +669,7 @@
      A basis makes each input ask for 170px and WRAP (the row already sets flex-wrap)
      while still being allowed to shrink, so nothing overflows. */
   .exrow input{flex:1 1 170px}
-  .exrow button{background:var(--brand);border:var(--bw-ctl) solid var(--edge);color:var(--on-brand);box-shadow:var(--sh-1);font-family:var(--mono);font-size:var(--fs-lbl);font-weight:700;padding:7px 14px;border-radius:5px;cursor:pointer}
+  .exrow button{background:var(--brand);border:var(--bw-ctl) solid var(--edge);color:var(--on-brand);box-shadow:var(--sh-1);font-weight:700;padding:7px 14px;border-radius:5px;cursor:pointer}
   .exrow button.btn2{background:transparent;color:var(--mut);border-color:var(--line)}
   .exrow button.btn2:hover{color:var(--accent);border-color:var(--accent)}
   .exout{margin-top:6px}
@@ -694,7 +694,7 @@
     .stickrow:has(>:nth-child(8):last-child){grid-template-columns:repeat(4,1fr)}
   }
   .sk{border:1px solid var(--line);border-radius:6px;background:var(--s2);padding:14px 20px;text-align:center}
-  .skv{font-family:var(--mono);font-size:var(--fs-num);font-weight:700;line-height:1.2;font-variant-numeric:tabular-nums}
+  .skv{line-height:1.2;font-variant-numeric:tabular-nums}
   .skv.acc{color:var(--accent)}
   .skl{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);text-transform:uppercase;letter-spacing:.06em;margin-top:3px}
   .saved{display:flex;flex-wrap:wrap;gap:8px}
@@ -713,7 +713,7 @@
   .crow .cn{font-weight:600;font-size:var(--fs-body);min-width:120px}
   /* The press is the point: offset collapses to 0 and the button translates INTO where the
      shadow was, so the travel is real rather than a colour change pretending to be one. */
-  .cbtn{display:inline-flex;align-items:center;gap:6px;border:var(--bw-ctl) solid var(--edge);border-radius:var(--r-ctl);background:var(--s2);color:var(--fg);font-family:var(--mono);font-size:var(--fs-lbl);padding:5px 12px;cursor:pointer;text-decoration:none;
+  .cbtn{display:inline-flex;align-items:center;gap:6px;border:var(--bw-ctl) solid var(--edge);border-radius:var(--r-ctl);background:var(--s2);color:var(--fg);padding:5px 12px;cursor:pointer;text-decoration:none;
     box-shadow:var(--sh-1);transition:box-shadow var(--t-fast) var(--ease), transform var(--t-fast) var(--ease)}
   .cbtn:hover{background:var(--s3)}
   .cbtn:active{box-shadow:none;transform:translate(4px,4px)}
@@ -729,7 +729,7 @@
   .obh{font-size:var(--fs-lead);font-weight:600;margin-bottom:10px}
   .obsub{font-size:var(--fs-lbl);color:var(--mut2);margin-bottom:10px}
   pre.code{background:var(--well);border:1px solid var(--line);border-radius:var(--r-ctl);padding:13px;overflow:auto;font-family:var(--mono);font-size:var(--fs-lbl);line-height:1.6;color:var(--fg);margin:0;white-space:pre-wrap;word-break:break-word}
-  .copy{margin-top:8px;background:transparent;border:1px solid var(--line);border-radius:4px;color:var(--mut);font-family:var(--mono);font-size:var(--fs-lbl);padding:5px 12px;cursor:pointer}
+  .copy{margin-top:8px;background:transparent;border:1px solid var(--line);border-radius:4px;color:var(--mut);padding:5px 12px;cursor:pointer}
   .copy:hover{border-color:var(--accent);color:var(--accent)}
   .obstatus{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2);padding-top:14px}
 
@@ -936,8 +936,8 @@
   /* card titles were 11px uppercase --mut2, the same weight as every caption on the page, so
      22 cards read as one undifferentiated field. Full contrast, sentence case, a touch larger:
      the title is now the second level of the hierarchy after the section heading. */
-  .deck .pane h3{margin:0 0 12px;font-size:var(--fs-lbl);line-height:18px;text-transform:none;
-    letter-spacing:0;color:var(--fg)}
+  .deck .pane h3{margin:0 0 12px;font-size:var(--fs-lead);line-height:var(--lh-lead);text-transform:none;
+    letter-spacing:-.01em;color:var(--fg)}
   .deck .pane h3 .sub{color:var(--mut)}
   /* clears the sticky rail, or every jump lands underneath it. --rail-h is MEASURED at
      runtime, never hardcoded: the rail wraps at narrow widths and a stale constant would
@@ -1017,7 +1017,13 @@
     border-radius:var(--r-pill);background:transparent;color:var(--mut);font-family:var(--mono);font-weight:400;font-size:var(--fs-lbl);line-height:1;cursor:pointer;
     transition:color var(--t-base) var(--ease),border-color var(--t-base) var(--ease);white-space:nowrap}
   .chip:hover{color:var(--accent);border-color:var(--accent)}
-  .zonelbl,.chiplbl,.gtile .l,.dcard h3,.pane h3{font-family:var(--mono);font-size:var(--fs-lbl);line-height:var(--lh-lbl);
+  /* .pane h3 WAS IN THIS GROUP, and this group is the label kit: mono, 13px, uppercase, 500.
+     It is declared after the real .pane h3 rule and has the same specificity, so it won, and
+     every one of the 33 pane titles rendered as a tiny uppercase caption with the same weight as
+     the sentence beneath it. Measured on the live dashboard before this change:
+     ui-monospace / 13px / 500 on every title on the page. That is most of why the dashboard read
+     as flat — there was no title rung at all, only labels and body. */
+  .zonelbl,.chiplbl,.gtile .l,.dcard h3{font-family:var(--mono);font-size:var(--fs-lbl);line-height:var(--lh-lbl);
     text-transform:uppercase;letter-spacing:var(--track-lbl);color:var(--mut2);font-weight:500}
   .gtile .v,.skv,.gnum{font:600 var(--fs-num)/var(--lh-num) var(--mono);letter-spacing:var(--track-num)}
   kbd{border-color:var(--line2);border-radius:3px}

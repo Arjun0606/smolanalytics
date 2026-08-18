@@ -1277,7 +1277,17 @@ func retentionGrid(rr retention.Result, now time.Time) (headers []string, rows [
 			a := 0.08 + 0.44*frac
 			row.Cells = append(row.Cells, retCell{
 				Label: fmt.Sprintf("%d%%", int(math.Round(frac*100))),
-				Style: template.CSS(fmt.Sprintf("background:rgba(245,166,35,%.2f);color:#F0ECDF", a)),
+				// BOTH VALUES WERE WRONG. The text was hardcoded #F0ECDF — cream — so in light mode
+				// every cell rendered cream on a near-cream wash: measured 1.02:1 to 1.26:1 across
+				// the whole alpha range, i.e. a heatmap whose numbers cannot be read at all. And
+				// the fill was rgba(245,166,35), the pre-rebrand amber, which no longer exists
+				// anywhere in the token file.
+				//
+				// --heat-fg has been defined in both themes the whole time (#F0ECDF dark,
+				// #17140D light) and nothing used it. Ink on brand-over-cream measures ~15:1 at
+				// the lightest cell and ~12:1 at the heaviest; cream on brand-over-ink is ~12:1
+				// and ~4.6:1. Both themes pass at every step.
+				Style: template.CSS(fmt.Sprintf("background:rgba(255,201,0,%.2f);color:var(--heat-fg)", a)),
 			})
 		}
 		rows = append(rows, row)
