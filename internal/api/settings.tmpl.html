@@ -63,6 +63,18 @@
   .inprompt button.ipx:hover,.inprompt button.ipx:focus-visible{border-color:var(--accent);color:var(--accent)}
   .keyrow .x[tabindex]:focus{outline:none;color:var(--warn)}
   @media(max-width:720px){.layout{grid-template-columns:1fr}nav.side{flex-direction:row;flex-wrap:wrap;position:static}}
+  /* THE LIGHT THEME. This block spent twelve days inside the script element below, where it was a
+     JavaScript syntax error — so the ENTIRE 14KB script never parsed and every control on this
+     page was dead: creating an API key, adding or testing a webhook, creating an alert, changing
+     retention, signing out everywhere, and every confirm row. The page rendered perfectly and
+     did nothing.
+     Nobody caught it because the failure is silent in exactly the two places nobody looks: the
+     browser console of a settings page, and a template that no test parsed. */
+  @media (prefers-color-scheme:light){ :root{
+    --bg:#F7F4EA;--surface:#FFFDF6;--surface2:#FBF8ED;--line:#E0D9C6;--fg:#17140D;--mut:#5C5443;--mut2:#6E6653;
+    --brand:#FFC900;--on-brand:#17140D;--accent:#8A5D00;--warn:#C0271C;--ok:#14713F;
+    --edge:#17140D;--sh-ink:#17140D;
+  }}
 </style>
 </head>
 <body>
@@ -316,11 +328,6 @@
     if(o.node&&o.node.parentNode)o.node.parentNode.removeChild(o.node);
     if(o.back&&o.back.focus)o.back.focus();
   }
-  @media (prefers-color-scheme:light){ :root{
-    --bg:#F7F4EA;--surface:#FFFDF6;--surface2:#FBF8ED;--line:#E0D9C6;--fg:#17140D;--mut:#5C5443;--mut2:#6E6653;
-    --brand:#FFC900;--on-brand:#17140D;--accent:#8A5D00;--warn:#C0271C;--ok:#14713F;
-    --edge:#17140D;--sh-ink:#17140D;
-  }}
   // anchor: the element the row sits under. trigger: the control that asked, so
   // focus can go home. question: what is destroyed, stated as irreversible.
   // done() runs only on confirm.

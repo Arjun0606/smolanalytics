@@ -3,6 +3,8 @@ package api
 import (
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -277,4 +279,106 @@ func TestNoSelectorDeclaresItsFontTwiceAtTopLevel(t *testing.T) {
 				strings.Join(bodies, "\n    "))
 		}
 	}
+}
+
+// EVERY SERVED TEMPLATE'S JAVASCRIPT MUST PARSE.
+//
+// A CSS @media block sat inside settings.tmpl.html's script element for twelve days. That is a
+// JavaScript syntax error, so the ENTIRE 14KB script never parsed and every control on the
+// settings page was dead: creating an API key, adding or testing a webhook, creating an alert,
+// changing retention, signing out everywhere, and every confirm row. The page rendered perfectly
+// and did nothing.
+//
+// It survived because the failure is silent in exactly the two places nobody looks — the console
+// of a settings page, and a template no test had ever parsed. Rendering the page does not catch
+// it either; the markup is fine.
+//
+// Skipped when node is unavailable rather than failing, so the suite still runs in a bare
+// container; CI has node.
+func TestEveryTemplateScriptParses(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not on PATH; this guard needs a JS parser")
+	}
+	// Non-greedy, and anchored on the closing tag, so one template with several scripts is
+	// checked block by block.
+	script := regexp.MustCompile(`(?s)<script[^>]*>(.*?)</script>`)
+	for _, f := range []string{"login.tmpl.html", "settings.tmpl.html", "dashboard.tmpl.html"} {
+		src, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatalf("read %s: %v", f, err)
+		}
+		blocks := script.FindAllStringSubmatch(string(src), -1)
+		if len(blocks) == 0 {
+			continue
+		}
+		for i, b := range blocks {
+			body := b[1]
+			body = neutraliseTemplate(body)
+			tmp := filepath.Join(t.TempDir(), "block.js")
+			if err := os.WriteFile(tmp, []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			out, err := exec.Command(node, "--check", tmp).CombinedOutput()
+			if err != nil {
+				t.Errorf("%s: script block %d does not parse — every control it wires is dead:\n%s",
+					f, i, out)
+			}
+		}
+	}
+}
+
+// neutraliseTemplate turns a Go template's JS block into plain JavaScript for parsing.
+//
+// A REGEX CANNOT DO THIS, which cost me three attempts. Actions nest —
+// `{{range .F}}{{if $i}},{{end}}"{{.X}}"{{end}}` — so a non-greedy match for range..end stops at
+// the INNER end and leaves `"0"0`, a syntax error invented by the test rather than present in
+// the file. A test that reports faults it created itself is worse than no test: it gets muted.
+//
+// So: walk the string, track nesting depth of range/if/with/block/define against end, and drop
+// whole control-flow spans. What survives is a value interpolation, replaced with 0 — valid both
+// bare and inside quotes, which are the only two positions a value appears in JS source.
+func neutraliseTemplate(s string) string {
+	var out strings.Builder
+	depth := 0
+	for i := 0; i < len(s); {
+		j := strings.Index(s[i:], "{{")
+		if j < 0 {
+			if depth == 0 {
+				out.WriteString(s[i:])
+			}
+			break
+		}
+		if depth == 0 {
+			out.WriteString(s[i : i+j])
+		}
+		i += j
+		k := strings.Index(s[i:], "}}")
+		if k < 0 {
+			break // unterminated action; nothing useful left to check
+		}
+		action := strings.TrimSpace(strings.Trim(s[i+2:i+k], "-"))
+		i += k + 2
+
+		switch {
+		case strings.HasPrefix(action, "end"):
+			if depth > 0 {
+				depth--
+			}
+		case isControl(action):
+			depth++
+		case depth == 0:
+			out.WriteString("0") // a value: valid bare and inside quotes
+		}
+	}
+	return out.String()
+}
+
+func isControl(a string) bool {
+	for _, kw := range []string{"range", "if", "with", "block", "define"} {
+		if a == kw || strings.HasPrefix(a, kw+" ") {
+			return true
+		}
+	}
+	return false
 }
