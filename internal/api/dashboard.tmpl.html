@@ -1095,6 +1095,26 @@
   .paneempty .pehint{font-family:var(--mono);font-size:var(--fs-lbl);line-height:1.65;
     color:var(--mut2);border-top:1px solid var(--line);padding-top:9px}
   .paneempty .pehint code{color:var(--fg)}
+  /* ═══ THE QUEUE ═════════════════════════════════════════════════════════════════════════
+     One row grammar for every finding on the desk, whichever engine produced it. The first
+     screen used to stack THREE finding systems in three styles — the brief's rows, the insight
+     verdict's callout, and the verdict-more strip — and three different-looking lists of
+     problems read as clutter even when each is individually fine. A queue of identical rows
+     reads as work. Status chip, headline, size, actions: the Autonoma run-row, for findings. */
+  .qrow{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;gap:0 14px;align-items:baseline;
+    padding:10px 2px;border-top:1px solid var(--line)}
+  .qrow:first-of-type{border-top:0}
+  .qchip{font-family:var(--mono);font-size:var(--fs-lbl);font-weight:600;text-transform:uppercase;
+    letter-spacing:var(--track-lbl);white-space:nowrap;padding:1px 8px;border:1px solid var(--line2);color:var(--mut)}
+  .qrow.you .qchip{border-color:var(--warn);color:var(--warn)}
+  .qhead{font-family:var(--mono);font-size:var(--fs-claim);line-height:var(--lh-claim);font-weight:600;
+    color:var(--fg);min-width:0}
+  .qsize{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);white-space:nowrap}
+  .qact{display:flex;gap:10px;white-space:nowrap}
+  .qact a{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--accent);cursor:pointer;text-decoration:none}
+  .qact a:hover{text-decoration:underline}
+  .qsub{grid-column:2/-1;font-size:var(--fs-body);line-height:var(--lh-body);color:var(--mut);max-width:68ch}
+  @media(max-width:820px){.qrow{grid-template-columns:auto minmax(0,1fr)}.qsize,.qact{grid-column:2}}
   /* ═══ THE SLAB ═══════════════════════════════════════════════════════════════════════════
      One conclusion, on the brand's own ground, figure first. Byte-identical in light and dark:
      #FFC900 with #17140D on it is 11.9:1 either way, so this is the one component that does not
@@ -1453,12 +1473,14 @@
           </div>
         </div>
       </div>
-      {{if gt (len .Findings) 1}}<div class="pmhead">{{sub (len .Findings) 1}} more finding{{if ne (len .Findings) 2}}s{{end}}</div>{{end}}
+      {{if gt (len .Findings) 1}}<div class="pmhead">the queue &middot; {{sub (len .Findings) 1}} more finding{{if ne (len .Findings) 2}}s{{end}}</div>{{end}}
       {{range slice .Findings 1 (len .Findings)}}
-      <div class="pmrow{{if .NeedsYou}} you{{end}}">
-        <div class="pmtop"><span class="pmh">{{.Headline}}</span>{{with .Cost.Size}}<span class="pmcost">{{.}}</span>{{end}}</div>
-        {{if .Attributed}}<div class="pmwhy">{{.Cause}}</div>{{else}}<div class="pmwhy pmun">cause not narrowed</div>{{end}}
-        <div class="pmnext">&rarr; {{.NextMove}}{{if .Evidence}} <a class="pmev" href="{{.Evidence}}" target="_blank" rel="noopener">check it</a>{{end}}</div>
+      <div class="qrow{{if .NeedsYou}} you{{end}}">
+        <span class="qchip">{{if .NeedsYou}}needs you{{else}}watch{{end}}</span>
+        <span class="qhead">{{.Headline}}</span>
+        {{with .Cost.Size}}<span class="qsize">{{.}}</span>{{end}}
+        <span class="qact"><a data-q="{{.Headline}}" role="button" tabindex="0">show me</a>{{if .Evidence}}<a href="{{.Evidence}}" target="_blank" rel="noopener">rows</a>{{end}}</span>
+        <span class="qsub">{{if .Attributed}}{{.Cause}}{{else}}<i>cause not narrowed</i>{{end}} &middot; {{.NextMove}}</span>
       </div>
       {{end}}
       <div class="pmbasis">sized by people affected &mdash; no revenue is tracked on these events, so this is not a dollar figure. <a href="/docs/revenue" target="_blank" rel="noopener">connect a payment provider</a> and these become money.</div>
@@ -1480,7 +1502,20 @@
     </div>
     {{end}}
     <div id="verdict">
-      {{if .Verdict}}{{$first := index .Verdict 0}}<div class="callout{{if eq $first.Severity "warn"}} warn{{end}}">
+      {{if .Verdict}}{{$first := index .Verdict 0}}
+      {{$slabPresent := and .Investigation (not .Investigation.Quiet)}}
+      {{if $slabPresent}}
+      <!-- The slab already leads with the most expensive finding, so a second full-width callout
+           two cards below it was the desk arguing with itself about what mattered most. The
+           insight verdict joins the queue as a row; on a quiet investigation it stays the lead
+           card, because then it IS the only thing with something to say. -->
+      <div class="qrow{{if eq $first.Severity "warn"}} you{{end}}">
+        <span class="qchip">{{if eq $first.Severity "warn"}}fix first{{else}}today{{end}}</span>
+        <span class="qhead">{{$first.Title}}</span>
+        <span class="qact"><a class="co-go" data-q="{{$first.Title}}" role="button" tabindex="0">show me</a><a class="co-fix" data-fix="{{$first.Fingerprint}}" role="button" tabindex="0">fix brief</a></span>
+        <span class="qsub">{{$first.Detail}}</span>
+      </div>
+      {{else}}<div class="callout{{if eq $first.Severity "warn"}} warn{{end}}">
         <div class="co-tag"><span class="co-ic">{{if eq $first.Severity "warn"}}!{{else}}&#10022;{{end}}</span>{{if eq $first.Severity "warn"}}Fix first{{else}}Today&rsquo;s read{{end}}</div>
         <div class="co-body">
           <div class="co-title">{{$first.Title}}</div>
@@ -1492,6 +1527,7 @@
           <a class="co-fix" data-fix="{{$first.Fingerprint}}" role="button" tabindex="0">Fix with your agent &rarr;</a>
         </div>
       </div>
+      {{end}}
       {{if .Findings}}<div class="verdict-more">{{range .Findings}}<div class="vline{{if .Warn}} warn{{end}}"><span class="vmk" aria-hidden="true">{{.Mark}}</span><span class="vsr">{{.MarkLabel}}</span><span class="vmid"><span class="vt">{{.Title}}</span><span class="vd" title="{{.Detail}}">{{.Lead}}</span></span><span class="vact"><a class="vwhy" data-q="{{.Q}}" role="button" tabindex="0">why? &rarr;</a><a class="vfix" data-fix="{{.Fingerprint}}" role="button" tabindex="0">brief &rarr;</a></span></div>{{end}}</div>{{end}}
       {{else}}<div class="vcalm">nothing unusual right now: traffic and conversion look within normal range.</div>{{end}}
     </div>
