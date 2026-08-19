@@ -62,6 +62,14 @@ func comma(n int) string {
 
 var dashTmpl = template.Must(template.New("dash").Funcs(template.FuncMap{
 	"comma": comma,
+	// moreNote is the one sentence a truncated list must carry. Empty when nothing was cut, so a
+	// complete list stays silent and the note means something when it appears.
+	"moreNote": func(shown, total int) string {
+		if total <= shown || shown == 0 {
+			return ""
+		}
+		return fmt.Sprintf("showing the top %s of %s by count", comma(shown), comma(total))
+	},
 	// sub exists so the slab can say "3 more findings" — a COUNT, never the bare word "more".
 	// "more" is the thing a reader cannot decide whether to click.
 	"sub": func(a, b int) int { return a - b },
@@ -277,13 +285,20 @@ type dashVM struct {
 	RetentionReady bool // P2-8: at least one observable post-D0 return exists
 	Trend          []trendBar
 	BySource       []segRow
-	ConvBySeg      []segConv
-	ConvByThin     int // segments held back for being too thin to state a rate — said on screen, never silent
-	ConvByNone     int // people carrying no value for the property — the majority, on most instances
-	Events         []string
-	ProductEvents  []string // real named events (no $-prefixed internals) for the "your events" ask chips
-	Updated        string
-	HasData        bool // false on a fresh install → show the big onboarding
+	// Pre-truncation lengths for the eleven top-N lists. A reader cannot tell a complete list
+	// from a truncated one by looking at it, so every one of them was quietly misleading:
+	// "top pages" showing six rows read identically on a site with six pages and a site with
+	// six hundred.
+	TopPagesTotal, ReferrersTotal, AIRefsTotal, EntryPagesTotal int
+	BrowsersTotal, OSesTotal, DeviceRowsTotal, CountriesTotal   int
+	UTMSourcesTotal, UTMMediumsTotal, UTMCampaignsTotal         int
+	ConvBySeg                                                   []segConv
+	ConvByThin                                                  int // segments held back for being too thin to state a rate — said on screen, never silent
+	ConvByNone                                                  int // people carrying no value for the property — the majority, on most instances
+	Events                                                      []string
+	ProductEvents                                               []string // real named events (no $-prefixed internals) for the "your events" ask chips
+	Updated                                                     string
+	HasData                                                     bool // false on a fresh install → show the big onboarding
 	// EverHadData distinguishes "you have not installed this yet" from "your filter matched
 	// nothing". HasData is computed AFTER the scope filters, so a filter matching zero rows told
 	// a customer with millions of events that "reports appear here as soon as your first events
@@ -2580,7 +2595,12 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		// rows summed to 38 and the card rendered "US 20 · 52%" for a true 20% share, with the
 		// visible rows adding to exactly 100% — asserting there is no tail at all. The longer the
 		// tail, the bigger the overstatement.
-		toRows := func(rows []web.Row, n int, denom int) []segRow {
+		// Returns the PRE-TRUNCATION length alongside the rows. Eleven lists on this page showed
+		// a top-N and said nothing about the tail, so "top pages" reading six rows was
+		// indistinguishable from a site with six pages. A reader cannot tell a complete list from
+		// a truncated one by looking at it, which makes every one of them quietly misleading.
+		toRows := func(rows []web.Row, n int, denom int) ([]segRow, int) {
+			total := len(rows)
 			top := 0
 			if len(rows) > 0 {
 				top = rows[0].Count
@@ -2599,22 +2619,22 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 				}
 				out = append(out, sr)
 			}
-			return out
+			return out, total
 		}
-		vm.TopPages = toRows(wv.TopPages, 6, wv.Pageviews)
-		vm.Referrers = toRows(wv.Referrers, 6, wv.Recorded.Referrers)
+		vm.TopPages, vm.TopPagesTotal = toRows(wv.TopPages, 6, wv.Pageviews)
+		vm.Referrers, vm.ReferrersTotal = toRows(wv.Referrers, 6, wv.Recorded.Referrers)
 		// the traffic half of the AI channel, for the AI-visibility card. Counted per
 		// VISITOR at first touch (web.go bumps aiRefs from firstPV), so the denominator is
 		// the AI visitors themselves, not pageviews.
-		vm.AIRefs = toRows(wv.AIReferrers, 6, wv.Recorded.AIReferrers)
-		vm.EntryPages = toRows(wv.EntryPages, 6, wv.Recorded.EntryPages)
-		vm.Browsers = toRows(wv.Browsers, 6, wv.Recorded.Browsers)
-		vm.OSes = toRows(wv.OSes, 6, wv.Recorded.OSes)
-		vm.DeviceRows = toRows(wv.DeviceSplit, 4, wv.Recorded.DeviceSplit)
-		vm.UTMSources = toRows(wv.UTMSources, 6, wv.Recorded.UTMSources)
-		vm.UTMMediums = toRows(wv.UTMMediums, 6, wv.Recorded.UTMMediums)
-		vm.UTMCampaigns = toRows(wv.UTMCampaigns, 6, wv.Recorded.UTMCampaigns)
-		vm.Countries = toRows(wv.Countries, 10, wv.Recorded.Countries)
+		vm.AIRefs, vm.AIRefsTotal = toRows(wv.AIReferrers, 6, wv.Recorded.AIReferrers)
+		vm.EntryPages, vm.EntryPagesTotal = toRows(wv.EntryPages, 6, wv.Recorded.EntryPages)
+		vm.Browsers, vm.BrowsersTotal = toRows(wv.Browsers, 6, wv.Recorded.Browsers)
+		vm.OSes, vm.OSesTotal = toRows(wv.OSes, 6, wv.Recorded.OSes)
+		vm.DeviceRows, vm.DeviceRowsTotal = toRows(wv.DeviceSplit, 4, wv.Recorded.DeviceSplit)
+		vm.UTMSources, vm.UTMSourcesTotal = toRows(wv.UTMSources, 6, wv.Recorded.UTMSources)
+		vm.UTMMediums, vm.UTMMediumsTotal = toRows(wv.UTMMediums, 6, wv.Recorded.UTMMediums)
+		vm.UTMCampaigns, vm.UTMCampaignsTotal = toRows(wv.UTMCampaigns, 6, wv.Recorded.UTMCampaigns)
+		vm.Countries, vm.CountriesTotal = toRows(wv.Countries, 10, wv.Recorded.Countries)
 		// "ZZ"/"XX" are MaxMind's not-a-real-country codes (anonymous proxy, unresolved).
 		// Show them as a plain "Unknown" row, never a bogus flag. If the ONLY thing we have
 		// is Unknown (geo disabled, or all traffic from unresolved IPs), the card carries no
