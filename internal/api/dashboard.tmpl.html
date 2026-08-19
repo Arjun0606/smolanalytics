@@ -1310,7 +1310,7 @@
        removes the second of the page's two competing sticky bars. -->
   <div class="sa-block sa-scope">
     <div class="sa-lbl">scope</div>
-    {{if .HasData}}<div class="toolbar">
+    {{if or .HasData .EverHadData}}<div class="toolbar">
       <nav class="ranges">{{range .Ranges}}<a class="rangebtn{{if and .On (not $.CustomRange)}} on{{end}}" href="{{.URL}}">{{.Label}}</a>{{end}}</nav>
       <form class="customrange{{if .CustomRange}} on{{end}}" id="rangeform">
         <input type="date" id="rfrom" value="{{.RangeFrom}}" aria-label="from date">
@@ -1346,7 +1346,8 @@
     <!-- filled by saBuildDeckIndexGrouped from the panes that actually rendered, so this
          list can never advertise a report that is not on the page, or miss one that is. -->
     <div class="deckindex" id="deckindex"></div>
-    <div class="railnote">reports appear here as soon as your first events land.</div>
+    <div class="railnote">{{if .EverHadData}}no report has rows under the current filters. the scope
+      above still applies &mdash; clear a chip, or <a href="?">start over with everything</a>.{{else}}reports appear here as soon as your first events land.{{end}}</div>
   </div>
 
   <div class="sa-block sa-tools">

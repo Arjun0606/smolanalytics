@@ -383,3 +383,44 @@ func TestNoPaneDeletesItselfWhenEmpty(t *testing.T) {
 			"{{else}} carrying a title, one sentence saying what would fill it, and the hint.", id)
 	}
 }
+
+// A FILTER THAT MATCHED NOTHING IS NOT A FRESH INSTALL.
+//
+// HasData is computed AFTER the scope filters, so a chip matching zero rows told a customer with
+// millions of events "reports appear here as soon as your first events land" — and hid the scope
+// block, which is where the chip that caused it lives. The only way back was editing the URL.
+//
+// Stripe states the rule for this outright: do not show a create-first-item call to action when
+// items exist but are filtered out. Two states, two messages, and the way out stays on screen.
+func TestFilteredToNothingIsNotConfusedWithAFreshInstall(t *testing.T) {
+	tmpl, err := os.ReadFile("dashboard.tmpl.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(tmpl)
+
+	// the scope block survives an empty result set, or the filter cannot be cleared
+	if !strings.Contains(s, `{{if or .HasData .EverHadData}}<div class="toolbar">`) {
+		t.Error("the scope toolbar is gated on HasData alone, so a filter matching nothing hides " +
+			"the chips that caused it and there is no way back except editing the URL")
+	}
+	// and the fresh-install copy is not shown to an instance that has data
+	i := strings.Index(s, "reports appear here as soon as your first events land")
+	if i < 0 {
+		t.Fatal("the fresh-install line is gone entirely; this guard is watching nothing")
+	}
+	if !strings.Contains(s[max(0, i-400):i], ".EverHadData") {
+		t.Error("the fresh-install line is not gated on EverHadData, so an instance with events " +
+			"is told it has none whenever a filter matches zero rows")
+	}
+
+	// and the Go side must actually compute it from the PRE-filter count
+	src, err := os.ReadFile("dashboard.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src), "EverHadData:   totalAll > 0") {
+		t.Error("EverHadData is not computed from totalAll (the pre-filter count), so it would " +
+			"agree with HasData and distinguish nothing")
+	}
+}

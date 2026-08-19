@@ -283,11 +283,17 @@ type dashVM struct {
 	Events         []string
 	ProductEvents  []string // real named events (no $-prefixed internals) for the "your events" ask chips
 	Updated        string
-	HasData        bool   // false on a fresh install → show the big onboarding
-	DevHidden      int    // count of env=development events hidden from production reports
-	ShowingDev     bool   // true when ?env=development — viewing the hidden dev traffic
-	Base           string // this server's base URL, for ready-to-paste snippets
-	WriteKey       string // this instance's write key — real snippets, not placeholders (key is public-by-design: it ships in tracked pages' HTML)
+	HasData        bool // false on a fresh install → show the big onboarding
+	// EverHadData distinguishes "you have not installed this yet" from "your filter matched
+	// nothing". HasData is computed AFTER the scope filters, so a filter matching zero rows told
+	// a customer with millions of events that "reports appear here as soon as your first events
+	// land" — and hid the scope block, which is where the chips that caused it live. There was
+	// no way back except editing the URL by hand.
+	EverHadData bool
+	DevHidden   int    // count of env=development events hidden from production reports
+	ShowingDev  bool   // true when ?env=development — viewing the hidden dev traffic
+	Base        string // this server's base URL, for ready-to-paste snippets
+	WriteKey    string // this instance's write key — real snippets, not placeholders (key is public-by-design: it ships in tracked pages' HTML)
 	// CloudURL is the header's "Cloud ↗" href. Defaults to smolanalytics.com (right for
 	// every self-hosted install); the hosted product overrides it via SMOLANALYTICS_CLOUD_URL
 	// so the link leads back to the project the user came from, not the marketing home page.
@@ -2069,6 +2075,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		ProductEvents: productEvents(names, 8),
 		Updated:       time.Now().UTC().Format("Jan 2, 15:04 MST"),
 		HasData:       len(evs) > 0,
+		EverHadData:   totalAll > 0,
 		Verdict:       verdict,
 		// The full history, and the flags, so the kill list can see what shipped. Same inputs
 		// the CLI brief uses, so the page and the email cannot tell different stories.
