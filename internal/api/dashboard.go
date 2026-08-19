@@ -265,7 +265,12 @@ type dashVM struct {
 	// cost, each with a cause and a next move. The verdict below it is the health read; this is
 	// the "so what". It renders ABOVE the verdict because a conclusion outranks context.
 	Investigation investigate.Investigation
-	Verdict       []insight.Finding
+	// Healed: what the system did on its own. Guardrail auto-reverts write $experiment_reverted
+	// into the operator's log with the reason, and until now that receipt was visible only if you
+	// went digging in the raw event stream — the one genuinely self-operating behaviour in the
+	// product, performed invisibly. The desk shows it as work the system completed.
+	Healed  []healedRow
+	Verdict []insight.Finding
 	// Findings is the SAME slice from the second element on, composed into rows that rank.
 	// The template reads Verdict only for the card (element 0) and Findings for the list.
 	Findings []findingLine
@@ -2095,6 +2100,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		// The full history, and the flags, so the kill list can see what shipped. Same inputs
 		// the CLI brief uses, so the page and the email cannot tell different stories.
 		Investigation:   investigate.WithContext(evs, flagsFor(s), deploysFor(s), investigate.Opts{Now: nowT}),
+		Healed:          buildHealed(evs, time.Now().UTC()),
 		Findings:        verdictLines(verdict),
 		DevHidden:       devHidden,
 		ShowingDev:      showDev,
@@ -2950,4 +2956,31 @@ func deploysFor(s *Server) []deploys.Deploy {
 		return nil
 	}
 	return s.deploys.List()
+}
+
+// healedRow is one act of self-operation, rendered on the desk queue.
+type healedRow struct {
+	Flag, Guardrail, Reason, When string
+}
+
+// buildHealed collects the guardrail auto-reverts of the last 14 days, newest first. Capped at
+// five: a desk drowning in old receipts stops reading as a desk. The receipts themselves are
+// $experiment_reverted events the auto-reverter writes into the operator's own log — the one
+// genuinely self-operating behaviour in the product, which until now was visible only to someone
+// digging through the raw event stream.
+func buildHealed(evs []event.Event, now time.Time) []healedRow {
+	cutoff := now.AddDate(0, 0, -14)
+	var out []healedRow
+	for i := len(evs) - 1; i >= 0 && len(out) < 5; i-- {
+		e := evs[i]
+		if e.Name != RevertEvent || e.Timestamp.Before(cutoff) {
+			continue
+		}
+		str := func(k string) string { v, _ := e.Properties[k].(string); return v }
+		out = append(out, healedRow{
+			Flag: str("flag"), Guardrail: str("guardrail"), Reason: str("reason"),
+			When: e.Timestamp.UTC().Format("Jan 2"),
+		})
+	}
+	return out
 }

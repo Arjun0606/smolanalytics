@@ -1107,6 +1107,8 @@
   .qchip{font-family:var(--mono);font-size:var(--fs-lbl);font-weight:600;text-transform:uppercase;
     letter-spacing:var(--track-lbl);white-space:nowrap;padding:1px 8px;border:1px solid var(--line2);color:var(--mut)}
   .qrow.you .qchip{border-color:var(--warn);color:var(--warn)}
+  .qchip.healed{border-color:var(--ok);color:var(--ok)}
+  .qrow .qchip.healed~.qhead{color:var(--mut)}
   .qhead{font-family:var(--mono);font-size:var(--fs-claim);line-height:var(--lh-claim);font-weight:600;
     color:var(--fg);min-width:0}
   .qsize{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);white-space:nowrap}
@@ -1453,7 +1455,7 @@
            trusts. The headline renders verbatim: no string surgery, so it cannot drift from what
            the CLI and the share page say. -->
       <div class="slab">
-        <div class="slab-eyebrow">needs you &middot; {{.NeedsYouCount}} of {{len .Findings}} &middot; computed by /v1/brief</div>
+        <div class="slab-eyebrow">needs you &middot; {{.NeedsYouCount}} of {{len .Findings}} &middot; swept {{len .Scanned}} metric{{if ne (len .Scanned) 1}}s{{end}} &middot; {{.GeneratedAt.Format "15:04"}} UTC &middot; computed by /v1/brief</div>
         <div class="slab-grid">
           <div class="slab-figure">
             <div class="slab-read">{{$lead.Cost.Readout}}</div>
@@ -1476,7 +1478,7 @@
       {{if gt (len .Findings) 1}}<div class="pmhead">the queue &middot; {{sub (len .Findings) 1}} more finding{{if ne (len .Findings) 2}}s{{end}}</div>{{end}}
       {{range slice .Findings 1 (len .Findings)}}
       <div class="qrow{{if .NeedsYou}} you{{end}}">
-        <span class="qchip">{{if .NeedsYou}}needs you{{else}}watch{{end}}</span>
+        <span class="qchip{{if .Recovered}} healed{{end}}">{{if .Recovered}}recovered{{else if .NeedsYou}}needs you{{else}}watch{{end}}</span>
         <span class="qhead">{{.Headline}}</span>
         {{with .Cost.Size}}<span class="qsize">{{.}}</span>{{end}}
         <span class="qact"><a data-q="{{.Headline}}" role="button" tabindex="0">show me</a>{{if .Evidence}}<a href="{{.Evidence}}" target="_blank" rel="noopener">rows</a>{{end}}</span>
@@ -1485,6 +1487,18 @@
       {{end}}
       <div class="pmbasis">sized by people affected &mdash; no revenue is tracked on these events, so this is not a dollar figure. <a href="/docs/revenue" target="_blank" rel="noopener">connect a payment provider</a> and these become money.</div>
       {{if .AnyUnattributed}}<div class="pmbasis" style="border-top:0;padding-top:0">the rows marked <i>cause not narrowed</i> had no deploy recorded near the day and no single segment carrying the change &mdash; record deploys and that line becomes which ship did it.</div>{{end}}
+      {{end}}
+      {{with $.Healed}}
+      <div class="pmhead">healed &middot; the system acted on its own</div>
+      {{range .}}
+      <div class="qrow">
+        <span class="qchip healed">auto-reverted</span>
+        <span class="qhead">{{.Flag}} pulled &middot; guardrail {{.Guardrail}}</span>
+        <span class="qsize">{{.When}}</span>
+        <span class="qact"><a data-q="what happened to the flag {{.Flag}}" role="button" tabindex="0">show me</a></span>
+        <span class="qsub">{{.Reason}}</span>
+      </div>
+      {{end}}
       {{end}}
       {{with .Movements}}
       <!-- THE QUARTER, under the week, and OUTSIDE the quiet/busy branch on purpose. The findings

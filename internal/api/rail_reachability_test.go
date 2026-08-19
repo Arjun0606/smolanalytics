@@ -523,3 +523,33 @@ func TestNoBlockElementInsideASelect(t *testing.T) {
 		}
 	}
 }
+
+// HEALED ROWS RENDER ON A QUIET DAY TOO.
+//
+// The auto-revert receipt is most of the news precisely when the investigation is quiet — the
+// system pulled a flag and nothing else happened. The first version of this block sat inside the
+// busy branch, so the one self-operating act the product performs would have been invisible on
+// exactly the day it was the headline. Same placement rule as the movements quarter, guarded the
+// same way.
+func TestHealedRowsAreOutsideTheQuietBranch(t *testing.T) {
+	src, err := os.ReadFile("dashboard.tmpl.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(src)
+	h := strings.Index(s, "healed &middot; the system acted on its own")
+	if h < 0 {
+		t.Fatal("the healed block is gone; this guard is watching nothing")
+	}
+	// It must sit AFTER the {{else}}-branch basis lines' closing {{end}} — i.e. adjacent to the
+	// movements block, which is the established outside-the-branch position.
+	m := strings.Index(s, "{{with .Movements}}")
+	if m < 0 || h > m {
+		t.Error("the healed block does not sit directly before the movements quarter — check it " +
+			"renders on quiet days, not only busy ones")
+	}
+	if m-h > 900 {
+		t.Errorf("healed block is %d bytes from the movements anchor; it has drifted somewhere "+
+			"with different branch semantics", m-h)
+	}
+}

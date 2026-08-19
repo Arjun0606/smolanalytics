@@ -97,6 +97,12 @@ type Finding struct {
 	Event    string `json:"event,omitempty"`
 	Day      string `json:"day,omitempty"`
 
+	// Recovered marks a regression whose metric has returned to its pre-drop level — computed by
+	// the same daily-series arithmetic that detected the drop, never asserted. It says
+	// "recovered", not "fixed": no causality is known. A recovered finding stays on the queue so
+	// the week reads whole, but it must never look like open work.
+	Recovered bool `json:"recovered,omitempty"`
+
 	// NeedsYou marks the ones worth a human's attention today. Everything else is context.
 	// A brief where every line is urgent is a brief with no triage in it.
 	NeedsYou bool `json:"needs_you"`
@@ -178,6 +184,9 @@ func Run(evs []event.Event, opts Opts) Investigation {
 	//
 	// WithContext re-runs this with real deploys, which overwrites rather than duplicates.
 	Attribute(evs, inv.Findings, nil, o)
+	// And close the loop: a regression whose metric came back is marked recovered, so the queue
+	// can retire it visibly instead of leaving the reader to re-derive last week's state.
+	MarkRecovered(evs, inv.Findings, o)
 
 	// The quarter-level reading belongs on EVERY caller, not just the one with a deploy store.
 	// Wiring it into WithContext alone meant brief.Build — the CLI, the email and the dashboard —
@@ -186,6 +195,11 @@ func Run(evs []event.Event, opts Opts) Investigation {
 	// the sentence says so rather than implying nothing shipped.
 	inv.Movements = Movements(evs, nil, MovementOpts{Now: o.Now})
 
+	for i := range inv.Findings {
+		if inv.Findings[i].Recovered {
+			inv.Findings[i].NeedsYou = false
+		}
+	}
 	rank(inv.Findings)
 	StampSizes(inv.Findings)
 	inv.Quiet = len(inv.Findings) == 0
@@ -289,6 +303,12 @@ func productEvents(evs []event.Event) []string {
 func rank(fs []Finding) {
 	sort.SliceStable(fs, func(i, j int) bool {
 		a, b := fs[i], fs[j]
+		// A recovered finding sorts LAST regardless of size. The most expensive drop of the month,
+		// once recovered, must not take the slab — the slab is the one thing that needs you, and a
+		// resolved problem leading the desk teaches the reader the desk is history, not work.
+		if a.Recovered != b.Recovered {
+			return !a.Recovered
+		}
 		if (a.Cost.UsdPerMonth > 0) != (b.Cost.UsdPerMonth > 0) {
 			return a.Cost.UsdPerMonth > 0
 		}

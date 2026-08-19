@@ -562,3 +562,76 @@ func TestRunAttributesTheSegmentWithoutADeployStore(t *testing.T) {
 			"the line explaining how to make attribution possible")
 	}
 }
+
+// THE LOOP CLOSES: A REGRESSION THAT CAME BACK SAYS SO.
+//
+// Every analytics tool reports the break; none comes back to report the resolution, so the reader
+// re-derives last week's state by squinting at a chart. "Recovered" is computed by the same
+// daily-series arithmetic that detected the drop — and it says recovered, never fixed, because no
+// causality is known.
+func TestARecoveredRegressionIsMarkedAndRetired(t *testing.T) {
+	now := time.Now().UTC()
+	var evs []event.Event
+	mk := func(day, n int) {
+		for i := 0; i < n; i++ {
+			evs = append(evs, event.Event{
+				ID: fmt.Sprintf("r%d_%d", day, i), Name: "checkout",
+				DistinctID: fmt.Sprintf("u%d_%d", day, i),
+				Timestamp:  now.AddDate(0, 0, -day).Add(time.Duration(i) * time.Minute),
+			})
+		}
+	}
+	// 40/day, a collapse to 10/day ten days ago, then a return to 40/day for the last four days.
+	for d := 27; d >= 11; d-- {
+		mk(d, 40)
+	}
+	for d := 10; d >= 5; d-- {
+		mk(d, 10)
+	}
+	for d := 4; d >= 0; d-- {
+		mk(d, 40)
+	}
+
+	inv := Run(evs, Opts{Now: now})
+	var reg *Finding
+	for i := range inv.Findings {
+		if inv.Findings[i].Kind == KindRegression {
+			reg = &inv.Findings[i]
+		}
+	}
+	if reg == nil {
+		t.Fatal("the collapse was never found, so recovery has nothing to mark")
+	}
+	if !reg.Recovered {
+		t.Fatalf("the metric is back at its pre-drop level for four days and the finding still "+
+			"reads as open work: %+v", reg)
+	}
+	if reg.NeedsYou {
+		t.Error("a recovered finding still claims to need a human — sending someone to fix a " +
+			"thing that already recovered teaches them the queue is stale")
+	}
+	if !strings.Contains(reg.NextMove, "recovered") {
+		t.Errorf("the next move does not say it recovered: %q", reg.NextMove)
+	}
+
+	// AND THE NEGATIVE HALF: while the metric is still down, nothing may claim recovery.
+	var down []event.Event
+	for d := 27; d >= 11; d-- {
+		for i := 0; i < 40; i++ {
+			down = append(down, event.Event{ID: fmt.Sprintf("d%d_%d", d, i), Name: "checkout",
+				DistinctID: fmt.Sprintf("v%d_%d", d, i), Timestamp: now.AddDate(0, 0, -d).Add(time.Duration(i) * time.Minute)})
+		}
+	}
+	for d := 10; d >= 0; d-- {
+		for i := 0; i < 10; i++ {
+			down = append(down, event.Event{ID: fmt.Sprintf("e%d_%d", d, i), Name: "checkout",
+				DistinctID: fmt.Sprintf("w%d_%d", d, i), Timestamp: now.AddDate(0, 0, -d).Add(time.Duration(i) * time.Minute)})
+		}
+	}
+	inv2 := Run(down, Opts{Now: now})
+	for _, f := range inv2.Findings {
+		if f.Kind == KindRegression && f.Recovered {
+			t.Errorf("a metric still at a quarter of its old level was marked recovered: %q", f.Headline)
+		}
+	}
+}
