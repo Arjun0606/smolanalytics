@@ -155,7 +155,7 @@ var readOnlyTools = map[string]bool{
 	"paths": true, "lifecycle": true, "stickiness": true, "groups": true, "web_overview": true,
 	"heatmap": true, "user_activity": true, "recent_events": true, "list_events": true,
 	"list_sessions": true, "session_timeline": true, "whats_notable": true, "fix_brief": true,
-	"explain_change": true, "goal_report": true, "deploy_impact": true, "list_deploys": true,
+	"explain_change": true, "investigate": true, "backtest": true, "goal_report": true, "deploy_impact": true, "list_deploys": true,
 	"ai_visibility": true, "ai_crawlers": true, "gsc_status": true, "search_console_report": true,
 	"survey_results": true, "list_surveys": true, "list_goals": true, "list_alerts": true,
 	"list_cohorts": true, "list_webhooks": true, "list_flags": true, "list_saved_reports": true,
@@ -341,6 +341,14 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 	}
 	if name == "explain_change" {
 		return s.toolExplainChange(args)
+	}
+	// The flagship pair reads raw events itself (WithContext applies its own production scope,
+	// exactly as the dashboard's call does), so both dispatch before the shared scoped load.
+	if name == "investigate" {
+		return s.toolInvestigate(args)
+	}
+	if name == "backtest" {
+		return s.toolBacktest(args)
 	}
 	// Reads the repo only; it never touches the event store, so it skips the shared load too.
 	if name == "instrumentation_coverage" {

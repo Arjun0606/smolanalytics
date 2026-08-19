@@ -635,3 +635,34 @@ func TestARecoveredRegressionIsMarkedAndRetired(t *testing.T) {
 		}
 	}
 }
+
+// A TINY PRODUCT IS TOLD WHY IT IS QUIET, WITH THE NUMBER THAT CHANGES IT.
+//
+// The gates are correct — 3/day genuinely swings 50% by chance — but correct behaviour rendered
+// as permanent silence is zero delivered value, and the smallest products this tool targets are
+// exactly the ones the gates exclude. The floor note is the honest day-one answer.
+func TestABelowFloorMetricIsNamedWithItsArithmetic(t *testing.T) {
+	now := time.Now().UTC()
+	evs := seed(t, now, "signup", 3, 3) // steady 3/day: under the 5/day floor, no step change
+	inv := Run(evs, Opts{Now: now})
+
+	if len(inv.Findings) != 0 {
+		t.Fatalf("a flat 3/day produced findings: %+v", inv.Findings)
+	}
+	if len(inv.BelowFloor) != 1 || inv.BelowFloor[0].Event != "signup" {
+		t.Fatalf("the floored metric was not named: %+v", inv.BelowFloor)
+	}
+	fn := inv.BelowFloor[0]
+	if fn.PerDay <= 0 || fn.NeedPerDay != 5 {
+		t.Errorf("the note must carry the real rate and the required rate: %+v", fn)
+	}
+	if !strings.Contains(fn.Note, "coin flip") && !strings.Contains(fn.Note, "/day") {
+		t.Errorf("the note does not explain the arithmetic: %q", fn.Note)
+	}
+
+	// A metric ABOVE the floor that simply did not move is quiet, not floored — opposite answers.
+	busy := Run(seed(t, now, "signup", 30, 30), Opts{Now: now})
+	if len(busy.BelowFloor) != 0 {
+		t.Errorf("a healthy 30/day metric was reported as below the floor: %+v", busy.BelowFloor)
+	}
+}

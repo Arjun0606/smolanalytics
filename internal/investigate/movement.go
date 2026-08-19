@@ -206,6 +206,45 @@ func Movements(evs []event.Event, deps []deploys.Deploy, o MovementOpts) []Movem
 		out = append(out, m)
 	}
 
+	// MULTIPLICITY, CORRECTED OVER THE WHOLE TABLE.
+	//
+	// Seven metrics each tested at alpha=0.05 is roughly a 30% chance that at least one
+	// "moved" in this table is noise — and the homepage's whole claim is "this tells you which
+	// ones did anything", read by exactly the ICP most likely to know what a family-wise error
+	// rate is. flag.BenjaminiHochberg existed for the experiment reports and was never wired
+	// here, so the quarter table made the one statistical promise in the product that could not
+	// survive its first statistically literate reader.
+	//
+	// A verdict that does not survive the correction downgrades to Unchanged with the adjusted
+	// context appended — never silently deleted, because a row that vanishes between loads is
+	// worse than a row that explains itself.
+	var hyp []flag.Hypothesis
+	for _, m := range out {
+		if m.Verdict == MovedUp || m.Verdict == MovedDown {
+			hyp = append(hyp, flag.Hypothesis{Variant: "after", Metric: m.Metric, P: m.PValue})
+		}
+	}
+	if len(hyp) > 1 {
+		if bh, err := flag.BenjaminiHochberg("quarter-movements", hyp, 0.05); err == nil {
+			surviving := map[string]bool{}
+			for _, t := range bh.Tests {
+				if t.Rejected {
+					surviving[t.Metric] = true
+				}
+			}
+			for i := range out {
+				m := &out[i]
+				if (m.Verdict == MovedUp || m.Verdict == MovedDown) && !surviving[m.Metric] {
+					m.Verdict = Unchanged
+					m.Label = "unchanged"
+					m.Headline = fmt.Sprintf("%s: %.1f%% then, %.1f%% now — moved individually, but does not survive "+
+						"correction across the %d metrics tested together, so it is reported as unchanged",
+						m.Metric, m.Before, m.After, len(hyp))
+				}
+			}
+		}
+	}
+
 	// Biggest population first: the metric most of the product touches leads.
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].People != out[j].People {

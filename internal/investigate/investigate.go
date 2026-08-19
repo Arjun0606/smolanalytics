@@ -23,6 +23,7 @@ package investigate
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"time"
 
@@ -122,6 +123,24 @@ type Investigation struct {
 	// that shipped. The findings above are what changed THIS WEEK; this is whether any of it
 	// added up. It is the half a founder forwards.
 	Movements []Movement `json:"movements,omitempty"`
+
+	// BelowFloor names the events this instance tracks that CANNOT currently produce a finding,
+	// with the arithmetic. The detection gates are correct — a 3-a-day product genuinely moves
+	// 50% every other day by chance — but correct behaviour that renders as permanent silence is
+	// zero delivered value, and the smallest products this tool targets are exactly the ones the
+	// gates exclude. "Below the floor, and here is the number that would change that" converts a
+	// silent product into a visible one on day one.
+	BelowFloor []FloorNote `json:"below_floor,omitempty"`
+}
+
+// FloorNote is one metric's honest exclusion.
+type FloorNote struct {
+	Event string `json:"event"`
+	// PerDay is the metric's current daily rate over the window.
+	PerDay float64 `json:"per_day"`
+	// NeedPerDay is the baseline the change detector requires before a percentage may speak.
+	NeedPerDay int    `json:"need_per_day"`
+	Note       string `json:"note"`
 }
 
 // Opts configures a pass.
@@ -165,6 +184,19 @@ func Run(evs []event.Event, opts Opts) Investigation {
 		inv.Scanned = append(inv.Scanned, n)
 		if f, ok := changeFinding(evs, n, o); ok {
 			inv.Findings = append(inv.Findings, f)
+			continue
+		}
+		// If this metric could never have produced a finding — its baseline is under the floor
+		// the detector requires — say so with the arithmetic, once, rather than being silent
+		// about it forever. Only genuinely floored metrics: a metric above the floor with no
+		// step change is a quiet metric, which is a different (and good) answer.
+		rate := dailyMean(evs, n, o.Now.AddDate(0, 0, -o.Days), o.Now)
+		if rate > 0 && rate < minDailyBefore {
+			inv.BelowFloor = append(inv.BelowFloor, FloorNote{
+				Event: n, PerDay: math.Round(rate*10) / 10, NeedPerDay: minDailyBefore,
+				Note: fmt.Sprintf("%s runs at ~%.1f/day; step-change detection needs a baseline of about %d/day before a percentage means anything. Below that, a 50%% swing is a coin flip, and reporting it would be noise dressed as news.",
+					n, rate, minDailyBefore),
+			})
 		}
 	}
 

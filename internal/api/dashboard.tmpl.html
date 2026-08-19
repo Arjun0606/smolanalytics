@@ -1441,7 +1441,7 @@
     {{with .Investigation}}
     <div class="pmbrief" id="pmbrief">
       {{if .Quiet}}
-      <div class="pmq">Nothing needs you today.<span class="pmqs"> {{len .Scanned}} metric(s) checked for step changes.</span></div>
+      <div class="pmq">Nothing needs you today.<span class="pmqs"> {{len .Scanned}} metric{{if ne (len .Scanned) 1}}s{{end}} checked for step changes{{with .BelowFloor}}, {{len .}} below the detection floor &mdash; details under the quarter{{end}}.</span></div>
       {{else}}
       {{$inv := .}}{{$lead := index .Findings 0}}
       <!-- THE SLAB. One conclusion, on the brand's own ground, with its figure at 64px.
@@ -1499,6 +1499,11 @@
         <span class="qsub">{{.Reason}}</span>
       </div>
       {{end}}
+      {{end}}
+      {{with .BelowFloor}}
+      <div class="pmbasis" style="border-top:0">
+        {{range .}}<span title="{{.Note}}">{{.Event}} runs at ~{{.PerDay}}/day &mdash; below the {{.NeedPerDay}}/day floor step-change detection needs, so it is watched but cannot yet produce a finding.</span> {{end}}
+      </div>
       {{end}}
       {{with .Movements}}
       <!-- THE QUARTER, under the week, and OUTSIDE the quiet/busy branch on purpose. The findings
