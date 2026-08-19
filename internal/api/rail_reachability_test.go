@@ -441,17 +441,40 @@ func TestOnboardingIsGatedOnEverHavingDataNotOnTheFilteredCount(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(src)
-	if strings.Contains(s, `{{if not .HasData}}{{template "devnote" .}}{{end}}`) {
-		t.Error("the onboarding block is gated on HasData (post-filter), so any filter matching " +
-			"zero rows renders it — and its poller reloads the page every 4 seconds forever")
+
+	// THE PROPERTY, NOT THE STRING I HAPPENED TO FIX.
+	//
+	// The first version of this test asserted that ONE specific line had been changed, so it
+	// passed while the loop was still running: #obstatus, which anchors the reload poller, lives
+	// in a SECOND onboarding block I had not touched. Measured after "fixing" it: still 10
+	// navigations in 6 seconds.
+	//
+	// HasData is post-filter. NOTHING that can trigger a reload may depend on it, anywhere.
+	if n := strings.Count(s, "{{if not .HasData}}"); n > 0 {
+		t.Errorf("%d onboarding gate(s) still key off HasData, which is computed AFTER the scope "+
+			"filters — any filter matching zero rows renders onboarding, and its poller reloads "+
+			"the page every 4 seconds forever", n)
 	}
-	if !strings.Contains(s, `{{if not .EverHadData}}{{template "devnote" .}}{{end}}`) {
-		t.Error("the onboarding block is not gated on EverHadData; onboarding is for an instance " +
-			"that has never received an event, which is the only state where reload-on-first-event " +
-			"terminates")
-	}
-	// and the poller itself must still exist, or this guard is watching a thing that is gone
+	// and the poller must still be anchored to something that only exists on a fresh install
 	if !strings.Contains(s, "first event arrived") {
 		t.Error("the first-event poller is gone; re-check what this guard is protecting")
+	}
+	if !strings.Contains(s, `id="obstatus"`) {
+		t.Fatal(`#obstatus is gone; it is the poller's anchor and this guard depends on it`)
+	}
+	// the block containing #obstatus must be gated on EverHadData
+	ob := strings.Index(s, `id="obstatus"`)
+	before := s[max(0, ob-3000):ob]
+	if !strings.Contains(before, "{{if not .EverHadData}}") {
+		t.Error("the block holding #obstatus is not gated on EverHadData, so the reload poller " +
+			"can run on an instance that already has events")
+	}
+
+	src2, err := os.ReadFile("dashboard.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src2), "EverHadData:   totalAll > 0") {
+		t.Error("EverHadData is not computed from the pre-filter count, so it distinguishes nothing")
 	}
 }

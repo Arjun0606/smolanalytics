@@ -2607,7 +2607,7 @@
   {{end}}
 
   <!-- connect your agent: a first-class moment, present on every state of the page -->
-  <details class="connect" id="connect" {{if not .HasData}}open{{end}}>
+  <details class="connect" id="connect" {{if not .EverHadData}}open{{end}}>
     <summary>⌁ connect your coding agent ▾</summary>
     <div style="padding-top:8px">
       <div class="crow" style="align-items:flex-start">
@@ -2667,7 +2667,12 @@
     </div>
   </details>
 
-  {{if not .HasData}}
+  {{/* EverHadData: this block holds #obstatus, whose poller reloads the page the moment any
+       event exists. Gated on HasData (post-filter) it rendered on any filtered-to-zero page and
+       reloaded forever. Fixing the devnote alone was not enough — this is a SECOND onboarding
+       block, and the first version of the guard asserted the string I had just changed rather
+       than the property, so it passed while the loop continued. */}}
+  {{if not .EverHadData}}
   <!-- fresh install: the page IS the setup, two paths, gone forever once data flows -->
   <div class="takeover">
     <div class="obcard">
