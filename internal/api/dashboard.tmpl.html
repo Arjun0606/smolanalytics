@@ -1081,6 +1081,10 @@
      A pane that is merely empty must LOOK empty, not absent.
      Deliberately not a generic "no data yet": each one says what specifically would fill it,
      because the useful half of an empty state is the instruction, not the apology. ═══ */
+  /* truncation stated, never inferred: ten lists show a top-N and the tail was invisible, so
+     "top pages" with six rows read identically on a site with six pages and six hundred. */
+  .panemore{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2);margin-top:7px;
+    padding-top:6px;border-top:1px solid var(--line)}
   .paneempty{opacity:.75}
   .paneempty .pe{font-size:var(--fs-body);line-height:var(--lh-body);color:var(--mut);
     max-width:56ch;margin:2px 0 12px}
@@ -1730,12 +1734,14 @@
     <div class="pane wide" id="pane-pages" style="order:410" data-stratum="behave">
       <div class="webcols">
         <div>
-          <h3>top pages</h3>
-          {{range .TopPages}}<div class="seg" data-fp="path" data-fv="{{.Value}}" title="click to filter every zone to this page"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">no pageviews in this window. sdk.js sends a $pageview on load and on every route change, so the first visit fills this in. every path is listed as itself, nothing is folded into "(other)".</div>{{end}}{{with moreNote (len .TopPages) .TopPagesTotal}}<div class="morerows">{{.}}</div>{{end}}
+          <h3>top pages<span class="sub">&middot; pageviews per path &middot; the range selected above &middot; computed by /v1/web</span></h3>
+          {{range .TopPages}}<div class="seg" data-fp="path" data-fv="{{.Value}}" title="click to filter every zone to this page"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">no pageviews in this window. sdk.js sends a $pageview on load and on every route change, so the first visit fills this in. every path is listed as itself, nothing is folded into "(other)".</div>{{end}}
+          {{with moreNote (len .TopPages) .TopPagesTotal}}<div class="panemore">{{.}}</div>{{end}}{{with moreNote (len .TopPages) .TopPagesTotal}}<div class="morerows">{{.}}</div>{{end}}
         </div>
         <div>
           <h3>entry pages · where sessions land</h3>
-          {{range .EntryPages}}<div class="seg" data-fp="path" data-fv="{{.Value}}"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">appears once sessions carry a landing page</div>{{end}}{{with moreNote (len .EntryPages) .EntryPagesTotal}}<div class="morerows">{{.}}</div>{{end}}
+          {{range .EntryPages}}<div class="seg" data-fp="path" data-fv="{{.Value}}"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">appears once sessions carry a landing page</div>{{end}}
+          {{with moreNote (len .EntryPages) .EntryPagesTotal}}<div class="panemore">{{.}}</div>{{end}}{{with moreNote (len .EntryPages) .EntryPagesTotal}}<div class="morerows">{{.}}</div>{{end}}
         </div>
       </div>
     </div>
@@ -1751,6 +1757,7 @@
       <h3>heatmap
         <select id="hmPath" class="zonesel" style="margin-left:8px" title="which page to map">
           {{range .TopPages}}<option value="{{.Value}}">{{.Value}}</option>{{end}}
+          {{with moreNote (len .TopPages) .TopPagesTotal}}<div class="panemore">{{.}}</div>{{end}}
         </select>
         <select id="hmVp" class="zonesel" title="viewport bucket, from the width captured on each click">
           <option value="all">all widths</option>
@@ -1762,8 +1769,9 @@
       <div id="hmOut"><div class="exsummary">…</div></div>
     </div>
     <div class="pane" id="pane-referrers" style="order:320" data-stratum="acquire">
-      <h3>referrers</h3>
-      {{range .Referrers}}<div class="seg"{{if and (ne .Value "direct") (ne .Value "(none)")}} data-fp="referrer" data-fv="{{.Value}}" title="click to filter every zone to this referrer"{{end}}><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">no referrers in this window. a referrer is read from the Referer header the browser sends, so visits typed straight into the address bar count as direct and land here as soon as anyone arrives from a link.</div>{{end}}{{with moreNote (len .Referrers) .ReferrersTotal}}<div class="morerows">{{.}}</div>{{end}}
+      <h3>referrers<span class="sub">&middot; where visits arrived from, by referring domain &middot; the range selected above &middot; computed by /v1/web</span></h3>
+      {{range .Referrers}}<div class="seg"{{if and (ne .Value "direct") (ne .Value "(none)")}} data-fp="referrer" data-fv="{{.Value}}" title="click to filter every zone to this referrer"{{end}}><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">no referrers in this window. a referrer is read from the Referer header the browser sends, so visits typed straight into the address bar count as direct and land here as soon as anyone arrives from a link.</div>{{end}}
+          {{with moreNote (len .Referrers) .ReferrersTotal}}<div class="panemore">{{.}}</div>{{end}}{{with moreNote (len .Referrers) .ReferrersTotal}}<div class="morerows">{{.}}</div>{{end}}
     </div>
     {{else}}
     <!-- no $pageview has ever landed: teach the web side rather than dropping four
@@ -1778,7 +1786,8 @@
     <div class="pane" id="pane-geo" style="order:340" data-stratum="acquire">
       <h3>countries · geo by <a href="https://db-ip.com" target="_blank" rel="noopener" style="color:var(--mut2)">db-ip.com</a></h3>
       <div class="exsummary" style="margin-bottom:10px">countries stamp at ingest from the moment geo is enabled (the IP is used for one lookup and never stored, so no backfill). your own visits count too: open your site once with ?sa_optout=1 to exclude this browser, ?sa_optout=0 to undo</div>
-      {{range .Countries}}<div class="seg"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname"{{if .Code}} data-cc="{{.Code}}"{{end}}>{{if .Flag}}<span class="cflag" aria-hidden="true">{{.Flag}}</span>{{end}}{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}{{with moreNote (len .Countries) .CountriesTotal}}<div class="morerows">{{.}}</div>{{end}}
+      {{range .Countries}}<div class="seg"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname"{{if .Code}} data-cc="{{.Code}}"{{end}}>{{if .Flag}}<span class="cflag" aria-hidden="true">{{.Flag}}</span>{{end}}{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}
+          {{with moreNote (len .Countries) .CountriesTotal}}<div class="panemore">{{.}}</div>{{end}}{{with moreNote (len .Countries) .CountriesTotal}}<div class="morerows">{{.}}</div>{{end}}
     </div>
     {{else}}
     <!-- geo off, or every IP unresolved. a proud "Unknown 100%" bar would be worse than
@@ -1796,14 +1805,17 @@
     <div class="pane wide" id="pane-devices" style="order:440" data-stratum="behave">
       <div class="webcols">
         <div>
-          <h3>device</h3>
-          {{range .DeviceRows}}<div class="seg" data-fp="device" data-fv="{{.Value}}"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{else}}<div class="exsummary">no device data yet</div>{{end}}{{with moreNote (len .DeviceRows) .DeviceRowsTotal}}<div class="morerows">{{.}}</div>{{end}}
+          <h3>device<span class="sub">&middot; browser, OS and device split &middot; the range selected above &middot; computed by /v1/web</span></h3>
+          {{range .DeviceRows}}<div class="seg" data-fp="device" data-fv="{{.Value}}"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{else}}<div class="exsummary">no device data yet</div>{{end}}
+          {{with moreNote (len .DeviceRows) .DeviceRowsTotal}}<div class="panemore">{{.}}</div>{{end}}{{with moreNote (len .DeviceRows) .DeviceRowsTotal}}<div class="morerows">{{.}}</div>{{end}}
           <h3 style="margin-top:16px">os</h3>
-          {{range .OSes}}<div class="seg" data-fp="os" data-fv="{{.Value}}"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">appears as visitors arrive (parsed from the user agent, nothing stored)</div>{{end}}{{with moreNote (len .OSes) .OSesTotal}}<div class="morerows">{{.}}</div>{{end}}
+          {{range .OSes}}<div class="seg" data-fp="os" data-fv="{{.Value}}"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">appears as visitors arrive (parsed from the user agent, nothing stored)</div>{{end}}
+          {{with moreNote (len .OSes) .OSesTotal}}<div class="panemore">{{.}}</div>{{end}}{{with moreNote (len .OSes) .OSesTotal}}<div class="morerows">{{.}}</div>{{end}}
         </div>
         <div>
           <h3>browser</h3>
-          {{range .Browsers}}<div class="seg" data-fp="browser" data-fv="{{.Value}}"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">appears as visitors arrive</div>{{end}}{{with moreNote (len .Browsers) .BrowsersTotal}}<div class="morerows">{{.}}</div>{{end}}
+          {{range .Browsers}}<div class="seg" data-fp="browser" data-fv="{{.Value}}"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">appears as visitors arrive</div>{{end}}
+          {{with moreNote (len .Browsers) .BrowsersTotal}}<div class="panemore">{{.}}</div>{{end}}{{with moreNote (len .Browsers) .BrowsersTotal}}<div class="morerows">{{.}}</div>{{end}}
         </div>
       </div>
     </div>
@@ -1813,13 +1825,16 @@
       <div class="webcols">
         <div>
           <h3>utm source</h3>
-          {{range .UTMSources}}<div class="seg" data-fp="utm_source" data-fv="{{.Value}}"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}{{with moreNote (len .UTMSources) .UTMSourcesTotal}}<div class="morerows">{{.}}</div>{{end}}
+          {{range .UTMSources}}<div class="seg" data-fp="utm_source" data-fv="{{.Value}}"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
+          {{with moreNote (len .UTMSources) .UTMSourcesTotal}}<div class="panemore">{{.}}</div>{{end}}{{with moreNote (len .UTMSources) .UTMSourcesTotal}}<div class="morerows">{{.}}</div>{{end}}
           {{if .UTMMediums}}<h3 style="margin-top:16px">utm medium</h3>
-          {{range .UTMMediums}}<div class="seg" data-fp="utm_medium" data-fv="{{.Value}}"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}{{with moreNote (len .UTMMediums) .UTMMediumsTotal}}<div class="morerows">{{.}}</div>{{end}}{{end}}
+          {{range .UTMMediums}}<div class="seg" data-fp="utm_medium" data-fv="{{.Value}}"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
+          {{with moreNote (len .UTMMediums) .UTMMediumsTotal}}<div class="panemore">{{.}}</div>{{end}}{{with moreNote (len .UTMMediums) .UTMMediumsTotal}}<div class="morerows">{{.}}</div>{{end}}{{end}}
         </div>
         <div>
           <h3>utm campaign</h3>
-          {{range .UTMCampaigns}}<div class="seg" data-fp="utm_campaign" data-fv="{{.Value}}"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">tag links with utm_campaign to see them here</div>{{end}}{{with moreNote (len .UTMCampaigns) .UTMCampaignsTotal}}<div class="morerows">{{.}}</div>{{end}}
+          {{range .UTMCampaigns}}<div class="seg" data-fp="utm_campaign" data-fv="{{.Value}}"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">tag links with utm_campaign to see them here</div>{{end}}
+          {{with moreNote (len .UTMCampaigns) .UTMCampaignsTotal}}<div class="panemore">{{.}}</div>{{end}}{{with moreNote (len .UTMCampaigns) .UTMCampaignsTotal}}<div class="morerows">{{.}}</div>{{end}}
         </div>
       </div>
     </div>
@@ -2359,7 +2374,7 @@
           <option value="" {{if not .RetRolling}}selected{{end}}>returned on</option>
           <option value="1" {{if .RetRolling}}selected{{end}}>on or after</option>
         </select>
-        <span style="text-transform:none;letter-spacing:0">· computed by /v1/retention</span></h3>
+        <span style="text-transform:none;letter-spacing:0">· computed by /v1/retention</span><span class="sub">&middot; weekly cohorts: of the people new that week, how many came back &middot; across all recorded history, not the range selected above &middot; computed by /v1/retention</span></h3>
       {{if .RetentionReady}}
       <table class="heat">
         <thead><tr><th>Cohort</th><th>n</th>{{range .RetDayHeaders}}<th>{{.}}</th>{{end}}</tr></thead>
