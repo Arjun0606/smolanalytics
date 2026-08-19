@@ -2690,6 +2690,30 @@
 </div></main>
 
 <script>
+  // NOTHING MAY FAIL SILENTLY.
+  //
+  // Seven fetch chains on this page had no .catch, so a network failure — the server restarting
+  // mid-load, a dropped connection, a laptop waking up — rejected the promise, the .then never
+  // ran, and whatever placeholder was on screen ("…", "computing…") stayed there forever. It
+  // looked exactly like a pane that is simply empty, which is the worst possible confusion on a
+  // product whose pitch is that its numbers are trustworthy.
+  //
+  // shipGet now catches per-pane and names the failing pane, which covers 16 call sites. This is
+  // the backstop for the rest, and for every chain written after today: one visible line, once,
+  // that says the page is stale rather than empty. A banner is worse than a per-pane message and
+  // far better than nothing, and it cannot be forgotten.
+  window.addEventListener('unhandledrejection', function(){
+    if(document.getElementById('sastale'))return;      // say it once, not once per failed pane
+    var b=document.createElement('div');
+    b.id='sastale';
+    b.setAttribute('role','status');
+    b.textContent='some panes could not reach the server. what you see is stale, not empty — reload to try again.';
+    b.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:80;padding:10px 16px;'+
+      'background:var(--warn);color:var(--bg);font-family:var(--sans);font-size:var(--fs-body);'+
+      'line-height:var(--lh-body);border-top:2px solid var(--edge)';
+    document.body.appendChild(b);
+  });
+
   (function(){
     var f=document.getElementById('askform'),q=document.getElementById('askq'),res=document.getElementById('askresult');
     // the engine's own funnel/event detection, exposed so answer-charts and pins use
@@ -5090,10 +5114,19 @@
     }
     // a marker's url is whatever was POSTed, so only ever render an http(s) one as a link
     function shipHref(u){u=String(u||'');return (u.indexOf('http://')===0||u.indexOf('https://')===0)?u:'';}
+    // ONE .catch HERE COVERS EVERY CALLER. fetch() rejects on a network failure — the server
+    // restarting mid-load, a dropped connection, a sleeping laptop — and there was no catch
+    // anywhere in the chain, so the promise rejected, the caller's .then never ran, and whatever
+    // placeholder was on screen ("…", "computing…") stayed there forever. Silently, and
+    // indistinguishable from a pane that is simply empty.
+    // st:0 means "never reached the server", which shipOff already renders because it checks
+    // j.error, so every existing call site gets a visible failure with no change.
     function shipGet(url){
       return fetch(url).then(function(r){
         return r.json().then(function(j){return {st:r.status,j:j};},
                              function(){return {st:r.status,j:{error:'the server did not return a report'}};});
+      }).catch(function(){
+        return {st:0,j:{error:'could not reach the server — this pane is stale, not empty. reload to try again.'}};
       });
     }
     // a store that isn't attached answers 404/503, which is not a failure to report —

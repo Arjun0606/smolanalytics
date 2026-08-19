@@ -19,6 +19,7 @@ import (
 	alias2 "github.com/Arjun0606/smolanalytics/internal/alias"
 	"github.com/Arjun0606/smolanalytics/internal/api"
 	"github.com/Arjun0606/smolanalytics/internal/audit"
+	"github.com/Arjun0606/smolanalytics/internal/brief"
 	"github.com/Arjun0606/smolanalytics/internal/cohort"
 	"github.com/Arjun0606/smolanalytics/internal/defined"
 	"github.com/Arjun0606/smolanalytics/internal/demo"
@@ -28,7 +29,6 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/geo"
 	"github.com/Arjun0606/smolanalytics/internal/goal"
 	"github.com/Arjun0606/smolanalytics/internal/gsc"
-	"github.com/Arjun0606/smolanalytics/internal/insight"
 	"github.com/Arjun0606/smolanalytics/internal/insights"
 	"github.com/Arjun0606/smolanalytics/internal/mcp"
 	"github.com/Arjun0606/smolanalytics/internal/settings"
@@ -494,8 +494,17 @@ func pruneLoop(st store.Store, set *settings.Store) {
 	}
 }
 
-// dailyBrief delivers the proactive "what to look at" verdict to configured
-// webhooks once a day — the morning brief, the habit loop.
+// dailyBrief delivers the morning read to configured webhooks once a day.
+//
+// IT SENDS THE INVESTIGATION NOW, not insight.Generate. The product's claim — and the
+// homepage's own words — is that it investigates before you wake up: what changed, the segment
+// carrying it, what it cost in people, and whether a quarter of shipping moved anything. That
+// output had no unprompted delivery path on any surface. The only scheduled job in the binary
+// sent the older verdict engine instead, so the flagship conclusion was reachable exclusively by
+// someone who chose to open a browser.
+//
+// brief.Build computes both, so this is a change of which field is delivered rather than new
+// work per tick.
 func dailyBrief(st store.Store, wh *webhook.Store) {
 	t := time.NewTicker(24 * time.Hour)
 	defer t.Stop()
@@ -504,16 +513,20 @@ func dailyBrief(st store.Store, wh *webhook.Store) {
 		if err != nil {
 			continue
 		}
-		findings := insight.Generate(evs)
-		if len(findings) == 0 {
+		b := brief.Build(evs, 7, time.Now().UTC())
+		// A quiet day is a real answer and the brief renders it as one, but it is not worth a
+		// notification: a daily message saying "nothing happened" is how someone learns to filter
+		// the channel, and then they miss the day it matters.
+		if b.Investigation.Quiet && len(b.Findings) == 0 {
 			continue
 		}
-		text := insight.Text(findings)
+		text := brief.Format(b)
 		wh.DeliverAll(map[string]any{
-			"type":     "daily_brief",
-			"text":     text,
-			"findings": findings,
-			"at":       time.Now().UTC(),
+			"type":          "daily_brief",
+			"text":          text,
+			"investigation": b.Investigation,
+			"findings":      b.Findings,
+			"at":            time.Now().UTC(),
 		}, text)
 	}
 }
