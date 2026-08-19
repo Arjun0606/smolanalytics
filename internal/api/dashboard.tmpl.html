@@ -2002,7 +2002,7 @@
       <div data-empty="0">
         <div class="agrow">
           <span class="agprov">computed · {{comma .Checks}} sampled run{{if ne .Checks 1}}s{{end}}</span>
-          <span class="agmeta">{{len .Engines}} engine{{if ne (len .Engines) 1}}s{{end}} · {{len .Prompts}} prompt{{if ne (len .Prompts) 1}}s{{end}} · last {{.Days}} days</span>
+          <span class="agmeta">{{range $i, $e := .Engines}}{{if $i}}, {{end}}{{$e.Engine}}{{end}} &middot; {{len .Prompts}} prompt{{if ne (len .Prompts) 1}}s{{end}} &middot; last {{.Days}} days</span>
         </div>
         <div class="stickrow">
           {{with .Latest}}

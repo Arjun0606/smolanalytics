@@ -478,3 +478,29 @@ func TestOnboardingIsGatedOnEverHavingDataNotOnTheFilteredCount(t *testing.T) {
 		t.Error("EverHadData is not computed from the pre-filter count, so it distinguishes nothing")
 	}
 }
+
+// NAME THE ENGINES, NEVER COUNT THEM.
+//
+// The AI-visibility pane rendered "3 engines", which reads as three AI search engines — ChatGPT,
+// Claude, Perplexity. Only two engine values are ever written, `claude` and `claude-grounded`
+// (smolanalytics-cloud/lib/geo.ts:56-57), and both are the same vendor sampled two ways; the
+// third was whatever "unknown" rows existed. So a count implied a breadth of coverage that does
+// not exist, on the one pane whose entire job is telling you how visible you are to AI.
+//
+// A count hides the composition. Naming them cannot: "claude, claude-grounded" states the limit
+// in the same breath as the finding, and gets better on its own the day a second vendor is added.
+func TestTheVisibilityPaneNamesItsEnginesRatherThanCountingThem(t *testing.T) {
+	src, err := os.ReadFile("dashboard.tmpl.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(src)
+	if strings.Contains(s, "{{len .Engines}} engine") {
+		t.Error("the visibility pane counts its engines, which implies coverage it does not have — " +
+			"only claude and claude-grounded are ever written, and they are one vendor. Range over " +
+			"them and print the names.")
+	}
+	if !strings.Contains(s, "{{range $i, $e := .Engines}}") {
+		t.Error("the pane no longer names its engines; a reader cannot tell one vendor from three")
+	}
+}
