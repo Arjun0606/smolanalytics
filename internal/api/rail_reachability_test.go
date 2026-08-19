@@ -424,3 +424,34 @@ func TestFilteredToNothingIsNotConfusedWithAFreshInstall(t *testing.T) {
 			"agree with HasData and distinguish nothing")
 	}
 }
+
+// THE ONBOARDING POLLER MUST NOT RELOAD A FILTERED PAGE FOREVER.
+//
+// The onboarding block carries a poller that hits /v1/events/recent — unfiltered — and calls
+// location.reload() the instant any event exists, to reveal the populated dashboard. That is
+// correct on a fresh install and catastrophic anywhere else.
+//
+// It was gated on HasData, which is computed AFTER the scope filters. So a filter matching zero
+// rows rendered the onboarding block, the poller saw the instance's real events, reloaded, came
+// back still filtered to zero, and reloaded again. Measured on the deployed demo: 8 main-frame
+// navigations in 6 seconds, indefinitely, against the customer's own server.
+func TestOnboardingIsGatedOnEverHavingDataNotOnTheFilteredCount(t *testing.T) {
+	src, err := os.ReadFile("dashboard.tmpl.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(src)
+	if strings.Contains(s, `{{if not .HasData}}{{template "devnote" .}}{{end}}`) {
+		t.Error("the onboarding block is gated on HasData (post-filter), so any filter matching " +
+			"zero rows renders it — and its poller reloads the page every 4 seconds forever")
+	}
+	if !strings.Contains(s, `{{if not .EverHadData}}{{template "devnote" .}}{{end}}`) {
+		t.Error("the onboarding block is not gated on EverHadData; onboarding is for an instance " +
+			"that has never received an event, which is the only state where reload-on-first-event " +
+			"terminates")
+	}
+	// and the poller itself must still exist, or this guard is watching a thing that is gone
+	if !strings.Contains(s, "first event arrived") {
+		t.Error("the first-event poller is gone; re-check what this guard is protecting")
+	}
+}

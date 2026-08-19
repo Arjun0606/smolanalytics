@@ -1375,7 +1375,15 @@
        verdict — a footnote holding the most valuable space on the page, in front of the one
        thing the page exists to tell you. It renders under the verdict now (see below), and
        only takes the top when there is no verdict to come second to. -->
-  {{if not .HasData}}{{template "devnote" .}}{{end}}
+  {{/* EverHadData, not HasData. The onboarding block carries a poller that hits
+       /v1/events/recent — which is UNFILTERED — and reloads the page the moment any event
+       exists, to reveal the populated dashboard. On a page filtered to zero rows, HasData was
+       false, so the block rendered, the poller saw the instance's millions of events, reloaded,
+       came back still filtered to zero, and reloaded again. Measured: 8 navigations in 6
+       seconds, forever, hammering the customer's own server.
+       Onboarding is for an instance that has never received an event. A filter matching nothing
+       is not that, and the railnote above says so instead. */}}
+  {{if not .EverHadData}}{{template "devnote" .}}{{end}}
 
   <!-- the answer slot — an artifact, not a chat. Renders only when you ask; the ask
        shortcuts live below the chart (they are prompts, not the page's headline). -->
