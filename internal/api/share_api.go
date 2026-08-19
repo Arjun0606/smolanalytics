@@ -86,6 +86,7 @@ var shareTmpl = template.Must(template.New("share").Parse(`<!doctype html>
 .card h2{font-size:12px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.1em;color:var(--mut);margin:0 0 12px}
 .upd{margin-bottom:18px}
 .mv{font-family:var(--mono);font-size:13px;line-height:1.65;padding:7px 0;border-top:1px solid rgba(255,255,255,.06)}
+.mv.ok{opacity:.65}
 .mv:first-of-type{border-top:0}
 .mv.bad{color:#E0A44A} .mv.good{color:#7FBF95}
 .mv .n{color:var(--mut);margin-left:8px}
@@ -113,7 +114,7 @@ var shareTmpl = template.Must(template.New("share").Parse(`<!doctype html>
 {{end}}
 {{if .Inv.Findings}}
 <div class="card upd"><h2>{{len .Inv.Findings}} changed &middot; {{.Inv.NeedsYouCount}} need attention</h2>
-  {{range .Inv.Findings}}<div class="mv {{if .NeedsYou}}bad{{end}}">{{.Headline}}
+  {{range .Inv.Findings}}<div class="mv {{if .NeedsYou}}bad{{end}}{{if .Recovered}} ok{{end}}">{{if .Recovered}}[recovered] {{end}}{{.Headline}}
     {{with .Cost.Size}}<span class="n">{{.}}</span>{{end}}
     {{if .Cause}}<div class="proj">{{.Cause}}</div>{{end}}
   </div>{{end}}

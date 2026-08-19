@@ -75,3 +75,25 @@ func TestTheBriefCarriesAndRendersTheInvestigation(t *testing.T) {
 			"the finding:\n%s", out)
 	}
 }
+
+// THE TEXT SURFACES CARRY THE SAME STATES THE DESK SHOWS.
+//
+// BelowFloor and Recovered shipped to the dashboard first, and the CLI brief and email — the
+// unprompted surfaces — rendered neither: the same one-surface-behind split this codebase keeps
+// re-learning, caught this time before it aged.
+func TestFormatCarriesFloorsAndRecoveredTags(t *testing.T) {
+	now := time.Now().UTC()
+	var evs []event.Event
+	// signup at a steady 3/day: below the floor
+	for d := 27; d >= 0; d-- {
+		for i := 0; i < 3; i++ {
+			evs = append(evs, event.Event{ID: fmt.Sprintf("s%d_%d", d, i), Name: "signup",
+				DistinctID: fmt.Sprintf("u%d_%d", d, i),
+				Timestamp:  now.AddDate(0, 0, -d).Add(time.Duration(i) * time.Minute)})
+		}
+	}
+	out := Format(Build(evs, 7, now))
+	if !strings.Contains(out, "below the detection floor") || !strings.Contains(out, "signup runs at") {
+		t.Errorf("the brief text does not carry the floor note the desk shows:\n%s", out)
+	}
+}

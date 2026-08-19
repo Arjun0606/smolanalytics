@@ -271,13 +271,23 @@ func formatInvestigation(s *strings.Builder, inv investigate.Investigation) {
 		// "nothing happened" from "nothing ran".
 		fmt.Fprintf(s, "\nNothing needs you today. Checked %d metric(s) for step changes.\n", len(inv.Scanned))
 		formatMovements(s, inv.Movements)
+		formatFloors(s, inv.BelowFloor)
 		return
 	}
 	formatMovements(s, inv.Movements)
+	formatFloors(s, inv.BelowFloor)
 	n := inv.NeedsYouCount()
 	fmt.Fprintf(s, "\n%s changed. %d needs you.\n\n", plural(len(inv.Findings), "thing"), n)
 	for i, f := range inv.Findings {
-		fmt.Fprintf(s, "%d. %s", i+1, f.Headline)
+		// The chip travels into text: the CLI and the email carry the same states the desk shows.
+		tag := ""
+		switch {
+		case f.Recovered:
+			tag = "[recovered] "
+		case f.NeedsYou:
+			tag = "[needs you] "
+		}
+		fmt.Fprintf(s, "%d. %s%s", i+1, tag, f.Headline)
 		// One shared renderer, so this cannot drift from the share page, the dashboard and the
 		// backtest — which is precisely what happened while only People was ever printed.
 		if sz := f.Cost.Size(); sz != "" {
@@ -291,6 +301,21 @@ func formatInvestigation(s *strings.Builder, inv investigate.Investigation) {
 			fmt.Fprintf(s, "   → %s\n", f.NextMove)
 		}
 		s.WriteString("\n")
+	}
+}
+
+// formatFloors renders the below-detection-floor notes: which metrics CANNOT yet produce a
+// finding, with the arithmetic. Without this the CLI and the email were silent about small
+// metrics forever, while the desk explained itself — the exact one-surface-behind split this
+// codebase keeps re-learning.
+func formatFloors(s *strings.Builder, fs []investigate.FloorNote) {
+	if len(fs) == 0 {
+		return
+	}
+	s.WriteString("\nbelow the detection floor:\n")
+	for _, f := range fs {
+		fmt.Fprintf(s, "   %s runs at ~%.1f/day; step-change detection needs ~%d/day.\n",
+			f.Event, f.PerDay, f.NeedPerDay)
 	}
 }
 
