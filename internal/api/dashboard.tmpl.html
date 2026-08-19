@@ -1601,7 +1601,7 @@
     <div id="chartAlt" hidden></div>
     <div id="chartMain">
     <div class="chartwrap">
-      <div class="yaxis"><span>{{comma .TrendMax}}</span><span class="ymid">{{comma .TrendMid}}</span><span>0</span></div>
+      <div class="yaxis"><span>{{comma .TrendMax}}</span>{{if ne .TrendMid .TrendMax}}<span class="ymid">{{comma .TrendMid}}</span>{{else}}<span class="ymid"></span>{{end}}<span>0</span></div>
       <div class="plot">
         <div class="gridlines"><div></div><div></div><div></div></div>
         <div class="bars">
@@ -2204,7 +2204,7 @@
         "recommended":true,
         "rank":1,
         "competitors":"PostHog, Plausible",
-        "verbatim":"open-source analytics you can just ask questions",
+        "verbatim":"analytics you can just ask questions",
         "model_version":"claude-sonnet-4-6"}}'</pre>
         <div class="agmeta">One POST per sampled answer. <b>rank</b> is the 1-based position among the tools that answer named (0 = named but not ranked), <b>competitors</b> is comma-separated, <b>verbatim</b> is one line of how it described you, and <b>model_version</b> is the exact model id — a quote with no model and date is not evidence. Put the mode in the engine name (<b>claude</b> vs <b>claude-grounded</b>): a model that knows you and a live web search that surfaces you are different claims. Sample each prompt several times a week and let the rates settle. <b>Send a User-Agent header</b> — $-prefixed events arriving without one are dropped at ingest as crawler traffic, silently.</div>
         </details>

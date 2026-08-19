@@ -2325,7 +2325,11 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		vm.Trend = append(vm.Trend, b)
 	}
 	vm.TrendMax = maxT
-	vm.TrendMid = (maxT + 1) / 2
+	// (max+1)/2 rounds UP, so at max=1 the middle tick equalled the top tick and the axis read
+	// "1 1 0" — a duplicated label that tells a brand-new customer, on their first event, that
+	// the scale is broken. Round down; the template drops the middle label entirely when it
+	// would collide with the top.
+	vm.TrendMid = maxT / 2
 	vm.ChartMetric = trendEvent
 	vm.Gran = string(gran)
 	if tr.Truncated && len(tr.Points) > 0 {
