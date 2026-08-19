@@ -1083,6 +1083,10 @@
      because the useful half of an empty state is the instruction, not the apology. ═══ */
   /* truncation stated, never inferred: ten lists show a top-N and the tail was invisible, so
      "top pages" with six rows read identically on a site with six pages and six hundred. */
+  /* Reserved geometry: the fourteen ajax-filled bodies keep a floor so the card's shape exists
+     before its data does. Plausible sizes its report pane at layout time for the same reason —
+     nothing may reflow when rows arrive, and a collapsed card mid-load reads as broken. */
+  #acctOut,#alOut,#dpOut,#errOut,#exOut,#expOut,#flOut,#fmOut,#hmOut,#pplOut,#sesOut,#sqlOut,#svOut,#whyOut{min-height:96px}
   .panemore{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2);margin-top:7px;
     padding-top:6px;border-top:1px solid var(--line)}
   .paneempty{opacity:.75}
@@ -1755,10 +1759,9 @@
            map" here, so anyone hunting the page for "heatmap" found nothing and concluded
            we had not built it. The plain-English name stays in the explainer. -->
       <h3>heatmap
-        <select id="hmPath" class="zonesel" style="margin-left:8px" title="which page to map">
+        {{if .TopPages}}<select id="hmPath" class="zonesel" style="margin-left:8px" title="which page to map">
           {{range .TopPages}}<option value="{{.Value}}">{{.Value}}</option>{{end}}
-          {{with moreNote (len .TopPages) .TopPagesTotal}}<div class="panemore">{{.}}</div>{{end}}
-        </select>
+        </select>{{else}}<span class="agmeta" style="margin-left:8px">no pages captured yet &mdash; the picker appears with the first $pageview</span>{{end}}
         <select id="hmVp" class="zonesel" title="viewport bucket, from the width captured on each click">
           <option value="all">all widths</option>
           <option value="desktop">desktop</option>
@@ -3341,8 +3344,14 @@
           // authoritative: inferring emptiness from the DOM is what mis-fired on real data.
           if(c.dataset&&c.dataset.empty==='1')return true;
           if(c.dataset&&c.dataset.empty==='0')return false;
-          // a wrapper holding nothing but one note (e.g. #hmOut > .inote) is still empty
-          return c.children&&c.children.length===1&&c.children[0].matches&&c.children[0].matches(NOTE);
+          // a wrapper holding nothing but notes is still empty. This checked for EXACTLY ONE
+          // child, so a .webcols wrapper — two columns, each holding a shrug — never matched,
+          // and pages/devices rendered full-height cards containing two apologies.
+          if(!c.children||c.children.length===0)return false;
+          return Array.prototype.every.call(c.children,function(k){
+            if(k.matches&&k.matches(NOTE))return true;
+            return k.children&&k.children.length===1&&k.children[0].matches&&k.children[0].matches(NOTE);
+          });
         });
         // never quiet a card that is still loading, or its shell would flicker away and back
         if(quiet&&/^\s*…\s*$/.test((p.innerText||'').replace(/^[^\n]*\n/,'')))quiet=false;

@@ -437,7 +437,7 @@ type dashVM struct {
 	FunnelOrder string // the funnel discipline (?forder=): ordered|strict|unordered
 	// Account grain (?grain=company): the funnel + retention panes count ACCOUNTS, not people.
 	GrainProp    string   // the group property in effect, "" = user grain
-	GrainOptions []string // group properties this instance actually has, for the picker
+	GrainOptions []string // group properties this instance actually has. NO PICKER EXISTS: only [0] is read (the template hard-uses SA_GRAIN_OPTS[0]); the rest ride along for the day one is built
 	GrainGroups  int      // how many accounts the re-keyed slice covers
 	GrainNote    string   // coverage note when traffic could not be attributed to an account
 	GrainMiss    string   // a requested property nothing carries — shown, never silently ignored

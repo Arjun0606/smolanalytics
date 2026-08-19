@@ -504,3 +504,22 @@ func TestTheVisibilityPaneNamesItsEnginesRatherThanCountingThem(t *testing.T) {
 		t.Error("the pane no longer names its engines; a reader cannot tell one vendor from three")
 	}
 }
+
+// NO BLOCK ELEMENT MAY SIT INSIDE A SELECT.
+//
+// The truncation-footer pass inserted a <div class="panemore"> inside the heatmap's <select> —
+// its option list ranges over TopPages, and the inserter footered every TopPages range it found.
+// A div inside a select is invalid HTML the browser silently discards, so it shipped rendering
+// nothing and saying nothing, which is precisely the failure mode this codebase's whole test
+// suite exists to make loud.
+func TestNoBlockElementInsideASelect(t *testing.T) {
+	src, err := os.ReadFile("dashboard.tmpl.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range regexp.MustCompile(`(?s)<select.*?</select>`).FindAllString(string(src), -1) {
+		if strings.Contains(m, "<div") {
+			t.Errorf("a <div> inside a <select> is silently dropped by the parser: %.120s", m)
+		}
+	}
+}
