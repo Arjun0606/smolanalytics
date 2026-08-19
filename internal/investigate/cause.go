@@ -48,11 +48,68 @@ func (f Finding) Attributed() bool {
 	return f.Cause != "" && !strings.HasPrefix(f.Cause, Unattributed)
 }
 
-// causeProps are the dimensions worth blaming, in the order a person would check them. Browser
-// and device first because a regression concentrated there is almost always a real front-end bug;
-// country and referrer later because concentration there is more often a traffic-mix change than
-// a defect.
+// causeProps are the BUILT-IN dimensions worth blaming, in the order a person would check them.
+// Browser and device first because a regression concentrated there is almost always a real
+// front-end bug; country and referrer later because concentration there is more often a
+// traffic-mix change than a defect.
+//
+// THE LIST IS NOT THE CEILING. These six cover what autocapture stamps on every event, and for a
+// year they were the ONLY dimensions checked — so a drop carried entirely by free-plan users, or
+// by one utm_campaign, was reported as "spread evenly", which is a false statement produced by
+// not looking. eventProps() below discovers the instance's own custom properties per event and
+// checks those too, because what is worth blaming depends on what the operator actually tracks,
+// and a hardcoded list is the wrong shape for that fact.
 var causeProps = []string{"browser", "os", "device", "path", "country", "referrer"}
+
+// maxDiscoveredProps caps how many custom dimensions are tried per finding, keeping the scan
+// bounded on events with sprawling property bags.
+const maxDiscoveredProps = 4
+
+// eventProps returns the event's own string-valued property keys, most-present first — the
+// dimensions the OPERATOR chose to record, which the built-in list cannot know about.
+func eventProps(evs []event.Event, name string, from, to time.Time) []string {
+	skip := map[string]bool{}
+	for _, p := range causeProps {
+		skip[p] = true
+	}
+	counts := map[string]int{}
+	total := 0
+	for _, e := range evs {
+		if e.Name != name || e.Timestamp.Before(from) || !e.Timestamp.Before(to) {
+			continue
+		}
+		total++
+		for k, v := range e.Properties {
+			if skip[k] || len(k) == 0 || k[0] == '$' {
+				continue // $-props are this tool's own bookkeeping, never a customer dimension
+			}
+			if sv, ok := v.(string); ok && sv != "" {
+				counts[k]++
+			}
+		}
+	}
+	if total == 0 {
+		return nil
+	}
+	var keys []string
+	for k, n := range counts {
+		// Present on at least half the rows, or a "worst segment" over it describes a minority
+		// of the data while reading as though it describes the whole.
+		if float64(n)/float64(total) >= 0.5 {
+			keys = append(keys, k)
+		}
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if counts[keys[i]] != counts[keys[j]] {
+			return counts[keys[i]] > counts[keys[j]]
+		}
+		return keys[i] < keys[j] // deterministic: same instance, same order, every run
+	})
+	if len(keys) > maxDiscoveredProps {
+		keys = keys[:maxDiscoveredProps]
+	}
+	return keys
+}
 
 // Attribute fills in the Cause of every finding it can explain, in place.
 func Attribute(evs []event.Event, findings []Finding, deps []deploys.Deploy, o Opts) {
@@ -161,7 +218,8 @@ func worstSegment(evs []event.Event, name string, day time.Time, o Opts) string 
 	from, to := day.AddDate(0, 0, -span), day.AddDate(0, 0, span)
 
 	type ba struct{ before, after int }
-	for _, prop := range causeProps {
+	props := append(append([]string{}, causeProps...), eventProps(evs, name, from, to)...)
+	for _, prop := range props {
 		counts := map[string]*ba{}
 		totalBefore, totalAfter := 0, 0
 		for _, e := range evs {

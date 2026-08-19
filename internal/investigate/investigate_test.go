@@ -666,3 +666,48 @@ func TestABelowFloorMetricIsNamedWithItsArithmetic(t *testing.T) {
 		t.Errorf("a healthy 30/day metric was reported as below the floor: %+v", busy.BelowFloor)
 	}
 }
+
+// THE DIMENSIONS ARE DISCOVERED, NOT HARDCODED.
+//
+// Six built-in properties were the only ones ever checked, so a drop carried entirely by
+// free-plan users was reported as "spread evenly" — a false statement produced by not looking.
+// The investigator now discovers the instance's own string properties per event and checks those
+// too: what is worth blaming depends on what the operator actually tracks.
+func TestADropCarriedByACustomPropertyIsNamed(t *testing.T) {
+	now := time.Now().UTC()
+	var evs []event.Event
+	add := func(day, i int, plan string, id string) {
+		evs = append(evs, event.Event{
+			ID: id, Name: "checkout", DistinctID: id,
+			Timestamp:  now.AddDate(0, 0, -day).Add(time.Duration(i) * time.Minute),
+			Properties: map[string]any{"plan": plan},
+		})
+	}
+	// Before the drop: 20 free + 20 pro per day. After: free collapses to 2, pro untouched.
+	for d := 27; d >= 0; d-- {
+		freeN := 20
+		if d < 7 {
+			freeN = 2
+		}
+		for i := 0; i < freeN; i++ {
+			add(d, i, "free", fmt.Sprintf("f%d_%d", d, i))
+		}
+		for i := 0; i < 20; i++ {
+			add(d, i+100, "pro", fmt.Sprintf("p%d_%d", d, i))
+		}
+	}
+	inv := Run(evs, Opts{Now: now})
+	var reg *Finding
+	for i := range inv.Findings {
+		if inv.Findings[i].Kind == KindRegression {
+			reg = &inv.Findings[i]
+		}
+	}
+	if reg == nil {
+		t.Fatal("the free-plan collapse was not even detected")
+	}
+	if !strings.Contains(reg.Cause, "free") {
+		t.Errorf("the drop is carried entirely by plan=free and the cause does not say so: %q\n"+
+			"  (a hardcoded dimension list reports this as 'spread evenly', which is false)", reg.Cause)
+	}
+}
