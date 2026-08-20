@@ -16,6 +16,7 @@ import { stdin, stdout } from "node:process";
 import { detect } from "../lib/detect.mjs";
 import { applyStrategy, upsertEnv, snippetHtml, MANUAL_SNIPPETS } from "../lib/insert.mjs";
 import { connectCmd } from "../lib/connect.mjs";
+import { planCheckCmd } from "../lib/plan.mjs";
 
 const C = {
   dim: (s) => `\x1b[2m${s}\x1b[0m`,
@@ -54,7 +55,13 @@ ${C.bold("smolanalytics")} — analytics you can ask in plain English
   ${C.dim("--key   <org token>")}   the API token from smolanalytics.com → Settings
   ${C.dim("--url   <endpoint>")}    one instance instead of the org (default: smolanalytics.com/api/mcp)
 
-Docs: https://smolanalytics.com/docs · 14-day trial, no card
+  ${C.bold("npx smolanalytics plan check")}  fail CI when a planned event stops firing
+  ${C.dim("--key   <api key>")}     or SMOLANALYTICS_KEY
+  ${C.dim("--url   <instance>")}    or SMOLANALYTICS_HOST (default: the cloud org endpoint)
+  ${C.dim("--project <name>")}      cloud only: which project to check
+  ${C.dim("--window <hours>")}      only count events from the last N hours
+
+Docs: https://smolanalytics.com/docs · 14-day trial at Pro limits, no card
 `);
 }
 
@@ -67,6 +74,21 @@ async function main() {
       url: flag("url") || flag("host") || "",
       key: flag("key") || process.env.SMOLANALYTICS_MCP_KEY || "",
       target: bare || "",
+    });
+    return;
+  }
+  if (cmd === "plan") {
+    const sub = process.argv[3];
+    if (sub !== "check") {
+      console.error(`plan: only \`check\` is available in the npm CLI (use the binary for init/push/pull)\n`);
+      process.exitCode = 1;
+      return;
+    }
+    process.exitCode = await planCheckCmd({
+      url: flag("url") || flag("host") || process.env.SMOLANALYTICS_HOST || "",
+      key: flag("key") || process.env.SMOLANALYTICS_KEY || "",
+      project: flag("project") || "",
+      windowHours: Number(flag("window") || 0),
     });
     return;
   }

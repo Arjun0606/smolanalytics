@@ -1,7 +1,7 @@
 {
   "name": "smolanalytics",
-  "version": "0.2.0",
-  "description": "Wire smolanalytics into your app and your editor with one command each: init adds the tracker, connect adds the MCP server (investigate, backtest, mark_finding_acted and 90+ more tools) to Cursor, Claude Code, VS Code, Windsurf, Claude Desktop and Cline.",
+  "version": "0.3.0",
+  "description": "Wire smolanalytics into your app, your editor, and your CI with one command each: init adds the tracker, connect adds the MCP server to Cursor/Claude Code/VS Code/Windsurf/Claude Desktop/Cline, and plan check fails your build when a tracked event stops firing.",
   "type": "module",
   "bin": {
     "smolanalytics": "bin/smolanalytics.mjs"
