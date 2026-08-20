@@ -31,7 +31,6 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/goal"
 	"github.com/Arjun0606/smolanalytics/internal/gsc"
 	"github.com/Arjun0606/smolanalytics/internal/insights"
-	"github.com/Arjun0606/smolanalytics/internal/investigate"
 	"github.com/Arjun0606/smolanalytics/internal/mcp"
 	"github.com/Arjun0606/smolanalytics/internal/settings"
 	"github.com/Arjun0606/smolanalytics/internal/share"
@@ -344,6 +343,8 @@ func serve(st store.Store, closeStore func() error, guardPublic bool) {
 		log.Printf("smolanalytics: audit log disabled (%v)", err)
 	}
 	var actedStore *acted.Store
+	var flagStore *flag.Store
+	var deployStore *deploys.Store
 	if ac, err := acted.Open(sp(".acted.json")); err == nil {
 		actedStore = ac
 		app.SetActed(ac)
@@ -352,7 +353,19 @@ func serve(st store.Store, closeStore func() error, guardPublic bool) {
 	}
 	if wh, err := webhook.Open(sp(".webhooks.json")); err == nil {
 		app.SetWebhooks(wh)
-		go dailyBrief(st, wh, actedStore)
+		go dailyBrief(st, wh, func() *brief.Context {
+			ctx := &brief.Context{}
+			if flagStore != nil {
+				ctx.Flags = flagStore.List()
+			}
+			if deployStore != nil {
+				ctx.Deploys = deployStore.List()
+			}
+			if actedStore != nil {
+				ctx.Acted = actedStore.Lookup()
+			}
+			return ctx
+		})
 	} else {
 		log.Printf("smolanalytics: webhooks disabled (%v)", err)
 	}
@@ -383,6 +396,7 @@ func serve(st store.Store, closeStore func() error, guardPublic bool) {
 	}
 	var flagDeploys *deploys.Store
 	if dp, err := deploys.Open(sp(".deploys.json")); err == nil {
+		deployStore = dp
 		app.SetDeploys(dp)
 		flagDeploys = dp
 		if demoMode {
@@ -392,6 +406,7 @@ func serve(st store.Store, closeStore func() error, guardPublic bool) {
 		log.Printf("smolanalytics: deploys disabled (%v)", err)
 	}
 	if fs, err := flag.Open(sp(".flags.json")); err == nil {
+		flagStore = fs
 		app.SetFlags(fs)
 		wireFlipMarkers(fs, flagDeploys)
 		if demoMode {
@@ -514,7 +529,7 @@ func pruneLoop(st store.Store, set *settings.Store) {
 //
 // brief.Build computes both, so this is a change of which field is delivered rather than new
 // work per tick.
-func dailyBrief(st store.Store, wh *webhook.Store, ac *acted.Store) {
+func dailyBrief(st store.Store, wh *webhook.Store, briefCtx func() *brief.Context) {
 	t := time.NewTicker(24 * time.Hour)
 	defer t.Stop()
 	for range t.C {
@@ -522,13 +537,12 @@ func dailyBrief(st store.Store, wh *webhook.Store, ac *acted.Store) {
 		if err != nil {
 			continue
 		}
-		b := brief.Build(evs, 7, time.Now().UTC())
-		// Same overlay as the dashboard and /v1/brief. Without it the email is the ONE surface
-		// on which a finding you marked acted yesterday still reads "needs you" — and the email
-		// is the surface most likely to be read first thing in the morning.
-		if ac != nil {
-			investigate.ApplyActed(b.Investigation.Findings, ac.Lookup(), time.Now().UTC())
-		}
+		// The full instance context, same as the dashboard: flags (kill list), deploys (cause
+		// attribution) and the outcome ledger. Without it the email is the ONE surface where a
+		// finding you marked acted yesterday still reads "needs you", and where "no deploy
+		// recorded near this day" appears to someone who records deploys — and the email is the
+		// surface most likely to be read first thing in the morning.
+		b := brief.BuildCtx(evs, 7, time.Now().UTC(), briefCtx())
 		// A quiet day is a real answer and the brief renders it as one, but it is not worth a
 		// notification: a daily message saying "nothing happened" is how someone learns to filter
 		// the channel, and then they miss the day it matters.

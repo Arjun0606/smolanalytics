@@ -15,7 +15,6 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/brief"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
-	"github.com/Arjun0606/smolanalytics/internal/investigate"
 	"github.com/Arjun0606/smolanalytics/internal/query"
 	"github.com/Arjun0606/smolanalytics/internal/retention"
 	"github.com/Arjun0606/smolanalytics/internal/trends"
@@ -81,7 +80,7 @@ func (s *Server) ask(w http.ResponseWriter, r *http.Request) {
 		intent = ""
 	}
 	writeJSON(w, http.StatusOK, map[string]string{
-		"answer":      answer(q, evs, now, actedLookup(s)),
+		"answer":      answer(q, evs, now, briefCtx(s)),
 		"computed_by": computedBy(q, evs, now),
 		"intent":      intent,
 	})
@@ -468,7 +467,13 @@ func actedLookup(s *Server) func(string) (time.Time, bool) {
 	return s.acted.Lookup()
 }
 
-func answer(q string, evs []event.Event, now time.Time, acted func(string) (time.Time, bool)) string {
+// briefCtx hands the ask bar and /v1/brief the same instance context the dashboard's
+// investigation reads, so all three surfaces name the same ship for the same finding.
+func briefCtx(s *Server) *brief.Context {
+	return &brief.Context{Flags: flagsFor(s), Deploys: deploysFor(s), Acted: actedLookup(s)}
+}
+
+func answer(q string, evs []event.Event, now time.Time, bctx *brief.Context) string {
 	intent := classifyAsk(q)
 	switch intent {
 	case intentAction:
@@ -483,9 +488,9 @@ func answer(q string, evs []event.Event, now time.Time, acted func(string) (time
 			"why are people droppi", "why do people droppi") {
 			return "I can't tell you WHY people leave, that's a judgment call no metric holds. " +
 				"What I can show is WHERE they drop and whether they come back, which is usually where the answer starts:\n\n" +
-				answerBrief(evs, briefDays(q), now, acted)
+				answerBrief(evs, briefDays(q), now, bctx)
 		}
-		return answerBrief(evs, briefDays(q), now, acted)
+		return answerBrief(evs, briefDays(q), now, bctx)
 	}
 
 	win, unsupported := parseWindow(q, now)
@@ -651,7 +656,7 @@ func answer(q string, evs []event.Event, now time.Time, acted func(string) (time
 				}
 				scoped = scope(evs, win)
 				segNote := " (scoped to " + segs[0].label + ")"
-				return answerScopedIntent(intent, evs, scoped, volAll, win, now, q, acted) + segNote
+				return answerScopedIntent(intent, evs, scoped, volAll, win, now, q, bctx) + segNote
 			default:
 				return answerSegment(evs, m, segs[0], win)
 			}
@@ -715,12 +720,12 @@ func answer(q string, evs []event.Event, now time.Time, acted func(string) (time
 		}
 	}
 
-	return answerScopedIntent(intent, evs, scoped, volAll, win, now, q, acted)
+	return answerScopedIntent(intent, evs, scoped, volAll, win, now, q, bctx)
 }
 
 // answerScopedIntent dispatches the report-shaped intents; pulled out of answer so the
 // segment layer can run the SAME reports over a filtered event set.
-func answerScopedIntent(intent askIntent, evs []event.Event, scoped []event.Event, volAll []string, win askWindow, now time.Time, q string, acted func(string) (time.Time, bool)) string {
+func answerScopedIntent(intent askIntent, evs []event.Event, scoped []event.Event, volAll []string, win askWindow, now time.Time, q string, bctx *brief.Context) string {
 	switch intent {
 	case intentRetention:
 		// "how many people came back today" over a 1-2 day window is a returning-users
@@ -803,7 +808,7 @@ func answerScopedIntent(intent askIntent, evs []event.Event, scoped []event.Even
 			"surveys, feature flags and A/B reads, sessions, deploy impact, and agent observability " +
 			"(tool-call latency, error taxonomy, conversation re-ask/abandon/resolution). I don't invent " +
 			"metrics you haven't tracked (revenue, MRR, churn) unless you send them as events. Here's the closest read I have:\n\n" +
-			answerBrief(evs, 7, now, acted) + "\n\nAsk about any of those, scoped to today, yesterday, this/last week, " +
+			answerBrief(evs, 7, now, bctx) + "\n\nAsk about any of those, scoped to today, yesterday, this/last week, " +
 			"this/last month, or last N days, or connect your own Claude/Cursor over MCP to go deeper."
 	}
 }
@@ -1071,12 +1076,11 @@ func briefDays(q string) int {
 // answerBrief renders the SAME computation as `smolanalytics brief` (pulse +
 // deltas + the verdict engine's findings) tight enough for the ask panel, one
 // Brief struct feeds both, so the ask bar and the morning digest can never disagree.
-func answerBrief(evs []event.Event, days int, now time.Time, acted func(string) (time.Time, bool)) string {
-	b := brief.Build(evs, days, now)
-	// The acted overlay, same as the dashboard and the email — the ask bar answering "how was
-	// the week" must show the verified line too, or the surfaces tell two different stories
-	// about the same finding. ApplyActed no-ops on a nil lookup.
-	investigate.ApplyActed(b.Investigation.Findings, acted, now)
+func answerBrief(evs []event.Event, days int, now time.Time, bctx *brief.Context) string {
+	// The full instance context, same as the dashboard and the email — the ask bar answering
+	// "how was the week" sits directly above the desk, and the two must name the same ship and
+	// show the same verified line for the same finding. BuildCtx no-ops on nil.
+	b := brief.BuildCtx(evs, days, now, bctx)
 	var s strings.Builder
 	// b.Visitors counts distinct users of ANY event (active people), NOT web visitors
 	// (pageviews) — label it as such so a 0-pageview site can't read "1 visitor this week"

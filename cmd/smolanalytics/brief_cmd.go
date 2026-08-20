@@ -21,9 +21,12 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/acted"
 	alias2 "github.com/Arjun0606/smolanalytics/internal/alias"
 	"github.com/Arjun0606/smolanalytics/internal/brief"
+	"github.com/Arjun0606/smolanalytics/internal/deploys"
 	"github.com/Arjun0606/smolanalytics/internal/event"
+	flagstore "github.com/Arjun0606/smolanalytics/internal/flag"
 	"github.com/Arjun0606/smolanalytics/internal/store"
 )
 
@@ -32,7 +35,20 @@ import (
 type briefDigest = brief.Brief
 
 func buildBrief(evs []event.Event, days int, now time.Time) briefDigest {
-	return brief.Build(evs, days, now)
+	// The CLI reads the same sidecars the server does, so `smolanalytics brief` names the same
+	// ship and shows the same verified line as the desk. All three open nil-safe: a missing
+	// sidecar degrades the context, never the brief.
+	ctx := &brief.Context{}
+	if fs, err := flagstore.Open(dataPath() + ".flags.json"); err == nil {
+		ctx.Flags = fs.List()
+	}
+	if dp, err := deploys.Open(dataPath() + ".deploys.json"); err == nil {
+		ctx.Deploys = dp.List()
+	}
+	if ac, err := acted.Open(dataPath() + ".acted.json"); err == nil {
+		ctx.Acted = ac.Lookup()
+	}
+	return brief.BuildCtx(evs, days, now, ctx)
 }
 
 func formatBrief(b briefDigest) string { return brief.Format(b) }

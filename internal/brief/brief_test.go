@@ -6,7 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/deploys"
 	"github.com/Arjun0606/smolanalytics/internal/event"
+	"github.com/Arjun0606/smolanalytics/internal/investigate"
 )
 
 // The GEO sampler writes to the same instance the brief reads. Its robot id must not
@@ -95,5 +97,65 @@ func TestFormatCarriesFloorsAndRecoveredTags(t *testing.T) {
 	out := Format(Build(evs, 7, now))
 	if !strings.Contains(out, "below the detection floor") || !strings.Contains(out, "signup runs at") {
 		t.Errorf("the brief text does not carry the floor note the desk shows:\n%s", out)
+	}
+}
+
+// PARITY WITH THE DESK. The brief was the one surface built without instance context, so on an
+// instance that records deploys the email said "no deploy recorded near this day" while the
+// dashboard named the ship — and even invited the reader to start recording deploys they already
+// record. BuildCtx must hand the same context through; this test fails if it quietly stops.
+func TestBriefWithContextNamesTheShipTheDeskNames(t *testing.T) {
+	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
+	var evs []event.Event
+	mk := func(day, n int) {
+		for i := 0; i < n; i++ {
+			evs = append(evs, event.Event{ID: fmt.Sprintf("c%d_%d", day, i), Name: "checkout",
+				DistinctID: fmt.Sprintf("u%d_%d", day, i),
+				Timestamp:  now.AddDate(0, 0, -day).Add(time.Duration(i) * time.Minute)})
+		}
+	}
+	for d := 27; d >= 8; d-- {
+		mk(d, 40)
+	}
+	for d := 7; d >= 0; d-- {
+		mk(d, 10)
+	}
+	dropDay := now.AddDate(0, 0, -8) // the last full day at the old level; the fall lands on -7
+	deps := []deploys.Deploy{{ID: "d1", SHA: "a1b3f9c", Message: "ship the checkout rewrite",
+		At: now.AddDate(0, 0, -7), Created: now.AddDate(0, 0, -7)}}
+	_ = dropDay
+
+	plain := Build(evs, 7, now)
+	ctxed := BuildCtx(evs, 7, now, &Context{Deploys: deps})
+
+	var plainReg, ctxReg *investigate.Finding
+	for i := range plain.Investigation.Findings {
+		if plain.Investigation.Findings[i].Kind == investigate.KindRegression {
+			plainReg = &plain.Investigation.Findings[i]
+		}
+	}
+	for i := range ctxed.Investigation.Findings {
+		if ctxed.Investigation.Findings[i].Kind == investigate.KindRegression {
+			ctxReg = &ctxed.Investigation.Findings[i]
+		}
+	}
+	if plainReg == nil || ctxReg == nil {
+		t.Fatal("fixture did not produce the regression on both paths")
+	}
+	if !strings.Contains(ctxReg.Cause, "a1b3f9c") {
+		t.Errorf("with deploys in context the brief must name the ship, got: %q", ctxReg.Cause)
+	}
+	if strings.Contains(plainReg.Cause, "a1b3f9c") {
+		t.Errorf("without context the ship cannot be named, got: %q", plainReg.Cause)
+	}
+
+	// and the acted overlay flows through the same door
+	acted := BuildCtx(evs, 7, now, &Context{Acted: func(string) (time.Time, bool) {
+		return now.AddDate(0, 0, -3), true
+	}})
+	for _, f := range acted.Investigation.Findings {
+		if f.Kind == investigate.KindRegression && f.ActedAt.IsZero() {
+			t.Error("the acted overlay did not reach the brief's findings")
+		}
 	}
 }

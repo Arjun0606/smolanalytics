@@ -13,7 +13,9 @@ import (
 
 	"github.com/Arjun0606/smolanalytics/internal/aicrawl"
 	"github.com/Arjun0606/smolanalytics/internal/aivis"
+	"github.com/Arjun0606/smolanalytics/internal/deploys"
 	"github.com/Arjun0606/smolanalytics/internal/event"
+	"github.com/Arjun0606/smolanalytics/internal/flag"
 	"github.com/Arjun0606/smolanalytics/internal/insight"
 	"github.com/Arjun0606/smolanalytics/internal/investigate"
 )
@@ -55,15 +57,39 @@ type siteAgg struct {
 	seen, priorSeen                              map[string]bool
 }
 
+// Context is the optional instance state the investigation reads beyond the events: recorded
+// flags (the kill list), deploy markers (cause attribution), and the outcome ledger (the
+// acted/verified overlay). All optional, all nil-safe.
+//
+// It exists because the brief was the one surface built from investigate.Run while the dashboard
+// used WithContext — so on an instance that records deploys, the emailed finding said "no deploy
+// recorded near this day" while the desk named the ship. Same events, two answers; the email
+// even invites the reader to record deploys they already record.
+type Context struct {
+	Flags   []flag.Flag
+	Deploys []deploys.Deploy
+	Acted   func(string) (time.Time, bool)
+}
+
 // Build computes the pulse windows ([now-N, now) vs [now-2N, now-N)) and runs
-// the verdict engine. The findings see the FULL history — same as the dashboard —
-// so week-over-week and retention reads stay correct even when days narrows the pulse.
+// the verdict engine, without instance context. Prefer BuildCtx wherever the flag, deploy or
+// acted stores are in reach.
 func Build(evs []event.Event, days int, now time.Time) Brief {
+	return BuildCtx(evs, days, now, nil)
+}
+
+// BuildCtx is Build with the same instance context the dashboard's investigation gets.
+func BuildCtx(evs []event.Event, days int, now time.Time, ctx *Context) Brief {
 	b := Brief{GeneratedAt: now, Days: days, Findings: []insight.Finding{}} // [] not null in JSON
 	// The investigation sees the FULL history, like the verdict engine below, because a step
 	// change is only visible against what came before it. Handing it the pulse window would
 	// leave the detector with no "before" and it would find nothing, every time.
-	b.Investigation = investigate.Run(evs, investigate.Opts{Now: now})
+	if ctx != nil {
+		b.Investigation = investigate.WithContext(evs, ctx.Flags, ctx.Deploys, investigate.Opts{Now: now})
+		investigate.ApplyActed(b.Investigation.Findings, ctx.Acted, now)
+	} else {
+		b.Investigation = investigate.Run(evs, investigate.Opts{Now: now})
+	}
 	cur := now.AddDate(0, 0, -days)
 	prior := now.AddDate(0, 0, -2*days)
 	seen, priorSeen := map[string]bool{}, map[string]bool{}
