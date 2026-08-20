@@ -1,7 +1,7 @@
 {
   "name": "smolanalytics",
-  "version": "0.1.1",
-  "description": "Wire smolanalytics into your app with one command. Open-source analytics you can ask in plain English, where a CI test proves the dashboard, the API and your editor return the same number.",
+  "version": "0.2.0",
+  "description": "Wire smolanalytics into your app and your editor with one command each: init adds the tracker, connect adds the MCP server (investigate, backtest, mark_finding_acted and 90+ more tools) to Cursor, Claude Code, VS Code, Windsurf, Claude Desktop and Cline.",
   "type": "module",
   "bin": {
     "smolanalytics": "bin/smolanalytics.mjs"
@@ -18,9 +18,10 @@
     "analytics",
     "product-analytics",
     "web-analytics",
-    "self-hosted",
-    "open-source",
     "mcp",
+    "ai",
+    "cursor",
+    "claude",
     "privacy",
     "cookieless",
     "nextjs",
@@ -28,14 +29,6 @@
     "vite"
   ],
   "homepage": "https://smolanalytics.com",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Arjun0606/smolanalytics.git",
-    "directory": "cli"
-  },
-  "bugs": {
-    "url": "https://github.com/Arjun0606/smolanalytics/issues"
-  },
   "author": "Arjun Varma",
   "license": "MIT",
   "engines": {

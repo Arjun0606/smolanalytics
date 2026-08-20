@@ -15,6 +15,7 @@ import readline from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { detect } from "../lib/detect.mjs";
 import { applyStrategy, upsertEnv, snippetHtml, MANUAL_SNIPPETS } from "../lib/insert.mjs";
+import { connectCmd } from "../lib/connect.mjs";
 
 const C = {
   dim: (s) => `\x1b[2m${s}\x1b[0m`,
@@ -41,20 +42,34 @@ function help() {
   console.log(`
 ${C.bold("smolanalytics")} — analytics you can ask in plain English
 
-  ${C.bold("npx smolanalytics init")}     wire the tracker into this app
+  ${C.bold("npx smolanalytics init")}        wire the tracker into this app
 
   ${C.dim("--key   <write key>")}   public ingest key (or SMOLANALYTICS_WRITE_KEY)
   ${C.dim("--host  <url>")}         your instance, e.g. https://you.fly.dev
   ${C.dim("--yes")}                 don't ask before editing
   ${C.dim("--print")}               print the snippet, change nothing
 
-Self-host the MIT binary or use the hosted plane. Docs: https://smolanalytics.com/docs
+  ${C.bold("npx smolanalytics connect")}     wire the MCP server into every assistant you have
+  ${C.dim("[editor]")}              or just one: cursor, claude-code, vscode, windsurf, claude-desktop, cline
+  ${C.dim("--key   <org token>")}   the API token from smolanalytics.com → Settings
+  ${C.dim("--url   <endpoint>")}    one instance instead of the org (default: smolanalytics.com/api/mcp)
+
+Docs: https://smolanalytics.com/docs · 14-day trial, no card
 `);
 }
 
 async function main() {
   const cmd = process.argv[2];
   if (!cmd || cmd === "help" || cmd === "--help" || cmd === "-h") return help();
+  if (cmd === "connect") {
+    const bare = process.argv.slice(3).find((a, i, all) => !a.startsWith("--") && !(i > 0 && all[i - 1].startsWith("--") && !all[i - 1].includes("=")));
+    process.exitCode = connectCmd({
+      url: flag("url") || flag("host") || "",
+      key: flag("key") || process.env.SMOLANALYTICS_MCP_KEY || "",
+      target: bare || "",
+    });
+    return;
+  }
   if (cmd !== "init") {
     console.error(`unknown command ${C.bold(cmd)}\n`);
     help();
