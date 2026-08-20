@@ -348,8 +348,12 @@ func TestAnUnattributableDropSaysWhatIsMissing(t *testing.T) {
 	if len(inv.Findings) == 0 {
 		t.Fatal("no finding")
 	}
-	if c := inv.Findings[0].Cause; !strings.Contains(c, "record deploys") {
-		t.Errorf("the unattributed line must name the fix that would attribute it next time: %q", c)
+	// The property, not the phrasing: an unattributed line must tell the reader what to change so
+	// that next time it CAN be attributed. Which fix it names depends on what is missing (a deploy
+	// marker, a property to slice by, or both), so assert that a fix is named at all.
+	c := inv.Findings[0].Cause
+	if !strings.Contains(c, "record deploys") && !strings.Contains(c, "send a property") {
+		t.Errorf("the unattributed line names no fix that would attribute it next time: %q", c)
 	}
 }
 
@@ -433,7 +437,7 @@ func TestTheUnattributedLineMatchesTheDirectionOfTheFinding(t *testing.T) {
 		if f.Kind != KindSurge {
 			continue
 		}
-		if strings.Contains(f.Cause, "the drop is spread") {
+		if strings.Contains(f.Cause, "drop") {
 			t.Errorf("a rise is explained as a drop: %q\n  headline: %s", f.Cause, f.Headline)
 		}
 	}
@@ -443,7 +447,8 @@ func TestTheUnattributedLineMatchesTheDirectionOfTheFinding(t *testing.T) {
 	if len(fall.Findings) == 0 {
 		t.Fatal("a 4x collapse produced no finding")
 	}
-	if c := fall.Findings[0].Cause; !strings.Contains(c, "the drop is spread") {
+	// Whichever unattributed line it lands on, the direction word follows the finding.
+	if c := fall.Findings[0].Cause; !strings.Contains(c, "drop") || strings.Contains(c, "rise") {
 		t.Errorf("a drop no longer reads as a drop: %q", c)
 	}
 }

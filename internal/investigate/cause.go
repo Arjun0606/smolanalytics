@@ -61,6 +61,39 @@ func (f Finding) Attributed() bool {
 // and a hardcoded list is the wrong shape for that fact.
 var causeProps = []string{"browser", "os", "device", "path", "country", "referrer"}
 
+// vendorAliases maps each built-in dimension to the names OTHER TOOLS write for the same thing.
+//
+// Every vendor prefixes its autocapture properties with "$", and eventProps() deliberately skips
+// "$" keys because those are OUR bookkeeping. The result was measured and is worse than missing a
+// finding: on PostHog-shaped data the exact same drop that reads "100% of the loss is
+// browser=Safari" on our own events came out as "the drop is spread evenly across browsers,
+// devices and pages" — a confident sentence about dimensions the code never examined. That is a
+// false statement shipped to anyone who imported from another tool, which is a path we sell.
+//
+// Aliased here rather than renamed at import time on purpose: this also fixes data already
+// imported, and data POSTed in a vendor's shape straight to /v1/events.
+var vendorAliases = map[string][]string{
+	"browser":  {"$browser"},
+	"os":       {"$os"},
+	"device":   {"$device_type", "$device"},
+	"path":     {"$pathname", "$current_url"},
+	"country":  {"$geoip_country_name", "$geoip_country_code"},
+	"referrer": {"$referring_domain", "$referrer"},
+}
+
+// propValue reads a dimension from an event under our name or any vendor's name for it.
+func propValue(e event.Event, prop string) string {
+	if v, ok := e.Properties[prop].(string); ok && v != "" {
+		return v
+	}
+	for _, alias := range vendorAliases[prop] {
+		if v, ok := e.Properties[alias].(string); ok && v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 // maxDiscoveredProps caps how many custom dimensions are tried per finding, keeping the scan
 // bounded on events with sprawling property bags.
 const maxDiscoveredProps = 4
@@ -124,7 +157,7 @@ func Attribute(evs []event.Event, findings []Finding, deps []deploys.Deploy, o O
 			continue
 		}
 		ship := shipNear(evs, f.Event, day, deps, o)
-		seg := worstSegment(evs, f.Event, day, o)
+		seg, examined := worstSegment(evs, f.Event, day, o)
 
 		switch {
 		case ship != "" && seg != "":
@@ -147,8 +180,15 @@ func Attribute(evs []event.Event, findings []Finding, deps []deploys.Deploy, o O
 			case KindSurge:
 				word = "rise"
 			}
-			f.Cause = Unattributed + " and the " + word + " is spread evenly across " +
-				"browsers, devices and pages — record deploys and this line becomes 'which ship did it'"
+			if examined {
+				f.Cause = Unattributed + " and the " + word + " is spread evenly across " +
+					"browsers, devices and pages — record deploys and this line becomes 'which ship did it'"
+			} else {
+				// Nothing to slice by. Say that, rather than describing a spread we never measured.
+				f.Cause = Unattributed + ", and these events carry no properties to break the " +
+					word + " down by — record deploys and send a property or two (browser, plan, path), " +
+					"and this line names the ship and who it hit"
+			}
 		}
 	}
 }
@@ -204,7 +244,7 @@ func shipNear(evs []event.Event, name string, day time.Time, deps []deploys.Depl
 // Compares each value's share of the metric BEFORE the change day against AFTER, and reports the
 // value whose loss accounts for most of the total. Concentration is the signal: an even spread
 // across every browser is a demand problem, one browser losing everything is a bug.
-func worstSegment(evs []event.Event, name string, day time.Time, o Opts) string {
+func worstSegment(evs []event.Event, name string, day time.Time, o Opts) (string, bool) {
 	// EQUAL WINDOWS EITHER SIDE, or the arithmetic is meaningless.
 	//
 	// The first version compared "everything before the change day" against "everything after".
@@ -213,12 +253,16 @@ func worstSegment(evs []event.Event, name string, day time.Time, o Opts) string 
 	// "117% of the loss is browser=Safari", which is the kind of number that ends a sales call.
 	span := windowEitherSide(evs, name, day, o)
 	if span <= 0 {
-		return ""
+		return "", false
 	}
 	from, to := day.AddDate(0, 0, -span), day.AddDate(0, 0, span)
 
 	type ba struct{ before, after int }
 	props := append(append([]string{}, causeProps...), eventProps(evs, name, from, to)...)
+	// examined records whether ANY dimension was actually present on these events. Without it,
+	// "no concentration found" and "there was nothing to look at" produce the same empty string,
+	// and the caller states the first while meaning the second.
+	examined := false
 	for _, prop := range props {
 		counts := map[string]*ba{}
 		totalBefore, totalAfter := 0, 0
@@ -226,10 +270,11 @@ func worstSegment(evs []event.Event, name string, day time.Time, o Opts) string 
 			if e.Name != name || e.Timestamp.Before(from) || !e.Timestamp.Before(to) {
 				continue
 			}
-			v, _ := e.Properties[prop].(string)
+			v := propValue(e, prop)
 			if v == "" {
 				continue
 			}
+			examined = true
 			c := counts[v]
 			if c == nil {
 				c = &ba{}
@@ -276,9 +321,9 @@ func worstSegment(evs []event.Event, name string, day time.Time, o Opts) string 
 		if share < minSegmentShare {
 			continue // spread evenly — naming the biggest slice would mislead
 		}
-		return fmt.Sprintf("%.0f%% of the loss is %s=%s.", share*100, prop, rows[0].v)
+		return fmt.Sprintf("%.0f%% of the loss is %s=%s.", share*100, prop, rows[0].v), true
 	}
-	return ""
+	return "", examined
 }
 
 // dailyPoints builds the series ComputeImpact expects.
