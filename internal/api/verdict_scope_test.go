@@ -69,11 +69,15 @@ func TestVerdictFollowsTheActiveFilter(t *testing.T) {
 		return string(b)
 	}
 
-	callout := regexp.MustCompile(`(?s)<div class="co-title">(.*?)</div>\s*<div class="co-detail">(.*?)</div>`)
+	// The verdict is a ledger row now, not a full-width callout: one grammar for everything
+	// waiting on a human, whichever engine produced it. What is read here is the same pair of
+	// strings — the finding's headline and its prose — from the row that carries a fix-brief
+	// affordance, which is what only an insight verdict row has.
+	row := regexp.MustCompile(`(?s)<span class="lhead">(.*?)</span>.*?class="lfix".*?<span class="lsub">(.*?)<a class="lev"`)
 	read := func(html, label string) (string, string) {
-		m := callout.FindStringSubmatch(html)
+		m := row.FindStringSubmatch(html)
 		if m == nil {
-			t.Fatalf("%s: no verdict callout rendered", label)
+			t.Fatalf("%s: no verdict row rendered on the ledger", label)
 		}
 		return m[1], m[2]
 	}

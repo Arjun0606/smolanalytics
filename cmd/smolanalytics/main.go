@@ -25,6 +25,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/defined"
 	"github.com/Arjun0606/smolanalytics/internal/demo"
 	"github.com/Arjun0606/smolanalytics/internal/deploys"
+	"github.com/Arjun0606/smolanalytics/internal/desk"
 	"github.com/Arjun0606/smolanalytics/internal/exportlink"
 	"github.com/Arjun0606/smolanalytics/internal/flag"
 	"github.com/Arjun0606/smolanalytics/internal/geo"
@@ -560,11 +561,15 @@ func dailyBrief(st store.Store, wh *webhook.Store, briefCtx func() *brief.Contex
 	}
 }
 
-// alertLoop evaluates alerts on boot and every 5 minutes, firing webhooks for any
+// alertLoop evaluates alerts on boot and on every safety pass, firing webhooks for any
 // whose condition is met.
+//
+// The interval comes from desk.SafetyPassEvery because the ledger PRINTS it — "rechecked every 5
+// minutes" is a claim on the first screen, and a claim built from a literal in a different file
+// is a claim that outlives the schedule it describes.
 func alertLoop(app *api.Server) {
 	safetyPass(app)
-	t := time.NewTicker(5 * time.Minute)
+	t := time.NewTicker(desk.SafetyPassEvery)
 	defer t.Stop()
 	for range t.C {
 		safetyPass(app)

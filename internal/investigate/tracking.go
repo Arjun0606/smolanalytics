@@ -394,3 +394,22 @@ func pctFall(after, before float64) string {
 	}
 	return fmt.Sprintf("%.0f%%", 100*(before-after)/before)
 }
+
+// TrackingTrigger is the promise this detector makes about one planned event, in the same
+// arithmetic the gates enforce.
+//
+// It exists so a surface can say what WOULD happen without restating the rule from memory. The
+// dashboard's standing-orders section printed this sentence by hand for exactly as long as it
+// took someone to change minQuietDays, and then the page was advertising a threshold the code no
+// longer used. Built from the unexported consts themselves, so the promise cannot drift from
+// classifyOne: change the number and the sentence changes with it.
+//
+// It deliberately promises only what THIS package does — raise a finding. Opening a pull request
+// is the cloud's half, gated on switches this package cannot see, and a detector that promises
+// somebody else's action is how a product ends up lying on a self-hosted instance.
+func TrackingTrigger(event string) string {
+	return fmt.Sprintf(
+		"%s goes silent for %d full days running while a witness metric — the page it fires on, or "+
+			"the rest of the instance — holds at %.0f%% of its own baseline",
+		event, minQuietDays, 100*witnessTolerance)
+}

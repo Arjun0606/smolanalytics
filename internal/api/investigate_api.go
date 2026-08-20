@@ -23,12 +23,26 @@ import (
 // deskSources gathers this instance's optional state for an investigation. One place, so the
 // route, the dashboard and the share page cannot be wired with different halves of it.
 func (s *Server) deskSources() desk.Sources {
-	return desk.Sources{
+	src := desk.Sources{
 		Flags:   flagsFor(s),
 		Deploys: deploysFor(s),
 		Acted:   actedLookup(s),
 		Planned: desk.Planned(s.trackplan),
 	}
+	// The ledger's standing orders: the declared events by NAME (Planned above is a lookup and
+	// cannot be enumerated), the alert rules, and whether there is anywhere to deliver. Wired
+	// identically in internal/mcp, and the agreement test fails the moment one door gains a
+	// source the other does not.
+	if s.trackplan != nil {
+		src.Plan = s.trackplan.Get().Events
+	}
+	if s.alerts != nil {
+		src.Alerts = s.alerts.List()
+	}
+	if s.webhooks != nil {
+		src.Webhooks = len(s.webhooks.List())
+	}
+	return src
 }
 
 // apiInvestigate serves the whole desk as JSON.
@@ -58,7 +72,7 @@ func (s *Server) apiInvestigate(w http.ResponseWriter, r *http.Request) {
 	// MCP tool hands it the raw range — so passing a pre-filtered slice from this door only, to
 	// be filtered again downstream, is precisely the kind of asymmetry the agreement test exists
 	// to catch. One door must not narrow what the other does not.
-	writeJSON(w, http.StatusOK, desk.Doc(desk.Build(evs, s.deskSources(), investigate.Opts{
+	writeJSON(w, http.StatusOK, desk.Doc(desk.BuildDesk(evs, s.deskSources(), investigate.Opts{
 		Now:  time.Now().UTC(),
 		Days: days,
 	})))

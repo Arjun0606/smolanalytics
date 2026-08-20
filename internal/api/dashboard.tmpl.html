@@ -277,32 +277,12 @@
   .abtn:hover{border-color:var(--accent);color:var(--accent)}
   .abtn.pinned{border-color:var(--accent);color:var(--accent)}
 
-  /* zone 3 — the verdict, led by a first-class insight callout: the one thing to fix,
-     stated plainly, with the proof and a way in. This IS the product's job-done-for-you. */
+  /* zone 3 — the ledger: what is standing over this product right now, what it has already done
+     without being asked, and what it would take to arm the rest. The insight verdict's callout,
+     its ! / ✦ strip and the separate findings queue all folded into .lrow — three finding
+     systems in three styles was the clutter the queue's own comment set out to remove, and the
+     ledger finishes that job by giving acts, findings and watches one grammar. */
   .verdict{margin:var(--zone) 0 0}
-  .callout{position:relative;display:grid;grid-template-columns:auto 1fr auto;gap:20px;align-items:start;
-    border:var(--bw) solid var(--edge);border-radius:var(--r-card);background:var(--s1);padding:19px 22px 19px 26px;overflow:hidden;margin-bottom:16px;
-    box-shadow:var(--sh-3)}
-  .callout::before{content:"";position:absolute;left:0;top:0;bottom:0;width:8px;background:var(--brand)}
-  .callout.warn::before{background:var(--warn)}
-  .callout.warn{background:radial-gradient(130% 150% at 0% 0%,rgba(229,84,75,.07),transparent 52%),var(--s1)}
-  .co-tag{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:var(--fs-lbl);letter-spacing:.09em;text-transform:uppercase;color:var(--accent);font-weight:700;white-space:nowrap;padding-top:3px}
-  .callout.warn .co-tag{color:var(--warn)}
-  /* the circle grows with the glyph: a 12px "!" inside a 15px ring with a 1.5px border has
-     12px of inner space and touches on both sides. 18px keeps the ring a ring. */
-  .co-ic{width:18px;height:18px;border-radius:50%;border:1.5px solid currentColor;display:grid;place-items:center;font-size:var(--fs-lbl);line-height:1;font-weight:700}
-  .co-title{font-size:var(--fs-lead);font-weight:600;line-height:1.3;letter-spacing:-.012em;color:var(--fg)}
-  .co-detail{margin-top:6px;color:var(--mut);font-size:var(--fs-body);line-height:1.5}
-  .co-meta{margin-top:11px;display:flex;gap:8px 14px;flex-wrap:wrap;align-items:center;font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2)}
-  .co-meta .co-prov{color:var(--mut);border:1px solid var(--line);border-radius:4px;padding:3px 8px}
-  /* The verdict now carries two actions: "Show me" opens the report (primary — the number is
-     always the first move), "Fix with your agent" hands the computed evidence to the thing that
-     will change the code (secondary weight, same control kit, so they read as one pair). */
-  .co-act{align-self:center;display:flex;flex-direction:column;gap:7px}
-  .co-fix{display:inline-block;background:var(--s2);border:1px solid var(--line2);color:var(--mut);font-family:var(--mono);font-size:var(--fs-lbl);font-weight:600;border-radius:var(--r-ctl);padding:7px 14px;text-decoration:none;white-space:nowrap;text-align:center;cursor:pointer;transition:border-color var(--t-fast),color var(--t-fast)}
-  .co-fix:hover,.co-fix:focus-visible{border-color:var(--accent);color:var(--accent)}
-  .vfix{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2);cursor:pointer;white-space:nowrap}
-  .vfix:hover,.vfix:focus-visible{color:var(--accent)}
   /* the fix-brief sheet — same slide-over geometry as the visitor journey overlay, wider,
      because this one is read rather than scanned */
   .fxshade{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100;animation:fadein var(--t-base) var(--ease)}
@@ -325,40 +305,9 @@
   .fixsheet .fxwhy{color:var(--mut);font-size:var(--fs-body);line-height:1.6;padding:2px 0 8px}
   .fixsheet ol.fxdo{margin:0;padding-left:18px;color:var(--mut);font-size:var(--fs-body);line-height:1.75}
   .fixsheet .fxaccept{font-size:var(--fs-body);color:var(--fg);line-height:1.7}
-  .co-go{display:inline-block;background:var(--brand);color:var(--on-brand);font-family:var(--mono);font-size:var(--fs-lbl);font-weight:700;border-radius:var(--r-ctl);padding:8px 14px;text-decoration:none;white-space:nowrap;cursor:pointer;transition:background var(--t-fast)}
-  .co-go:hover{filter:brightness(.93)}
-  .verdict-more{margin-top:8px;border-top:1px solid var(--line)}
-  @media(max-width:720px){.callout{grid-template-columns:1fr;gap:12px}.co-act{justify-self:start}}
-  /* ---- the findings block ------------------------------------------------------------
-     A triage list has to RANK, and four bullets of prose in one weight cannot: "day-1
-     retention 4%" and "page views up 249%" were rendered identically, one of them three
-     lines long, every line ending in the same two links so the eye had nothing to fix on.
-     Four columns now, in scanning order: the rank, the finding, its one figure, the two
-     actions — with the actions pushed to a right rail so they stop competing with content.
-     Severity is a CHARACTER (! / ✦) before it is a colour, and it is a word in the a11y
-     tree, so the rank survives greyscale, a colour-blind reader and a screen reader. */
-  .vline{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:baseline;gap:0 10px;
-    padding:7px 2px;font-size:var(--fs-lead);line-height:var(--lh-lead);border-bottom:1px solid var(--line)}
-  .vline:last-child{border-bottom:none}
-  .vline .vmk{font-family:var(--mono);font-size:var(--fs-lbl);font-weight:700;color:var(--mut2);width:1ch;text-align:center}
-  .vline.warn .vmk{color:var(--warn)}
-  /* the rank as text for anything that cannot see the glyph — clipped, never display:none,
-     because display:none takes it out of the a11y tree too */
-  .vsr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
-  .vmid{display:grid;grid-template-columns:minmax(0,auto) minmax(0,1fr);align-items:baseline;gap:0 10px;min-width:0}
-  .vline .vt{color:var(--sec);font-weight:500;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .vline.warn .vt{color:var(--fg);font-weight:600}
-  /* one line per finding, always: the detail is its first sentence and even that clips before
-     the title does. The whole prose is still on the row in title= and in the fix brief. */
-  .vline .vd{color:var(--mut);font-size:var(--fs-body);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  /* the promoted figure — the one thing on the row the eye should find without reading it */
-  .vline .vn{font-family:var(--mono);font-weight:600;color:var(--fg);font-variant-numeric:tabular-nums}
-  .vline.warn .vn{color:var(--warn)}
-  .vact{display:flex;gap:14px;white-space:nowrap}
-  .vline .vwhy{color:var(--mut2);font-family:var(--mono);font-size:var(--fs-lbl);text-decoration:none;white-space:nowrap;cursor:pointer}
-  .vline .vwhy:hover,.vline .vwhy:focus-visible{color:var(--accent);text-decoration:underline}
-  @media(max-width:720px){.vmid{grid-template-columns:minmax(0,1fr)}.vline .vt{white-space:normal}}
-  .vcalm{color:var(--mut);font-size:var(--fs-lead);padding:5px 0}
+  /* .lfix is the fix brief's affordance on a ledger row. It is styled by .lact a with every
+     other row verb, because "fix brief" is one of four verbs in that column and giving it its
+     own chrome is what made the old strip read as a second, competing finding system. */
   .weekline{margin-top:4px}
   .weekline summary{cursor:pointer;list-style:none;font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2)}
   .weekline summary:hover{color:var(--accent)}
@@ -1095,28 +1044,61 @@
   .paneempty .pehint{font-family:var(--mono);font-size:var(--fs-lbl);line-height:1.65;
     color:var(--mut2);border-top:1px solid var(--line);padding-top:9px}
   .paneempty .pehint code{color:var(--fg)}
-  /* ═══ THE QUEUE ═════════════════════════════════════════════════════════════════════════
-     One row grammar for every finding on the desk, whichever engine produced it. The first
-     screen used to stack THREE finding systems in three styles — the brief's rows, the insight
-     verdict's callout, and the verdict-more strip — and three different-looking lists of
-     problems read as clutter even when each is individually fine. A queue of identical rows
-     reads as work. Status chip, headline, size, actions: the Autonoma run-row, for findings. */
-  .qrow{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;gap:0 14px;align-items:baseline;
+  /* ═══ THE LEDGER ROW ════════════════════════════════════════════════════════════════════
+     ONE row grammar for every line on the desk: an act the system performed without asking, a
+     finding waiting on a human, a condition standing armed, a capability that is not armed yet.
+     This is the old queue grid kept intact — the queue's own comment already said this row was
+     meant to be the one grammar for every finding, whichever engine produced it, and the ledger
+     only extends it to acts and watches. It is a rename plus an extension, not a rewrite.
+
+     The mono/prose split is total and mechanical. Chip, head, time and figure are MONO because
+     they are identifiers and numbers: a flag key, an event name, a check age, a cost. The one
+     full-width line is SANS because it is the only place the product speaks in sentences, and a
+     paragraph set in a monospace face is a paragraph nobody finishes. */
+  .lrow{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;gap:0 14px;align-items:baseline;
     padding:10px 2px;border-top:1px solid var(--line)}
-  .qrow:first-of-type{border-top:0}
-  .qchip{font-family:var(--mono);font-size:var(--fs-lbl);font-weight:600;text-transform:uppercase;
+  .lrow:first-of-type{border-top:0}
+  .lchip{font-family:var(--mono);font-size:var(--fs-lbl);font-weight:600;text-transform:uppercase;
     letter-spacing:var(--track-lbl);white-space:nowrap;padding:1px 8px;border:1px solid var(--line2);color:var(--mut)}
-  .qrow.you .qchip{border-color:var(--warn);color:var(--warn)}
-  .qchip.healed{border-color:var(--ok);color:var(--ok)}
-  .qrow .qchip.healed~.qhead{color:var(--mut)}
-  .qhead{font-family:var(--mono);font-size:var(--fs-claim);line-height:var(--lh-claim);font-weight:600;
+  /* .did is the only green: something actually happened and left a receipt. ARMED is
+     deliberately NOT green — armed is readiness, not good news, and a standing order coloured
+     like a pass reads as a completed one. It shares the neutral --line3/--sec tone with an
+     ACTED-but-not-yet-recovered finding, which is the same state: in flight, not concluded. */
+  .lchip.did{border-color:var(--ok);color:var(--ok)}
+  .lchip.you{border-color:var(--warn);color:var(--warn)}
+  .lchip.armed{border-color:var(--line3);color:var(--sec)}
+  .lchip.cold{border-color:var(--line2);color:var(--mut2)}
+  /* Weight 600, not 700+: mono faces on macOS and Windows ship no real 800, so anything heavier
+     is faux-bold and varies by platform. */
+  .lhead{font-family:var(--mono);font-size:var(--fs-claim);line-height:var(--lh-claim);font-weight:600;
     color:var(--fg);min-width:0}
-  .qsize{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);white-space:nowrap}
-  .qact{display:flex;gap:10px;white-space:nowrap}
-  .qact a{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--accent);cursor:pointer;text-decoration:none}
-  .qact a:hover{text-decoration:underline}
-  .qsub{grid-column:2/-1;font-size:var(--fs-body);line-height:var(--lh-body);color:var(--mut);max-width:68ch}
-  @media(max-width:820px){.qrow{grid-template-columns:auto minmax(0,1fr)}.qsize,.qact{grid-column:2}}
+  .lwhen{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);white-space:nowrap;
+    font-variant-numeric:tabular-nums}
+  /* The lead open finding promotes its measured cost into the time slot at 40px. It is the only
+     large figure below the slab, so the ladder stays a clean 64 → 40 → body now that the slab's
+     own subject is the ledger rather than the most expensive thing we noticed. */
+  .lrow.lead .lwhen{font-size:var(--fs-num);line-height:var(--lh-num);font-weight:600;
+    letter-spacing:var(--track-num);color:var(--fg)}
+  /* Column 4 is explicit: a row without a time (a folded-in verdict line) would otherwise slide
+     its actions into column 3 and the whole list would stop lining up. */
+  .lact{grid-column:4;display:flex;gap:10px;white-space:nowrap;justify-self:end}
+  .lact a{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--accent);cursor:pointer;text-decoration:none}
+  .lact a:hover{text-decoration:underline}
+  /* The one sentence. Never --mut2 and never --dis: the type ladder forbids a sentence at those
+     rungs, and every .lsub is a sentence. This is where the row earns its place. */
+  .lsub{grid-column:2/-1;font-size:var(--fs-body);line-height:var(--lh-body);color:var(--mut);max-width:68ch}
+  /* a promoted figure inside prose keeps the mono face — numbers are mono everywhere */
+  .lsub .vn,.lhead .vn{font-family:var(--mono);font-weight:600;color:var(--fg);font-variant-numeric:tabular-nums}
+  /* THE EVIDENCE AFFORDANCE. Exactly one per row, always, as the last child of the sentence.
+     Its text names the DESTINATION rather than the action, so the reader knows where they land.
+     This single rule is what demotes the thirty-three report panes from a browsable menu to the
+     proof of a specific claim: nothing on the ledger asserts anything without one. */
+  .lev{color:var(--accent);text-decoration:none;border-bottom:1px solid var(--line2);white-space:nowrap}
+  .lev:hover{border-bottom-color:var(--accent)}
+  .lnote{font-size:var(--fs-body);line-height:var(--lh-body);color:var(--mut);max-width:68ch;
+    margin-top:10px;padding-top:8px;border-top:1px solid var(--line)}
+  @media(max-width:820px){.lrow{grid-template-columns:auto minmax(0,1fr)}
+    .lwhen,.lact{grid-column:2}.lact{justify-self:start}}
   /* ═══ THE SLAB ═══════════════════════════════════════════════════════════════════════════
      One conclusion, on the brand's own ground, figure first. Byte-identical in light and dark:
      #FFC900 with #17140D on it is 11.9:1 either way, so this is the one component that does not
@@ -1166,24 +1148,10 @@
      apart across the whole viewport, so comparing "then" against "now" meant a saccade across
      half a metre of screen. 1080px puts the columns in one field of view and leaves the deck
      below free to use the full width for charts, which genuinely want it. */
-  .pmbrief .pmrow,.pmbrief .pmbasis,.pmbrief .pmquarter,.pmbrief .pmhead{max-width:1080px}
-  .pmhead{font-family:var(--mono);font-size:var(--fs-lbl);text-transform:uppercase;letter-spacing:var(--track-lbl);color:var(--mut2);margin:0 0 10px;padding-top:2px}
+  .pmbrief .lrow,.pmbrief .lnote,.pmbrief .pmbasis,.pmbrief .pmquarter,.pmbrief .pmhead{max-width:1080px}
+  .pmhead{font-family:var(--mono);font-size:var(--fs-lbl);text-transform:uppercase;letter-spacing:var(--track-lbl);color:var(--mut2);margin:18px 0 10px;padding-top:2px}
   .pmhead b{color:var(--fg)}
-  .pmrow{padding:8px 0;border-top:1px solid var(--line)}
-  .pmrow:first-of-type{border-top:0}
-  .pmtop{display:flex;gap:10px;align-items:baseline;justify-content:space-between}
-  /* The finding headline is the sentence the screen is about, so it gets the claim rung. Mono
-     stays on purpose: it leads with the operator's own event name, which is exactly the case the
-     face rule keeps in mono. Weight 600 — mono faces on macOS and Windows ship no 800, so 700+
-     is faux-bold and varies by platform. */
-  .pmh{font-family:var(--mono);font-size:var(--fs-claim);line-height:var(--lh-claim);font-weight:600;color:var(--fg)}
-  .pmrow.you .pmh{font-weight:600}
-  .pmcost{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);white-space:nowrap}
-  .pmwhy,.pmnext{font-size:var(--fs-body);line-height:var(--lh-body);color:var(--mut);margin-top:4px;max-width:68ch}
-  .pmev{color:var(--accent);text-decoration:none;border-bottom:1px solid var(--line2)}
-  .pmev:hover{border-bottom-color:var(--accent)}
   .pmbasis{font-size:var(--fs-lbl);color:var(--mut);margin-top:10px;padding-top:8px;border-top:1px solid var(--line)}
-  .pmq{font-size:var(--fs-body);color:var(--fg)}
   .pmquarter{margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
   .pmqh{display:block;font-family:var(--mono);font-size:var(--fs-lbl);letter-spacing:.06em;
         text-transform:uppercase;color:var(--mut);margin-bottom:6px}
@@ -1203,14 +1171,9 @@
   .pmtbl td.n.hi{color:var(--fg)}
   .pmtbl th.v,.pmtbl td.v{text-align:right;font-family:var(--mono);color:var(--mut)}
   .pmtbl tr.bad td.v{color:var(--warn)} .pmtbl tr.good td.v{color:var(--ok)}
-  /* three words, not two lines: on an instance with no deploys recorded, most findings are
-     unattributed, and printing the whole instruction per row put the identical paragraph on
-     screen twice in the first 1000px. Said once, underneath, instead. */
-  .pmwhy.pmun{color:var(--mut2);font-style:italic}
   .grail{font-size:var(--fs-lbl);line-height:1.6;margin-top:4px}
   .grail.ok{color:var(--ok)} .grail.warn{color:var(--mut)} .grail.err{color:var(--warn)}
   .grailwhen{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);margin-top:2px}
-  .pmqs{color:var(--mut)}
   /* Daily bars under a detected change. Deliberately not the .spark SVG: this one has to mark a
      single day, and one flagged bar in a row of flat ones is the whole point of the picture. */
   .whybars{display:flex;align-items:flex-end;gap:2px;height:44px;margin:10px 0 4px}
@@ -1428,89 +1391,180 @@
   </div>
 
   {{if .HasData}}
-  <!-- THE FRONT PAGE, in reading order: verdict (what needs you, as sentences) → KPIs
-       (is it OK, as 4-7 numbers) → provenance → the one chart. A visitor with 5 seconds
-       leaves informed after the first two blocks; everything below is evidence.
-       The verdict as sentences: empty verdict = one calm line, never a card -->
+  <!-- THE FRONT PAGE, in reading order: THE LEDGER (what is standing over your product, and
+       what it already did) → KPIs (is it OK, as 4-7 numbers) → provenance → the one chart.
+       A visitor with 5 seconds leaves informed after the first block; everything below is
+       evidence for a claim the ledger already made. -->
   <div class="verdict">
-    <!-- ══ THE BRIEF ═══════════════════════════════════════════════════════════════════════
-         A PM's Monday output, not a dashboard: what changed, what it cost, why, and what to
-         do — ranked so the most expensive thing is first. It sits ABOVE the verdict because
-         a conclusion outranks context, and it renders even on a quiet day, where saying
-         "nothing needs you" plainly is what earns the reader's trust on the day it does. ══ -->
-    {{with .Investigation}}
+    <!-- ══ THE LEDGER ══════════════════════════════════════════════════════════════════════
+         We are not an analytics dashboard. PostHog and Amplitude give that away free and do it
+         better. We are the thing that ACTS on your product, alongside whatever analytics you
+         already run — so the primary surface is a ledger of ACTIONS, not a queue of findings.
+
+         The acts used to render HERE, underneath the queue: the one genuinely self-operating
+         behaviour in the product, filed as a footnote beneath a list of things it had merely
+         noticed. That is an information-architecture problem and no amount of restyling fixes
+         it, so the sections are ordered by who did the work: what the system did, what closed,
+         what is waiting on you, what is armed, and what it would take to arm the rest.
+
+         THE HARD CASE IS THE EMPTY ONE, and it is the normal one: acting is off by default,
+         reverts are rare by design, and a healthy product breaks nothing. An empty ledger does
+         not report an absence — it renders the STANDING ORDERS, every condition being checked
+         on this instance, with the trigger arithmetic in the reader's own numbers and the
+         action in the future tense. Nothing there is invented: every input is already computed
+         and already persisted, which is the entire persuasive force of the screen. A single
+         fabricated example row would destroy it.
+
+         Composed in internal/desk, never here. The page and GET /v1/investigate read one
+         ledger, for the reason that package exists: a question with two call sites grows two
+         answers. ══ -->
+    {{with .Ledger}}
     <div class="pmbrief" id="pmbrief">
-      {{if .Quiet}}
-      <div class="pmq">Nothing needs you today.<span class="pmqs"> {{len .Scanned}} metric{{if ne (len .Scanned) 1}}s{{end}} checked for step changes{{with .BelowFloor}}, {{len .}} below the detection floor &mdash; details under the quarter{{end}}.</span></div>
-      {{else}}
-      {{$inv := .}}{{$lead := index .Findings 0}}
-      <!-- THE SLAB. One conclusion, on the brand's own ground, with its figure at 64px.
-           The first screen used to be ~1000px of monospace paragraphs in which nothing was
-           larger than anything else — in an analytics tool. This is the same component as the
-           landing page's yellow band, deliberately: the two surfaces should read as one product,
-           and the thing they have in common is that a measured figure leads.
-           The readout is always Cost.People, in every state including 0 on a quiet day, so the
-           unit never changes under the reader. Money, when revenue is instrumented, prints in the
-           support line and never displaces the figure — a unit that moves is a unit nobody
-           trusts. The headline renders verbatim: no string surgery, so it cannot drift from what
-           the CLI and the share page say. -->
+      <!-- id="ledger" is a real element, not a comment: html/template strips HTML comments from
+           the output, so a comment sentinel is invisible to any guard that reads the rendered
+           page. The guards scope themselves to [#ledger, #ledger-end), which is how "no row
+           promises a pull request" can be strict without tripping over the AI-crawler pane, where
+           the phrase is legitimate prose. -->
+      <div id="ledger">
+      <!-- THE SLAB, re-subjected. Same component, same 64px figure, same yellow ground: the
+           page's largest number must be about the page's subject, and the subject is now what
+           the system is DOING. The unit never changes — acts are the body, never the figure —
+           so the readout cannot swap units under the reader between one visit and the next.
+           The lead finding's cost is not lost; it moves to .lrow.lead below at 40px. -->
       <div class="slab">
-        <div class="slab-eyebrow">needs you &middot; {{.NeedsYouCount}} of {{len .Findings}} &middot; swept {{len .Scanned}} metric{{if ne (len .Scanned) 1}}s{{end}} &middot; {{.GeneratedAt.Format "15:04"}} UTC &middot; computed by /v1/brief</div>
+        <div class="slab-eyebrow">the ledger &middot; {{.ArmedCount}} standing order{{if ne .ArmedCount 1}}s{{end}} &middot; {{.ActedCount}} act{{if ne .ActedCount 1}}s{{end}} &middot; checked {{.CheckedAt.Format "15:04"}} UTC &middot; computed by /v1/investigate</div>
         <div class="slab-grid">
           <div class="slab-figure">
-            <div class="slab-read">{{$lead.Cost.Readout}}</div>
-            <div class="slab-subj">{{$lead.Cost.Unit}}{{if $lead.Event}} &middot; {{$lead.Event}}{{end}}{{if $lead.Day}} &middot; {{$lead.Day}}{{end}}</div>
+            <div class="slab-read">{{.ArmedCount}}</div>
+            <div class="slab-subj">{{.Subject}}</div>
           </div>
           <div class="slab-body">
-            <div class="slab-claim">{{$lead.Headline}}</div>
-            <div class="slab-support">
-              {{if $lead.Attributed}}{{$lead.Cause}}{{else}}<i>cause not narrowed</i> &mdash; no deploy recorded near the day, and no single segment carrying it.{{end}}
-              {{if $lead.NextMove}}<span class="slab-next">&rarr; {{$lead.NextMove}}</span>{{end}}
-              {{if $lead.Cost.HasMoney}}<span class="slab-money">{{$lead.Cost.Size}}</span>{{end}}
-            </div>
+            <div class="slab-claim">{{.Claim}}</div>
+            <div class="slab-support">{{.Support}}</div>
           </div>
           <div class="slab-act">
-            <a class="slab-go" data-q="{{$lead.Headline}}" role="button" tabindex="0">show me &rarr;</a>
-            {{if $lead.Evidence}}<a class="slab-ghost" href="{{$lead.Evidence}}" target="_blank" rel="noopener">check the rows &rarr;</a>{{end}}
+            <!-- The one state where the primary action points DOWN the page instead of at a
+                 row: a big honest zero over a fully populated not-armed section is a better
+                 screen than an invented number. -->
+            {{if gt .ArmedCount 0}}<a class="slab-go" href="#ledger-armed">see the standing orders &rarr;</a>
+            {{else}}<a class="slab-go" href="#ledger-cold">what it would take &rarr;</a>{{end}}
           </div>
         </div>
       </div>
-      {{if gt (len .Findings) 1}}<div class="pmhead">the queue &middot; {{sub (len .Findings) 1}} more finding{{if ne (len .Findings) 2}}s{{end}}</div>{{end}}
-      {{range slice .Findings 1 (len .Findings)}}
-      <div class="qrow{{if .NeedsYou}} you{{end}}" data-fp="{{.Fingerprint}}">
-        <span class="qchip{{if .Recovered}} healed{{end}}">{{if and .Recovered (not .ActedAt.IsZero)}}verified{{else if .Recovered}}recovered{{else if not .ActedAt.IsZero}}acted {{.ActedAt.Format "Jan 2"}}{{else if .NeedsYou}}needs you{{else}}watch{{end}}</span>
-        <span class="qhead">{{.Headline}}</span>
-        {{with .Cost.Size}}<span class="qsize">{{.}}</span>{{end}}
-        <span class="qact"><a data-q="{{.Headline}}" role="button" tabindex="0">show me</a>{{if .Evidence}}<a href="{{.Evidence}}" target="_blank" rel="noopener">rows</a>{{end}}{{if and .ActedAt.IsZero (not .Recovered)}}<a class="qacted" role="button" tabindex="0">mark acted</a>{{end}}</span>
-        <span class="qsub">{{if .Attributed}}{{.Cause}}{{else}}<i>cause not narrowed</i>{{end}} &middot; {{.NextMove}}</span>
-      </div>
-      {{end}}
-      <div class="pmbasis">sized by people affected &mdash; no revenue is tracked on these events, so this is not a dollar figure. <a href="/docs/revenue" target="_blank" rel="noopener">connect a payment provider</a> and these become money.</div>
-      {{if .AnyUnattributed}}<div class="pmbasis" style="border-top:0;padding-top:0">the rows marked <i>cause not narrowed</i> had no deploy recorded near the day and no single segment carrying the change &mdash; record deploys and that line becomes which ship did it.</div>{{end}}
-      {{end}}
-      {{with $.Healed}}
-      <div class="pmhead">healed &middot; the system acted on its own</div>
+
+      <!-- ACTED. Receipt-backed, both kinds: a guardrail revert writes $experiment_reverted
+           onto the operator's own timeline, and the cloud's tracking restore writes
+           $tracking_pr_opened with the pull request's URL. No receipt, no row — and when there
+           are none the header goes with them. An empty acted section is silence, and silence
+           is correct; the armed section below carries the screen. -->
+      {{with .Acted}}
+      <div class="pmhead">acted &middot; without you</div>
       {{range .}}
-      <div class="qrow">
-        <span class="qchip healed">auto-reverted</span>
-        <span class="qhead">{{.Flag}} pulled &middot; guardrail {{.Guardrail}}</span>
-        <span class="qsize">{{.When}}</span>
-        <span class="qact"><a data-q="what happened to the flag {{.Flag}}" role="button" tabindex="0">show me</a></span>
-        <span class="qsub">{{.Reason}}</span>
+      <div class="lrow">
+        <span class="lchip did">{{.Chip}}</span>
+        <span class="lhead">{{.Head}}</span>
+        <span class="lwhen">{{.When}}</span>
+        <span class="lsub">{{.Sub}} <a class="lev" href="{{.EvHref}}"{{if .EvExternal}} target="_blank" rel="noopener"{{end}}>{{.EvText}} &rarr;</a></span>
       </div>
       {{end}}
       {{end}}
-      {{with .BelowFloor}}
-      <div class="pmbasis" style="border-top:0">
-        {{range .}}<span title="{{.Note}}">{{.Event}} runs at ~{{.PerDay}}/day &mdash; below the {{.NeedPerDay}}/day floor step-change detection needs, so it is watched but cannot yet produce a finding.</span> {{end}}
+
+      <!-- CLOSED. The loop closing: a human marked it acted, and the metric came back.
+           Renders only once somebody has used the mark-acted affordance, because a section
+           advertising a loop that has never closed is an advertisement, not a ledger. -->
+      {{with .Closed}}
+      <div class="pmhead">closed &middot; you acted, it recovered</div>
+      {{range .}}
+      <div class="lrow">
+        <span class="lchip {{if .Recovered}}did{{else}}armed{{end}}">{{if .Recovered}}verified{{else}}acted{{end}}</span>
+        <span class="lhead">{{.Headline}}</span>
+        <span class="lwhen">acted {{.ActedAt.Format "Jan 2"}}</span>
+        <span class="lsub">{{.NextMove}} <a class="lev" href="{{evidenceOr .Evidence}}" target="_blank" rel="noopener">check the rows &rarr;</a></span>
       </div>
       {{end}}
-      {{with .Movements}}
-      <!-- THE QUARTER, under the week, and OUTSIDE the quiet/busy branch on purpose. The findings
-           above are what changed in the last few days; this is whether any of it added up. A calm
-           week is exactly when the second half matters most: "nothing needs you today" is
-           comfortable reading right until it sits beside "and conversion has not moved across 23
-           ships". Either alone lets someone feel fine. -->
+      {{end}}
+
+      <!-- OPEN. The old queue, now a middle section rather than the page's subject. Every
+           finding waiting on a human, whichever engine produced it: the investigator's, and
+           the insight verdict's — which used to be a second full-width callout two rows under
+           the slab, i.e. the desk arguing with itself about what mattered most. -->
+      {{if or .Open $.VerdictLead}}
+      <div class="pmhead">open &middot; waiting on you</div>
+      {{range $i, $f := .Open}}
+      <div class="lrow{{if eq $i 0}} lead{{end}}" data-fp="{{$f.Fingerprint}}">
+        <span class="lchip{{if $f.NeedsYou}} you{{end}}">{{if $f.NeedsYou}}needs you{{else}}watch{{end}}</span>
+        <span class="lhead">{{$f.Headline}}</span>
+        <span class="lwhen">{{if eq $i 0}}{{$f.Cost.Readout}} {{$f.Cost.Unit}}{{else}}{{$f.Cost.Size}}{{end}}</span>
+        <span class="lact"><a data-q="{{$f.Headline}}" role="button" tabindex="0">show me</a>{{if not $f.Recovered}}<a class="lacted" role="button" tabindex="0">mark acted</a>{{end}}</span>
+        <span class="lsub">{{if $f.Attributed}}{{$f.Cause}}{{else}}<i>cause not narrowed</i>{{end}} &middot; {{$f.NextMove}} <a class="lev" href="{{evidenceOr $f.Evidence}}" target="_blank" rel="noopener">check the rows &rarr;</a></span>
+      </div>
+      {{end}}
+      {{with $.VerdictLead}}
+      <div class="lrow">
+        <span class="lchip{{if .Warn}} you{{end}}">{{if .Warn}}fix first{{else}}today{{end}}</span>
+        <span class="lhead">{{.Title}}</span>
+        <span class="lact"><a data-q="{{.Q}}" role="button" tabindex="0">show me</a><a class="lfix" data-fix="{{.Fingerprint}}" role="button" tabindex="0">fix brief</a></span>
+        <span class="lsub">{{.Lead}} <a class="lev" href="{{.EvHref}}">{{.EvText}} &rarr;</a></span>
+      </div>
+      {{end}}
+      {{range $.Findings}}
+      <div class="lrow">
+        <span class="lchip{{if .Warn}} you{{end}}">{{if .Warn}}fix first{{else}}today{{end}}</span>
+        <span class="lhead">{{.Title}}</span>
+        <span class="lact"><a data-q="{{.Q}}" role="button" tabindex="0">show me</a><a class="lfix" data-fix="{{.Fingerprint}}" role="button" tabindex="0">fix brief</a></span>
+        <span class="lsub">{{.Lead}} <a class="lev" href="{{.EvHref}}">{{.EvText}} &rarr;</a></span>
+      </div>
+      {{end}}
+      {{if .Open}}
+      <div class="pmbasis">sized by people affected &mdash; no revenue is tracked on these events, so this is not a dollar figure. <a href="/docs/revenue" target="_blank" rel="noopener">connect a payment provider</a> and these become money.</div>
+      {{if $.Investigation.AnyUnattributed}}<div class="pmbasis" style="border-top:0;padding-top:0">the rows marked <i>cause not narrowed</i> had no deploy recorded near the day and no single segment carrying the change &mdash; record deploys and that line becomes which ship did it.</div>{{end}}
+      {{end}}
+      {{end}}
+
+      <!-- ARMED. The heart of the empty ledger, and the reason it is not an apology: these are
+           live conditions on the reader's own events, each printing what trips it and what
+           happens next. The step-change row renders on every instance that has events at all,
+           so this section is never empty when the ledger renders. -->
+      {{with .Armed}}
+      <div class="pmhead" id="ledger-armed">armed &middot; what happens next</div>
+      {{range .}}
+      <div class="lrow">
+        <span class="lchip armed">armed</span>
+        <span class="lhead">{{.Subject}}</span>
+        <span class="lwhen">{{.CheckedText}}</span>
+        <span class="lsub">{{.Sub}} <a class="lev" href="{{.EvHref}}">{{.EvText}} &rarr;</a></span>
+      </div>
+      {{end}}
+      <!-- The engine promises only what the engine does. Opening the pull request is the
+           cloud's half, gated on switches this binary cannot read, so it is said HERE — once,
+           as a note, and only on an instance that actually belongs to a cloud project. -->
+      {{if and $.CloudLinked $.Ledger.HasTracking}}<div class="lnote">the restore half runs in the cloud and is off until you switch it on for this project: it finds the commit that deleted the call and opens one pull request putting that exact line back. this instance raises the finding.</div>{{end}}
+      {{end}}
+
+      <!-- NOT ARMED. Not disabled chrome and not "coming soon": real rows for real gaps, each
+           quoting the refusal in the words the code enforces and carrying the single next step
+           that would clear it. Below-floor metrics live here too — they used to be run-together
+           spans of small print at the bottom of the page, and they are exactly the material an
+           empty ledger needs: what we watch, and the number that would let it speak. -->
+      {{with .Cold}}
+      <div class="pmhead" id="ledger-cold">not armed &middot; what it would take</div>
+      {{range .}}
+      <div class="lrow">
+        <span class="lchip cold">not armed</span>
+        <span class="lhead">{{.Subject}}</span>
+        <span class="lsub">{{.Sub}} <a class="lev" href="{{.EvHref}}">{{.EvText}} &rarr;</a></span>
+      </div>
+      {{end}}
+      {{end}}
+
+      </div>
+      <div class="lnote" id="ledger-end">every row above is a live condition on your own events, checked on this instance. an empty ledger is the product working.</div>
+      {{with $.Investigation.Movements}}
+      <!-- THE QUARTER, after the ledger, and OUTSIDE every branch on purpose. The rows above are
+           what is happening now; this is whether any of it added up. A calm ledger is exactly
+           when the second half matters most: "nothing has tripped yet" is comfortable reading
+           right until it sits beside "and conversion has not moved across 23 ships". Either
+           alone lets someone feel fine. -->
       <div class="pmquarter"><span class="pmqh">across the last 90 days</span>
         <table class="pmtbl"><thead><tr><th>metric</th><th class="n">then</th><th class="n">now</th><th class="v">verdict</th></tr></thead><tbody>
         {{range .}}<tr class="{{if eq (printf "%s" .Verdict) "moved down"}}bad{{else if eq (printf "%s" .Verdict) "moved up"}}good{{end}}"><td class="m">{{.Metric}}</td><td class="n">{{printf "%.1f" .Before}}%</td><td class="n hi">{{printf "%.1f" .After}}%</td><td class="v">{{.Label}}</td></tr>{{end}}
@@ -1520,36 +1574,6 @@
       {{end}}
     </div>
     {{end}}
-    <div id="verdict">
-      {{if .Verdict}}{{$first := index .Verdict 0}}
-      {{$slabPresent := and .Investigation (not .Investigation.Quiet)}}
-      {{if $slabPresent}}
-      <!-- The slab already leads with the most expensive finding, so a second full-width callout
-           two cards below it was the desk arguing with itself about what mattered most. The
-           insight verdict joins the queue as a row; on a quiet investigation it stays the lead
-           card, because then it IS the only thing with something to say. -->
-      <div class="qrow{{if eq $first.Severity "warn"}} you{{end}}">
-        <span class="qchip">{{if eq $first.Severity "warn"}}fix first{{else}}today{{end}}</span>
-        <span class="qhead">{{$first.Title}}</span>
-        <span class="qact"><a class="co-go" data-q="{{$first.Title}}" role="button" tabindex="0">show me</a><a class="co-fix" data-fix="{{$first.Fingerprint}}" role="button" tabindex="0">fix brief</a></span>
-        <span class="qsub">{{$first.Detail}}</span>
-      </div>
-      {{else}}<div class="callout{{if eq $first.Severity "warn"}} warn{{end}}">
-        <div class="co-tag"><span class="co-ic">{{if eq $first.Severity "warn"}}!{{else}}&#10022;{{end}}</span>{{if eq $first.Severity "warn"}}Fix first{{else}}Today&rsquo;s read{{end}}</div>
-        <div class="co-body">
-          <div class="co-title">{{$first.Title}}</div>
-          <div class="co-detail">{{$first.Detail}}</div>
-          <div class="co-meta"><span class="co-prov">computed, not guessed</span><span>the same report this dashboard renders</span></div>
-        </div>
-        <div class="co-act">
-          <a class="co-go" data-q="{{$first.Title}}" role="button" tabindex="0">Show me &rarr;</a>
-          <a class="co-fix" data-fix="{{$first.Fingerprint}}" role="button" tabindex="0">Fix with your agent &rarr;</a>
-        </div>
-      </div>
-      {{end}}
-      {{if .Findings}}<div class="verdict-more">{{range .Findings}}<div class="vline{{if .Warn}} warn{{end}}"><span class="vmk" aria-hidden="true">{{.Mark}}</span><span class="vsr">{{.MarkLabel}}</span><span class="vmid"><span class="vt">{{.Title}}</span><span class="vd" title="{{.Detail}}">{{.Lead}}</span></span><span class="vact"><a class="vwhy" data-q="{{.Q}}" role="button" tabindex="0">why? &rarr;</a><a class="vfix" data-fix="{{.Fingerprint}}" role="button" tabindex="0">brief &rarr;</a></span></div>{{end}}</div>{{end}}
-      {{else}}<div class="vcalm">nothing unusual right now: traffic and conversion look within normal range.</div>{{end}}
-    </div>
     <details class="weekline"><summary>this week &rarr;</summary><div class="weekbody" id="brief"><div class="exsummary">&hellip;</div></div></details>
   </div>
 
@@ -2924,14 +2948,14 @@
       document.getElementById('fixsheet').hidden=true;
     }
     document.addEventListener('click',function(e){
-      var t=e.target.closest('.co-fix[data-fix],.vfix[data-fix]');
+      var t=e.target.closest('.lfix[data-fix]');
       if(t){e.preventDefault();fxOpen(t.getAttribute('data-fix'));return;}
       if(e.target.closest('#fxclose')||e.target.id==='fxshade')fxClose();
     });
     document.addEventListener('keydown',function(e){
       if(e.key==='Escape'&&!document.getElementById('fixsheet').hidden){fxClose();return;}
       if(e.key!=='Enter'&&e.key!==' ')return;
-      var t=e.target.closest&&e.target.closest('.co-fix[data-fix],.vfix[data-fix],#fxclose');
+      var t=e.target.closest&&e.target.closest('.lfix[data-fix],#fxclose');
       if(t){e.preventDefault();t.click();}
     });
     // the daily brief email links to /#fix=<fingerprint>; the cloud's sign-in bounce carries the
@@ -3058,31 +3082,33 @@
       if(e.key==='Escape'&&document.activeElement===q)q.blur();
     });
 
-    // chips + verdict "why?" links both feed the ask bar. These are spans and hrefless
-    // anchors, so they take no focus of their own: the markup carries role="button"
+    // the ask chips and every ledger row's "show me" feed the ask bar. These are spans and
+    // hrefless anchors, so they take no focus of their own: the markup carries role="button"
     // tabindex="0" and Enter/Space has to be wired by hand, or the dashboard's primary
     // call to action is reachable with a mouse and nothing else.
-    // .slab-go is in this list or the slab's primary action does nothing — a button that looks
-    // like the most important control on the page and silently ignores a click is worse than no
-    // button. This codebase has shipped that exact shape before (31 dead rail links).
+    // The slab's primary action is NOT in this list any more, and does not need to be: it is a
+    // real anchor with a real href into the standing-orders section, which the browser wires
+    // for free. The rule the guard now enforces is the property, not the mechanism — the slab's
+    // action has to LEAD somewhere. This codebase has shipped 31 rail links that scrolled
+    // nowhere, which is what a control that silently ignores a click costs.
     // mark acted: the human's half of the loop. POST, then swap the chip in place — a reload
     // would lose their scroll position over a one-bit write.
     document.addEventListener('click', function(e){
-      var a = e.target.closest && e.target.closest('.qacted'); if(!a) return;
-      var row = a.closest('.qrow'); var fp = row && row.getAttribute('data-fp'); if(!fp) return;
+      var a = e.target.closest && e.target.closest('.lacted'); if(!a) return;
+      var row = a.closest('.lrow'); var fp = row && row.getAttribute('data-fp'); if(!fp) return;
       a.textContent = '…';
       fetch('/v1/findings/acted', {method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({fingerprint: fp})})
         .then(function(r){ return r.json().then(function(j){ return {ok: r.ok, j: j}; }); })
         .then(function(r){
           if(!r.ok){ a.textContent = 'failed — ' + (r.j.error || 'try again'); return; }
-          var chip = row.querySelector('.qchip');
+          var chip = row.querySelector('.lchip');
           if(chip){ chip.textContent = 'acted just now'; }
           a.remove();
         })
         .catch(function(){ a.textContent = 'offline — this pane is stale, not saved'; });
     });
-    var ASKABLE='.chip[data-q],.vwhy[data-q],.co-go[data-q],.slab-go[data-q]';
+    var ASKABLE='.chip[data-q],.lact a[data-q]';
     function saAsk(c){
       q.value=c.getAttribute('data-q');f.dispatchEvent(new Event('submit',{cancelable:true}));
       q.scrollIntoView({behavior:'smooth',block:'center'});

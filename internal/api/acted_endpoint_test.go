@@ -86,8 +86,34 @@ func TestDeskActedButtonPostsToTheRegisteredRoute(t *testing.T) {
 	if !strings.Contains(string(api), `"POST `+path+`"`) {
 		t.Fatalf("the route table no longer registers POST %s", path)
 	}
-	// And the button only exists when there is a fingerprint to send.
-	if !strings.Contains(string(tmpl), `data-fp="{{.Fingerprint}}"`) {
-		t.Fatal("qrow rows no longer carry the fingerprint the POST needs")
+	// And every mark-acted button must sit in a row that carries a fingerprint to send.
+	//
+	// The old form of this looked for one literal interpolation, `data-fp="{{.Fingerprint}}"`,
+	// which asserted an EDIT rather than the property: the ledger ranges with an index variable
+	// so the row writes `data-fp="{{$f.Fingerprint}}"`, and the guard failed on markup that was
+	// entirely correct. Worse, it would have passed on markup where the attribute sat on a row
+	// with no button in it. Structural now: walk back from each button to its enclosing row.
+	src := string(tmpl)
+	buttons := 0
+	for i := 0; ; {
+		j := strings.Index(src[i:], `class="lacted"`)
+		if j < 0 {
+			break
+		}
+		at := i + j
+		i = at + 1
+		buttons++
+		row := strings.LastIndex(src[:at], `<div class="lrow`)
+		if row < 0 {
+			t.Fatalf("a mark-acted button at offset %d is not inside a ledger row at all", at)
+		}
+		open := src[row : row+strings.Index(src[row:], ">")+1]
+		if !strings.Contains(open, "data-fp=") {
+			t.Errorf("the row holding a mark-acted button carries no fingerprint, so the POST has "+
+				"nothing to send:\n  %s", open)
+		}
+	}
+	if buttons == 0 {
+		t.Fatal("no mark-acted button in the template; this guard is watching nothing")
 	}
 }

@@ -222,29 +222,55 @@ func TestNoSurfaceFormatsACostByHand(t *testing.T) {
 	}
 }
 
-// THE SLAB'S PRIMARY ACTION MUST BE WIRED.
+// THE SLAB'S PRIMARY ACTION MUST LEAD SOMEWHERE.
 //
 // It is the largest, highest-contrast control on the first screen. A button that looks like the
 // most important thing on the page and silently ignores a click is worse than no button, and this
 // codebase has shipped exactly that shape before — 31 rail links that scrolled nowhere.
 //
-// Source-level, because a rendered assertion cannot tell a handler that never fires from one that
-// fires and finds nothing to do.
+// The PROPERTY is "it leads somewhere", and the guard used to assert a MECHANISM instead: that
+// ".slab-go[data-q]" appeared in the ASKABLE selector list, because the action was an hrefless
+// anchor that only JavaScript could animate. The ledger's slab points at a section of the page
+// with a real href, which the browser wires for free — correct markup that the old assertion
+// called broken. So: every .slab-go must carry either a fragment href whose target id exists in
+// this template, or a data-q that the ASKABLE list can match. Either is wired; neither is not.
 func TestTheSlabPrimaryActionIsWired(t *testing.T) {
 	src, err := os.ReadFile("dashboard.tmpl.html")
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := string(src)
-	if !strings.Contains(s, `class="slab-go"`) {
+	tag := regexp.MustCompile(`<a class="slab-go"[^>]*>`)
+	tags := tag.FindAllString(s, -1)
+	if len(tags) == 0 {
 		t.Fatal("no .slab-go in the template; this guard is watching something that no longer exists")
 	}
-	if !strings.Contains(s, ".slab-go[data-q]") {
-		t.Error("the slab's primary action is not in the ASKABLE selector list, so clicking it " +
-			"does nothing at all")
+	askable := regexp.MustCompile(`var ASKABLE='([^']*)'`).FindStringSubmatch(s)
+	if askable == nil {
+		t.Fatal("the ASKABLE selector list is gone, so no data-q control on the page is wired")
 	}
-	// And the readout must come from the one renderer, not from formatting the field here.
-	if strings.Contains(s, "comma $lead.Cost.People") || strings.Contains(s, "$lead.Cost.People}}") {
+	href := regexp.MustCompile(`href="#([A-Za-z0-9_-]+)"`)
+	for _, a := range tags {
+		if m := href.FindStringSubmatch(a); m != nil {
+			if !strings.Contains(s, `id="`+m[1]+`"`) {
+				t.Errorf("the slab's primary action points at #%s and nothing in the template has "+
+					"that id — the loudest control on the page scrolls nowhere: %s", m[1], a)
+			}
+			continue
+		}
+		if strings.Contains(a, "data-q=") {
+			// an hrefless anchor is only alive if a delegated handler can match it
+			if !strings.Contains(askable[1], ".slab-go[data-q]") {
+				t.Errorf("the slab's primary action is a data-q control that ASKABLE does not "+
+					"select, so clicking it does nothing at all: %s", a)
+			}
+			continue
+		}
+		t.Errorf("the slab's primary action has neither a fragment href nor a data-q; it cannot "+
+			"lead anywhere: %s", a)
+	}
+	// And any readout must come from the one renderer, not from formatting the field here.
+	if strings.Contains(s, "comma $lead.Cost.People") || strings.Contains(s, "Cost.People}}") {
 		t.Error("the slab formats Cost.People itself; use Cost.Readout so the figure has one definition")
 	}
 }
@@ -524,32 +550,11 @@ func TestNoBlockElementInsideASelect(t *testing.T) {
 	}
 }
 
-// HEALED ROWS RENDER ON A QUIET DAY TOO.
+// ACTS RENDER ON A QUIET DAY TOO — see TestActsRenderOnAQuietInvestigation in ledger_test.go.
 //
-// The auto-revert receipt is most of the news precisely when the investigation is quiet — the
-// system pulled a flag and nothing else happened. The first version of this block sat inside the
-// busy branch, so the one self-operating act the product performs would have been invisible on
-// exactly the day it was the headline. Same placement rule as the movements quarter, guarded the
-// same way.
-func TestHealedRowsAreOutsideTheQuietBranch(t *testing.T) {
-	src, err := os.ReadFile("dashboard.tmpl.html")
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := string(src)
-	h := strings.Index(s, "healed &middot; the system acted on its own")
-	if h < 0 {
-		t.Fatal("the healed block is gone; this guard is watching nothing")
-	}
-	// It must sit AFTER the {{else}}-branch basis lines' closing {{end}} — i.e. adjacent to the
-	// movements block, which is the established outside-the-branch position.
-	m := strings.Index(s, "{{with .Movements}}")
-	if m < 0 || h > m {
-		t.Error("the healed block does not sit directly before the movements quarter — check it " +
-			"renders on quiet days, not only busy ones")
-	}
-	if m-h > 900 {
-		t.Errorf("healed block is %d bytes from the movements anchor; it has drifted somewhere "+
-			"with different branch semantics", m-h)
-	}
-}
+// This guard used to live here and measured the healed block's byte distance from the
+// {{with .Movements}} anchor, as a proxy for "outside the quiet branch". The property was and is
+// exactly right; the mechanism died with the block it was measuring, and a proxy for behaviour
+// is what let a template edit look correct while the behaviour changed. It renders the case
+// instead now: a quiet investigation carrying a revert receipt must name the flag that was
+// pulled.

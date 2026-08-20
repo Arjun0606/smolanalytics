@@ -45,7 +45,7 @@ func (s *Server) toolInvestigate(args json.RawMessage) (string, error) {
 	// stores this instance has. Not a re-implementation: the editor, the dashboard and the API
 	// must be doors into one computation, or a customer will eventually catch them disagreeing.
 	// TestInvestigateRouteAndMcpToolAgree in internal/api is what keeps that true.
-	out, err := json.MarshalIndent(desk.Doc(desk.Build(evs, s.deskSources(), investigate.Opts{
+	out, err := json.MarshalIndent(desk.Doc(desk.BuildDesk(evs, s.deskSources(), investigate.Opts{
 		Now:  time.Now().UTC(),
 		Days: a.Days,
 	})), "", "  ")
@@ -69,6 +69,18 @@ func (s *Server) deskSources() desk.Sources {
 		src.Acted = s.acted.Lookup()
 	}
 	src.Planned = desk.Planned(s.trackplan)
+	// The ledger's standing orders. Wired on BOTH doors or the two disagree about how many
+	// conditions are armed — which is the drift TestInvestigateRouteAndMcpToolAgree exists to
+	// catch, now that the ledger travels in the same document as the investigation.
+	if s.trackplan != nil {
+		src.Plan = s.trackplan.Get().Events
+	}
+	if s.alerts != nil {
+		src.Alerts = s.alerts.List()
+	}
+	if s.webhooks != nil {
+		src.Webhooks = len(s.webhooks.List())
+	}
 	return src
 }
 

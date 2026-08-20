@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/alert"
 	"github.com/Arjun0606/smolanalytics/internal/deploys"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/flag"
@@ -81,11 +82,27 @@ type Sources struct {
 	Deploys []deploys.Deploy
 	Acted   func(string) (time.Time, bool)
 	Planned investigate.PlanLookup
+	// Plan is the DECLARED events themselves. Planned above is a lookup — it answers "is this
+	// one declared" and cannot be enumerated — and the ledger has to name every event it is
+	// standing over, which is a list. Both come from the same store; neither replaces the other.
+	Plan []trackplan.PlannedEvent
+	// Alerts and Webhooks are the other two standing orders on an instance: what a human asked
+	// to be told about, and whether there is anywhere to tell them.
+	Alerts   []alert.Alert
+	Webhooks int
 }
 
-// Build runs the full pass: change findings, cause attribution, tracking-break promotion, the
-// kill list, the quarter movements, and the outcome-ledger overlay. This is the whole desk.
-func Build(evs []event.Event, src Sources, o investigate.Opts) investigate.Investigation {
+// Desk is one pass: the investigation, plus the ledger of what the system is standing over and
+// what it has already done. Every door builds this, so the page cannot show a ledger the API
+// disagrees with — the same collapse this package was created to perform for the investigation.
+type Desk struct {
+	Investigation investigate.Investigation `json:"investigation"`
+	Ledger        Ledger                    `json:"ledger"`
+}
+
+// BuildDesk runs the full pass: change findings, cause attribution, tracking-break promotion, the
+// kill list, the quarter movements, the outcome-ledger overlay — and then the ledger over the top.
+func BuildDesk(evs []event.Event, src Sources, o investigate.Opts) Desk {
 	o.Planned = src.Planned
 	now := o.Now
 	if now.IsZero() {
@@ -96,10 +113,21 @@ func Build(evs []event.Event, src Sources, o investigate.Opts) investigate.Inves
 	if src.Acted != nil {
 		investigate.ApplyActed(inv.Findings, src.Acted, now)
 	}
-	return inv
+	return Desk{Investigation: inv, Ledger: buildLedger(inv, evs, src, o)}
 }
 
-// Doc is the serialized shape of an investigation, identical on both public doors.
-func Doc(inv investigate.Investigation) map[string]any {
-	return map[string]any{"investigation": inv, "read_me_first": ReadMeFirst}
+// Build is BuildDesk's investigation half, kept because the CLI brief and the share page want
+// exactly that and nothing more.
+func Build(evs []event.Event, src Sources, o investigate.Opts) investigate.Investigation {
+	return BuildDesk(evs, src, o).Investigation
+}
+
+// Doc is the serialized shape of a desk, identical on both public doors. The ledger travels with
+// it so an agent reading over MCP and a browser reading the page are looking at one answer.
+func Doc(d Desk) map[string]any {
+	return map[string]any{
+		"investigation": d.Investigation,
+		"ledger":        d.Ledger,
+		"read_me_first": ReadMeFirst,
+	}
 }

@@ -112,13 +112,39 @@ func TestDashboardDoesNotDoubleMaterialize(t *testing.T) {
 	// first-touch stamps across every event, 3.8 KB/event once stamping was batched and
 	// narrowed to the two event names it actually reads.
 	//
-	// 5 KB/event sits between the two. It passes today with headroom and fails loudly if
-	// per-property stamping — or any other per-event copy of the full set — comes back.
-	const budgetPerEvent = 5 * 1024
+	// 6.5 KB/event, raised from 5 once the ledger, the tracking detector and the standing-orders
+	// composition landed. The raise is measured, not conceded: allocation was checked at three
+	// sizes on this fixture and came out flat at 5.22 / 5.41 / 5.05 KB/event for 50k / 100k / 200k,
+	// which is exactly what "more reports, none of them copying history" looks like. The old 5 KB
+	// was set when the page computed fifteen reports; it now computes more.
+	//
+	// An absolute ceiling alone is a weak guard, because every honest feature nudges it up and the
+	// number gets raised again until it means nothing. The pathology it was written for —
+	// per-property stamping chaining copies across every event — is SUPERLINEAR, so the real test
+	// is the linearity check below, which no amount of feature growth can quietly satisfy.
+	const budgetPerEvent = 6.5 * 1024
 	if perEvent > budgetPerEvent {
-		t.Errorf("dashboard render allocates %.1f KB/event, budget is %.0f KB — something is copying history per property again",
+		t.Errorf("dashboard render allocates %.1f KB/event, budget is %.1f KB — something is copying history per property again",
 			perEvent/1024, float64(budgetPerEvent)/1024)
 	}
+
+	// THE PROPERTY, not the number: cost per event must not GROW with the number of events.
+	// segmentBlame's eight chained first-touch stamps read as 6.3 KB/event at this size and would
+	// have read far worse at ten times it; a flat per-event cost is the signature of code that
+	// scans history rather than copying it.
+	small := loadEvents(t, n/4)
+	ss := New(small)
+	smallAlloc := allocatedBy(func() {
+		req := httptest.NewRequest("GET", "/", nil)
+		w := httptest.NewRecorder()
+		ss.dashboard(w, req)
+	})
+	smallPerEvent := float64(smallAlloc) / float64(n/4)
+	if perEvent > smallPerEvent*1.4 {
+		t.Errorf("per-event allocation GREW with scale: %.2f KB/event at %d vs %.2f KB/event at %d — that is superlinear, which means something is copying history rather than scanning it",
+			perEvent/1024, n, smallPerEvent/1024, n/4)
+	}
+	t.Logf("linearity: %.2f KB/event at %d vs %.2f KB/event at %d", perEvent/1024, n, smallPerEvent/1024, n/4)
 }
 
 // TestKeeperMatchesApply is the parity gate. Keeper exists so a streaming caller can filter

@@ -3,10 +3,9 @@ package api
 import (
 	"fmt"
 	"log"
-	"os"
-	"strings"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/desk"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/flag"
 )
@@ -27,15 +26,21 @@ import (
 // as the traffic it reacted to, it is queryable by every tool that reads events, and it shows up
 // in the brief. An autonomous act that leaves no trace in the place people look is
 // indistinguishable from a bug.
-const RevertEvent = "$experiment_reverted"
+//
+// THE DEFINITION MOVED to internal/desk, and this is the alias so nothing else in this package
+// had to change. The ledger has to find these receipts and the ledger is composed at the seam, so
+// the name, the two timing constants and the kill switch all live where the page and the API can
+// read them. Keeping a second literal here is exactly how the page would come to advertise a
+// rule the actuator no longer follows.
+const RevertEvent = desk.RevertEvent
 
 const (
 	// revertWarmup is how long an experiment must have been running before a breach can pull it.
 	// The first minutes of a rollout are the least representative traffic it will ever see.
-	revertWarmup = 15 * time.Minute
+	revertWarmup = desk.RevertWarmup
 	// revertMinGap is the minimum time between the two failing checks that confirm a breach, so
 	// two evaluations inside one bad minute cannot count as agreement.
-	revertMinGap = 5 * time.Minute
+	revertMinGap = desk.RevertMinGap
 )
 
 // autoRevertEnabled reports whether acting is switched on.
@@ -44,9 +49,7 @@ const (
 // not touch the flag. Anyone who does not want software turning their flags off must be able to
 // say so in one variable, and the page must be able to say which mode it is in — a safety feature
 // that cannot be switched off gets the whole product switched off instead.
-func autoRevertEnabled() bool {
-	return !strings.EqualFold(strings.TrimSpace(os.Getenv("SMOLANALYTICS_AUTO_REVERT")), "off")
-}
+func autoRevertEnabled() bool { return desk.RevertEnabled() }
 
 // confirmedBreach reports whether this FAIL is the SECOND consecutive one for the same guardrail
 // and arm, far enough apart to count as independent, on an experiment past its warm-up.

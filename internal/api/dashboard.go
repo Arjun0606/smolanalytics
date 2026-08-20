@@ -83,6 +83,17 @@ var dashTmpl = template.Must(template.New("dash").Funcs(template.FuncMap{
 	"ev":      EventLabel,
 	"evgloss": EventGloss,
 	"evauto":  EventIsAuto,
+	// evidenceOr guarantees the ONE thing every ledger row owes its reader: somewhere to go and
+	// check. A finding with no Evidence URL is rare but real, and a row that silently drops its
+	// evidence link is an assertion with nothing behind it — which is the whole failure mode the
+	// ledger is built to avoid. /v1/investigate recomputes the finding itself, so it is always
+	// true and always checkable.
+	"evidenceOr": func(u string) string {
+		if strings.TrimSpace(u) == "" {
+			return "/v1/investigate"
+		}
+		return u
+	},
 }).Parse(dashboardHTML))
 
 type funnelRow struct {
@@ -266,12 +277,18 @@ type dashVM struct {
 	// cost, each with a cause and a next move. The verdict below it is the health read; this is
 	// the "so what". It renders ABOVE the verdict because a conclusion outranks context.
 	Investigation investigate.Investigation
-	// Healed: what the system did on its own. Guardrail auto-reverts write $experiment_reverted
-	// into the operator's log with the reason, and until now that receipt was visible only if you
-	// went digging in the raw event stream — the one genuinely self-operating behaviour in the
-	// product, performed invisibly. The desk shows it as work the system completed.
-	Healed  []healedRow
-	Verdict []insight.Finding
+	// Ledger is the front page's SUBJECT: how many conditions are standing over this product,
+	// what the system has already done without being asked, and what it would take to arm the
+	// rest. Composed in internal/desk, so the page and GET /v1/investigate read one ledger.
+	//
+	// This replaced a queue of findings as the lead. PostHog and Amplitude give a findings queue
+	// away free and do it better; the thing nobody else has is the half that ACTS, and it used to
+	// render as a footnote beneath the list of things we merely noticed.
+	Ledger desk.Ledger
+	// VerdictLead is element 0 of Verdict as a ledger row; Findings is the rest. Both fold into
+	// the open section, so the page has ONE list of things waiting on a human.
+	VerdictLead *findingLine
+	Verdict     []insight.Finding
 	// Findings is the SAME slice from the second element on, composed into rows that rank.
 	// The template reads Verdict only for the card (element 0) and Findings for the list.
 	Findings []findingLine
@@ -319,6 +336,13 @@ type dashVM struct {
 	// every self-hosted install); the hosted product overrides it via SMOLANALYTICS_CLOUD_URL
 	// so the link leads back to the project the user came from, not the marketing home page.
 	CloudURL string
+	// CloudLinked is true only when SMOLANALYTICS_CLOUD_URL was actually set — i.e. this
+	// instance belongs to a hosted project. CloudURL cannot answer that question because it
+	// falls back to the marketing home page, and the ledger needs the real answer: the
+	// tracking-restore half runs in the cloud, so on a self-hosted box the page must not mention
+	// it at all. A note about a capability that will never run here is a claim the code cannot
+	// produce, which is the one thing the ledger may never print.
+	CloudLinked bool
 	// adaptive labels — the default dashboard reflects the user's OWN events
 	FunnelTitle    string
 	ConvLabel      string // "<first> → <last>" of the detected funnel
@@ -749,6 +773,28 @@ type findingLine struct {
 	Detail      string        // the whole prose, still on the row for hover and for a screen reader
 	Q           string        // the ask the "why?" affordance runs — the finding's raw title
 	Fingerprint string
+	// EvText/EvHref are the row's ONE evidence link. Every row on the ledger carries exactly one,
+	// which is what demotes the thirty-three report panes from a browsable menu to the proof of a
+	// specific claim: nothing on the ledger asserts anything the reader cannot open.
+	EvText string
+	EvHref string
+}
+
+// insightEvidence names where a verdict finding's proof lives. The detector already knows the
+// metric or the funnel it computed over, so this is a lookup rather than a guess; the /v1/notable
+// fallback is the endpoint that produced the finding itself, which is always true and always
+// checkable even for the two findings that are about the ABSENCE of a measurement.
+func insightEvidence(f insight.Finding) (string, string) {
+	switch {
+	case f.Kind == insight.KindRetention:
+		return "open the retention grid", "#pane-retention"
+	case f.Kind == insight.KindDropoff:
+		return "open the funnel", "#pane-funnel"
+	case f.Metric != "":
+		return "check the rows", "/v1/explain?event=" + url.QueryEscape(f.Metric) + "&days=30"
+	default:
+		return "recompute it", "/v1/notable"
+	}
 }
 
 // numToken matches the first standalone figure in a sentence: "49%", "1.7×", "1220", "23%".
@@ -790,6 +836,33 @@ func leadSentence(detail string) string {
 
 // verdictLines composes the findings block from every finding AFTER the first — the first one
 // is the verdict card above the list.
+// verdictLead composes element 0 — the one the verdict used to render as a full-width callout —
+// into the same row shape as the rest. The callout is gone: the ledger's open section is one
+// grammar for every finding waiting on a human, whichever engine produced it, and a second
+// full-width card two rows under the slab was the desk arguing with itself about what mattered.
+func verdictLead(fs []insight.Finding) *findingLine {
+	if len(fs) == 0 {
+		return nil
+	}
+	f := fs[0]
+	l := findingLine{
+		Warn: f.Severity == "warn", Mark: "!", MarkLabel: "warning",
+		Detail: f.Detail, Q: f.Title, Fingerprint: f.Fingerprint(),
+	}
+	if !l.Warn {
+		l.Mark, l.MarkLabel = "✦", "note"
+	}
+	l.EvText, l.EvHref = insightEvidence(f)
+	var promoted bool
+	l.Title, promoted = promoteFigure(f.Title)
+	if promoted {
+		l.Lead = template.HTML(template.HTMLEscapeString(f.Detail))
+	} else {
+		l.Lead, _ = promoteFigure(f.Detail)
+	}
+	return &l
+}
+
 func verdictLines(fs []insight.Finding) []findingLine {
 	if len(fs) < 2 {
 		return nil
@@ -800,6 +873,7 @@ func verdictLines(fs []insight.Finding) []findingLine {
 			Warn: f.Severity == "warn", Mark: "✦", MarkLabel: "note",
 			Detail: f.Detail, Q: f.Title, Fingerprint: f.Fingerprint(),
 		}
+		l.EvText, l.EvHref = insightEvidence(f)
 		if l.Warn {
 			l.Mark, l.MarkLabel = "!", "warning"
 		}
@@ -2087,6 +2161,11 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		cloudURL = s.cloudURL
 	}
 
+	// ONE pass, both halves. The investigation and the ledger are built together — a second call
+	// would re-read the clock and re-sweep, and the page would be able to print an armed count
+	// that disagreed with the findings underneath it.
+	dk := s.desk(evs, nowT)
+
 	vm := dashVM{
 		HasConversion: len(fsteps) >= 2,
 		TotalUsers:    distinctUsers(evs),
@@ -2100,10 +2179,11 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		Verdict:       verdict,
 		// The full history, and the flags, so the kill list can see what shipped. Same inputs
 		// the CLI brief uses, so the page and the email cannot tell different stories.
-		Investigation: s.investigation(evs, nowT),
-		Healed:        buildHealed(evs, time.Now().UTC()),
+		Investigation: dk.Investigation,
+		Ledger:        dk.Ledger,
 		// The acted overlay joins at serve time: the ledger is a sidecar, the investigation is a
 		// pure computation, and the join is one lookup per finding.
+		VerdictLead:     verdictLead(verdict),
 		Findings:        verdictLines(verdict),
 		DevHidden:       devHidden,
 		ShowingDev:      showDev,
@@ -2112,6 +2192,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		Base:            baseURL(r),
 		WriteKey:        s.writeKey,
 		CloudURL:        cloudURL,
+		CloudLinked:     s.cloudURL != "",
 		FunnelTitle:     ftitle,
 		ConvLabel:       convLabel,
 		StatEventLabel:  trendEvent,
@@ -2961,40 +3042,26 @@ func deploysFor(s *Server) []deploys.Deploy {
 	return s.deploys.List()
 }
 
-// healedRow is one act of self-operation, rendered on the desk queue.
-type healedRow struct {
-	Flag, Guardrail, Reason, When string
-}
-
-// buildHealed collects the guardrail auto-reverts of the last 14 days, newest first. Capped at
-// five: a desk drowning in old receipts stops reading as a desk. The receipts themselves are
-// $experiment_reverted events the auto-reverter writes into the operator's own log — the one
-// genuinely self-operating behaviour in the product, which until now was visible only to someone
-// digging through the raw event stream.
-func buildHealed(evs []event.Event, now time.Time) []healedRow {
-	cutoff := now.AddDate(0, 0, -14)
-	var out []healedRow
-	for i := len(evs) - 1; i >= 0 && len(out) < 5; i-- {
-		e := evs[i]
-		if e.Name != RevertEvent || e.Timestamp.Before(cutoff) {
-			continue
-		}
-		str := func(k string) string { v, _ := e.Properties[k].(string); return v }
-		out = append(out, healedRow{
-			Flag: str("flag"), Guardrail: str("guardrail"), Reason: str("reason"),
-			When: e.Timestamp.UTC().Format("Jan 2"),
-		})
-	}
-	return out
-}
+// The acts the system performed on its own used to be built here, as healedRow, and rendered as
+// a footnote UNDERNEATH the queue of things it had merely noticed. They are the ledger's first
+// section now, composed by desk.actsFrom alongside the tracking-PR receipts that had no surface
+// at all — one builder serving the page and GET /v1/investigate rather than a page-only helper.
 
 // investigation computes the desk's investigation and overlays the outcome ledger. One function,
 // so the dashboard, /v1/brief and the MCP investigate tool cannot drift on whether acted state
 // is present — the exact three-surface split this codebase keeps re-learning.
 func (s *Server) investigation(evs []event.Event, now time.Time) investigate.Investigation {
-	// desk.Build, not WithContext directly: the tracking plan has to reach the investigator here
-	// too, or the page says "checkout fell 100%" while GET /v1/investigate says "tracking broke"
-	// about the same event on the same instance — the two-doors-one-computation failure this
-	// file's own comments record having fixed twice already.
-	return desk.Build(evs, s.deskSources(), investigate.Opts{Now: now})
+	return s.desk(evs, now).Investigation
+}
+
+// desk computes the whole desk — the investigation AND the ledger of standing orders and acts.
+//
+// desk.BuildDesk, not WithContext directly: the tracking plan has to reach the investigator here
+// too, or the page says "checkout fell 100%" while GET /v1/investigate says "tracking broke"
+// about the same event on the same instance — the two-doors-one-computation failure this file's
+// own comments record having fixed twice already. The ledger rides along for the same reason:
+// the page's SUBJECT is now the ledger, so composing it here rather than in the template is what
+// keeps the route and the front page from growing two answers to "what is armed".
+func (s *Server) desk(evs []event.Event, now time.Time) desk.Desk {
+	return desk.BuildDesk(evs, s.deskSources(), investigate.Opts{Now: now})
 }
