@@ -9,10 +9,15 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/Arjun0606/smolanalytics/internal/acted"
 	"github.com/Arjun0606/smolanalytics/internal/deploys"
 )
 
 func (s *Server) SetDeploys(d *deploys.Store) { s.deploys = d }
+
+// SetActed wires the outcome ledger so the investigate tool can stamp acted-on findings and the
+// mark_finding_acted tool has somewhere to write.
+func (s *Server) SetActed(a *acted.Store) { s.acted = a }
 
 func init() {
 	toolList = append(toolList,

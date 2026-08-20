@@ -45,5 +45,5 @@ func TestTrendSegmentScopesByUserLikeTheNonTrendAnswer(t *testing.T) {
 // askText runs one question through the real ask path and returns the answer sentence.
 func askText(t *testing.T, evs []event.Event, q string) string {
 	t.Helper()
-	return answer(strings.ToLower(q), evs, time.Now().UTC())
+	return answer(strings.ToLower(q), evs, time.Now().UTC(), nil)
 }

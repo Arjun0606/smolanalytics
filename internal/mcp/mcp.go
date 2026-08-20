@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/acted"
 	"github.com/Arjun0606/smolanalytics/internal/agent"
 	"github.com/Arjun0606/smolanalytics/internal/aicrawl"
 	"github.com/Arjun0606/smolanalytics/internal/aivis"
@@ -93,6 +94,7 @@ type Server struct {
 	shares    *share.Store
 	deploys   *deploys.Store
 	flags     *flag.Store
+	acted     *acted.Store // the outcome ledger, optional
 	surveys   *survey.Store
 	gsc       *gsc.Store
 	exports   *exportlink.Store
@@ -130,8 +132,9 @@ func (s *Server) SetReadOnly(v bool) { s.readOnly = v }
 // fails the build until someone classifies it, which is the only version of this guard that
 // cannot quietly reopen.
 var mutatingTools = map[string]bool{
-	"experiment_plan": true,
-	"create_alert":    true, "delete_alert": true, "save_report": true, "delete_saved_report": true,
+	"mark_finding_acted": true,
+	"experiment_plan":    true,
+	"create_alert":       true, "delete_alert": true, "save_report": true, "delete_saved_report": true,
 	"create_cohort": true, "create_sequence_cohort": true, "delete_cohort": true,
 	"add_webhook": true, "delete_webhook": true, "test_webhook": true,
 	"create_flag": true, "delete_flag": true, "set_flag_enabled": true,
@@ -349,6 +352,9 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 	}
 	if name == "backtest" {
 		return s.toolBacktest(args)
+	}
+	if name == "mark_finding_acted" {
+		return s.toolMarkActed(args)
 	}
 	// Reads the repo only; it never touches the event store, so it skips the shared load too.
 	if name == "instrumentation_coverage" {

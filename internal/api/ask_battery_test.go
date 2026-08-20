@@ -198,7 +198,7 @@ func TestAskBatteryContracts(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := answer(tc.q, evs, batNow)
+			got := answer(tc.q, evs, batNow, nil)
 			for _, want := range tc.contains {
 				if !strings.Contains(got, want) {
 					t.Errorf("answer(%q)\n  missing %q\n  got: %s", tc.q, want, got)
@@ -219,16 +219,16 @@ func TestAskBatteryContracts(t *testing.T) {
 // anchor to ANY activity, and day-N beyond the data answers honestly.
 func TestAskRetentionCovenant(t *testing.T) {
 	evs := batteryFixture()
-	got := answer("whats our day 1 retention", evs, batNow)
+	got := answer("whats our day 1 retention", evs, batNow, nil)
 	// cohorts: base day has 6 users, r1+r2 return next day; w1's cohort (Jun 23) is
 	// also past day 1 with no return. DayN(1) = 2 returned of 7 eligible = 29%.
 	if !strings.Contains(got, "29%") || !strings.Contains(got, "of 7") {
 		t.Errorf("day-1 retention must be 29%% of 7 (any-activity anchor, the /v1 default), got: %s", got)
 	}
-	if a := answer("day 30 retention", evs, batNow); !strings.Contains(a, "Not enough history") {
+	if a := answer("day 30 retention", evs, batNow, nil); !strings.Contains(a, "Not enough history") {
 		t.Errorf("day-30 with 7 days of data must answer not-enough-history, got: %s", a)
 	}
-	if a := answer("retention for mobile users", evs, batNow); !strings.Contains(a, "scoped to mobile") {
+	if a := answer("retention for mobile users", evs, batNow, nil); !strings.Contains(a, "scoped to mobile") {
 		t.Errorf("segment-scoped retention must say its scope, got: %s", a)
 	}
 }
@@ -259,7 +259,7 @@ func TestChannelAttributionUsesReferrer(t *testing.T) {
 	mk("g1", "google.com", false)
 	mk("g2", "google.com", false)
 	mk("d1", "", true)
-	got := answer("which channel converts best", evs, batNow)
+	got := answer("which channel converts best", evs, batNow, nil)
 	// must NOT collapse to one "direct" row of everyone
 	if strings.Contains(got, "direct 6") || !strings.Contains(got, "reddit.com") {
 		t.Errorf("channel attribution collapsed / ignored referrer: %s", got)

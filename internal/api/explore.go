@@ -11,6 +11,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/brief"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/insight"
+	"github.com/Arjun0606/smolanalytics/internal/investigate"
 	"github.com/Arjun0606/smolanalytics/internal/query"
 )
 
@@ -74,7 +75,12 @@ func (s *Server) apiBrief(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	evs = query.Apply(evs, nil) // production scope: dev-env events excluded by default
-	writeJSON(w, http.StatusOK, brief.Build(evs, days, time.Now().UTC()))
+	now := time.Now().UTC()
+	b := brief.Build(evs, days, now)
+	if s.acted != nil {
+		investigate.ApplyActed(b.Investigation.Findings, s.acted.Lookup(), now)
+	}
+	writeJSON(w, http.StatusOK, b)
 }
 
 // usage reports this instance's event + user counts so a control plane (the Cloud)

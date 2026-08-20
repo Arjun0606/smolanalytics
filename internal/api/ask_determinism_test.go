@@ -34,9 +34,9 @@ func TestTopListsDoNotShuffleBetweenIdenticalCalls(t *testing.T) {
 	}
 
 	for _, q := range []string{"which countries are my users in", "what browsers do my visitors use"} {
-		first := answer(q, evs, now)
+		first := answer(q, evs, now, nil)
 		for i := 0; i < 30; i++ {
-			if got := answer(q, evs, now); got != first {
+			if got := answer(q, evs, now, nil); got != first {
 				t.Fatalf("%q answered differently on run %d over identical data:\n  %s\n  %s", q, i, first, got)
 			}
 		}

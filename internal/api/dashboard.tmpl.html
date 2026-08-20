@@ -1477,11 +1477,11 @@
       </div>
       {{if gt (len .Findings) 1}}<div class="pmhead">the queue &middot; {{sub (len .Findings) 1}} more finding{{if ne (len .Findings) 2}}s{{end}}</div>{{end}}
       {{range slice .Findings 1 (len .Findings)}}
-      <div class="qrow{{if .NeedsYou}} you{{end}}">
-        <span class="qchip{{if .Recovered}} healed{{end}}">{{if .Recovered}}recovered{{else if .NeedsYou}}needs you{{else}}watch{{end}}</span>
+      <div class="qrow{{if .NeedsYou}} you{{end}}" data-fp="{{.Fingerprint}}">
+        <span class="qchip{{if .Recovered}} healed{{end}}">{{if and .Recovered (not .ActedAt.IsZero)}}verified{{else if .Recovered}}recovered{{else if not .ActedAt.IsZero}}acted {{.ActedAt.Format "Jan 2"}}{{else if .NeedsYou}}needs you{{else}}watch{{end}}</span>
         <span class="qhead">{{.Headline}}</span>
         {{with .Cost.Size}}<span class="qsize">{{.}}</span>{{end}}
-        <span class="qact"><a data-q="{{.Headline}}" role="button" tabindex="0">show me</a>{{if .Evidence}}<a href="{{.Evidence}}" target="_blank" rel="noopener">rows</a>{{end}}</span>
+        <span class="qact"><a data-q="{{.Headline}}" role="button" tabindex="0">show me</a>{{if .Evidence}}<a href="{{.Evidence}}" target="_blank" rel="noopener">rows</a>{{end}}{{if and .ActedAt.IsZero (not .Recovered)}}<a class="qacted" role="button" tabindex="0">mark acted</a>{{end}}</span>
         <span class="qsub">{{if .Attributed}}{{.Cause}}{{else}}<i>cause not narrowed</i>{{end}} &middot; {{.NextMove}}</span>
       </div>
       {{end}}
@@ -3065,6 +3065,23 @@
     // .slab-go is in this list or the slab's primary action does nothing — a button that looks
     // like the most important control on the page and silently ignores a click is worse than no
     // button. This codebase has shipped that exact shape before (31 dead rail links).
+    // mark acted: the human's half of the loop. POST, then swap the chip in place — a reload
+    // would lose their scroll position over a one-bit write.
+    document.addEventListener('click', function(e){
+      var a = e.target.closest && e.target.closest('.qacted'); if(!a) return;
+      var row = a.closest('.qrow'); var fp = row && row.getAttribute('data-fp'); if(!fp) return;
+      a.textContent = '…';
+      fetch('/v1/findings/acted', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({fingerprint: fp})})
+        .then(function(r){ return r.json().then(function(j){ return {ok: r.ok, j: j}; }); })
+        .then(function(r){
+          if(!r.ok){ a.textContent = 'failed — ' + (r.j.error || 'try again'); return; }
+          var chip = row.querySelector('.qchip');
+          if(chip){ chip.textContent = 'acted just now'; }
+          a.remove();
+        })
+        .catch(function(){ a.textContent = 'offline — this pane is stale, not saved'; });
+    });
     var ASKABLE='.chip[data-q],.vwhy[data-q],.co-go[data-q],.slab-go[data-q]';
     function saAsk(c){
       q.value=c.getAttribute('data-q');f.dispatchEvent(new Event('submit',{cancelable:true}));

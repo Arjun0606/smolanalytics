@@ -1,7 +1,9 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -106,4 +108,39 @@ func (s *Server) apiBacktest(w http.ResponseWriter, r *http.Request) {
 	backtestMu.Unlock()
 
 	writeJSON(w, http.StatusOK, rep)
+}
+
+// POST /v1/findings/acted — a human says "I did something about this".
+//
+// The single write the outcome ledger accepts. Session or key auth like the read side of the
+// desk: marking a finding acted is an annotation on your own data, not an admin operation, and
+// gating it behind an admin key is how the button never gets pressed.
+func (s *Server) markActed(w http.ResponseWriter, r *http.Request) {
+	if s.readsGated() && !s.validSession(r) && !s.keyAuthed(r) {
+		writeErr(w, http.StatusUnauthorized, "login or a valid key required")
+		return
+	}
+	if s.acted == nil {
+		writeErr(w, http.StatusServiceUnavailable, "the outcome ledger is not enabled on this instance")
+		return
+	}
+	var req struct {
+		Fingerprint string `json:"fingerprint"`
+		Note        string `json:"note"`
+	}
+	body, _ := io.ReadAll(io.LimitReader(r.Body, 8<<10))
+	if err := json.Unmarshal(body, &req); err != nil || req.Fingerprint == "" {
+		writeErr(w, http.StatusBadRequest, `send {"fingerprint": "<kind|event|day>", "note": "optional"}`)
+		return
+	}
+	e, err := s.acted.Mark(req.Fingerprint, req.Note)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.rec("finding.acted", req.Fingerprint)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"acted": true, "fingerprint": e.Fingerprint, "at": e.At,
+		"next": "the desk and the brief now carry this; when the metric recovers, the line upgrades to verified",
+	})
 }

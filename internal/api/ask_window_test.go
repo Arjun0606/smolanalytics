@@ -32,7 +32,7 @@ func TestLastNWeeksIsTheAskedWindowNotAllTime(t *testing.T) {
 	now := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
 	evs := dailyPageviews(now, 60)
 
-	got := answer("how many pageviews in the last 2 weeks", evs, now)
+	got := answer("how many pageviews in the last 2 weeks", evs, now, nil)
 	if !strings.Contains(got, "14") {
 		t.Errorf("last 2 weeks should count 14 daily pageviews, got: %s", got)
 	}
@@ -57,7 +57,7 @@ func TestLastNMonthsIsTheAskedWindowNotAllTime(t *testing.T) {
 			want++
 		}
 	}
-	got := answer("how many pageviews in the last 2 months", evs, now)
+	got := answer("how many pageviews in the last 2 months", evs, now, nil)
 	if !strings.Contains(got, fmt.Sprintf("%d", want)) {
 		t.Errorf("last 2 months should count %d pageviews, got: %s", want, got)
 	}
@@ -74,7 +74,7 @@ func TestUnhandledPluralTimePhraseIsRefusedNotWidened(t *testing.T) {
 	if tok := unsupportedTimePhrase("how many pageviews in the last 2 quarters"); tok == "" {
 		t.Error(`"quarters" is not refused, so the question is silently answered over all time`)
 	}
-	got := answer("how many pageviews in the last 2 quarters", dailyPageviews(now, 60), now)
+	got := answer("how many pageviews in the last 2 quarters", dailyPageviews(now, 60), now, nil)
 	if strings.Contains(got, "60 pageviews") {
 		t.Errorf("an unsupported window was answered with the all-time total: %s", got)
 	}
@@ -103,7 +103,7 @@ func TestWorstDayIsTheTroughNotThePeak(t *testing.T) {
 		}
 	}
 
-	worst := answer("what was our worst day last month", evs, now)
+	worst := answer("what was our worst day last month", evs, now, nil)
 	if strings.Contains(worst, "Biggest") || strings.Contains(worst, "Jul 5") {
 		t.Errorf("the trough question was answered with the peak day: %s", worst)
 	}
@@ -111,7 +111,7 @@ func TestWorstDayIsTheTroughNotThePeak(t *testing.T) {
 		t.Errorf("worst day should be Fri Jul 10 with 1: %s", worst)
 	}
 	// the peak path must keep working
-	best := answer("what was our best day last month", evs, now)
+	best := answer("what was our best day last month", evs, now, nil)
 	if !strings.Contains(best, "Jul 5") || !strings.Contains(best, "with 9") {
 		t.Errorf("best day should still be Sun Jul 5 with 9: %s", best)
 	}

@@ -51,10 +51,14 @@ func (s *Server) toolInvestigate(args json.RawMessage) (string, error) {
 	if s.deploys != nil {
 		deps = s.deploys.List()
 	}
+	now := time.Now().UTC()
 	inv := investigate.WithContext(evs, flags, deps, investigate.Opts{
-		Now:  time.Now().UTC(),
+		Now:  now,
 		Days: a.Days,
 	})
+	if s.acted != nil {
+		investigate.ApplyActed(inv.Findings, s.acted.Lookup(), now)
+	}
 
 	out, err := json.MarshalIndent(map[string]any{
 		"investigation": inv,
@@ -149,4 +153,45 @@ var backtestToolDef = map[string]any{
 		"days": map[string]any{"type": "integer", "description": "How far back to replay, default 90, max 365"},
 		"step": map[string]any{"type": "integer", "description": "Days between sweeps, default 1"},
 	}, []string{}),
+}
+
+// mark_finding_acted — the write half of the loop, from the editor.
+//
+// The agent that just fixed the code is the best-placed writer of this bit: it knows which
+// finding it was working from. Mutating, so it is in mutatingTools and the read-only guard
+// refuses it on demo instances.
+func (s *Server) toolMarkActed(args json.RawMessage) (string, error) {
+	var a struct {
+		Fingerprint string `json:"fingerprint"`
+		Note        string `json:"note"`
+	}
+	if err := unmarshalArgs(args, &a); err != nil {
+		return "", err
+	}
+	if a.Fingerprint == "" {
+		return "", fmt.Errorf("fingerprint is required — it is on every finding the investigate tool returns (kind|event|day)")
+	}
+	if s.acted == nil {
+		return "", fmt.Errorf("the outcome ledger is not enabled on this instance")
+	}
+	e, err := s.acted.Mark(a.Fingerprint, a.Note)
+	if err != nil {
+		return "", err
+	}
+	return jsonStr(map[string]any{
+		"acted": true, "fingerprint": e.Fingerprint, "at": e.At,
+		"next": "when the metric recovers, investigate will report this finding as verified — acted on, then measurably recovered",
+	}), nil
+}
+
+var markActedToolDef = map[string]any{
+	"name": "mark_finding_acted",
+	"description": "Record that a finding from the investigate tool was ACTED ON — a fix shipped, a decision made. " +
+		"Pass the finding's fingerprint (kind|event|day, present on every investigate result). From then on the desk, " +
+		"the brief and investigate all show the acted state, and when the metric recovers the finding upgrades to " +
+		"VERIFIED: acted on, then measurably recovered. Call this after you have actually done the work, never before.",
+	"inputSchema": obj(map[string]any{
+		"fingerprint": map[string]any{"type": "string", "description": "The finding's fingerprint from investigate"},
+		"note":        map[string]any{"type": "string", "description": "Optional: what was done, one line"},
+	}, []string{"fingerprint"}),
 }

@@ -33,7 +33,7 @@ func TestTwoSegmentQuestionsKeepBothFiltersInTrendAndCompare(t *testing.T) {
 	add("fd-cur", "free", "desktop", thisWeek, 6)
 	add("fd-old", "free", "desktop", lastWeek, 4)
 
-	trend := answer("pro signups on mobile over time", evs, now)
+	trend := answer("pro signups on mobile over time", evs, now, nil)
 	if !strings.Contains(trend, "10 total") {
 		t.Errorf("the trend answer dropped a qualifier — pro+mobile is 10 signups: %s", trend)
 	}
@@ -44,7 +44,7 @@ func TestTwoSegmentQuestionsKeepBothFiltersInTrendAndCompare(t *testing.T) {
 		t.Errorf("the trend answer does not say which segments it counted: %s", trend)
 	}
 
-	cmp := answer("did pro signups on mobile grow this week vs last week", evs, now)
+	cmp := answer("did pro signups on mobile grow this week vs last week", evs, now, nil)
 	if !strings.Contains(cmp, "6 this week") || !strings.Contains(cmp, "4 last week") {
 		t.Errorf("the comparison should be 6 vs 4 for pro+mobile: %s", cmp)
 	}
@@ -75,7 +75,7 @@ func TestHostContainingAnAliasIsNotHijacked(t *testing.T) {
 			t.Fatalf("producthunt.com resolved a twitter segment: %+v", seg)
 		}
 	}
-	got := answer("how many visitors from producthunt.com", evs, now)
+	got := answer("how many visitors from producthunt.com", evs, now, nil)
 	if strings.Contains(got, "twitter") {
 		t.Errorf("a producthunt question was answered about twitter: %s", got)
 	}
@@ -89,7 +89,7 @@ func TestHostContainingAnAliasIsNotHijacked(t *testing.T) {
 		Name: "$pageview", DistinctID: "tw1", Timestamp: now.Add(-2 * time.Hour),
 		Properties: map[string]any{"path": "/", "referrer": "https://t.co/abc"},
 	})
-	if got := answer("how many visitors from twitter", tw, now); !strings.HasPrefix(got, "1 visitors from twitter") {
+	if got := answer("how many visitors from twitter", tw, now, nil); !strings.HasPrefix(got, "1 visitors from twitter") {
 		t.Errorf("the twitter alias stopped resolving a real t.co referrer: %s", got)
 	}
 }
@@ -122,9 +122,9 @@ func TestHourWindowLifecycleNamesTheDayItAnswered(t *testing.T) {
 		}
 	}
 
-	rolling := answer("how many users went dormant in the last 24 hours", evs, now)
-	today := answer("how many users went dormant today", evs, now)
-	yesterday := answer("how many users went dormant yesterday", evs, now)
+	rolling := answer("how many users went dormant in the last 24 hours", evs, now, nil)
+	today := answer("how many users went dormant today", evs, now, nil)
+	yesterday := answer("how many users went dormant yesterday", evs, now, nil)
 
 	if !strings.HasPrefix(yesterday, "7 users went dormant") {
 		t.Fatalf("fixture is not what this test thinks it is — yesterday: %s", yesterday)

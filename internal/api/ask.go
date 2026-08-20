@@ -15,6 +15,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/brief"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
+	"github.com/Arjun0606/smolanalytics/internal/investigate"
 	"github.com/Arjun0606/smolanalytics/internal/query"
 	"github.com/Arjun0606/smolanalytics/internal/retention"
 	"github.com/Arjun0606/smolanalytics/internal/trends"
@@ -80,7 +81,7 @@ func (s *Server) ask(w http.ResponseWriter, r *http.Request) {
 		intent = ""
 	}
 	writeJSON(w, http.StatusOK, map[string]string{
-		"answer":      answer(q, evs, now),
+		"answer":      answer(q, evs, now, actedLookup(s)),
 		"computed_by": computedBy(q, evs, now),
 		"intent":      intent,
 	})
@@ -458,7 +459,16 @@ func isAction(q string) bool {
 	return false
 }
 
-func answer(q string, evs []event.Event, now time.Time) string {
+// actedLookup adapts the server's optional outcome ledger for the pure ask engine; nil when the
+// ledger is off, which ApplyActed treats as "overlay nothing".
+func actedLookup(s *Server) func(string) (time.Time, bool) {
+	if s.acted == nil {
+		return nil
+	}
+	return s.acted.Lookup()
+}
+
+func answer(q string, evs []event.Event, now time.Time, acted func(string) (time.Time, bool)) string {
 	intent := classifyAsk(q)
 	switch intent {
 	case intentAction:
@@ -473,9 +483,9 @@ func answer(q string, evs []event.Event, now time.Time) string {
 			"why are people droppi", "why do people droppi") {
 			return "I can't tell you WHY people leave, that's a judgment call no metric holds. " +
 				"What I can show is WHERE they drop and whether they come back, which is usually where the answer starts:\n\n" +
-				answerBrief(evs, briefDays(q), now)
+				answerBrief(evs, briefDays(q), now, acted)
 		}
-		return answerBrief(evs, briefDays(q), now)
+		return answerBrief(evs, briefDays(q), now, acted)
 	}
 
 	win, unsupported := parseWindow(q, now)
@@ -641,7 +651,7 @@ func answer(q string, evs []event.Event, now time.Time) string {
 				}
 				scoped = scope(evs, win)
 				segNote := " (scoped to " + segs[0].label + ")"
-				return answerScopedIntent(intent, evs, scoped, volAll, win, now, q) + segNote
+				return answerScopedIntent(intent, evs, scoped, volAll, win, now, q, acted) + segNote
 			default:
 				return answerSegment(evs, m, segs[0], win)
 			}
@@ -705,12 +715,12 @@ func answer(q string, evs []event.Event, now time.Time) string {
 		}
 	}
 
-	return answerScopedIntent(intent, evs, scoped, volAll, win, now, q)
+	return answerScopedIntent(intent, evs, scoped, volAll, win, now, q, acted)
 }
 
 // answerScopedIntent dispatches the report-shaped intents; pulled out of answer so the
 // segment layer can run the SAME reports over a filtered event set.
-func answerScopedIntent(intent askIntent, evs []event.Event, scoped []event.Event, volAll []string, win askWindow, now time.Time, q string) string {
+func answerScopedIntent(intent askIntent, evs []event.Event, scoped []event.Event, volAll []string, win askWindow, now time.Time, q string, acted func(string) (time.Time, bool)) string {
 	switch intent {
 	case intentRetention:
 		// "how many people came back today" over a 1-2 day window is a returning-users
@@ -793,7 +803,7 @@ func answerScopedIntent(intent askIntent, evs []event.Event, scoped []event.Even
 			"surveys, feature flags and A/B reads, sessions, deploy impact, and agent observability " +
 			"(tool-call latency, error taxonomy, conversation re-ask/abandon/resolution). I don't invent " +
 			"metrics you haven't tracked (revenue, MRR, churn) unless you send them as events. Here's the closest read I have:\n\n" +
-			answerBrief(evs, 7, now) + "\n\nAsk about any of those, scoped to today, yesterday, this/last week, " +
+			answerBrief(evs, 7, now, acted) + "\n\nAsk about any of those, scoped to today, yesterday, this/last week, " +
 			"this/last month, or last N days, or connect your own Claude/Cursor over MCP to go deeper."
 	}
 }
@@ -1061,8 +1071,12 @@ func briefDays(q string) int {
 // answerBrief renders the SAME computation as `smolanalytics brief` (pulse +
 // deltas + the verdict engine's findings) tight enough for the ask panel, one
 // Brief struct feeds both, so the ask bar and the morning digest can never disagree.
-func answerBrief(evs []event.Event, days int, now time.Time) string {
+func answerBrief(evs []event.Event, days int, now time.Time, acted func(string) (time.Time, bool)) string {
 	b := brief.Build(evs, days, now)
+	// The acted overlay, same as the dashboard and the email — the ask bar answering "how was
+	// the week" must show the verified line too, or the surfaces tell two different stories
+	// about the same finding. ApplyActed no-ops on a nil lookup.
+	investigate.ApplyActed(b.Investigation.Findings, acted, now)
 	var s strings.Builder
 	// b.Visitors counts distinct users of ANY event (active people), NOT web visitors
 	// (pageviews) — label it as such so a 0-pageview site can't read "1 visitor this week"

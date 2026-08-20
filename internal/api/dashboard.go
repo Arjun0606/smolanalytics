@@ -2099,8 +2099,10 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		Verdict:       verdict,
 		// The full history, and the flags, so the kill list can see what shipped. Same inputs
 		// the CLI brief uses, so the page and the email cannot tell different stories.
-		Investigation:   investigate.WithContext(evs, flagsFor(s), deploysFor(s), investigate.Opts{Now: nowT}),
-		Healed:          buildHealed(evs, time.Now().UTC()),
+		Investigation: s.investigation(evs, nowT),
+		Healed:        buildHealed(evs, time.Now().UTC()),
+		// The acted overlay joins at serve time: the ledger is a sidecar, the investigation is a
+		// pure computation, and the join is one lookup per finding.
 		Findings:        verdictLines(verdict),
 		DevHidden:       devHidden,
 		ShowingDev:      showDev,
@@ -2983,4 +2985,15 @@ func buildHealed(evs []event.Event, now time.Time) []healedRow {
 		})
 	}
 	return out
+}
+
+// investigation computes the desk's investigation and overlays the outcome ledger. One function,
+// so the dashboard, /v1/brief and the MCP investigate tool cannot drift on whether acted state
+// is present — the exact three-surface split this codebase keeps re-learning.
+func (s *Server) investigation(evs []event.Event, now time.Time) investigate.Investigation {
+	inv := investigate.WithContext(evs, flagsFor(s), deploysFor(s), investigate.Opts{Now: now})
+	if s.acted != nil {
+		investigate.ApplyActed(inv.Findings, s.acted.Lookup(), now)
+	}
+	return inv
 }

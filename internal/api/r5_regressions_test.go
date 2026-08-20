@@ -24,12 +24,12 @@ func TestAskPathsHonorsWindow(t *testing.T) {
 			event.Event{ID: u + "s", DistinctID: u, Name: "signup", Timestamp: now.AddDate(0, 0, -5)},
 			event.Event{ID: u + "a", DistinctID: u, Name: "activate", Timestamp: now.AddDate(0, 0, -5).Add(time.Hour)})
 	}
-	got := answer("what do users do after signup in the last 24 hours?", evs, now)
+	got := answer("what do users do after signup in the last 24 hours?", evs, now, nil)
 	if strings.Contains(got, "activate") || strings.Contains(got, "5 users") {
 		t.Errorf("paths must honor the 24h window (all events are 5 days old): %q", got)
 	}
 	// all-time phrasing still reports the journey
-	all := answer("what do users do after signup?", evs, now)
+	all := answer("what do users do after signup?", evs, now, nil)
 	if !strings.Contains(all, "activate") {
 		t.Errorf("unwindowed paths should still show the journey: %q", all)
 	}
@@ -99,7 +99,7 @@ func TestMeasureOverflowIsExplicit(t *testing.T) {
 		{ID: "b1", DistinctID: "b1", Name: "big", Timestamp: time.Now().UTC().Add(-time.Hour), Properties: map[string]any{"amount": 1e308}},
 		{ID: "b2", DistinctID: "b2", Name: "big", Timestamp: time.Now().UTC().Add(-time.Hour), Properties: map[string]any{"amount": 1e308}},
 	}
-	got := answer("total sum of amount on big events", evs, time.Now().UTC())
+	got := answer("total sum of amount on big events", evs, time.Now().UTC(), nil)
 	if strings.Contains(got, "Inf") {
 		t.Errorf("ask must not state +Inf as fact: %q", got)
 	}
@@ -117,11 +117,11 @@ func TestAskUniqueUsersCount(t *testing.T) {
 		{ID: "2", DistinctID: "u1", Name: "signup", Timestamp: now.Add(-2 * time.Hour)}, // same user twice
 		{ID: "3", DistinctID: "u2", Name: "signup", Timestamp: now.Add(-1 * time.Hour)},
 	}
-	got := answer("how many unique users did signup", evs, now)
+	got := answer("how many unique users did signup", evs, now, nil)
 	if !strings.Contains(got, "2") || !strings.Contains(got, "distinct users") {
 		t.Errorf("unique-users question must dedupe (2 distinct users, not 3 events): %q", got)
 	}
-	if cnt := answer("how many signup events", evs, now); !strings.Contains(cnt, "3") {
+	if cnt := answer("how many signup events", evs, now, nil); !strings.Contains(cnt, "3") {
 		t.Errorf("plain event count stays 3: %q", cnt)
 	}
 }
@@ -136,7 +136,7 @@ func TestReceiptMatchesBreakdownAnswer(t *testing.T) {
 		{ID: "2", DistinctID: "u2", Name: "plan_event", Timestamp: now.Add(-time.Hour), Properties: map[string]any{"plan": "free"}},
 	}
 	q := "break down plan_event by plan"
-	ans := answer(q, evs, now)
+	ans := answer(q, evs, now, nil)
 	rec := computedBy(q, evs, now)
 	if !strings.Contains(ans, "plan breakdown") {
 		t.Fatalf("expected a breakdown answer: %q", ans)

@@ -24,8 +24,9 @@ What it does, briefly:
   "recovered" — computed, never asserted.
 - **Replays.** `backtest` re-runs the investigator over your own history and
   dates every finding by the day it would first have surfaced.
-- **Answers in your editor.** 96 MCP tools over your own model — including
-  `investigate`, which returns the whole desk in one call. Deterministic reports,
-  never generated SQL.
+- **Answers in your editor.** 97 MCP tools over your own model — including
+  `investigate`, which returns the whole desk in one call, and
+  `mark_finding_acted`, which closes the loop from your editor. Deterministic
+  reports, never generated SQL.
 
 Questions: [smolanalytics.com/contact](https://smolanalytics.com/contact)

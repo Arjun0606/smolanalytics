@@ -711,3 +711,82 @@ func TestADropCarriedByACustomPropertyIsNamed(t *testing.T) {
 			"  (a hardcoded dimension list reports this as 'spread evenly', which is false)", reg.Cause)
 	}
 }
+
+// THE LOOP, END TO END: acted + recovered = VERIFIED.
+//
+// This is the sentence the whole self-healing pivot exists to produce — a human's work connected
+// to a measured outcome. And its honest sibling: acted but still down must say so, never
+// "verified", never silence.
+func TestActedPlusRecoveredReadsVerified(t *testing.T) {
+	now := time.Now().UTC()
+	var evs []event.Event
+	mk := func(day, n int, name string) {
+		for i := 0; i < n; i++ {
+			evs = append(evs, event.Event{ID: fmt.Sprintf("%s%d_%d", name, day, i), Name: name,
+				DistinctID: fmt.Sprintf("u%d_%d", day, i),
+				Timestamp:  now.AddDate(0, 0, -day).Add(time.Duration(i) * time.Minute)})
+		}
+	}
+	// collapse ten days ago, recovered for the last four
+	for d := 27; d >= 11; d-- {
+		mk(d, 40, "checkout")
+	}
+	for d := 10; d >= 5; d-- {
+		mk(d, 10, "checkout")
+	}
+	for d := 4; d >= 0; d-- {
+		mk(d, 40, "checkout")
+	}
+	inv := Run(evs, Opts{Now: now})
+	var reg *Finding
+	for i := range inv.Findings {
+		if inv.Findings[i].Kind == KindRegression {
+			reg = &inv.Findings[i]
+		}
+	}
+	if reg == nil || !reg.Recovered {
+		t.Fatal("fixture did not produce a recovered regression")
+	}
+	if reg.Fingerprint == "" {
+		t.Fatal("no fingerprint — the ledger has nothing to attach to")
+	}
+
+	actedAt := now.AddDate(0, 0, -6)
+	ApplyActed(inv.Findings, func(fp string) (time.Time, bool) {
+		if fp == reg.Fingerprint {
+			return actedAt, true
+		}
+		return time.Time{}, false
+	}, now)
+
+	if !strings.Contains(reg.NextMove, "verified") {
+		t.Errorf("acted + recovered did not read as verified: %q", reg.NextMove)
+	}
+
+	// the honest sibling: still down → acted but never "verified"
+	var down []event.Event
+	for d := 27; d >= 11; d-- {
+		for i := 0; i < 40; i++ {
+			down = append(down, event.Event{ID: fmt.Sprintf("d%d_%d", d, i), Name: "checkout",
+				DistinctID: fmt.Sprintf("v%d_%d", d, i), Timestamp: now.AddDate(0, 0, -d).Add(time.Duration(i) * time.Minute)})
+		}
+	}
+	for d := 10; d >= 0; d-- {
+		for i := 0; i < 10; i++ {
+			down = append(down, event.Event{ID: fmt.Sprintf("e%d_%d", d, i), Name: "checkout",
+				DistinctID: fmt.Sprintf("w%d_%d", d, i), Timestamp: now.AddDate(0, 0, -d).Add(time.Duration(i) * time.Minute)})
+		}
+	}
+	inv2 := Run(down, Opts{Now: now})
+	ApplyActed(inv2.Findings, func(string) (time.Time, bool) { return actedAt, true }, now)
+	for _, f := range inv2.Findings {
+		if f.Kind == KindRegression {
+			if strings.Contains(f.NextMove, "verified") {
+				t.Errorf("still-down + acted read as verified: %q", f.NextMove)
+			}
+			if !strings.Contains(f.NextMove, "not recovered yet") {
+				t.Errorf("the honest middle state is missing: %q", f.NextMove)
+			}
+		}
+	}
+}

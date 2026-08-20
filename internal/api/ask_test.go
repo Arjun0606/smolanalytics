@@ -227,7 +227,7 @@ func TestAskRouterAndAnswers(t *testing.T) {
 			if got := classifyAsk(tc.q); got != tc.intent {
 				t.Fatalf("classifyAsk(%q) = %q, want %q", tc.q, got, tc.intent)
 			}
-			ans := answer(tc.q, evs, askNow)
+			ans := answer(tc.q, evs, askNow, nil)
 			for _, want := range tc.contains {
 				if !strings.Contains(ans, want) {
 					t.Errorf("answer(%q) missing %q\ngot: %s", tc.q, want, ans)
@@ -336,45 +336,45 @@ func TestAskNamedEventAndPage(t *testing.T) {
 	}
 
 	// named event: "checkout" resolves even though the generic classifier would call it a funnel
-	if got := answer("how many checkout events?", evs, now); !strings.Contains(got, "checkout") || !strings.Contains(got, "2") {
+	if got := answer("how many checkout events?", evs, now, nil); !strings.Contains(got, "checkout") || !strings.Contains(got, "2") {
 		t.Errorf("named-event ask: got %q, want a count of 2 checkout events", got)
 	}
 	// page path: visitors + pageviews to /pricing (case/slash-insensitive)
-	if got := answer("visitors to /Pricing/", evs, now); !strings.Contains(got, "2 visitors") || !strings.Contains(got, "3 pageviews") {
+	if got := answer("visitors to /Pricing/", evs, now, nil); !strings.Contains(got, "2 visitors") || !strings.Contains(got, "3 pageviews") {
 		t.Errorf("page ask: got %q, want 2 visitors / 3 pageviews for /pricing", got)
 	}
 	// web volume: total pageviews + visitors, never mislabeled as a signup count
-	if got := answer("how many pageviews?", evs, now); !strings.Contains(got, "4 pageviews") || !strings.Contains(got, "3 visitors") || strings.Contains(got, "signup") {
+	if got := answer("how many pageviews?", evs, now, nil); !strings.Contains(got, "4 pageviews") || !strings.Contains(got, "3 visitors") || strings.Contains(got, "signup") {
 		t.Errorf("pageview ask: got %q, want 4 pageviews / 3 visitors and no signup", got)
 	}
 	// top pages ranks the most-viewed path, not the capabilities menu
-	if got := answer("top pages?", evs, now); !strings.Contains(got, "/pricing") || strings.Contains(got, "I can answer about") {
+	if got := answer("top pages?", evs, now, nil); !strings.Contains(got, "/pricing") || strings.Contains(got, "I can answer about") {
 		t.Errorf("top pages ask: got %q, want /pricing ranked", got)
 	}
 	// a bare event mention without a count word still falls through to the funnel intent
-	if got := answer("how is checkout doing", evs, now); strings.Contains(got, "pageviews") {
+	if got := answer("how is checkout doing", evs, now, nil); strings.Contains(got, "pageviews") {
 		t.Errorf("non-count event mention should not hit the page/event resolver: %q", got)
 	}
 	// unknown path answers honestly, not a fake zero passed off as data
-	if got := answer("visitors to /nope", evs, now); !strings.Contains(got, "No pageviews for /nope") {
+	if got := answer("visitors to /nope", evs, now, nil); !strings.Contains(got, "No pageviews for /nope") {
 		t.Errorf("unknown path: got %q, want an honest no-data message", got)
 	}
 
 	// an explicitly-named event we DON'T have must NOT silently answer a default event
 	// (the trust-breaking substitution). Say it doesn't exist, name the real events.
-	if got := answer("how many times did the flibbergibbet_zorptastic event fire last week?", evs, now); !strings.Contains(got, "No event named") || strings.Contains(got, "events last week") {
+	if got := answer("how many times did the flibbergibbet_zorptastic event fire last week?", evs, now, nil); !strings.Contains(got, "No event named") || strings.Contains(got, "events last week") {
 		// must say no-such-event, and must NOT report a real event's count for the window
 		t.Errorf("unknown named event: got %q, want an honest no-such-event message", got)
 	}
-	if got := answer("how many flibbergibbet_zorptastic events?", evs, now); !strings.Contains(got, "No event named") {
+	if got := answer("how many flibbergibbet_zorptastic events?", evs, now, nil); !strings.Contains(got, "No event named") {
 		t.Errorf("unknown named event (plural): got %q, want an honest no-such-event message", got)
 	}
 	// a near-typo of a real event should suggest the nearest name
-	if got := answer("how many chekout events?", evs, now); !strings.Contains(got, "No event named") || !strings.Contains(got, `Did you mean "checkout"`) {
+	if got := answer("how many chekout events?", evs, now, nil); !strings.Contains(got, "No event named") || !strings.Contains(got, `Did you mean "checkout"`) {
 		t.Errorf("typo'd event: got %q, want a nearest-match suggestion", got)
 	}
 	// a correctly-named event must still count (not misfire as unknown)
-	if got := answer("how many checkout events?", evs, now); strings.Contains(got, "No event named") {
+	if got := answer("how many checkout events?", evs, now, nil); strings.Contains(got, "No event named") {
 		t.Errorf("known event mislabeled as unknown: %q", got)
 	}
 }

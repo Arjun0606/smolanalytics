@@ -28,9 +28,9 @@ func TestVisitorsFromChannelAreFirstTouchLikeTheTrafficReport(t *testing.T) {
 		)
 	}
 
-	sources := answer("where is our traffic coming from", evs, now)
-	google := answer("how many visitors from google", evs, now)
-	reddit := answer("how many visitors from reddit", evs, now)
+	sources := answer("where is our traffic coming from", evs, now, nil)
+	google := answer("how many visitors from google", evs, now, nil)
+	reddit := answer("how many visitors from reddit", evs, now, nil)
 
 	if !strings.Contains(sources, "google.com 10") {
 		t.Fatalf("fixture is not what this test thinks it is — traffic report: %s", sources)
@@ -62,12 +62,12 @@ func TestFirstTouchAttributionHoldsAcrossAskPhrasings(t *testing.T) {
 	}
 
 	// "google vs reddit" runs through answerSegVsSeg
-	vs := answer("google vs reddit visitors", evs, now)
+	vs := answer("google vs reddit visitors", evs, now, nil)
 	if !strings.Contains(vs, "google 10") || !strings.Contains(vs, "reddit 0") {
 		t.Errorf("segment-vs-segment must use the same first-touch attribution: %s", vs)
 	}
 	// "over time" runs through answerTrendText
-	trend := answer("visitors from reddit over time", evs, now)
+	trend := answer("visitors from reddit over time", evs, now, nil)
 	if strings.Contains(trend, "10 total") {
 		t.Errorf("the trend answer re-attributes google visitors to reddit: %s", trend)
 	}
@@ -88,7 +88,7 @@ func TestSourceOnlyOnCustomEventsStillCounts(t *testing.T) {
 				Properties: map[string]any{"source": "twitter"}},
 		)
 	}
-	got := answer("how many visitors from twitter", evs, now)
+	got := answer("how many visitors from twitter", evs, now, nil)
 	if strings.HasPrefix(got, "0 ") {
 		t.Errorf("source is only on the signup event, so first-touch must fall back to any-touch: %s", got)
 	}

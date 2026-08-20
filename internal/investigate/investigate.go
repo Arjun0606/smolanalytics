@@ -98,6 +98,16 @@ type Finding struct {
 	Event    string `json:"event,omitempty"`
 	Day      string `json:"day,omitempty"`
 
+	// Fingerprint identifies this finding stably across sweeps: the same kind of change to the
+	// same event on the same day is the same finding tomorrow, so an annotation made today still
+	// attaches. Deliberately NOT a hash — kind|event|day is already unique, human-readable in an
+	// API response, and debuggable without a rainbow table of our own making.
+	Fingerprint string `json:"fingerprint,omitempty"`
+
+	// ActedAt is when a human said they acted on this, stamped from the outcome ledger by the
+	// serving layer. Zero means nobody has.
+	ActedAt time.Time `json:"acted_at,omitempty"`
+
 	// Recovered marks a regression whose metric has returned to its pre-drop level — computed by
 	// the same daily-series arithmetic that detected the drop, never asserted. It says
 	// "recovered", not "fixed": no causality is known. A recovered finding stays on the queue so
@@ -231,6 +241,8 @@ func Run(evs []event.Event, opts Opts) Investigation {
 		if inv.Findings[i].Recovered {
 			inv.Findings[i].NeedsYou = false
 		}
+		f := &inv.Findings[i]
+		f.Fingerprint = string(f.Kind) + "|" + f.Event + "|" + f.Day
 	}
 	rank(inv.Findings)
 	StampSizes(inv.Findings)

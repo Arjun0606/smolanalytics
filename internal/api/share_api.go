@@ -114,7 +114,7 @@ var shareTmpl = template.Must(template.New("share").Parse(`<!doctype html>
 {{end}}
 {{if .Inv.Findings}}
 <div class="card upd"><h2>{{len .Inv.Findings}} changed &middot; {{.Inv.NeedsYouCount}} need attention</h2>
-  {{range .Inv.Findings}}<div class="mv {{if .NeedsYou}}bad{{end}}{{if .Recovered}} ok{{end}}">{{if .Recovered}}[recovered] {{end}}{{.Headline}}
+  {{range .Inv.Findings}}<div class="mv {{if .NeedsYou}}bad{{end}}{{if .Recovered}} ok{{end}}">{{if .Recovered}}{{if .ActedAt.IsZero}}[recovered] {{else}}[verified] {{end}}{{end}}{{.Headline}}
     {{with .Cost.Size}}<span class="n">{{.}}</span>{{end}}
     {{if .Cause}}<div class="proj">{{.Cause}}</div>{{end}}
   </div>{{end}}

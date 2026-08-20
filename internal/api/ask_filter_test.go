@@ -26,15 +26,15 @@ func TestAskHonorsCustomPropertyFilter(t *testing.T) {
 	}
 
 	// single custom-property filter: "pro signups" must be 3, not the unfiltered 6.
-	if got := answer("how many pro signups", evs, now); !strings.Contains(got, "3") || strings.Contains(got, "6 ") {
+	if got := answer("how many pro signups", evs, now, nil); !strings.Contains(got, "3") || strings.Contains(got, "6 ") {
 		t.Errorf("`pro signups` should be 3 (was dropping the filter -> 6): %q", got)
 	}
-	if got := answer("how many free signups", evs, now); !strings.Contains(got, "3") {
+	if got := answer("how many free signups", evs, now, nil); !strings.Contains(got, "3") {
 		t.Errorf("`free signups` should be 3: %q", got)
 	}
 	// two different-property segments = AND, not compare: pro users are all mobile, so
 	// "pro signups on desktop" is 0 (was reporting device=desktop only, dropping plan).
-	if got := answer("how many pro signups on desktop", evs, now); !strings.HasPrefix(got, "0") {
+	if got := answer("how many pro signups on desktop", evs, now, nil); !strings.HasPrefix(got, "0") {
 		t.Errorf("`pro signups on desktop` must be 0 (plan=pro AND device=desktop): %q", got)
 	}
 }
@@ -55,10 +55,10 @@ func TestAskMeasureHonorsSegment(t *testing.T) {
 			Timestamp: now.Add(-2 * time.Hour), Properties: map[string]any{"amount": 1000.0, "plan": "free"}})
 	}
 	// avg over pro only = 10 (not the blended (10+1000)/2 = 505).
-	if got := answer("average order value for pro users", evs, now); !strings.Contains(got, "10") || strings.Contains(got, "505") {
+	if got := answer("average order value for pro users", evs, now, nil); !strings.Contains(got, "10") || strings.Contains(got, "505") {
 		t.Errorf("avg order value for pro should be 10, not the blended 505: %q", got)
 	}
-	if got := answer("average order value for free users", evs, now); !strings.Contains(got, "1000") {
+	if got := answer("average order value for free users", evs, now, nil); !strings.Contains(got, "1000") {
 		t.Errorf("avg order value for free should be 1000: %q", got)
 	}
 }
@@ -83,12 +83,12 @@ func TestAskBreakdownByEventProperty(t *testing.T) {
 			Timestamp: now.Add(-2 * time.Hour), Properties: map[string]any{"device": device, "plan": plan}})
 	}
 	// device breakdown of signup (was "No devices recorded" via the web dimension).
-	got := answer("break down signup by device", evs, now)
+	got := answer("break down signup by device", evs, now, nil)
 	if !strings.Contains(got, "device") || !strings.Contains(got, "desktop 50") || !strings.Contains(got, "mobile 50") {
 		t.Errorf("`break down signup by device` should split 50/50: %q", got)
 	}
 	// custom-property breakdown (was flattened to the aggregate total).
-	got = answer("break signups down by plan", evs, now)
+	got = answer("break signups down by plan", evs, now, nil)
 	if !strings.Contains(got, "plan") || !strings.Contains(got, "pro") || !strings.Contains(got, "free") {
 		t.Errorf("`break signups down by plan` should split by plan value: %q", got)
 	}
@@ -104,7 +104,7 @@ func TestAskConvertNamedEventCount(t *testing.T) {
 	for i := 0; i < 89; i++ {
 		evs = append(evs, event.Event{ID: string(rune(i)) + "c", DistinctID: string(rune(i)), Name: "convert", Timestamp: now.Add(-2 * time.Hour)})
 	}
-	got := answer("How many convert events?", evs, now)
+	got := answer("How many convert events?", evs, now, nil)
 	if !strings.Contains(got, "89") || !strings.Contains(got, "convert") {
 		t.Errorf("`how many convert events` should count 89, not answer a funnel: %q", got)
 	}
@@ -130,7 +130,7 @@ func TestAskFunnelHonorsNamedSteps(t *testing.T) {
 			evs = append(evs, event.Event{ID: u + "c", DistinctID: u, Name: "convert", Timestamp: now.Add(-1 * time.Hour)})
 		}
 	}
-	got := answer("what percent of landing users convert?", evs, now)
+	got := answer("what percent of landing users convert?", evs, now, nil)
 	if strings.Contains(got, "No landing") {
 		t.Fatalf("named funnel landing->convert must not zero the entry step: %q", got)
 	}
@@ -155,7 +155,7 @@ func TestAskSourcesFirstTouch(t *testing.T) {
 		mkpv("v1", "https://t.co/abc", 2*time.Hour),
 		mkpv("v2", "https://www.google.com/", 8*time.Hour),
 	}
-	got := answer("where is our traffic coming from", evs, now)
+	got := answer("where is our traffic coming from", evs, now, nil)
 	if strings.Contains(got, "t.co") {
 		t.Errorf("first-touch sources must not surface the later-visit t.co referrer: %q", got)
 	}
@@ -179,7 +179,7 @@ func TestAskWebDimCountsVisitors(t *testing.T) {
 		mkpv("d1", "desktop", 2*time.Hour), mkpv("d1", "desktop", time.Hour),
 		mkpv("m1", "mobile", 3*time.Hour), mkpv("m2", "mobile", 2*time.Hour),
 	}
-	got := answer("what devices do people use", evs, now)
+	got := answer("what devices do people use", evs, now, nil)
 	if !strings.Contains(got, "by visitors") {
 		t.Errorf("device split must be labeled as visitors: %q", got)
 	}
@@ -213,7 +213,7 @@ func TestAskBreakdownNoneBucketAndTail(t *testing.T) {
 		add(n, "")
 		n++
 	}
-	got := answer("break signups down by plan", evs, now)
+	got := answer("break signups down by plan", evs, now, nil)
 	if !strings.Contains(got, "(none)") {
 		t.Errorf("events missing the property must land in \"(none)\", not vanish: %q", got)
 	}
@@ -235,8 +235,8 @@ func TestAskRetentionHonorsNamedEvent(t *testing.T) {
 		// u2: open cohort day-10, never returns.
 		{ID: "u2o", DistinctID: "u2", Name: "open", Timestamp: d(10)},
 	}
-	general := answer("what is my day 1 retention", evs, now)
-	scoped := answer("day 1 retention for open", evs, now)
+	general := answer("what is my day 1 retention", evs, now, nil)
+	scoped := answer("day 1 retention for open", evs, now, nil)
 	if !strings.Contains(general, "of 2") {
 		t.Errorf("general retention cohort is both users (of 2): %q", general)
 	}

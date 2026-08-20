@@ -115,7 +115,7 @@ func TestConversionRateComparison(t *testing.T) {
 			mk(fmt.Sprintf("p%d", i), "checkout", "pro")
 		}
 	}
-	got := answer("pro vs free conversion rate", evs, now)
+	got := answer("pro vs free conversion rate", evs, now, nil)
 	if !strings.Contains(got, "pro 80%") || !strings.Contains(got, "free 20%") {
 		t.Errorf("conversion rate comparison should be pro 80%% / free 20%% (rates, not counts): %q", got)
 	}
@@ -139,8 +139,8 @@ func TestRetentionComparisonHonorsPeriod(t *testing.T) {
 			evs = append(evs, event.Event{ID: u + "r7", DistinctID: u, Name: "open", Timestamp: d(3)})
 		}
 	}
-	got7 := answer("day-7 retention for mobile vs desktop", evs, now)
-	got1 := answer("day-1 retention for mobile vs desktop", evs, now)
+	got7 := answer("day-7 retention for mobile vs desktop", evs, now, nil)
+	got1 := answer("day-1 retention for mobile vs desktop", evs, now, nil)
 	if !strings.Contains(got7, "Day-7") {
 		t.Errorf("`day-7 retention ...` must answer Day-7, not substitute day-1: %q", got7)
 	}

@@ -35,14 +35,14 @@ func recentSignupsP(prefix string, n int, props map[string]any) []event.Event {
 func TestAskSegmentSourceFallbackAndDisclosure(t *testing.T) {
 	now := time.Now().UTC()
 	evs := append(recentSignupsP("tw", 28, map[string]any{"source": "twitter"}), recentSignupsP("gg", 11, map[string]any{"source": "google"})...)
-	if got := answer("how many signups from twitter", evs, now); !strings.Contains(got, "28") {
+	if got := answer("how many signups from twitter", evs, now, nil); !strings.Contains(got, "28") {
 		t.Errorf("`from twitter` must resolve to source=twitter (28), got: %q", got)
 	}
-	if got := answer("how many signups where source is twitter", evs, now); !strings.Contains(got, "28") {
+	if got := answer("how many signups where source is twitter", evs, now, nil); !strings.Contains(got, "28") {
 		t.Errorf("`where source is twitter` should be 28: %q", got)
 	}
 	// unresolved value -> honest 0, NOT the unfiltered 39
-	got := answer("how many signups from flurbotron", evs, now)
+	got := answer("how many signups from flurbotron", evs, now, nil)
 	if !strings.HasPrefix(got, "0") || strings.Contains(got, "39") {
 		t.Errorf("`from flurbotron` (absent) must disclose 0, not the unfiltered total: %q", got)
 	}
@@ -55,7 +55,7 @@ func TestAskMinuteWindow(t *testing.T) {
 	for i := 0; i < 20; i++ { // all 3 hours old — outside a 30-min window
 		evs = append(evs, event.Event{ID: string(rune(i)), DistinctID: string(rune(i)), Name: "signup", Timestamp: now.Add(-3 * time.Hour)})
 	}
-	got := answer("how many signups in the last 30 minutes", evs, now)
+	got := answer("how many signups in the last 30 minutes", evs, now, nil)
 	if strings.Contains(got, "20") || strings.Contains(got, "all time") {
 		t.Errorf("`last 30 minutes` must scope (0 here), not answer all-time 20: %q", got)
 	}
@@ -69,7 +69,7 @@ func TestAskMeasureRouting(t *testing.T) {
 		evs = append(evs, event.Event{ID: string(rune(i)), DistinctID: string(rune(i)), Name: "checkout",
 			Timestamp: now.Add(-2 * time.Hour), Properties: map[string]any{"amount": 100.0}})
 	}
-	got := answer("total checkout amount", evs, now)
+	got := answer("total checkout amount", evs, now, nil)
 	if !strings.Contains(got, "400") { // 4 * 100
 		t.Errorf("`total checkout amount` should sum to 400, not a count/funnel: %q", got)
 	}
@@ -86,7 +86,7 @@ func TestAskPageviewCustomEvent(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		evs = append(evs, event.Event{ID: string(rune(i)), DistinctID: string(rune(i)), Name: "pageview", Timestamp: now.Add(-2 * time.Hour)})
 	}
-	got := answer("how many pageviews", evs, now)
+	got := answer("how many pageviews", evs, now, nil)
 	if strings.Contains(got, "No pageviews") || !strings.Contains(got, "20") {
 		t.Errorf("a custom `pageview` event (20) must be counted, not 'No pageviews': %q", got)
 	}
@@ -136,7 +136,7 @@ func TestAskRetentionStickinessNotHijacked(t *testing.T) {
 			evs = append(evs, event.Event{ID: u + "b", DistinctID: u, Name: "app_open", Timestamp: d(2)}) // day-1 return
 		}
 	}
-	got := answer("retention for app_open this week", evs, now)
+	got := answer("retention for app_open this week", evs, now, nil)
 	if strings.Contains(got, "events") && !strings.Contains(got, "retention") && !strings.Contains(got, "%") {
 		t.Errorf("event-scoped retention must not be answered as an event count: %q", got)
 	}
@@ -152,7 +152,7 @@ func TestAskTotalEventsCount(t *testing.T) {
 		}
 		return e
 	}()...)
-	got := answer("how many events did we receive all time", evs, now)
+	got := answer("how many events did we receive all time", evs, now, nil)
 	if !strings.Contains(got, "27") { // 7 signup + 20 checkout
 		t.Errorf("total events should be 27, not one event's count: %q", got)
 	}
@@ -178,7 +178,7 @@ func TestAskConvByTwoStepAndFloor(t *testing.T) {
 	}
 	add("tv0", "signup", "tv")
 	add("tv0", "checkout", "tv") // 100% but n=1
-	got := answer("conversion from signup to checkout by plan", evs, now)
+	got := answer("conversion from signup to checkout by plan", evs, now, nil)
 	if !strings.Contains(got, "pro 60%") || !strings.Contains(got, "free 0%") {
 		t.Errorf("2-step conversion by plan should be pro 60%%, free 0%% (not 100%% for all): %q", got)
 	}
@@ -195,7 +195,7 @@ func TestAskPathsUnknownAnchor(t *testing.T) {
 		{ID: "1", DistinctID: "u", Name: "signup", Timestamp: now.Add(-2 * time.Hour)},
 		{ID: "2", DistinctID: "u", Name: "checkout", Timestamp: now.Add(-time.Hour)},
 	}
-	got := answer("what do users do after purchase", evs, now)
+	got := answer("what do users do after purchase", evs, now, nil)
 	if !strings.Contains(got, "No event named") || !strings.Contains(got, "purchase") {
 		t.Errorf("`after purchase` (no such event) must disclose, not anchor elsewhere: %q", got)
 	}

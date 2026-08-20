@@ -23,13 +23,13 @@ func TestAskMeasure_ComputesRevenueAndAOV(t *testing.T) {
 	now := time.Now().UTC()
 	evs := []event.Event{checkoutWithAmount(20), checkoutWithAmount(30), checkoutWithAmount(40)} // sum 90, avg 30
 
-	if a := answer("total revenue", evs, now); !strings.Contains(a, "90") {
+	if a := answer("total revenue", evs, now, nil); !strings.Contains(a, "90") {
 		t.Errorf("'total revenue' should sum amounts to 90, got: %q", a)
 	}
-	if a := answer("average order value", evs, now); !strings.Contains(a, "30") {
+	if a := answer("average order value", evs, now, nil); !strings.Contains(a, "30") {
 		t.Errorf("'average order value' should be 30, got: %q", a)
 	}
-	if a := answer("what's the max amount", evs, now); !strings.Contains(a, "40") {
+	if a := answer("what's the max amount", evs, now, nil); !strings.Contains(a, "40") {
 		t.Errorf("'max amount' should be 40, got: %q", a)
 	}
 }
@@ -39,7 +39,7 @@ func TestAskMeasure_RefusesToInventWhenNotTracked(t *testing.T) {
 	// signups only, no numeric property anywhere
 	evs := []event.Event{{Name: "signup", DistinctID: "u", Timestamp: now.Add(-time.Hour), Properties: map[string]any{"path": "/"}}}
 
-	a := answer("total revenue", evs, now)
+	a := answer("total revenue", evs, now, nil)
 	if !strings.Contains(a, "numeric") || !strings.Contains(a, "track(") {
 		t.Errorf("with no numeric property, revenue must be an honest refusal that guides sending one, got: %q", a)
 	}

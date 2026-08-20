@@ -24,6 +24,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/acted"
 	"github.com/Arjun0606/smolanalytics/internal/aicrawl"
 	"github.com/Arjun0606/smolanalytics/internal/alert"
 	"github.com/Arjun0606/smolanalytics/internal/alias"
@@ -108,6 +109,7 @@ type Server struct {
 	goals        *goal.Store
 	deploys      *deploys.Store // deploy markers → "which ship moved the metric"
 	flags        *flag.Store    // feature flags → boolean/multivariate, targeted, deterministic
+	acted        *acted.Store   // the outcome ledger: findings a human marked acted-on
 	surveys      *survey.Store  // in-product micro-surveys (NPS/rating/choice/text)
 	exports      *exportlink.Store
 	defined      *defined.Store // retroactive zero-code events (Heap wedge)
@@ -150,6 +152,10 @@ func (s *Server) SetCohorts(st *cohort.Store) { s.cohorts = st; s.mcp.SetCohorts
 
 // SetFlags attaches the feature-flag store (shared with MCP + the SDK evaluate endpoint).
 func (s *Server) SetFlags(f *flag.Store) { s.flags = f; s.mcp.SetFlags(f) }
+
+// SetActed wires the outcome ledger: which findings a human said they acted on. Optional, like
+// every sidecar store; without it the desk simply never shows the verified line.
+func (s *Server) SetActed(a *acted.Store) { s.acted = a; s.mcp.SetActed(a) }
 
 // SetSurveys attaches the survey store (shared with MCP + the SDK active-surveys endpoint).
 func (s *Server) SetSurveys(sv *survey.Store) { s.surveys = sv; s.mcp.SetSurveys(sv) }
@@ -354,6 +360,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/notable", s.notable)
 	mux.HandleFunc("GET /v1/brief", s.apiBrief)
 	mux.HandleFunc("GET /v1/backtest", s.apiBacktest)
+	mux.HandleFunc("POST /v1/findings/acted", s.markActed)
 	mux.HandleFunc("GET /v1/events/recent", s.recentEvents)
 	mux.HandleFunc("GET /v1/users/{id}", s.userActivity)
 	mux.HandleFunc("GET /v1/who", s.apiWho) // the microscope: the people behind any datapoint

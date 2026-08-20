@@ -78,3 +78,47 @@ func dailyMean(evs []event.Event, name string, from, to time.Time) float64 {
 	}
 	return float64(n) / days
 }
+
+// ApplyActed overlays the outcome ledger onto findings and writes the verified line.
+//
+// The lookup is a plain func so this package needs no store dependency — the serving layer hands
+// in whatever ledger it has. Three states come out of the combination, each a different sentence:
+//
+//	acted, recovered   → "verified": the only line in the product that connects a human's work
+//	                     to a measured outcome, which is the entire self-healing claim.
+//	acted, still down  → the honest middle. Never "verified", never silent.
+//	not acted          → untouched; recovery alone already wrote its own line.
+func ApplyActed(findings []Finding, lookup func(string) (time.Time, bool), now time.Time) {
+	if lookup == nil {
+		return
+	}
+	for i := range findings {
+		f := &findings[i]
+		at, ok := lookup(f.Fingerprint)
+		if !ok {
+			continue
+		}
+		f.ActedAt = at
+		if f.Recovered {
+			days := int(now.Sub(at).Hours() / 24)
+			f.NextMove = fmt.Sprintf("verified — you acted on %s and the metric recovered %s. This is the loop closing.",
+				at.Format("Jan 2"), sinceDays(days))
+			continue
+		}
+		if f.Kind == KindRegression {
+			f.NextMove = fmt.Sprintf("you acted on %s; not recovered yet — the metric is still below its pre-drop level, so keep it open.",
+				at.Format("Jan 2"))
+		}
+	}
+}
+
+func sinceDays(d int) string {
+	switch {
+	case d <= 0:
+		return "the same day"
+	case d == 1:
+		return "1 day later"
+	default:
+		return fmt.Sprintf("within %d days", d)
+	}
+}

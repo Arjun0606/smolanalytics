@@ -423,6 +423,7 @@ var toolList = []map[string]any{
 	sqlToolDef,
 	provenanceToolDef,
 	investigateToolDef,
+	markActedToolDef,
 	backtestToolDef,
 	explainChangeToolDef,
 	coverageToolDef,

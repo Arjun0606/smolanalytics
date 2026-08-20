@@ -282,8 +282,12 @@ func formatInvestigation(s *strings.Builder, inv investigate.Investigation) {
 		// The chip travels into text: the CLI and the email carry the same states the desk shows.
 		tag := ""
 		switch {
+		case f.Recovered && !f.ActedAt.IsZero():
+			tag = "[verified] " // acted on AND recovered — the loop, closed, in an email
 		case f.Recovered:
 			tag = "[recovered] "
+		case !f.ActedAt.IsZero():
+			tag = "[acted] "
 		case f.NeedsYou:
 			tag = "[needs you] "
 		}
