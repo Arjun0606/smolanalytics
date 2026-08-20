@@ -138,6 +138,10 @@ func TestFullUserJourneyE2E(t *testing.T) {
 		{"write key CANNOT read raw export", "GET", "/v1/export", "wk_public", 401},
 		{"write key in ?key= CANNOT read export", "GET", "/v1/export?key=wk_public", "", 401},
 		{"write key CANNOT read the verdict", "GET", "/v1/notable", "wk_public", 401},
+		// The investigation is the richest read on the instance — every finding, every cause,
+		// every cost. The key embedded in the customer's client-side SDK must not open it.
+		{"write key CANNOT read the investigation", "GET", "/v1/investigate", "wk_public", 401},
+		{"read key CAN read the investigation", "GET", "/v1/investigate", "rk_secret", 200},
 		{"write key CANNOT use MCP", "POST", "/mcp", "wk_public", 401},
 		{"read key CAN read reports", "GET", "/v1/trends?event=signup", "rk_secret", 200},
 		{"read key CAN read export", "GET", "/v1/export", "rk_secret", 200},

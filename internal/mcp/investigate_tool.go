@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/deploys"
+	"github.com/Arjun0606/smolanalytics/internal/desk"
 	"github.com/Arjun0606/smolanalytics/internal/flag"
 	"github.com/Arjun0606/smolanalytics/internal/investigate"
 )
@@ -40,37 +41,35 @@ func (s *Server) toolInvestigate(args json.RawMessage) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// The SAME entry point the dashboard uses — WithContext, with whatever stores this instance
-	// has. Not a re-implementation: the editor and the dashboard must be two doors into one
-	// computation, or a customer will eventually catch them disagreeing.
-	var flags []flag.Flag
-	if s.flags != nil {
-		flags = s.flags.List()
-	}
-	var deps []deploys.Deploy
-	if s.deploys != nil {
-		deps = s.deploys.List()
-	}
-	now := time.Now().UTC()
-	inv := investigate.WithContext(evs, flags, deps, investigate.Opts{
-		Now:  now,
+	// The SAME entry point the dashboard and GET /v1/investigate use — desk.Build, with whatever
+	// stores this instance has. Not a re-implementation: the editor, the dashboard and the API
+	// must be doors into one computation, or a customer will eventually catch them disagreeing.
+	// TestInvestigateRouteAndMcpToolAgree in internal/api is what keeps that true.
+	out, err := json.MarshalIndent(desk.Doc(desk.Build(evs, s.deskSources(), investigate.Opts{
+		Now:  time.Now().UTC(),
 		Days: a.Days,
-	})
-	if s.acted != nil {
-		investigate.ApplyActed(inv.Findings, s.acted.Lookup(), now)
-	}
-
-	out, err := json.MarshalIndent(map[string]any{
-		"investigation": inv,
-		"read_me_first": "Findings are ranked by cost — money when the metric carries revenue, people otherwise. " +
-			"needs_you=true is worth interrupting a human for; recovered=true is closed work kept for the record. " +
-			"cause is computed correlation and says so; never present it as proof. " +
-			"A quiet=true result with a populated scanned list is a real answer: nothing moved enough to matter.",
-	}, "", "  ")
+	})), "", "  ")
 	if err != nil {
 		return "", err
 	}
 	return string(out), nil
+}
+
+// deskSources gathers whatever instance state this server was wired with. Every store is
+// optional, so this is nil-safe throughout and a bare instance simply gets fewer kinds of answer.
+func (s *Server) deskSources() desk.Sources {
+	var src desk.Sources
+	if s.flags != nil {
+		src.Flags = s.flags.List()
+	}
+	if s.deploys != nil {
+		src.Deploys = s.deploys.List()
+	}
+	if s.acted != nil {
+		src.Acted = s.acted.Lookup()
+	}
+	src.Planned = desk.Planned(s.trackplan)
+	return src
 }
 
 func (s *Server) toolBacktest(args json.RawMessage) (string, error) {

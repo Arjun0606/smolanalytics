@@ -1459,7 +1459,7 @@
         <div class="slab-grid">
           <div class="slab-figure">
             <div class="slab-read">{{$lead.Cost.Readout}}</div>
-            <div class="slab-subj">people affected{{if $lead.Event}} &middot; {{$lead.Event}}{{end}}{{if $lead.Day}} &middot; {{$lead.Day}}{{end}}</div>
+            <div class="slab-subj">{{$lead.Cost.Unit}}{{if $lead.Event}} &middot; {{$lead.Event}}{{end}}{{if $lead.Day}} &middot; {{$lead.Day}}{{end}}</div>
           </div>
           <div class="slab-body">
             <div class="slab-claim">{{$lead.Headline}}</div>

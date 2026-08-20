@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/brief"
+	"github.com/Arjun0606/smolanalytics/internal/desk"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/funnel"
 	"github.com/Arjun0606/smolanalytics/internal/query"
@@ -470,7 +471,8 @@ func actedLookup(s *Server) func(string) (time.Time, bool) {
 // briefCtx hands the ask bar and /v1/brief the same instance context the dashboard's
 // investigation reads, so all three surfaces name the same ship for the same finding.
 func briefCtx(s *Server) *brief.Context {
-	return &brief.Context{Flags: flagsFor(s), Deploys: deploysFor(s), Acted: actedLookup(s)}
+	return &brief.Context{Flags: flagsFor(s), Deploys: deploysFor(s), Acted: actedLookup(s),
+		Planned: desk.Planned(s.trackplan)}
 }
 
 func answer(q string, evs []event.Event, now time.Time, bctx *brief.Context) string {

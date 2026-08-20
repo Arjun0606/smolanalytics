@@ -49,6 +49,10 @@ const (
 	// KindDeadShip — something shipped and moved nothing. Nobody does this review, which is why
 	// products accumulate surfaces that cost maintenance and earn nothing.
 	KindDeadShip Kind = "dead_ship"
+	// KindTrackingBroke is declared in tracking.go beside the five gates that produce it — the
+	// promotion rules and the kind are one idea and splitting them across files is how a
+	// constant outlives the reasoning behind it. It is a fourth member of this set: a regression
+	// that is provably instrumentation loss rather than a product change.
 )
 
 // Basis records HOW a cost was arrived at, and travels with the number everywhere it is shown.
@@ -117,6 +121,22 @@ type Finding struct {
 	// NeedsYou marks the ones worth a human's attention today. Everything else is context.
 	// A brief where every line is urgent is a brief with no triage in it.
 	NeedsYou bool `json:"needs_you"`
+
+	// SilentSince is the first day a KindTrackingBroke event sat at or below the silence floor.
+	// Set only on promotion; it is the day the cloud searches the repository around.
+	SilentSince string `json:"silent_since,omitempty"`
+
+	// Witness is the metric that HELD while this event went silent, with its numbers in the
+	// string. It is the entire discriminator between "tracking broke" and "the product broke",
+	// so it travels with the finding rather than being recomputed by whoever renders it.
+	Witness string `json:"witness,omitempty"`
+
+	// TrackingRuledOut is why this regression is NOT a tracking break, with the arithmetic.
+	//
+	// Written on every regression that fails a gate, because a check that runs and says nothing
+	// is a check the reader will assume does not run. Exactly one of TrackingRuledOut and
+	// Kind==KindTrackingBroke is true for any regression — never neither.
+	TrackingRuledOut string `json:"tracking_ruled_out,omitempty"`
 }
 
 // Investigation is one pass over the product.
@@ -160,6 +180,10 @@ type Opts struct {
 	// MinPeople is the floor below which a move is noise rather than news. A three-person
 	// product produces a "50% drop" every other day.
 	MinPeople int
+	// Planned answers "was this event declared in the tracking plan", and is what lets a
+	// regression be promoted to KindTrackingBroke. Nil — the default — means no plan is
+	// declared and nothing is ever promoted. See tracking.go, gate G1.
+	Planned PlanLookup
 }
 
 func (o Opts) withDefaults() Opts {
@@ -361,6 +385,15 @@ func rank(fs []Finding) {
 		}
 		if a.NeedsYou != b.NeedsYou {
 			return a.NeedsYou
+		}
+		// A tracking break outranks every other finding of equal urgency, INCLUDING larger ones.
+		//
+		// Not favouritism: its cost is unmeasurable by definition (Cost.People is 0 and must
+		// stay 0 — see BasisBlind), so the People tiebreak below would sink it beneath any
+		// finding that could be sized. That would bury the one finding which says the sizes
+		// themselves are wrong, underneath the numbers it is telling you not to trust.
+		if (a.Kind == KindTrackingBroke) != (b.Kind == KindTrackingBroke) {
+			return a.Kind == KindTrackingBroke
 		}
 		return a.Cost.People > b.Cost.People
 	})

@@ -127,6 +127,22 @@ func WithFlags(evs []event.Event, flags []flag.Flag, o Opts) Investigation {
 func WithContext(evs []event.Event, flags []flag.Flag, deps []deploys.Deploy, o Opts) Investigation {
 	inv := Run(evs, o)
 	Attribute(query.WithoutSampler(query.Apply(evs, nil)), inv.Findings, deps, o)
+	// THEN ask which of those regressions are instrumentation loss rather than product loss.
+	//
+	// Here and not in Run, because Run has no tracking plan: it takes events and nothing else,
+	// and gate G1 refuses without a declared plan. WithContext is the only entry point that
+	// carries instance state, so it is the only one that can answer the question at all.
+	//
+	// AFTER Attribute so a promoted finding keeps any segment its drop was narrowed to, and
+	// BEFORE MarkRecovered below so a break somebody already reverted by hand is reported as
+	// recovered and drops off the queue instead of triggering a pull request for a line that is
+	// already back. Promotion re-stamps the fingerprint, since the kind is half of it.
+	//
+	// RECOVERY IS ALREADY HANDLED, and not by luck: Run has run MarkRecovered by the time we get
+	// here, so a resumed metric arrives marked — and independently, gate G2 requires the event to
+	// still be silent right now, so an event that came back can never promote in the first place.
+	// Two mechanisms, which is what we want on the one path that writes to a repository.
+	ClassifyTracking(evs, inv.Findings, o.Planned, o)
 	if kl := KillList(evs, flags, o); len(kl) > 0 {
 		inv.Findings = append(inv.Findings, kl...)
 		inv.Quiet = false

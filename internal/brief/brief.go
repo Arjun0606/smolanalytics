@@ -69,6 +69,10 @@ type Context struct {
 	Flags   []flag.Flag
 	Deploys []deploys.Deploy
 	Acted   func(string) (time.Time, bool)
+	// Planned is the tracking-plan lookup. Without it the emailed brief would report
+	// "checkout fell 100%" about the very event the dashboard is calling a tracking break —
+	// the same split this type was created to close, one finding kind later.
+	Planned investigate.PlanLookup
 }
 
 // Build computes the pulse windows ([now-N, now) vs [now-2N, now-N)) and runs
@@ -85,7 +89,7 @@ func BuildCtx(evs []event.Event, days int, now time.Time, ctx *Context) Brief {
 	// change is only visible against what came before it. Handing it the pulse window would
 	// leave the detector with no "before" and it would find nothing, every time.
 	if ctx != nil {
-		b.Investigation = investigate.WithContext(evs, ctx.Flags, ctx.Deploys, investigate.Opts{Now: now})
+		b.Investigation = investigate.WithContext(evs, ctx.Flags, ctx.Deploys, investigate.Opts{Now: now, Planned: ctx.Planned})
 		investigate.ApplyActed(b.Investigation.Findings, ctx.Acted, now)
 	} else {
 		b.Investigation = investigate.Run(evs, investigate.Opts{Now: now})

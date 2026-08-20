@@ -107,10 +107,11 @@ type Server struct {
 	aliases      *alias.Map
 	gsc          *gsc.Store
 	goals        *goal.Store
-	deploys      *deploys.Store // deploy markers → "which ship moved the metric"
-	flags        *flag.Store    // feature flags → boolean/multivariate, targeted, deterministic
-	acted        *acted.Store   // the outcome ledger: findings a human marked acted-on
-	surveys      *survey.Store  // in-product micro-surveys (NPS/rating/choice/text)
+	deploys      *deploys.Store   // deploy markers → "which ship moved the metric"
+	flags        *flag.Store      // feature flags → boolean/multivariate, targeted, deterministic
+	acted        *acted.Store     // the outcome ledger: findings a human marked acted-on
+	trackplan    *trackplan.Store // the declared instrumentation: what this app MEANS to send
+	surveys      *survey.Store    // in-product micro-surveys (NPS/rating/choice/text)
 	exports      *exportlink.Store
 	defined      *defined.Store // retroactive zero-code events (Heap wedge)
 	writeKey     string         // PUBLIC ingest key (embedded in the SDK): authorizes POST /v1/events ONLY. Never reads.
@@ -132,7 +133,9 @@ type Server struct {
 func (s *Server) SetSettings(st *settings.Store) { s.settings = st; s.mcp.SetSettings(st) }
 
 // SetTrackPlan attaches the tracking-plan store (shared with the MCP instrumentation tools).
-func (s *Server) SetTrackPlan(tp *trackplan.Store) { s.mcp.SetTrackPlan(tp) }
+// Held here as well as on the MCP server because the investigator's tracking-break gate needs
+// it on the HTTP path too, and a second wiring call would be a second thing to forget.
+func (s *Server) SetTrackPlan(tp *trackplan.Store) { s.trackplan = tp; s.mcp.SetTrackPlan(tp) }
 
 func New(s store.Store) *Server {
 	ins, _ := insights.Open("") // in-memory by default; Set* adds persistence
@@ -359,6 +362,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/usage", s.usage)
 	mux.HandleFunc("GET /v1/notable", s.notable)
 	mux.HandleFunc("GET /v1/brief", s.apiBrief)
+	// The flagship over HTTP. Same computation as the MCP investigate tool and the dashboard
+	// desk (desk.Build), so a machine reading this can never be told a different story than the
+	// human looking at the page.
+	mux.HandleFunc("GET /v1/investigate", s.apiInvestigate)
 	mux.HandleFunc("GET /v1/backtest", s.apiBacktest)
 	mux.HandleFunc("POST /v1/findings/acted", s.markActed)
 	mux.HandleFunc("GET /v1/events/recent", s.recentEvents)

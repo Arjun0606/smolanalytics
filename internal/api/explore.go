@@ -11,6 +11,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/brief"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/insight"
+	"github.com/Arjun0606/smolanalytics/internal/investigate"
 	"github.com/Arjun0606/smolanalytics/internal/query"
 )
 
@@ -96,7 +97,11 @@ func (s *Server) usage(w http.ResponseWriter, r *http.Request) {
 		// the checks we chose to run on their behalf — and inflate the visitor count with
 		// one synthetic id. Excluded from every counter here for the same reason the
 		// verdict excludes them: they are not product activity.
-		if e.Name == aivis.CheckEvent || e.Name == insight.ReadableEvent || e.Name == aicrawl.CrawlEvent {
+		// $tracking_pr_opened joins them: it is the receipt OUR robot writes when it opens a
+		// pull request restoring a deleted track() call. Billing a customer for the evidence of
+		// work we did unprompted, on this of all endpoints, would be indefensible.
+		if e.Name == aivis.CheckEvent || e.Name == insight.ReadableEvent || e.Name == aicrawl.CrawlEvent ||
+			e.Name == investigate.TrackingPrEvent {
 			return nil
 		}
 		total++

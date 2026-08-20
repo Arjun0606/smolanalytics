@@ -21,6 +21,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/aicrawl"
 	"github.com/Arjun0606/smolanalytics/internal/aivis"
 	"github.com/Arjun0606/smolanalytics/internal/deploys"
+	"github.com/Arjun0606/smolanalytics/internal/desk"
 	"github.com/Arjun0606/smolanalytics/internal/engagement"
 	"github.com/Arjun0606/smolanalytics/internal/event"
 	"github.com/Arjun0606/smolanalytics/internal/fixbrief"
@@ -2991,9 +2992,9 @@ func buildHealed(evs []event.Event, now time.Time) []healedRow {
 // so the dashboard, /v1/brief and the MCP investigate tool cannot drift on whether acted state
 // is present — the exact three-surface split this codebase keeps re-learning.
 func (s *Server) investigation(evs []event.Event, now time.Time) investigate.Investigation {
-	inv := investigate.WithContext(evs, flagsFor(s), deploysFor(s), investigate.Opts{Now: now})
-	if s.acted != nil {
-		investigate.ApplyActed(inv.Findings, s.acted.Lookup(), now)
-	}
-	return inv
+	// desk.Build, not WithContext directly: the tracking plan has to reach the investigator here
+	// too, or the page says "checkout fell 100%" while GET /v1/investigate says "tracking broke"
+	// about the same event on the same instance — the two-doors-one-computation failure this
+	// file's own comments record having fixed twice already.
+	return desk.Build(evs, s.deskSources(), investigate.Opts{Now: now})
 }

@@ -134,6 +134,7 @@ func TestWindowParamsAreValidatedNotSubstituted(t *testing.T) {
 		"/v1/ai-visibility?days=abc",
 		"/v1/funnel?steps=signup,checkout&breakdown=plan&breakdown_limit=abc",
 		"/v1/brief?days=abc",
+		"/v1/investigate?days=abc",
 		"/v1/backtest?days=abc",
 		"/v1/backtest?step=0",
 		"/v1/backtest?days=365&step=1", // 365 sweeps over HTTP: refused with the arithmetic, not clamped
@@ -162,7 +163,8 @@ func TestWindowParamsAreValidatedNotSubstituted(t *testing.T) {
 		"/v1/groups?property=company",
 		"/v1/stickiness",
 		"/v1/ai-visibility?days=90",
-		"/v1/brief?days=200", // clamps to 90 — it used to fall back to 7 with no word
+		"/v1/brief?days=200",       // clamps to 90 — it used to fall back to 7 with no word
+		"/v1/investigate?days=500", // clamps to 90, same as the MCP investigate tool
 		"/v1/backtest?days=30&step=7",
 		"/v1/events/recent?limit=1000",
 	}

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/desk"
 	"github.com/Arjun0606/smolanalytics/internal/investigate"
 	"github.com/Arjun0606/smolanalytics/internal/query"
 	"github.com/Arjun0606/smolanalytics/internal/share"
@@ -192,7 +193,9 @@ func (s *Server) sharePage(w http.ResponseWriter, r *http.Request) {
 	// through the same call. A share page computed its own way would be a marketing artefact
 	// rather than a report, and the first reader to check it against the dashboard would find
 	// out.
-	inv := investigate.WithContext(evs, flagsFor(s), deploysFor(s), investigate.Opts{Now: time.Now().UTC()})
+	// Through desk.Build like every other door, tracking plan included: a page a stranger reads
+	// must not describe the same event differently from the dashboard it was forwarded from.
+	inv := desk.Build(evs, s.deskSources(), investigate.Opts{Now: time.Now().UTC()})
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = shareTmpl.Execute(w, map[string]any{

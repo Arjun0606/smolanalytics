@@ -18,6 +18,12 @@ func (c Cost) Size() string {
 	if c.SizeText != "" {
 		return c.SizeText
 	}
+	// A blind cost is a sentence, never a figure. People is 0 on a tracking break and always
+	// will be — rendering that as "0 people" would read as "nothing is wrong" on the one finding
+	// that means the numbers themselves have stopped being true.
+	if c.Basis == BasisBlind {
+		return blindSizeText
+	}
 	if c.UsdPerMonth > 0 {
 		return fmt.Sprintf("~$%s/mo · %s people", money(c.UsdPerMonth), group(c.People))
 	}
@@ -37,7 +43,24 @@ func (c Cost) Size() string {
 // ALWAYS People, in every state including zero on a quiet day. A readout whose unit changes when
 // revenue happens to be instrumented is a readout nobody can compare week to week — so money,
 // when it exists, prints in the support line via Size() and never displaces this.
-func (c Cost) Readout() string { return group(c.People) }
+// A blind cost has no figure at all, so the readout is an em dash rather than a zero. The unit
+// under it changes with it — see Unit — because "0 / people affected" on a tracking break is a
+// false statement in the largest type on the page.
+func (c Cost) Readout() string {
+	if c.Basis == BasisBlind {
+		return "—"
+	}
+	return group(c.People)
+}
+
+// Unit names what Readout is counting, so the surface that prints the figure prints the right
+// noun beside it instead of hardcoding one that is only true for most findings.
+func (c Cost) Unit() string {
+	if c.Basis == BasisBlind {
+		return "no longer counted"
+	}
+	return "people affected"
+}
 
 // HasMoney reports whether a dollar figure was computed, so a renderer can decide whether to show
 // the money line without reaching into the field and formatting it itself.
