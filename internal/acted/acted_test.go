@@ -45,3 +45,19 @@ func TestACorruptLedgerStartsEmptyRatherThanFailing(t *testing.T) {
 		t.Error("read an entry out of garbage")
 	}
 }
+
+// The demo convention every sidecar store follows: an empty path means fully in-memory. Before
+// this held, the demo's mark-acted button answered `rename .tmp : no such file or directory` —
+// found by probing the deployed instance, not by reading the source.
+func TestEmptyPathIsInMemoryNotAnError(t *testing.T) {
+	s, err := Open("")
+	if err != nil {
+		t.Fatalf("empty path must mean in-memory, got: %v", err)
+	}
+	if _, err := s.Mark("regression|checkout|2026-08-01", ""); err != nil {
+		t.Fatalf("in-memory mark failed: %v", err)
+	}
+	if _, ok := s.Get("regression|checkout|2026-08-01"); !ok {
+		t.Fatal("the in-memory mark did not hold")
+	}
+}

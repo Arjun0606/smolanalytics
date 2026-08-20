@@ -33,9 +33,13 @@ type Store struct {
 	items []Entry
 }
 
-// Open loads or creates the ledger at path.
+// Open loads or creates the ledger at path. An empty path is the demo convention shared by every
+// sidecar store: fully in-memory, nothing written to disk — marks work for the session and vanish.
 func Open(path string) (*Store, error) {
 	s := &Store{path: path}
+	if path == "" {
+		return s, nil
+	}
 	b, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -91,6 +95,9 @@ func (s *Store) Lookup() func(string) (time.Time, bool) {
 }
 
 func (s *Store) persist() error {
+	if s.path == "" {
+		return nil // in-memory (demo): the mark holds for the process lifetime only
+	}
 	b, err := json.MarshalIndent(s.items, "", "  ")
 	if err != nil {
 		return err
