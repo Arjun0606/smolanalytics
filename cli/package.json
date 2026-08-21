@@ -1,7 +1,7 @@
 {
   "name": "smolanalytics",
-  "version": "0.3.0",
-  "description": "Wire smolanalytics into your app, your editor, and your CI with one command each: init adds the tracker, connect adds the MCP server to Cursor/Claude Code/VS Code/Windsurf/Claude Desktop/Cline, and plan check fails your build when a tracked event stops firing.",
+  "version": "0.4.0",
+  "description": "See what your app does that nothing is measuring, in one command. npx smolanalytics audit reads your repo and names the untracked user actions (signup, login, checkout, invites) with file and line. No account, no network, your code never leaves your machine.",
   "type": "module",
   "bin": {
     "smolanalytics": "bin/smolanalytics.mjs"

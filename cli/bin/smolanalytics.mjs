@@ -17,6 +17,7 @@ import { detect } from "../lib/detect.mjs";
 import { applyStrategy, upsertEnv, snippetHtml, MANUAL_SNIPPETS } from "../lib/insert.mjs";
 import { connectCmd } from "../lib/connect.mjs";
 import { planCheckCmd } from "../lib/plan.mjs";
+import { auditCmd } from "../lib/audit.mjs";
 
 const C = {
   dim: (s) => `\x1b[2m${s}\x1b[0m`,
@@ -42,6 +43,9 @@ const hasFlag = (name) => process.argv.includes(`--${name}`);
 function help() {
   console.log(`
 ${C.bold("smolanalytics")} — analytics you can ask in plain English
+
+  ${C.bold("npx smolanalytics audit")}       what your app does that nothing is measuring
+  ${C.dim("[dir]")}                 repo to scan (default: here). No account, no network.
 
   ${C.bold("npx smolanalytics init")}        wire the tracker into this app
 
@@ -74,6 +78,14 @@ async function main() {
       url: flag("url") || flag("host") || "",
       key: flag("key") || process.env.SMOLANALYTICS_MCP_KEY || "",
       target: bare || "",
+    });
+    return;
+  }
+  if (cmd === "audit") {
+    const bare = process.argv[3];
+    process.exitCode = auditCmd({
+      dir: bare && !bare.startsWith("--") ? bare : flag("dir") || ".",
+      json: hasFlag("json"),
     });
     return;
   }
