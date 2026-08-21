@@ -147,7 +147,7 @@ func WithContext(evs []event.Event, flags []flag.Flag, deps []deploys.Deploy, o 
 		inv.Findings = append(inv.Findings, kl...)
 		inv.Quiet = false
 	}
-	inv.Scanned = append(inv.Scanned, fmt.Sprintf("%d experiments", len(flags)))
+	inv.ExperimentsScanned = len(flags)
 	// Recomputed WITH the deploy markers, so the ship count in each sentence is real. Run already
 	// produced movements without them; this replaces that reading rather than adding a second one.
 	if len(deps) > 0 {

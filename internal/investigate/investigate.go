@@ -149,6 +149,11 @@ type Investigation struct {
 	// Scanned is what was looked at, so "nothing to report" can be distinguished from
 	// "nothing was checked" — the difference between a calm product and a broken sweep.
 	Scanned []string `json:"scanned"`
+	// ExperimentsScanned is a COUNT, kept out of Scanned on purpose. It used to be appended there
+	// as the string "N experiments", which was invisible while the page only printed len(Scanned)
+	// — and then the ledger started NAMING the scanned metrics and a brand new instance read
+	// "2 metrics swept: signup, 0 experiments". A list of names may only contain names.
+	ExperimentsScanned int `json:"experiments_scanned"`
 	// Movements is the quarter-level reading: per metric, did it move at all across everything
 	// that shipped. The findings above are what changed THIS WEEK; this is whether any of it
 	// added up. It is the half a founder forwards.
