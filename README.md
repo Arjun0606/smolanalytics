@@ -9,8 +9,8 @@
 </div>
 
 smolanalytics is commercial software. The hosted product at
-[smolanalytics.com](https://smolanalytics.com) is the way to use it: a 14-day full
-trial with no card, then from $19/mo, with each project running as its own
+[smolanalytics.com](https://smolanalytics.com) is the way to use it: a 14-day trial
+at Pro limits with no card, then from $19/mo, with each project running as its own
 isolated instance.
 
 What it does, briefly:
