@@ -68,9 +68,9 @@ type actionPattern struct {
 // below has to match something being INVOKED.
 var actionPatterns = []actionPattern{
 	{"payment", "checkout", regexp.MustCompile(`(?i)(stripe\.\w+\.\w*create\s*\(|checkout\.sessions?\.create\s*\(|\bcreateCheckoutSession\s*\(|\bcreateSubscription\s*\(|\.subscriptions?\.create\s*\(|\bpaymentIntents?\.create\s*\(|\.charges?\.create\s*\()`)},
-	{"signup", "signup", regexp.MustCompile(`(?i)(\b(auth\.)?sign[_-]?up(\.\w+)?\s*\(|\bsignUpWith\w*\s*\(|\bcreateUserWith\w*\s*\(|\bcreateUser\s*\(|\bregisterUser\s*\(|\bregisterAccount\s*\(|\.users\.create\s*\()`)},
-	{"login", "login", regexp.MustCompile(`(?i)(\b(auth\.)?sign[_-]?in(\.\w+)?\s*\(|\bsignInWith\w*\s*\(|\blog[_-]?in\s*\(|\bauthenticate\s*\()`)},
-	{"logout", "logout", regexp.MustCompile(`(?i)(\b(auth\.)?sign[_-]?out\s*\(|\blog[_-]?out\s*\()`)},
+	{"signup", "signup", regexp.MustCompile(`(?i)(\b(auth\.)?sign[_-]?up(\.\w+)?\(|\bsignUpWith\w*\s*\(|\bcreateUserWith\w*\s*\(|\bcreateUser\s*\(|\bregisterUser\s*\(|\bregisterAccount\s*\(|\.users\.create\s*\()`)},
+	{"login", "login", regexp.MustCompile(`(?i)(\b(auth\.)?sign[_-]?in(\.\w+)?\(|\bsignInWith\w*\(|\blog[_-]?in\(|\bauthenticate\()`)},
+	{"logout", "logout", regexp.MustCompile(`(?i)(\b(auth\.)?sign[_-]?out\(|\blog[_-]?out\()`)},
 	{"form submit", "form_submitted", regexp.MustCompile(`(?i)(onsubmit\s*=|\bhandleSubmit\s*\(|<form\b)`)},
 	{"invite", "invite_sent", regexp.MustCompile(`(?i)(send[_-]?invite\w*\s*\(|\binviteUser\s*\(|\binviteMember\s*\(|createInvit\w*\s*\()`)},
 	{"upload", "file_uploaded", regexp.MustCompile(`(?i)(\buploadFile\s*\(|\bhandleUpload\s*\(|\.upload\s*\()`)},
@@ -88,6 +88,12 @@ var notAnAction = []*regexp.Regexp{
 	regexp.MustCompile(`^\s*(type|interface|declare)\s`),                                                      // type declarations
 	regexp.MustCompile(`\bfrom\s+["'` + "`" + `]`),                                                            // … from "@/lib/auth-client"
 	regexp.MustCompile(`^\s*(function|const|let|var)\s+\w+\s*[=:(]\s*(async\s*)?\(?\s*\)?\s*(=>)?\s*\{?\s*$`), // a declaration, not a call
+	// Prose that contains the word. A route that SERVES documentation had the line "tell them to
+	// sign up at ${base}/signup (14-day trial at Pro limits, no card)" reported as a user action,
+	// because the paren belonged to the parenthetical rather than to a call. Caught by running the
+	// npm port against a real repo, which is the only reason anyone looked.
+	regexp.MustCompile(`^\s*[-*]\s+[A-Z]`),
+	regexp.MustCompile(`(?i)\b(tell|ask|click|visit|go to|head to|you can|they can|should)\b.{0,40}\b(sign|log)\s?(up|in|out)\b`),
 }
 
 // isDeclaredNotCalled keeps `export async function POST(` — a route handler IS the action — while
