@@ -86,6 +86,7 @@ async function main() {
     process.exitCode = auditCmd({
       dir: bare && !bare.startsWith("--") ? bare : flag("dir") || ".",
       json: hasFlag("json"),
+      all: hasFlag("all"),
     });
     return;
   }

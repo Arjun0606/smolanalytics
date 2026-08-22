@@ -151,7 +151,7 @@ const C = {
 // "form submit" is the difference between a report someone acts on and one they close.
 const GENERIC = new Set(["form submit", "api mutation"]);
 
-export function render(r, log = console.log) {
+export function render(r, log = console.log, all = false) {
   if (r.actions.length === 0) {
     log("");
     log("No recognisable user-facing actions found here.");
@@ -165,12 +165,23 @@ export function render(r, log = console.log) {
   const generic = r.actions.filter((a) => GENERIC.has(a.kind) && !a.covered);
 
   log("");
-  log(C.b(`${r.uncovered} of ${r.actions.length} user-facing actions have no tracking near them.`));
-  log(C.dim("An action nobody instrumented looks identical to one nobody performed."));
-  log("");
+  // LEAD WITH THE SIGNAL, NOT THE TOTAL.
+  //
+  // This opened with "70 of 70 user-facing actions have no tracking near them", and the six that
+  // actually matter — signup, three logins, an invite, a logout — were then listed under 64 rows
+  // of "form submit" and "api mutation". A skeptical reader's verdict on that output was not
+  // "wow", it was "this thing pads". The named findings ARE the product; the bulk is a footnote.
+  if (named.length) {
+    log(C.b(`${named.length} thing${named.length === 1 ? "" : "s"} your product does that nothing is measuring.`));
+    log(C.dim("An action nobody instrumented looks identical to one nobody performed."));
+    log("");
+  } else {
+    log(C.b("Every named user action here already has tracking near it."));
+    log(C.dim(`Checked signups, logins, payments, invites, uploads and shares across ${r.files} files.`));
+    log("");
+  }
 
   if (named.length) {
-    log(C.b("The ones that cost you most:"));
     for (const a of named.slice(0, 12)) {
       log(`  ${C.y("untracked")}  ${C.b(a.kind.padEnd(15))} ${a.file}:${a.line}`);
       log(`             ${C.dim(a.snippet)}`);
@@ -181,10 +192,18 @@ export function render(r, log = console.log) {
   }
 
   if (generic.length) {
+    // One line, deliberately. These are shapes (a <form>, a POST handler), not named actions, and
+    // most of them are not worth an event. Listing them by kind made the report look padded and
+    // buried the findings above.
     const byKind = {};
     for (const a of generic) byKind[a.kind] = (byKind[a.kind] || 0) + 1;
-    log(C.b("Also untracked, in bulk:"));
-    for (const [k, n] of Object.entries(byKind)) log(`  ${String(n).padStart(4)}  ${k}`);
+    if (all) {
+      log(C.b("Also untracked:"));
+      for (const a of generic) log(`  ${C.dim(a.kind.padEnd(14))} ${a.file}:${a.line}`);
+    } else {
+      const parts = Object.entries(byKind).map(([k, n]) => `${n} ${k}${n === 1 ? "" : "s"}`);
+      log(C.dim(`Also seen, mostly not worth an event: ${parts.join(", ")}. Run with --all to list them.`));
+    }
     log("");
   }
 
@@ -198,7 +217,7 @@ export function render(r, log = console.log) {
   return 0;
 }
 
-export function auditCmd({ dir = ".", json = false, log = console.log, io = fs }) {
+export function auditCmd({ dir = ".", json = false, all = false, log = console.log, io = fs }) {
   const root = path.resolve(dir);
   if (!io.existsSync(root)) {
     log(`no such directory: ${root}`);
@@ -209,5 +228,5 @@ export function auditCmd({ dir = ".", json = false, log = console.log, io = fs }
     log(JSON.stringify(r, null, 2));
     return 0;
   }
-  return render(r, log);
+  return render(r, log, all);
 }

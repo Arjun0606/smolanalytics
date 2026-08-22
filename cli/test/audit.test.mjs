@@ -98,7 +98,10 @@ test("a repo with nothing recognisable says so, and does not invent findings", (
   assert.ok(lines.join("\n").includes("No recognisable user-facing actions"));
 });
 
-test("the headline states the ratio, which is the whole point", () => {
+// The property: the headline states a COUNT of real findings and keeps the line that explains why
+// they matter. It used to assert the exact phrase "1 of 1 user-facing actions", which pinned the
+// padded-total wording rather than the property, and would have blocked the fix for it.
+test("the headline states a count of findings and why they matter", () => {
   const io = {
     readdirSync: () => [{ name: "a.tsx", isDirectory: () => false }],
     readFileSync: () => `await signUp.email({ email });`,
@@ -107,6 +110,55 @@ test("the headline states the ratio, which is the whole point", () => {
   const lines = [];
   render(auditRepo("/fake", io), (l) => lines.push(l));
   const out = lines.join("\n");
-  assert.match(out, /1 of 1 user-facing actions have no tracking/);
-  assert.ok(out.includes("looks identical to one nobody performed"));
+  assert.match(out, /1 thing your product does/, `the headline must count the finding: ${out.split("\n")[1]}`);
+  assert.ok(out.includes("looks identical to one nobody performed"), "lost the line that says why it matters");
+});
+
+// LEAD WITH THE SIGNAL. A skeptical reader shown "70 of 70 user-facing actions have no tracking"
+// with six real findings buried under 64 rows of "form submit" did not say "wow", they said "this
+// thing pads". The named findings ARE the product; the shapes are a footnote.
+test("the headline counts the named findings, not the padded total", () => {
+  const io = {
+    readdirSync: () => [{ name: "a.tsx", isDirectory: () => false }],
+    readFileSync: () => `
+      await signUp.email({ email });
+      <form onSubmit={x}>
+      <form onSubmit={y}>
+      <form onSubmit={z}>
+    `,
+    existsSync: () => true,
+  };
+  const lines = [];
+  render(auditRepo("/fake", io), (l) => lines.push(l));
+  const out = lines.join("\n");
+  assert.match(out, /^\s*\x1b\[1m1 thing your product does that nothing is measuring/m,
+    `headline should count the 1 named finding, not the 4 total: ${out.split("\n")[1]}`);
+  assert.ok(!/4 of 4/.test(out), "the padded total is back in the headline");
+});
+
+test("the bulk shapes are one line, not a section, unless --all", () => {
+  const io = {
+    readdirSync: () => [{ name: "a.tsx", isDirectory: () => false }],
+    readFileSync: () => `<form onSubmit={x}>\n<form onSubmit={y}>`,
+    existsSync: () => true,
+  };
+  const brief = [];
+  render(auditRepo("/fake", io), (l) => brief.push(l));
+  assert.match(brief.join("\n"), /mostly not worth an event/);
+  assert.ok(!/a\.tsx:1/.test(brief.join("\n")), "bulk rows were listed without --all");
+
+  const full = [];
+  render(auditRepo("/fake", io), (l) => full.push(l), true);
+  assert.match(full.join("\n"), /a\.tsx:1/, "--all did not expand the bulk");
+});
+
+test("a fully instrumented repo is told so, rather than shown a zero", () => {
+  const io = {
+    readdirSync: () => [{ name: "a.tsx", isDirectory: () => false }],
+    readFileSync: () => `await signUp.email({ email });\nsmolanalytics.track("signup");`,
+    existsSync: () => true,
+  };
+  const lines = [];
+  render(auditRepo("/fake", io), (l) => lines.push(l));
+  assert.match(lines.join("\n"), /already has tracking/);
 });
