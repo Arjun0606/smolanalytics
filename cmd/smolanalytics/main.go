@@ -352,6 +352,10 @@ func serve(st store.Store, closeStore func() error, guardPublic bool) {
 	} else {
 		log.Printf("smolanalytics: outcome ledger disabled (%v)", err)
 	}
+	// The vendor read. Off unless SMOLANALYTICS_CONNECT_VENDOR is set; see connect_vendor.go for
+	// why this wire had to exist at all (the connector was complete and called by nothing).
+	startVendorSync(context.Background(), sp(".connector.json"))
+
 	if wh, err := webhook.Open(sp(".webhooks.json")); err == nil {
 		app.SetWebhooks(wh)
 		go dailyBrief(st, wh, func() *brief.Context {
