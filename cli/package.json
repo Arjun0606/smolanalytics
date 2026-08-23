@@ -1,7 +1,7 @@
 {
   "name": "smolanalytics",
-  "version": "0.6.0",
-  "description": "Your analytics, from the terminal. audit reads your repo and names what nothing measures, desk shows what it found, plan check fails CI when a tracked event stops firing, connect wires the MCP server into your editor.",
+  "version": "0.7.0",
+  "description": "Your analytics, from the terminal. audit reads your repo, names what nothing measures, and writes the calls in the analytics SDK you already use (PostHog, Mixpanel, Amplitude, GA4, Segment). desk shows what it found, plan check fails CI when a tracked event stops firing, connect wires the MCP server into your editor.",
   "type": "module",
   "bin": {
     "smolanalytics": "bin/smolanalytics.mjs"
