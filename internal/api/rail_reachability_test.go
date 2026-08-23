@@ -296,12 +296,9 @@ func TestPanesThatIgnoreTheRangeSaySo(t *testing.T) {
 	s := string(src)
 	// pane id -> a phrase its subtitle must contain, because its window is not the toolbar's.
 	must := map[string]string{
-		"pane-goals":      "not the range selected above",
-		"pane-lifecycle":  "not the range selected above",
-		"pane-accounts":   "not the range selected above",
-		"pane-people":     "not the range selected above",
-		"pane-stickiness": "does not apply",
-		"pane-sql":        "does NOT apply the range",
+		"pane-goals":    "not the range selected above",
+		"pane-accounts": "not the range selected above",
+		"pane-sql":      "does NOT apply the range",
 	}
 	for id, phrase := range must {
 		i := strings.Index(s, `id="`+id+`"`)

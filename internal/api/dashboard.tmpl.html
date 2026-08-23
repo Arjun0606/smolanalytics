@@ -1035,7 +1035,7 @@
   /* Reserved geometry: the fourteen ajax-filled bodies keep a floor so the card's shape exists
      before its data does. Plausible sizes its report pane at layout time for the same reason —
      nothing may reflow when rows arrive, and a collapsed card mid-load reads as broken. */
-  #acctOut,#alOut,#dpOut,#errOut,#exOut,#expOut,#flOut,#fmOut,#hmOut,#pplOut,#sesOut,#sqlOut,#svOut,#whyOut{min-height:96px}
+  #acctOut,#alOut,#dpOut,#errOut,#exOut,#expOut,#flOut,#fmOut,#hmOut,#sesOut,#sqlOut,#whyOut{min-height:96px}
   .panemore{font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2);margin-top:7px;
     padding-top:6px;border-top:1px solid var(--line)}
   .paneempty{opacity:.75}
@@ -1814,20 +1814,7 @@
     </div>
 
     {{if .HasWeb}}
-    <div class="pane wide" id="pane-pages" style="order:410" data-stratum="behave">
-      <div class="webcols">
-        <div>
-          <h3>top pages<span class="sub">&middot; pageviews per path &middot; the range selected above &middot; computed by /v1/web</span></h3>
-          {{range .TopPages}}<div class="seg" data-fp="path" data-fv="{{.Value}}" title="click to filter every zone to this page"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">no pageviews in this window. sdk.js sends a $pageview on load and on every route change, so the first visit fills this in. every path is listed as itself, nothing is folded into "(other)".</div>{{end}}
-          {{with moreNote (len .TopPages) .TopPagesTotal}}<div class="panemore">{{.}}</div>{{end}}{{with moreNote (len .TopPages) .TopPagesTotal}}<div class="morerows">{{.}}</div>{{end}}
-        </div>
-        <div>
-          <h3>entry pages · where sessions land</h3>
-          {{range .EntryPages}}<div class="seg" data-fp="path" data-fv="{{.Value}}"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">appears once sessions carry a landing page</div>{{end}}
-          {{with moreNote (len .EntryPages) .EntryPagesTotal}}<div class="panemore">{{.}}</div>{{end}}{{with moreNote (len .EntryPages) .EntryPagesTotal}}<div class="morerows">{{.}}</div>{{end}}
-        </div>
-      </div>
-    </div>
+    
     <!-- click map: where clicks actually land on one page. sits next to top pages
          because the question it answers ("what do they do ON this page") is the one
          a top-pages row raises. the grid the server bucketed into is the grid we
@@ -1850,11 +1837,7 @@
         <span class="sub">· the click map: where autocaptured clicks land, same window and filters as every zone above · computed by /v1/heatmap</span></h3>
       <div id="hmOut"><div class="exsummary">…</div></div>
     </div>
-    <div class="pane" id="pane-referrers" style="order:320" data-stratum="acquire">
-      <h3>referrers<span class="sub">&middot; where visits arrived from, by referring domain &middot; the range selected above &middot; computed by /v1/web</span></h3>
-      {{range .Referrers}}<div class="seg"{{if and (ne .Value "direct") (ne .Value "(none)")}} data-fp="referrer" data-fv="{{.Value}}" title="click to filter every zone to this referrer"{{end}}><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">no referrers in this window. a referrer is read from the Referer header the browser sends, so visits typed straight into the address bar count as direct and land here as soon as anyone arrives from a link.</div>{{end}}
-          {{with moreNote (len .Referrers) .ReferrersTotal}}<div class="panemore">{{.}}</div>{{end}}{{with moreNote (len .Referrers) .ReferrersTotal}}<div class="morerows">{{.}}</div>{{end}}
-    </div>
+    
     {{else}}
     <!-- no $pageview has ever landed: teach the web side rather than dropping four
          panes off the page and leaving a product-only instance looking half-built. -->
@@ -1865,68 +1848,21 @@
     {{end}}
 
     {{if .HasGeo}}
-    <div class="pane" id="pane-geo" style="order:340" data-stratum="acquire">
-      <h3>countries · geo by <a href="https://db-ip.com" target="_blank" rel="noopener" style="color:var(--mut2)">db-ip.com</a></h3>
-      <div class="exsummary" style="margin-bottom:10px">countries stamp at ingest from the moment geo is enabled (the IP is used for one lookup and never stored, so no backfill). your own visits count too: open your site once with ?sa_optout=1 to exclude this browser, ?sa_optout=0 to undo</div>
-      {{range .Countries}}<div class="seg"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname"{{if .Code}} data-cc="{{.Code}}"{{end}}>{{if .Flag}}<span class="cflag" aria-hidden="true">{{.Flag}}</span>{{end}}{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}
-          {{with moreNote (len .Countries) .CountriesTotal}}<div class="panemore">{{.}}</div>{{end}}{{with moreNote (len .Countries) .CountriesTotal}}<div class="morerows">{{.}}</div>{{end}}
-    </div>
+    
     {{else}}
     <!-- geo off, or every IP unresolved. a proud "Unknown 100%" bar would be worse than
          nothing, so the pane says what to turn on instead of ranking a single Unknown. -->
-    <div class="pane" id="pane-geo" style="order:340" data-stratum="acquire">
-      <h3>countries</h3>
-      <!-- a quiet window is not a broken geo table: the setup instruction below is the wrong
-           answer to "why is this empty" when the answer is "you picked six hours at night". -->
-      {{if .WebWindowEmpty}}<div class="exsummary">no visitor landed in the last {{.RangeLabel}}, so there is nothing to place. widen the range.</div>{{else}}
-      <div class="exsummary">no country resolved yet. geo is on unless you set <b>SMOLANALYTICS_GEO=off</b>: the free <a href="https://db-ip.com" target="_blank" rel="noopener" style="color:var(--mut2)">db-ip.com</a> table downloads on first boot and loads in the background, then every <em>new</em> event is stamped at ingest. the IP is used for that one lookup and never stored, so nothing already on disk is backfilled. an IPv6-only visitor stays unplaced rather than being guessed into a country, and so does anything the table cannot resolve.</div>
-      {{end}}
-    </div>
+    
     {{end}}
 
-    <div class="pane wide" id="pane-devices" style="order:440" data-stratum="behave">
-      <div class="webcols">
-        <div>
-          <h3>device<span class="sub">&middot; browser, OS and device split &middot; the range selected above &middot; computed by /v1/web</span></h3>
-          {{range .DeviceRows}}<div class="seg" data-fp="device" data-fv="{{.Value}}"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{else}}<div class="exsummary">no device data yet</div>{{end}}
-          {{with moreNote (len .DeviceRows) .DeviceRowsTotal}}<div class="panemore">{{.}}</div>{{end}}{{with moreNote (len .DeviceRows) .DeviceRowsTotal}}<div class="morerows">{{.}}</div>{{end}}
-          <h3 style="margin-top:16px">os</h3>
-          {{range .OSes}}<div class="seg" data-fp="os" data-fv="{{.Value}}"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">appears as visitors arrive (parsed from the user agent, nothing stored)</div>{{end}}
-          {{with moreNote (len .OSes) .OSesTotal}}<div class="panemore">{{.}}</div>{{end}}{{with moreNote (len .OSes) .OSesTotal}}<div class="morerows">{{.}}</div>{{end}}
-        </div>
-        <div>
-          <h3>browser</h3>
-          {{range .Browsers}}<div class="seg" data-fp="browser" data-fv="{{.Value}}"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">appears as visitors arrive</div>{{end}}
-          {{with moreNote (len .Browsers) .BrowsersTotal}}<div class="panemore">{{.}}</div>{{end}}{{with moreNote (len .Browsers) .BrowsersTotal}}<div class="morerows">{{.}}</div>{{end}}
-        </div>
-      </div>
-    </div>
+    
 
     {{if .UTMSources}}
-    <div class="pane wide" id="pane-campaigns" style="order:330" data-stratum="acquire">
-      <div class="webcols">
-        <div>
-          <h3>utm source</h3>
-          {{range .UTMSources}}<div class="seg" data-fp="utm_source" data-fv="{{.Value}}"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
-          {{with moreNote (len .UTMSources) .UTMSourcesTotal}}<div class="panemore">{{.}}</div>{{end}}{{with moreNote (len .UTMSources) .UTMSourcesTotal}}<div class="morerows">{{.}}</div>{{end}}
-          {{if .UTMMediums}}<h3 style="margin-top:16px">utm medium</h3>
-          {{range .UTMMediums}}<div class="seg" data-fp="utm_medium" data-fv="{{.Value}}"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
-          {{with moreNote (len .UTMMediums) .UTMMediumsTotal}}<div class="panemore">{{.}}</div>{{end}}{{with moreNote (len .UTMMediums) .UTMMediumsTotal}}<div class="morerows">{{.}}</div>{{end}}{{end}}
-        </div>
-        <div>
-          <h3>utm campaign</h3>
-          {{range .UTMCampaigns}}<div class="seg" data-fp="utm_campaign" data-fv="{{.Value}}"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">tag links with utm_campaign to see them here</div>{{end}}
-          {{with moreNote (len .UTMCampaigns) .UTMCampaignsTotal}}<div class="panemore">{{.}}</div>{{end}}{{with moreNote (len .UTMCampaigns) .UTMCampaignsTotal}}<div class="morerows">{{.}}</div>{{end}}
-        </div>
-      </div>
-    </div>
+    
     {{else}}
     <!-- no tagged link has landed yet. the pane stays and teaches the tag, because a
          missing campaigns card reads as "we don't do campaigns" rather than "none yet". -->
-    <div class="pane wide" id="pane-campaigns" style="order:330" data-stratum="acquire">
-      <h3>utm source · medium · campaign</h3>
-      <div class="exsummary">no tagged links in this window. add <b>?utm_source=…&amp;utm_medium=…&amp;utm_campaign=…</b> to a link you post and sdk.js reads the three tags straight off the URL and sends them on every event fired while they are in the address bar, and it also keeps the first utm_source of the visit as <b>initial_utm_source</b>. untagged visits stay in <b>referrers</b> above rather than being invented into a campaign here.</div>
-    </div>
+    
     {{end}}
 
     <div class="pane wide" id="pane-funnel" style="order:210" data-stratum="convert">
@@ -1981,16 +1917,9 @@
     {{end}}
 
     {{if .HasSource}}
-    <div class="pane" id="pane-sources" style="order:310" data-stratum="acquire">
-      <h3>{{.SourceTitle}}</h3>
-      {{range .BySource}}<div class="seg"{{if .FilterProp}} data-fp="{{.FilterProp}}" data-fv="{{.FilterVal}}" title="click to filter every zone to this channel"{{end}}><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}
-    </div>
+    
     {{else}}
-    <div class="pane paneempty" id="pane-sources" style="order:310" data-stratum="acquire">
-      <h3>where they came from</h3>
-      <div class="pe">nothing has arrived with a referrer or a utm tag yet, so there is no channel to break down.</div>
-      <div class="pehint">channels appear on their own once someone reaches you from a link. nothing to configure.</div>
-    </div>
+    
     {{end}}
 
     {{if .HasPaths}}
@@ -2015,65 +1944,21 @@
     {{end}}
 
     {{if .HasLifecycle}}
-    <div class="pane wide" id="pane-lifecycle" style="order:520" data-stratum="return">
-      <h3>lifecycle <span class="sub">· who's active each day: new vs loyal · a fixed 14-day window, not the range selected above</span></h3>
-      <div style="display:flex;gap:14px;flex-wrap:wrap;font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);margin:2px 0 10px">
-        <span><i style="display:inline-block;width:8px;height:8px;background:var(--accent);vertical-align:middle;margin-right:5px"></i>new</span>
-        <span><i style="display:inline-block;width:8px;height:8px;background:var(--ok);vertical-align:middle;margin-right:5px"></i>returning</span>
-        <span><i style="display:inline-block;width:8px;height:8px;background:#5B8DEF;vertical-align:middle;margin-right:5px"></i>resurrected</span>
-        <span style="color:var(--mut2)">dormant = churned out that day</span>
-      </div>
-      {{range .Lifecycle}}<div style="display:flex;align-items:center;gap:8px;margin:3px 0">
-        <span style="width:50px;font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);flex:none">{{.Label}}</span>
-        <div style="flex:1;display:flex;height:13px;border-radius:2px;overflow:hidden;background:var(--s2)">
-          <div title="new {{.New}}" style="width:{{.NewPct}}%;background:var(--accent)"></div>
-          <div title="returning {{.Returning}}" style="width:{{.RetPct}}%;background:var(--ok)"></div>
-          <div title="resurrected {{.Resurrected}}" style="width:{{.ResPct}}%;background:#5B8DEF"></div>
-        </div>
-        <span style="width:92px;font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut2);flex:none;text-align:right">{{if .Dormant}}-{{.Dormant}} dormant{{else}}none lost{{end}}</span>
-      </div>{{end}}
-    </div>
+    
     {{else}}
-    <div class="pane wide paneempty" id="pane-lifecycle" style="order:520" data-stratum="return">
-      <h3>lifecycle</h3>
-      <div class="pe">not enough days of history yet to split new from returning.</div>
-      <div class="pehint">this reads a fixed 14-day window, so it fills in about two weeks.</div>
-    </div>
+    
     {{end}}
 
     {{with .Stickiness}}
-    <div class="pane" id="pane-stickiness" style="order:530" data-stratum="return">
-      <h3>stickiness <span class="sub">· do they come back? · DAU, WAU and MAU are fixed 1, 7 and 30-day windows by definition, so the range above does not apply</span></h3>
-      <div style="display:flex;align-items:baseline;gap:10px;margin:10px 0 2px">
-        <span style="font-size:var(--fs-num);line-height:1.14;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums;letter-spacing:-.02em">{{.Ratio}}%</span>
-        <span style="font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut)">DAU/MAU</span>
-      </div>
-      <div style="font-family:var(--mono);font-size:var(--fs-lbl);color:var(--mut);margin-bottom:12px">{{.Verdict}}</div>
-      <div style="display:flex;gap:20px;font-family:var(--mono);font-size:var(--fs-lbl);color:var(--fg);border-top:1px solid var(--line);padding-top:10px">
-        <span>DAU <b style="color:var(--accent)">{{comma .DAU}}</b></span>
-        <span>WAU <b style="color:var(--accent)">{{comma .WAU}}</b></span>
-        <span>MAU <b style="color:var(--accent)">{{comma .MAU}}</b></span>
-      </div>
-    </div>
+    
     {{else}}
-    <div class="pane paneempty" id="pane-stickiness" style="order:530" data-stratum="return">
-      <h3>stickiness</h3>
-      <div class="pe">not enough distinct days of activity yet to compute DAU over MAU.</div>
-      <div class="pehint">DAU, WAU and MAU are fixed 1, 7 and 30-day windows, so this needs about a month before the ratio means anything.</div>
-    </div>
+    
     {{end}}
 
     {{if .HasSearch}}
-    <div class="pane" id="pane-search" style="order:350" data-stratum="acquire">
-      <h3>google search queries · 28d clicks</h3>
-      {{range .SearchRows}}<div class="seg"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{end}}
-    </div>
+    
     {{else}}
-    <div class="pane paneempty" id="pane-search" style="order:350" data-stratum="acquire">
-      <h3>google search queries</h3>
-      <div class="pe">google search console is not connected on this instance.</div>
-      <div class="pehint">run <code>smolanalytics gsc auth</code> once; queries, impressions and positions appear here afterwards.</div>
-    </div>
+    
     {{end}}
 
     <!-- AI VISIBILITY (GEO). Two halves of one question, and this is the only place that
@@ -2566,11 +2451,7 @@
          Profiles derived at query time, never stored. "Why does the profile say pro when
          the events say free" is a question that cannot be asked here, because there is no
          profile table for the events to disagree with. ═══════════════════════════════════ -->
-    <div class="pane wide" id="pane-people" style="order:460" data-stratum="behave">
-      <h3>people
-        <span class="sub">· last-known traits, derived from your events at query time — nothing stored, so a profile can never disagree with the log it came from · across all recorded history, not the range selected above · computed by /v1/people</span></h3>
-      <div id="pplOut"><div class="exsummary">…</div></div>
-    </div>
+    
 
     <!-- ══ DERIVED METRICS ══════════════════════════════════════════════════════════════
          One series over another. Without it the answer to "signups per visitor" is export
@@ -2602,11 +2483,7 @@
       <div id="alOut"><div class="exsummary">…</div></div>
     </div>
 
-    <div class="pane wide" id="pane-surveys" style="order:630" data-stratum="ship">
-      <h3>surveys
-        <span class="sub">· one-question in-product surveys and what came back · computed by /v1/surveys</span></h3>
-      <div id="svOut"><div class="exsummary">…</div></div>
-    </div>
+    
 
     <!-- sessions: the raw-behaviour end of the deck, right above the live feed and the
          event stream, because all three answer "what did one person actually do". this
@@ -4543,68 +4420,6 @@
     }
 
     // ══ PEOPLE ════════════════════════════════════════════════════════════════════════
-    var pplOut=document.getElementById('pplOut');
-    if(pplOut){
-      shipGet('/v1/people?limit=25').then(function(r){
-        if(shipOff(pplOut,r,'person profiles are unavailable on this instance.'))return;
-        // `people` is the COUNT; `recent` is the list. Reading j.people as an array renders an
-        // empty pane on an instance with 120 profiles — the failure looks like no data.
-        var j=r.j||{},people=j.recent||[],traits=j.traits||[];
-        if(!people.length){pplOut.innerHTML='<div class="agmeta">no people yet — a profile appears as soon as any event carries a <b>distinct_id</b>.</div>';return;}
-        var h='<div class="agrow"><span class="proof">'+(j.people!=null?j.people:people.length)+' people</span>'+
-          '<span class="agmeta">'+(traits.length?(traits.length+' trait'+(traits.length===1?'':'s')+' seen: '+traits.slice(0,6).map(function(t){return esc(t.value)+' ('+t.people+')';}).join(' · ')):
-            'no traits yet — send <b>$identify</b>, or ride one along on any event with <b>{"$set": {"plan": "pro"}}</b>')+'</span></div>';
-        // Trait columns are chosen from what people ACTUALLY carry, most widely held first, so
-        // the table is useful on an instance nobody configured.
-        var cols=traits.slice(0,3).map(function(t){return t.value;});
-        h+='<table class="ctab" style="margin-top:10px"><thead><tr><th>person</th>'+
-          cols.map(function(c){return '<th>'+esc(c)+'</th>';}).join('')+
-          '<th class="n">events</th><th>last seen</th></tr></thead><tbody>';
-        people.forEach(function(p){
-          var tr=p.traits||{};
-          h+='<tr><td><a class="hlink" href="#" data-user="'+esc(p.distinct_id)+'">'+esc(p.distinct_id)+'</a>'+
-            ' <a class="hlink pplerase" href="#" data-erase="'+esc(p.distinct_id)+'" title="erase everything this person ever sent">erase</a></td>'+
-            cols.map(function(c){return '<td class="mut">'+(tr[c]!=null?esc(String(tr[c])):'—')+'</td>';}).join('')+
-            '<td class="n">'+p.events+'</td><td class="mut">'+esc(String(p.last_seen||'').slice(0,10))+'</td></tr>';
-        });
-        pplOut.innerHTML=h+'</tbody></table><div class="agmeta" style="margin-top:10px">every value here is the LAST-KNOWN one, decided by timestamp and not by arrival order — a week-old event syncing late from an offline phone cannot overwrite today\'s. nothing is stored: these are recomputed from your events on every load, which is why a profile can never disagree with the log.</div>';
-      });
-    }
-
-    // GDPR erasure, from the page.
-    //
-    // DELETE /v1/users/{id}/data has existed for a while with no UI anywhere, so answering a
-    // deletion request meant writing curl. That is a legal obligation with a deadline, handed to
-    // someone who may have never used curl — the exact "built but unreachable" gap, with the
-    // highest stakes of any of them.
-    document.addEventListener('click', function (e) {
-      var a = e.target.closest && e.target.closest('[data-erase]');
-      if (!a) return;
-      e.preventDefault();
-      var id = a.getAttribute('data-erase');
-      // Names the person AND the consequence. "Are you sure?" is not informed consent for an
-      // irreversible deletion, and this one cannot be undone from a backup either — the point of
-      // erasure is that the rows are gone.
-      if (!window.confirm('Erase every event ' + id + ' ever sent?\n\nThis rewrites the event log ' +
-        'and cannot be undone. Their events disappear from every report, including past ones.')) return;
-      a.textContent = 'erasing…';
-      fetch('/v1/users/' + encodeURIComponent(id) + '/data', { method: 'DELETE' })
-        .then(function (r) { return r.json().then(function (j) { return { st: r.status, j: j }; }); })
-        .then(function (res) {
-          if (res.st >= 400) { a.textContent = 'failed'; a.title = (res.j && res.j.error) || 'could not erase'; return; }
-          var row = a.closest('tr');
-          if (row) {
-            row.style.opacity = '.45';
-            // Says what happened rather than just vanishing: a row that silently disappears leaves
-            // the operator unable to tell erasure from a rendering bug, on the one action where
-            // they may later have to prove it happened.
-            row.querySelector('td').innerHTML = '<span class="mut">erased · ' + esc(String(res.j && res.j.deleted || 0)) + ' events removed</span>';
-          }
-        })
-        .catch(function () { a.textContent = 'failed'; });
-    });
-
-    // ══ DERIVED METRICS ═══════════════════════════════════════════════════════════════
     var fmRun=document.getElementById('fmRun'),fmOut=document.getElementById('fmOut');
     if(fmRun&&fmOut){
       fmRun.addEventListener('click',function(){
@@ -4756,10 +4571,9 @@
       for (var j = 0; j < heads.length; j++) {
         heads[j].classList.toggle('pane--on', !!key && heads[j].getAttribute('data-stratum') === key);
       }
-      var menu = document.getElementById('sadeckmenu');
-      if (menu) menu.classList.toggle('pane--on', !key);
-      // Mark the current section in the rail and the menu, so "where am I" is answerable without
-      // reading the reports themselves.
+      // Mark the current section in the rail, so "where am I" is answerable without reading the
+      // reports themselves. There is no menu to mark any more: the deck stopped being a place you
+      // browse, and the panes are reached by deep link from the claim that cites them.
       var links = document.querySelectorAll('[data-view]');
       for (var m = 0; m < links.length; m++) {
         links[m].classList.toggle('on', links[m].getAttribute('data-view') === (key || ''));
@@ -4776,25 +4590,6 @@
     }
 
     // The menu that replaces the wall. Rendered once, into the deck, above everything.
-    function saBuildDeckMenu() {
-      var deck = document.querySelector('.deck');
-      if (!deck || document.getElementById('sadeckmenu')) return;
-      var el = document.createElement('div');
-      el.id = 'sadeckmenu';
-      el.className = 'deckmenu';
-      var h = '<div class="deckmenu-h">what do you want to look at?</div><div class="deckmenu-g">';
-      for (var i = 0; i < SA_VIEWS.length; i++) {
-        var v = SA_VIEWS[i], n = saCountIn(v.k);
-        if (!n) continue; // a section with no reports on THIS instance is not an option
-        h += '<a class="deckcard" href="?view=' + v.k + '" data-view="' + v.k + '">' +
-          '<span class="dct">' + esc(v.t) + '</span>' +
-          '<span class="dcd">' + esc(v.d) + '</span>' +
-          '<span class="dcn">' + n + ' report' + (n === 1 ? '' : 's') + '</span></a>';
-      }
-      el.innerHTML = h + '</div>';
-      deck.insertBefore(el, deck.firstChild);
-    }
-
     (function saInitViews() {
       // THE MENU IS GONE ON PURPOSE, THE PANES ARE NOT.
       //
@@ -5616,7 +5411,6 @@
     }
 
     // ---- surveys: the definitions, and what came back for each one.
-    var svOut=document.getElementById('svOut'),svList=[];
     function svFind(id){for(var i=0;i<svList.length;i++)if(svList[i].id===id)return svList[i];return null;}
     function svWhere(s){
       var bits=[s.url_match?('paths containing '+s.url_match):'every page'];
@@ -5624,48 +5418,10 @@
       return bits.join(' · ');
     }
     function svLoad(){
-      if(!svOut)return;
-      shipGet('/v1/surveys').then(function(r){
-        if(shipOff(svOut,r,'surveys are not enabled on this instance, so there is nothing to list. they persist to a .surveys.json beside your event data; when the engine cannot open that file it starts without them and logs the reason.'))return;
-        svList=r.j.surveys||[];
-        if(!svList.length){
-          svOut.innerHTML='<div class="agmeta">no surveys yet. create one from your editor with the <b>create_survey</b> tool, or POST /v1/surveys. a survey is one question (nps, rating, choice or text) plus where it should show. sdk.js renders it as a small popover and sends the answer as an ordinary event, so results are a query over your own event log like every other number here.</div>';
-          return;
-        }
-        var act=0;svList.forEach(function(s){if(s.active)act++;});
-        var h='<div class="agrow"><span class="agprov">computed · every response, no sampling</span>'+
-          '<span class="agmeta">'+svList.length+' survey'+(svList.length===1?'':'s')+' · '+act+
-          ' active · answers land as ordinary $survey_shown / $survey_response events</span></div>'+
-          '<table class="ctab"><thead><tr><th>survey</th><th>type</th><th>question</th>'+
-          '<th>where it shows</th><th>state</th></tr></thead><tbody>';
-        svList.forEach(function(s){
-          h+='<tr class="xrow" tabindex="0" role="button" data-id="'+esc(s.id)+'" title="open this survey\'s results">'+
-            '<td>'+shipCaret()+esc(s.name)+'</td><td class="mut">'+esc(s.type)+'</td>'+
-            '<td class="mut">'+esc(s.question)+'</td><td class="mut">'+esc(svWhere(s))+'</td>'+
-            '<td><span class="stpill'+(s.active?' on':'')+'" data-active="'+esc(s.id)+'" role="button" tabindex="0" '+
-            'title="'+(s.active?'stop showing it':'start showing it')+'">'+(s.active?'showing':'paused')+'</span></td></tr>';
-        });
-        svOut.innerHTML=h+'</tbody></table>'+
-          '<div class="agmeta" style="margin-top:8px">surveys are written from your editor (<b>create_survey</b>) or over POST /v1/surveys; this page shows them, flips them on and off, and reads what came back. click a row for its results.</div>';
-      }).catch(function(){svOut.innerHTML='<div class="inote err">could not load surveys</div>';});
     }
     function svToggleActive(id,pill){
       var s=svFind(id);if(!s)return;
       var on=!s.active;
-      saConfirm(svOut,pill,
-        on?('start showing "'+s.name+'" to visitors? sdk.js renders it as a popover on '+svWhere(s)+' from their next page load.')
-          :('stop showing "'+s.name+'"? visitors stop seeing it from their next page load. answers already collected stay, they are ordinary events.'),
-        on?'start showing it':'stop showing it',
-        function(){
-          var n={};for(var k in s)if(Object.prototype.hasOwnProperty.call(s,k))n[k]=s[k];
-          n.active=on;
-          fetch('/v1/surveys',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(n)})
-            .then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j};});})
-            .then(function(r){
-              if(!r.ok){saNote(svOut,(r.j&&r.j.error)||'could not save the survey','err');return;}
-              saNote(svOut,'');svLoad();
-            }).catch(function(){saNote(svOut,'could not reach the server, try again','err');});
-        });
     }
     function svResults(td,id){
       var s=svFind(id);
@@ -5704,20 +5460,6 @@
         }).catch(function(){td.innerHTML='<span class="inote err">could not load the results</span>';});
     }
     function svOpen(row){shipToggle(row,5,function(td){svResults(td,row.getAttribute('data-id'));});}
-    if(svOut){
-      svLoad();
-      svOut.addEventListener('click',function(e){
-        var a=shipHit(e,'[data-active]');if(a){svToggleActive(a.getAttribute('data-active'),a);return;}
-        var row=e.target.closest&&e.target.closest('tr.xrow');if(row)svOpen(row);
-      });
-      svOut.addEventListener('keydown',function(e){
-        if(e.key!=='Enter'&&e.key!==' ')return;
-        var a=e.target.closest&&e.target.closest('[data-active]');
-        if(a){e.preventDefault();e.stopPropagation();svToggleActive(a.getAttribute('data-active'),a);return;}
-        var row=e.target.closest&&e.target.closest('tr.xrow');
-        if(row){e.preventDefault();svOpen(row);}
-      });
-    }
 
     // the verdict is server-rendered once, scope-aware, at request time — a client
     // refetch that rebuilt the same markup from JS was a second copy to keep in sync.

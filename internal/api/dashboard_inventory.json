@@ -5,10 +5,8 @@
     "pane-aicrawl",
     "pane-aivis",
     "pane-alerts",
-    "pane-campaigns",
     "pane-conversion",
     "pane-deploys",
-    "pane-devices",
     "pane-errors",
     "pane-events",
     "pane-experiments",
@@ -16,22 +14,13 @@
     "pane-flags",
     "pane-formula",
     "pane-funnel",
-    "pane-geo",
     "pane-goals",
     "pane-heatmap",
-    "pane-lifecycle",
     "pane-live",
-    "pane-pages",
     "pane-paths",
-    "pane-people",
-    "pane-referrers",
     "pane-retention",
-    "pane-search",
     "pane-sessions",
-    "pane-sources",
     "pane-sql",
-    "pane-stickiness",
-    "pane-surveys",
     "pane-web-empty"
   ],
   "controls": [
@@ -186,8 +175,7 @@
     "sesLimit",
     "sesOut",
     "shareBtn",
-    "shareresult",
-    "svOut"
+    "shareresult"
   ],
   "delegatedSelectors": [
     ".chip[data-q],.lact a[data-q]",
@@ -201,7 +189,6 @@
     ".live .who",
     ".seg[data-fp]",
     ".who",
-    "[data-active]",
     "[data-del]",
     "[data-toggle]",
     "a[data-pane]",
@@ -253,7 +240,6 @@
     "xrow"
   ],
   "dataAttributes": [
-    "data-active",
     "data-c",
     "data-del",
     "data-did",

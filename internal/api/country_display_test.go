@@ -65,30 +65,6 @@ func TestRealCountriesKeepTheirCodeSeparateFromTheLabel(t *testing.T) {
 	}
 }
 
-// The full name is presentation only, so it is expanded in the browser rather than shipped as a
-// table in the binary. What has to be true in the template is that the browser is GIVEN the code
-// to expand, on both cards that show countries, and that the flag is hidden from assistive tech
-// (the name is the label; a flag emoji read aloud is noise).
-func TestCountryCardsHandTheBrowserSomethingToExpand(t *testing.T) {
-	tpl := dashboardTemplateSource(t)
-	if n := strings.Count(tpl, `data-cc="{{.Code}}"`); n < 2 {
-		t.Errorf("only %d country card(s) emit data-cc; both the countries card and conversion-by-country need it", n)
-	}
-	if !strings.Contains(tpl, `<span class="cflag" aria-hidden="true">{{.Flag}}</span>`) {
-		t.Error("the flag is not aria-hidden — a screen reader will read the emoji instead of the country")
-	}
-	for _, want := range []string{
-		"function saCountryNames(",
-		"Intl.DisplayNames",
-		"navigator.languages",  // the reader's language, not ours
-		"if(!full||full===cc)", // a tooltip repeating the thing you hover is worse than none
-	} {
-		if !strings.Contains(tpl, want) {
-			t.Errorf("browser-side country naming lost %q", want)
-		}
-	}
-}
-
 // "1 users" was rendering under every single-user country in the screenshot that prompted this.
 func TestUserCountsArePluralisedHonestly(t *testing.T) {
 	tpl := dashboardTemplateSource(t)
