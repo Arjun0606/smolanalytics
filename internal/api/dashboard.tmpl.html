@@ -4796,7 +4796,15 @@
     }
 
     (function saInitViews() {
-      saBuildDeckMenu();
+      // THE MENU IS GONE ON PURPOSE, THE PANES ARE NOT.
+      //
+      // "What do you want to look at?" made this a destination — a place you visit to browse
+      // reports — and that is the fight with Amplitude we already conceded. The customer keeps
+      // PostHog for looking at charts. What survives is EVIDENCE: every claim the product makes
+      // (a finding on the desk, a line in the morning brief, the impact comment on a pull
+      // request) deep-links to the one pane that proves it, and ?view= still routes exactly as
+      // before. A claim nobody can check is just an assertion, so the panes stay reachable; they
+      // stop being a menu.
       var start = new URL(window.location.href).searchParams.get('view') || '';
       saSetView(start, false);
       // One delegated handler for the menu, the rail's section links, and the back-to-summary
