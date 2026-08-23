@@ -408,7 +408,10 @@ func Propose(root, host, key string) Proposal {
 		if v.IsOurs() {
 			p.Notes = append(p.Notes, "No obvious signup/checkout call-sites found by pattern. Autocapture still records pageviews, clicks, and engagement with zero code once the snippet is installed. Add track() calls at your key conversion moments, then declare them with set_tracking_plan.")
 		} else {
-			p.Notes = append(p.Notes, "Nothing here is missing tracking that we can spot by pattern — every signup, checkout and invite we found already has a "+v.Name+" call near it. Declare them with set_tracking_plan so we can tell you when one stops firing.")
+			// Name only what this scanner actually looks for. eventPattern covers checkout,
+			// signup, login and activation — claiming we also checked invites is a small lie
+			// about coverage, and coverage claims are the thing this product sells.
+			p.Notes = append(p.Notes, "Every signup, checkout, login and activation we can spot by pattern already has a "+v.Name+" call near it, so there is nothing to add. Declare them with set_tracking_plan so we can tell you when one stops firing. For a wider sweep — invites, uploads, shares, mutating API routes — run instrumentation_coverage.")
 		}
 	} else {
 		p.Notes = append(p.Notes, "These are heuristic matches — confirm each before applying. After wiring them, declare the plan with set_tracking_plan and verify with instrumentation_health.")

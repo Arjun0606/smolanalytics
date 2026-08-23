@@ -66,7 +66,7 @@ export function gate(payload, log = console.log) {
   }
   let broken = 0;
   for (const p of planned) {
-    const ok = p.status === "ok" || p.status === "healthy";
+    const ok = HEALTHY_STATUS.has(p.status);
     const miss = (p.missing_properties || []).length;
     if (!ok || miss > 0) broken++;
     const mark = ok && miss === 0 ? "ok  " : "FAIL";
@@ -93,6 +93,23 @@ export function endpointFor(url) {
   if (!base) return "https://smolanalytics.com/api/mcp";
   return base.endsWith("/mcp") ? base : base + "/mcp";
 }
+
+// THE STATUS VOCABULARY THE SERVER ACTUALLY SPEAKS.
+//
+// This gated on "ok" || "healthy". instrumentation_health has only ever emitted "flowing" or
+// "MISSING — never seen" (internal/mcp/control.go), so against a real instance EVERY healthy event
+// printed FAIL and `plan check` exited 1 — a CI gate that reddens the build on the day it is
+// installed, which is the worst possible first impression for a tool you put in someone's
+// pipeline. The Go binary's own gate was right (`p.Status != "flowing"` in plan_cmd.go); only the
+// path a hosted user has was wrong, and the cloud's /api/mcp passes it straight through.
+//
+// Nothing caught it because cli/test/plan.test.mjs fabricated `status: "ok"` payloads the server
+// has never sent. A fixture that invents its input tests the fixture.
+//
+// "ok" and "healthy" stay accepted deliberately: this CLI talks to instances it does not control,
+// including self-hosted ones on older builds, and being strict buys nothing while being liberal
+// costs nothing. plan-status.test.mjs pins the set against the server's own source.
+export const HEALTHY_STATUS = new Set(["flowing", "ok", "healthy"]);
 
 export async function planCheckCmd({ url, key, project, windowHours, log = console.log, fetchImpl = fetch }) {
   if (!key) {

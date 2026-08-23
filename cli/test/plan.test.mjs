@@ -3,13 +3,19 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+
+// These payloads now use "flowing", the status the SERVER ACTUALLY SENDS. They previously used
+// "ok", which instrumentation_health has never emitted, and that invention hid a live bug for as
+// long as it existed: the gate accepted only "ok"/"healthy", so `plan check` failed the build for
+// every healthy event on every real instance. A fixture that makes up its input tests the fixture.
+// The vocabulary itself is pinned against the server's source in plan-status.test.mjs.
 import { gate, parseToolText, endpointFor, planCheckCmd } from "../lib/plan.mjs";
 
 const payload = (planned, unplanned = []) => JSON.stringify({ planned, unplanned_events: unplanned });
 
 test("a planned event that stopped firing fails the build", () => {
   const code = gate(payload([
-    { event: "signup", status: "ok", count: 120 },
+    { event: "signup", status: "flowing", count: 120 },
     { event: "checkout", status: "missing", count: 0 },
   ]), () => {});
   assert.equal(code, 1);
@@ -17,20 +23,20 @@ test("a planned event that stopped firing fails the build", () => {
 
 test("all planned events firing passes", () => {
   const code = gate(payload([
-    { event: "signup", status: "ok", count: 120 },
-    { event: "checkout", status: "ok", count: 44 },
+    { event: "signup", status: "flowing", count: 120 },
+    { event: "checkout", status: "flowing", count: 44 },
   ]), () => {});
   assert.equal(code, 0);
 });
 
 test("a planned event missing a property fails, even when the event itself fires", () => {
-  const code = gate(payload([{ event: "signup", status: "ok", count: 90, missing_properties: ["plan"] }]), () => {});
+  const code = gate(payload([{ event: "signup", status: "flowing", count: 90, missing_properties: ["plan"] }]), () => {});
   assert.equal(code, 1, "a half-instrumented event is a broken event");
 });
 
 test("events firing outside the plan are reported but never fatal", () => {
   const lines = [];
-  const code = gate(payload([{ event: "signup", status: "ok", count: 5 }], ["debug_click"]), (l) => lines.push(l));
+  const code = gate(payload([{ event: "signup", status: "flowing", count: 5 }], ["debug_click"]), (l) => lines.push(l));
   assert.equal(code, 0, "tracking something you did not write down is untidy, not broken");
   assert.ok(lines.join("\n").includes("debug_click"), "but it must be reported");
 });
