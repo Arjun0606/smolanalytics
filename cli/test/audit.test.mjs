@@ -6,7 +6,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { scanFile, auditRepo, render } from "../lib/audit.mjs";
+import { readFileSync } from "node:fs";
+import { scanFile, auditRepo, render, VENDORS } from "../lib/audit.mjs";
 
 const kinds = (rel, src) => scanFile(rel, src).map((a) => a.kind);
 
@@ -161,4 +162,112 @@ test("a fully instrumented repo is told so, rather than shown a zero", () => {
   const lines = [];
   render(auditRepo("/fake", io), (l) => lines.push(l));
   assert.match(lines.join("\n"), /already has tracking/);
+});
+
+// WE OFFER TO MAINTAIN THE ANALYTICS THEY ALREADY HAVE.
+//
+// The audit is the free front door, and the sentence under "Next:" is the only offer it makes. A
+// generic "your agent can write these track() calls" reads, to someone already paying for PostHog,
+// as an invitation to adopt a second analytics tool — which is the migration nobody wants and the
+// reason "I'd rather just use the free PostHog" is the standing objection. The offer has to name
+// the SDK in their repo and promise to write into it.
+//
+// These fixtures mirror the Go ones in internal/instrument/vendor_test.go. The CLI ships with no
+// network and no binary, so its detector is a deliberate second implementation; keeping the
+// fixtures identical is what stops the two from drifting apart unnoticed.
+
+const repoIo = (pkg, files) => ({
+  readdirSync: () => Object.keys(files).map((name) => ({ name, isDirectory: () => false })),
+  readFileSync: (p) => {
+    if (String(p).endsWith("package.json")) return pkg;
+    const hit = Object.entries(files).find(([name]) => String(p).endsWith(name));
+    return hit ? hit[1] : "";
+  },
+  existsSync: () => true,
+});
+
+test("detects the analytics SDK the repo already uses", () => {
+  const cases = [
+    [`{"dependencies":{"posthog-js":"1.0.0"}}`, `posthog.capture("x")`, "posthog", "PostHog"],
+    [`{"dependencies":{"mixpanel-browser":"2.0.0"}}`, `mixpanel.track("x")`, "mixpanel", "Mixpanel"],
+    [`{"dependencies":{"@amplitude/analytics-browser":"2.0"}}`, `amplitude.track("x")`, "amplitude", "Amplitude"],
+    [`{"dependencies":{"@segment/analytics-next":"1.0"}}`, `analytics.track("x")`, "segment", "Segment"],
+    [`{"dependencies":{"next":"14"}}`, `gtag("event", "x")`, "ga4", "Google Analytics 4"],
+    [`{"dependencies":{"next":"14"}}`, `const x = 1;`, "smolanalytics", "smolanalytics"],
+  ];
+  for (const [pkg, src, wantId, wantName] of cases) {
+    const r = auditRepo("/fake", repoIo(pkg, { "a.tsx": src }));
+    assert.equal(r.vendor.id, wantId, `${wantName}: detected ${r.vendor.id}`);
+  }
+});
+
+test("our own SDK is not mistaken for Segment", () => {
+  // `analytics.track(` matches the tail of `smolanalytics.track(`. Without a word boundary every
+  // repo running our own SDK reads as a Segment customer, and we then write Segment calls into it.
+  const r = auditRepo("/fake", repoIo(`{"dependencies":{"next":"14"}}`, {
+    "a.tsx": `smolanalytics.track("signup");`,
+  }));
+  assert.equal(r.vendor.id, "smolanalytics", "smolanalytics.track() was read as Segment");
+});
+
+test("an installed dependency outweighs a call left over from a migration", () => {
+  const r = auditRepo("/fake", repoIo(`{"dependencies":{"posthog-js":"1.0.0"}}`, {
+    "a.tsx": `mixpanel.track("old_a")`,
+    "b.tsx": `mixpanel.track("old_b")`,
+    "c.tsx": `mixpanel.track("old_c")`,
+  }));
+  assert.equal(r.vendor.id, "posthog", "stale calls outvoted the dependency they actually installed");
+});
+
+test("the offer names their SDK and writes into it, not beside it", () => {
+  const r = auditRepo("/fake", repoIo(`{"dependencies":{"posthog-js":"1.0.0"}}`, {
+    "invite.tsx": `const res = await inviteUser({ email });`,
+  }));
+  const out = [];
+  render(r, (l) => out.push(l));
+  const text = out.join("\n").replace(/\x1b\[\d+m/g, "");
+  assert.match(text, /This repo uses PostHog/, `no vendor named in the offer:\n${text}`);
+  assert.match(text, /posthog\.capture\("invite_sent"/, "the example is not in their SDK");
+  assert.match(text, /into PostHog, not beside it/, "the no-second-SDK promise is missing");
+  assert.ok(!/smolanalytics\.track/.test(text), "offered our SDK to a PostHog repo");
+});
+
+test("a repo with no analytics is still offered ours", () => {
+  const r = auditRepo("/fake", repoIo(`{"dependencies":{"next":"14"}}`, {
+    "invite.tsx": `const res = await inviteUser({ email });`,
+  }));
+  const out = [];
+  render(r, (l) => out.push(l));
+  const text = out.join("\n").replace(/\x1b\[\d+m/g, "");
+  assert.match(text, /Your coding agent can write these track\(\) calls/, `fallback offer missing:\n${text}`);
+  assert.ok(!/This repo uses/.test(text), "claimed a vendor in a repo that has none");
+});
+
+test("tracking written in any SDK counts as tracking", () => {
+  // The false-negative direction: telling someone with working PostHog tracking that nothing in
+  // their product is measured is a confident falsehood about their own codebase, delivered as our
+  // first impression.
+  for (const call of [
+    `posthog.capture("signup");`,
+    `mixpanel.track("signup");`,
+    `amplitude.track("signup");`,
+    `gtag("event", "sign_up");`,
+    `analytics.track("signup");`,
+    `smolanalytics.track("signup");`,
+  ]) {
+    const r = auditRepo("/fake", repoIo(`{}`, { "a.tsx": `await signUp.email({ email });\n${call}` }));
+    assert.equal(r.uncovered, 0, `${call} was not recognised as tracking`);
+  }
+});
+
+test("the CLI's vendor list matches the engine's", () => {
+  // The CLI ships with no network and no binary, so its detector must be a second implementation
+  // of internal/instrument/vendor.go. Two implementations drift, and the failure is quiet: the
+  // engine learns a new SDK, the free audit keeps telling those users nothing measures their
+  // product. Identical fixtures do not catch that on their own — this does.
+  const src = readFileSync(new URL("../../internal/instrument/vendor.go", import.meta.url), "utf8");
+  const goIds = [...src.matchAll(/^\t\tID: "([a-z0-9]+)",/gm)].map((m) => m[1]).sort();
+  const jsIds = VENDORS.map((v) => v.id).sort();
+  assert.deepEqual(jsIds, goIds,
+    `vendor lists have drifted — engine: ${goIds.join(", ")} / cli: ${jsIds.join(", ")}`);
 });

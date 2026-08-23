@@ -112,8 +112,14 @@ func skipAsNonAction(line string, kind string) bool {
 	return false
 }
 
-// trackNearby matches any tracking call, including the optional-chaining forms agents generate.
-var trackNearby = regexp.MustCompile(`smolanalytics\??\.track\(|/v1/events`)
+// trackNearby matches any tracking call, in ANY analytics SDK, including the optional-chaining
+// forms agents generate.
+//
+// It used to match only ours. On a repo with working PostHog tracking one line below every action,
+// this report said "2 of 2 user-facing actions have no tracking near them (0% covered)" — a
+// confident falsehood about the reader's own codebase, and the first thing the free audit shows a
+// prospect who already has analytics. See anyTrack in vendor.go for what counts.
+var trackNearby = anyTrack
 
 // Report walks the repository and returns every user-facing action it can identify, marked as
 // covered or not.
@@ -229,10 +235,20 @@ func coveredNear(lines []string, idx int) (bool, string) {
 	if hi > len(lines)-1 {
 		hi = len(lines) - 1
 	}
-	for j := lo; j <= hi; j++ {
-		if trackNearby.MatchString(lines[j]) {
-			if m := trackCallRe.FindStringSubmatch(lines[j]); len(m) > 1 {
-				return true, m[1]
+	// Nearest first, not top-down. Scanning lo→hi returned whichever tracking call appeared
+	// earliest in the window, so a file with two handlers attributed the second action to the
+	// first action's call — naming a real line that measures something else. "Covered by X" has
+	// to name the call that actually covers it or it is not checkable.
+	for d := 0; d <= nearbyLines; d++ {
+		for _, j := range [2]int{idx - d, idx + d} {
+			if j < lo || j > hi || (d == 0 && j != idx) {
+				continue
+			}
+			if !trackNearby.MatchString(lines[j]) {
+				continue
+			}
+			if name, ok := EventNameOn(lines[j]); ok {
+				return true, name
 			}
 			return true, strings.TrimSpace(truncate(lines[j], 80))
 		}

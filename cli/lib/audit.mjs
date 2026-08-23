@@ -64,8 +64,62 @@ function skipAsNonAction(line, kind) {
   return NOT_AN_ACTION.some((re) => re.test(line));
 }
 
-const TRACK_NEARBY = /smolanalytics\??\.track\(|\/v1\/events|posthog\.capture\(|analytics\.track\(|mixpanel\.track\(|gtag\(|amplitude\.\w*track/i;
+// WHAT COUNTS AS TRACKING, AND WHOSE.
+//
+// A false negative here is the expensive direction: it tells someone with working PostHog tracking
+// that nothing in their product is measured, which is the first thing the free audit ever shows a
+// prospect who already has analytics. The \b prefixes matter — without one, `analytics.track(`
+// matches the tail of `smolanalytics.track(` and every repo running our own SDK reads as Segment.
+//
+// These mirror internal/instrument/vendor.go in the engine. The CLI runs with no network and no
+// binary, so the duplication is deliberate; test/audit.test.mjs pins the same fixtures the Go
+// tests use so the two cannot drift silently.
+export const VENDORS = [
+  { id: "posthog", name: "PostHog", dep: /posthog-js|posthog-node/i, call: /\bposthog\??\.capture\(/, write: (e) => `posthog.capture("${e}", { … })` },
+  { id: "mixpanel", name: "Mixpanel", dep: /mixpanel-browser|mixpanel/i, call: /\bmixpanel\??\.track\(/, write: (e) => `mixpanel.track("${e}", { … })` },
+  { id: "amplitude", name: "Amplitude", dep: /@amplitude\//i, call: /\bamplitude\??\.(track|logEvent)\(/, write: (e) => `amplitude.track("${e}", { … })` },
+  { id: "ga4", name: "Google Analytics 4", dep: /gtag|google-analytics|@next\/third-parties/i, call: /\bgtag\(\s*["']event["']/, write: (e) => `gtag("event", "${e}", { … })` },
+  { id: "segment", name: "Segment", dep: /@segment\/analytics/i, call: /\banalytics\??\.track\(/, write: (e) => `analytics.track("${e}", { … })` },
+];
+const OURS = { id: "smolanalytics", name: "smolanalytics", call: /\bsmolanalytics\??\.track\(/, write: (e) => `smolanalytics.track("${e}", { … })` };
+
+const TRACK_NEARBY = new RegExp(
+  ["\\/v1\\/events", ...VENDORS.map((v) => v.call.source), OURS.call.source].join("|"),
+  "i",
+);
 const NEARBY_LINES = 12;
+
+// detectVendor reads the repo rather than asking, because a question at setup time is a step where
+// people leave. The manifest is weighted above source: a dependency is a decision, while a call
+// left behind after a migration is debris.
+export function detectVendor(root, files, io = fs) {
+  const hits = {};
+  let pkg = "";
+  try {
+    pkg = io.readFileSync(path.join(root, "package.json"), "utf8");
+  } catch {
+    /* no manifest is normal outside node */
+  }
+  for (const v of VENDORS) if (pkg && v.dep.test(pkg)) hits[v.id] = (hits[v.id] || 0) + 10;
+  for (const f of files.slice(0, 600)) {
+    let text;
+    try {
+      text = io.readFileSync(f, "utf8");
+    } catch {
+      continue;
+    }
+    for (const v of VENDORS) if (v.call.test(text)) hits[v.id] = (hits[v.id] || 0) + 1;
+  }
+  let best = OURS;
+  let bestN = 0;
+  for (const v of VENDORS) {
+    if ((hits[v.id] || 0) > bestN) {
+      best = v;
+      bestN = hits[v.id];
+    }
+  }
+  return best;
+}
 
 export function walk(root, io = fs, limit = 4000) {
   const out = [];
@@ -137,6 +191,7 @@ export function auditRepo(root, io = fs) {
     uncovered: actions.length - covered,
     pct: actions.length ? Math.round((covered / actions.length) * 100) : 0,
     files: files.length,
+    vendor: detectVendor(root, files, io),
   };
 }
 
@@ -209,8 +264,20 @@ export function render(r, log = console.log, all = false) {
 
   if (r.covered > 0) log(C.g(`${r.covered} action${r.covered === 1 ? " is" : "s are"} already tracked.`));
 
+  // NAME THE SDK THEY ALREADY RUN.
+  //
+  // The offer is not "install our analytics", it is "we keep your instrumentation correct in the
+  // tool you already pay for". Someone with PostHog who reads a generic "write these track() calls"
+  // assumes we mean ours, and the honest answer to that is a migration nobody wants.
+  const v = r.vendor || OURS;
+  const example = named.length ? named[0].suggest : "signup";
   log(C.b("Next:"));
-  log("  Your coding agent can write these track() calls for you. Connect it once:");
+  if (v.id !== "smolanalytics") {
+    log(`  This repo uses ${C.b(v.name)}. Your coding agent can write these as ${C.b(v.write(example))}`);
+    log(`  calls — into ${v.name}, not beside it. Connect it once:`);
+  } else {
+    log("  Your coding agent can write these track() calls for you. Connect it once:");
+  }
   log(`  ${C.b("npx smolanalytics connect --key <your key>")}   ${C.dim("then ask it to instrument your app")}`);
   log(C.dim("  Start free at https://smolanalytics.com — 14 days at Pro limits, no card."));
   log("");

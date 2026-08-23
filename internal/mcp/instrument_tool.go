@@ -47,7 +47,7 @@ func init() {
 		},
 		map[string]any{
 			"name":        "regenerate_plan_from_code",
-			"description": "Scan the repo for every smolanalytics.track(\"name\") call and return the tracking plan the code implies. Call this after wiring events, then pass the result to set_tracking_plan, so the declared plan always matches the code that implements it (no manual drift).",
+			"description": "Scan the repo for every tracking call in whatever analytics SDK it uses (PostHog, Mixpanel, Amplitude, GA4, Segment or smolanalytics) and return the tracking plan the code implies. Call this after wiring events, then pass the result to set_tracking_plan, so the declared plan always matches the code that implements it (no manual drift).",
 			"inputSchema": map[string]any{"type": "object", "properties": map[string]any{"repo_path": map[string]any{"type": "string", "description": "Path to the repo root (default: current directory)"}}},
 		},
 		map[string]any{

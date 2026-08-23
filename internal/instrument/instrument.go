@@ -52,10 +52,13 @@ type SnippetProposal struct {
 // Proposal is the whole instrumentation plan for a repo: the base snippet, the custom
 // events found, and the tracking-plan the agent should declare.
 type Proposal struct {
-	Framework Framework       `json:"framework"`
-	Snippet   SnippetProposal `json:"snippet"`
-	Events    []CallSite      `json:"events"`
-	Notes     []string        `json:"notes"`
+	Framework Framework `json:"framework"`
+	// Vendor is the analytics SDK this repo already uses, and the one every snippet below is
+	// written in. smolanalytics only when the repo has none.
+	Vendor  VendorInfo      `json:"vendor"`
+	Snippet SnippetProposal `json:"snippet"`
+	Events  []CallSite      `json:"events"`
+	Notes   []string        `json:"notes"`
 }
 
 // skipDir are directories never worth scanning — dependencies, builds, vcs.
@@ -198,6 +201,19 @@ func DetectFramework(root string) Framework {
 	return Framework{"unknown", "", "add the <script> to your site's <head>", ""}
 }
 
+// isBrowserLang reports whether the SDK's browser idiom is the right one for this codebase.
+//
+// The vocabulary is set by DetectFramework: typescript, javascript, python, ruby, php, go, html.
+// An earlier version of this test compared against "js" and "ts", which are not values it ever
+// produces, so every javascript repo took the backend path.
+func isBrowserLang(lang string) bool {
+	switch lang {
+	case "", "javascript", "typescript", "html":
+		return true
+	}
+	return false
+}
+
 // webSnippet is the base autocapture install, host + key already resolved so there is
 // no placeholder to forget.
 func webSnippet(host, key string) string {
@@ -208,7 +224,18 @@ func webSnippet(host, key string) string {
 // trackSnippet renders the exact track() (or server POST) call for an event — REAL,
 // paste-ready code with host + key already resolved, never commented pseudocode (the
 // tools promise "the exact snippet to insert"; a comment isn't insertable code).
-func trackSnippet(fw Framework, host, key, event string, props []string) string {
+func trackSnippet(fw Framework, v Vendor, host, key, event string, props []string) string {
+	if !v.IsOurs() {
+		// Their SDK, their idiom. For a backend language we only write the call when we have a
+		// confident idiom for that pair; otherwise we fall through to our own POST, which is at
+		// least correct code, and Propose adds a note naming what we could not write.
+		if isBrowserLang(fw.Language) {
+			return v.Call(event, props)
+		}
+		if call, ok := v.ServerCall(fw.Language, event, props); ok {
+			return call
+		}
+	}
 	if fw.Language == "python" {
 		return pyPost(host, key, event, props)
 	}
@@ -222,14 +249,7 @@ func trackSnippet(fw Framework, host, key, event string, props []string) string 
 			`  strings.NewReader(` + "`" + `{"name":"` + event + `","distinct_id":"` + "`" + `+userID+` + "`" + `","properties":{` + goProps(props) + `}}` + "`" + `))`
 	}
 	// JS/TS (web): the SDK's track()
-	if len(props) == 0 {
-		return `smolanalytics.track("` + event + `");`
-	}
-	pairs := make([]string, len(props))
-	for i, p := range props {
-		pairs[i] = p + ": " + "/* " + p + " */"
-	}
-	return `smolanalytics.track("` + event + `", { ` + strings.Join(pairs, ", ") + ` });`
+	return Smolanalytics.Call(event, props)
 }
 
 func pyPost(host, key, event string, props []string) string {
@@ -266,14 +286,15 @@ func goProps(props []string) string {
 
 // ScanCallSites walks the repo and returns the call-sites that look like a custom event,
 // deduped so the same event doesn't flood the list, capped for a readable proposal.
-func ScanCallSites(root, host, key string, fw Framework) []CallSite {
+func ScanCallSites(root, host, key string, fw Framework, v Vendor) []CallSite {
 	var sites []CallSite
 	perEvent := map[string]int{}
 	const maxPerEvent = 4
 
 	// alreadyTracked lets us skip lines that already call track(), so a re-run doesn't
-	// propose instrumenting an event that's already wired.
-	tracked := regexp.MustCompile(`smolanalytics\.track|/v1/events`)
+	// propose instrumenting an event that's already wired — in ANY SDK. Recognising only ours
+	// meant a PostHog codebase got a duplicate call proposed beside every working one.
+	tracked := anyTrack
 
 	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -300,9 +321,16 @@ func ScanCallSites(root, host, key string, fw Framework) []CallSite {
 		if e != nil {
 			return nil
 		}
-		for i, raw := range strings.Split(string(b), "\n") {
+		lines := strings.Split(string(b), "\n")
+		for i, raw := range lines {
 			line := strings.TrimSpace(raw)
 			if line == "" || len(line) > 400 || tracked.MatchString(line) {
+				continue
+			}
+			// Already measured a few lines away — in ANY SDK. Checking only this line meant a
+			// PostHog signup with posthog.capture() on the next line was reported as a gap and
+			// got a duplicate call proposed beside it.
+			if ok, _ := coveredNear(lines, i); ok {
 				continue
 			}
 			for _, ep := range eventPattern {
@@ -315,7 +343,7 @@ func ScanCallSites(root, host, key string, fw Framework) []CallSite {
 						File:       filepath.ToSlash(rel),
 						Line:       i + 1,
 						Context:    trimLen(line, 160),
-						Snippet:    trackSnippet(fw, host, key, ep.event, ep.props),
+						Snippet:    trackSnippet(fw, v, host, key, ep.event, ep.props),
 						Properties: ep.props,
 						Confidence: ep.confidence,
 					})
@@ -344,10 +372,12 @@ func ScanCallSites(root, host, key string, fw Framework) []CallSite {
 // host+key, scan for custom events, and assemble the tracking-plan advice.
 func Propose(root, host, key string) Proposal {
 	fw := DetectFramework(root)
-	sites := ScanCallSites(root, host, key, fw)
+	v := DetectVendor(root)
+	sites := ScanCallSites(root, host, key, fw, v)
 
 	p := Proposal{
 		Framework: fw,
+		Vendor:    v.Info(),
 		Snippet: SnippetProposal{
 			File: fw.SnippetFile,
 			Code: webSnippet(host, key),
@@ -355,15 +385,35 @@ func Propose(root, host, key string) Proposal {
 		},
 		Events: sites,
 	}
-	if fw.Name == "react-native" || fw.Name == "go" || fw.Language == "python" || fw.Language == "ruby" || fw.Language == "php" {
+	if !v.IsOurs() {
+		// They already run an analytics SDK, so there is nothing to install and the snippet
+		// section would otherwise be an invitation to adopt a second one. Say what we found and
+		// where the work actually is.
+		p.Snippet = SnippetProposal{
+			Note: v.Name + " is already installed and initialised in this repo, so there is nothing to add. " +
+				"Every call below is written in " + v.Name + "'s own idiom and goes to " + v.Name + " — " +
+				"smolanalytics maintains the instrumentation, it does not replace your analytics.",
+		}
+		if !isBrowserLang(fw.Language) {
+			if _, ok := v.ServerCall(fw.Language, "x", nil); !ok {
+				p.Notes = append(p.Notes, "This is a "+fw.Language+" codebase and we do not have a verified "+
+					v.Name+" call for "+fw.Language+", so the snippets below use smolanalytics' HTTP ingest instead. "+
+					"Swap them for "+v.Name+"'s server library if you would rather keep everything in one place.")
+			}
+		}
+	} else if fw.Name == "react-native" || fw.Name == "go" || fw.Language == "python" || fw.Language == "ruby" || fw.Language == "php" {
 		p.Snippet.Code = webSnippet(host, key) + "\n\n// backend/native: no browser SDK — POST /v1/events with your write key.\n// { \"name\": \"signup\", \"distinct_id\": \"<user id>\", \"properties\": { ... } }"
 	}
 	if len(sites) == 0 {
-		p.Notes = append(p.Notes, "No obvious signup/checkout call-sites found by pattern. Autocapture still records pageviews, clicks, and engagement with zero code once the snippet is installed. Add track() calls at your key conversion moments, then declare them with set_tracking_plan.")
+		if v.IsOurs() {
+			p.Notes = append(p.Notes, "No obvious signup/checkout call-sites found by pattern. Autocapture still records pageviews, clicks, and engagement with zero code once the snippet is installed. Add track() calls at your key conversion moments, then declare them with set_tracking_plan.")
+		} else {
+			p.Notes = append(p.Notes, "Nothing here is missing tracking that we can spot by pattern — every signup, checkout and invite we found already has a "+v.Name+" call near it. Declare them with set_tracking_plan so we can tell you when one stops firing.")
+		}
 	} else {
 		p.Notes = append(p.Notes, "These are heuristic matches — confirm each before applying. After wiring them, declare the plan with set_tracking_plan and verify with instrumentation_health.")
 	}
-	if fw.SnippetFile == "" {
+	if fw.SnippetFile == "" && v.IsOurs() {
 		p.Notes = append(p.Notes, "Could not locate a root layout/index.html automatically — paste the snippet into your site's <head>.")
 	}
 	return p
@@ -396,15 +446,27 @@ func ProposeResult(root, host, key string) map[string]any {
 	prop := Propose(root, host, key)
 	out := map[string]any{
 		"framework": prop.Framework,
+		"vendor":    prop.Vendor,
 		"snippet":   prop.Snippet,
 		"events":    prop.Events,
 		"plan":      prop.PlanEvents(),
 		"notes":     prop.Notes,
-		"how_to_apply": "1) Insert the snippet from `snippet` into the file it names (autocapture starts immediately — pageviews, clicks, engagement, zero code). " +
-			"2) For each item in `events`, add the `snippet` near the given file:line where that action happens, filling the property values. " +
-			"3) Declare them with set_tracking_plan using `plan`. 4) Run verify_instrumentation to confirm each is wired and firing.",
 	}
-	if strings.Contains(host, "<") || strings.Contains(key, "<") {
+	if prop.Vendor.Detected {
+		// Nothing to install, so step 1 is not "paste our script" — saying it anyway is how an
+		// agent ends up adding a second analytics SDK to a working app.
+		out["how_to_apply"] = "This repo already uses " + prop.Vendor.Name + ", so there is nothing to install and " +
+			"every snippet below is written in " + prop.Vendor.Name + "'s own idiom. " +
+			"1) For each item in `events`, add its `snippet` near the given file:line where that action happens, filling the property values. " +
+			"2) Declare them with set_tracking_plan using `plan`, so we can tell you when one stops firing. " +
+			"3) Run verify_instrumentation to confirm each is wired. Do NOT add a smolanalytics track() call beside an existing " +
+			prop.Vendor.Name + " one: two SDKs on one action double-counts it."
+	} else {
+		out["how_to_apply"] = "1) Insert the snippet from `snippet` into the file it names (autocapture starts immediately — pageviews, clicks, engagement, zero code). " +
+			"2) For each item in `events`, add the `snippet` near the given file:line where that action happens, filling the property values. " +
+			"3) Declare them with set_tracking_plan using `plan`. 4) Run verify_instrumentation to confirm each is wired and firing."
+	}
+	if !prop.Vendor.Detected && (strings.Contains(host, "<") || strings.Contains(key, "<")) {
 		out["heads_up"] = "host and/or key were not provided, so the snippet has placeholders. Pass the project's real host + write key (from the project page or `smolanalytics connect`) to get a copy-paste-ready snippet."
 	}
 	return out
@@ -414,25 +476,34 @@ func ProposeResult(root, host, key string) map[string]any {
 // event and the exact snippet to add there.
 func SuggestFixResult(root, event string) map[string]any {
 	prop := Propose(root, "<your-instance-host>", "<your-write-key>")
+	v := DetectVendor(root)
 	var matches []CallSite
 	for _, cs := range prop.Events {
 		if strings.EqualFold(cs.Event, event) {
 			matches = append(matches, cs)
 		}
 	}
-	out := map[string]any{"event": event}
+	out := map[string]any{"event": event, "vendor": v.Info()}
 	if len(matches) > 0 {
 		out["found_call_sites"] = matches
-		out["fix"] = "Add the shown track() snippet at (one of) these call-sites, then re-run the app and verify_instrumentation."
+		out["fix"] = "Add the shown snippet at (one of) these call-sites, then re-run the app and verify_instrumentation."
 	} else {
 		out["found_call_sites"] = []any{}
-		out["fix"] = "No obvious call-site was found by pattern. Add smolanalytics.track(\"" + event + "\", {...}) (web) or a POST /v1/events with that name (backend) at the exact point the action happens, then verify_instrumentation."
+		// The suggested call has to be in the SDK this repo actually runs, or the fix is an
+		// instruction to install a second analytics tool to repair the first one.
+		out["fix"] = "No obvious call-site was found by pattern. Add " + v.Call(event, nil) +
+			" at the exact point the action happens, then verify_instrumentation."
+		if v.IsOurs() {
+			out["fix"] = "No obvious call-site was found by pattern. Add " + v.Call(event, nil) +
+				" (web) or a POST /v1/events with that name (backend) at the exact point the action happens, then verify_instrumentation."
+		}
 	}
 	return out
 }
 
-// FindAllTracked scans the repo for every smolanalytics.track("name") call and returns
-// each event name -> where it was first found. Backs `plan sync`: regenerate the tracking
+// FindAllTracked scans the repo for every tracking call in ANY supported SDK — posthog.capture,
+// mixpanel.track, amplitude.track, gtag("event", …), analytics.track, smolanalytics.track — and
+// returns each event name -> where it was first found. Backs `plan sync`: regenerate the tracking
 // plan from the code that actually implements it, so the two can't drift.
 func FindAllTracked(root string) map[string]TrackedEvent {
 	found := map[string]TrackedEvent{}
@@ -458,8 +529,7 @@ func FindAllTracked(root string) map[string]TrackedEvent {
 		}
 		rel, _ := filepath.Rel(root, path)
 		for i, line := range strings.Split(string(b), "\n") {
-			if m := trackCallRe.FindStringSubmatch(line); m != nil {
-				name := m[1]
+			if name, ok := EventNameOn(line); ok {
 				if !strings.HasPrefix(name, "$") { // skip autocapture names
 					if _, seen := found[name]; !seen {
 						found[name] = TrackedEvent{Name: name, File: filepath.ToSlash(rel), Line: i + 1}
@@ -481,15 +551,10 @@ type TrackedEvent struct {
 
 var backtick = "`"
 
-// matches smolanalytics.track("name") AND the optional-chaining form agents commonly
-// generate: smolanalytics?.track("name"), (window as any).smolanalytics?.track("name").
-// Without the \?? the verify/regenerate scanners falsely report correctly-wired events
-// as MISSING (caught by end-to-end testing on a real repo, 2026-07-14).
-var trackCallRe = regexp.MustCompile(`smolanalytics\??\.track\(\s*["'` + backtick + `]([^"'` + backtick + `]+)`)
 var nameFieldRe = regexp.MustCompile(`["']?name["']?\s*[:=]\s*["'` + backtick + `]([^"'` + backtick + `]+)`)
 
 // Wired scans the repo for each of the given event names and returns where it is already
-// instrumented — a smolanalytics.track("name") call, or a name field on a line that also
+// instrumented — a tracking call in any supported SDK, or a name field on a line that also
 // mentions /v1/events. It lets the verify loop distinguish "wired but not yet fired" from
 // "not wired at all", and backs the code-side drift gate. Deterministic, no model.
 func Wired(root string, names []string) map[string]TrackedEvent {
@@ -527,8 +592,8 @@ func Wired(root string, names []string) map[string]TrackedEvent {
 					}
 				}
 			}
-			if m := trackCallRe.FindStringSubmatch(line); m != nil {
-				record(m[1])
+			if name, ok := EventNameOn(line); ok {
+				record(name)
 			}
 			// a bare name field only counts as instrumentation on a line that is plausibly
 			// an events POST (avoids matching every object with a `name:` key)
