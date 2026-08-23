@@ -442,7 +442,10 @@ func TestFilteredToNothingIsNotConfusedWithAFreshInstall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(src), "EverHadData:   totalAll > 0") {
+	// Matched with a regex rather than a literal because the spacing belongs to gofmt: adding a
+	// longer field name to this struct literal realigns every value in it, and an assertion that
+	// pins the whitespace fails on a change that did not touch the property it is guarding.
+	if !everHadDataFromTotal.Match(src) {
 		t.Error("EverHadData is not computed from totalAll (the pre-filter count), so it would " +
 			"agree with HasData and distinguish nothing")
 	}
@@ -497,7 +500,7 @@ func TestOnboardingIsGatedOnEverHavingDataNotOnTheFilteredCount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(src2), "EverHadData:   totalAll > 0") {
+	if !everHadDataFromTotal.Match(src2) {
 		t.Error("EverHadData is not computed from the pre-filter count, so it distinguishes nothing")
 	}
 }
@@ -555,3 +558,7 @@ func TestNoBlockElementInsideASelect(t *testing.T) {
 // is what let a template edit look correct while the behaviour changed. It renders the case
 // instead now: a quiet investigation carrying a revert receipt must name the flag that was
 // pulled.
+
+// everHadDataFromTotal is the property both tests above check: the field is assigned from the
+// PRE-filter count, whatever gofmt does to the alignment around it.
+var everHadDataFromTotal = regexp.MustCompile(`EverHadData:\s+totalAll > 0`)

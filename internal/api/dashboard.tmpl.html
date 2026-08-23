@@ -408,6 +408,23 @@
   .charttable summary:hover{color:var(--accent)}
   .tscroll{overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch}
   table.ctab{border-collapse:collapse;width:100%;font-size:var(--fs-body);line-height:var(--lh-body);margin-top:10px}
+  /* INSTRUMENTATION PANE. Written because the markup referenced five classes that did not exist,
+     which renders as an unstyled table and reads as a broken feature — the same failure the
+     sa-term-* rules had, where a reveal never worked and nothing failed to say so. */
+  .instr-head{display:flex;align-items:baseline;gap:10px;margin:2px 0 4px;flex-wrap:wrap}
+  .instr-meter{font-variant-numeric:tabular-nums;font-weight:700;font-size:var(--fs-lead);
+    padding:1px 8px;border:1px solid var(--line)}
+  .instr-meter.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 45%,transparent)}
+  .instr-meter.bad{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 45%,transparent)}
+  .instr-line{color:var(--sec);flex:1 1 16rem;min-width:0}
+  .instr-tbl .instr-n{text-align:right;font-variant-numeric:tabular-nums;width:5.5rem}
+  .instr-note{margin-top:10px;color:var(--sec);font-size:var(--fs-body);line-height:var(--lh-body);
+    border-left:2px solid var(--line);padding-left:10px}
+  .ipill{display:inline-block;padding:0 6px;border:1px solid var(--line);font-size:var(--fs-lbl);
+    white-space:nowrap}
+  .ipill.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 45%,transparent)}
+  .ipill.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 45%,transparent)}
+  .ipill.bad{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 60%,transparent);font-weight:600}
   /* The face rule inside a two-column table: the left cell names a thing (mono), the right cell
      explains it in sentences (sans). Declaring mono on the table put entire paragraphs about
      always-valid inference and non-inferiority in a typewriter face — the same defect as the
@@ -1780,6 +1797,8 @@
          inside HTML comments, so an unpaired one here is a parse error at EOF.) -->
     <h2 class="stratum" id="sec-agent" data-stratum="agent" data-short="agent" style="order:{{if .HasAgentEvents}}100{{else}}700{{end}}">
       <span class="stitle">what your agent did</span><span class="ssub">agent observability</span><span class="srule"></span><span class="scount"></span></h2>
+    <h2 class="stratum" id="sec-measure" data-stratum="measure" data-short="instrumentation" style="order:50">
+      <span class="stitle">is any of this being measured</span><span class="ssub">instrumentation</span><span class="srule"></span><span class="scount"></span></h2>
     <h2 class="stratum" id="sec-convert" data-stratum="convert" data-short="conversion" style="order:200">
       <span class="stitle">did it convert</span><span class="ssub">conversion</span><span class="srule"></span><span class="scount"></span></h2>
     <h2 class="stratum" id="sec-acquire" data-stratum="acquire" data-short="acquisition" style="order:300">
@@ -1793,6 +1812,50 @@
     <h2 class="stratum" id="sec-raw" data-stratum="raw" data-short="raw" style="order:800">
       <span class="stitle">the raw record</span><span class="ssub">every event, unaggregated</span><span class="srule"></span><span class="scount"></span></h2>
 
+
+
+    <!-- INSTRUMENTATION, and it leads the deck on purpose.
+         Every report below this answers "what do the numbers say". This one answers "are the
+         numbers real", which precedes all of them: a funnel computed over an event that stopped
+         firing looks exactly like a funnel over a product nobody used.
+         Rendered SERVER-SIDE from .Instrumentation, unlike the panes that fetch /v1/... — the
+         verdict is already in the template context, so there is nothing to spin on and no way for
+         this to sit at "…" when the fetch fails. The values come from internal/planhealth, the
+         same computation the instrumentation_health MCP tool returns, so the screen and the tool
+         cannot tell different stories. -->
+    <div class="pane wide" id="pane-instrumentation" style="order:60" data-stratum="measure">
+      <h3>your tracking plan
+        <span class="sub">· whether the events you declared are actually arriving · last 30 days · computed by /v1 from your own log</span></h3>
+      {{if .Instrumentation.Declared}}
+      <div class="instr-head">
+        <span class="instr-meter{{if eq .Instrumentation.Broken 0}} ok{{else}} bad{{end}}">{{.Instrumentation.Flowing}}/{{len .Instrumentation.Events}}</span>
+        <span class="instr-line">{{.Instrumentation.Headline}}</span>
+      </div>
+      <table class="ctab instr-tbl">
+        <thead><tr><th>event</th><th>status</th><th class="instr-n">seen</th><th>last</th></tr></thead>
+        <tbody>
+        {{range .Instrumentation.Events}}
+          <tr>
+            <td><code>{{.Event}}</code></td>
+            <td>{{if .OK}}<span class="ipill ok">flowing</span>{{else if .MissingProperties}}<span class="ipill warn">missing {{range $i, $p := .MissingProperties}}{{if $i}}, {{end}}<code>{{$p}}</code>{{end}}</span>{{else}}<span class="ipill bad">never seen</span>{{end}}</td>
+            <td class="instr-n">{{if .Count}}{{.Count}}{{else}}&mdash;{{end}}</td>
+            <td>{{if .LastSeen.IsZero}}&mdash;{{else}}{{.LastSeen.Format "Jan 2"}}{{end}}</td>
+          </tr>
+        {{end}}
+        </tbody>
+      </table>
+      {{if .Instrumentation.Unplanned}}
+      <div class="instr-note">arriving but not declared: {{range $i, $e := .Instrumentation.Unplanned}}{{if $i}}, {{end}}<code>{{$e}}</code>{{end}}.
+        Not a problem &mdash; usually a call someone added without updating the plan. Declaring them is how we can tell you when one stops.</div>
+      {{end}}
+      {{else}}
+      <div class="instr-note">{{.Instrumentation.Headline}}
+        Run <code>npx smolanalytics audit</code> in your repo to see which user actions nothing is measuring, in whatever
+        analytics you already use, then declare the plan with <code>set_tracking_plan</code> over MCP. Once it exists we
+        watch it: when a declared event stops arriving while the traffic behind it holds, we find the commit that deleted
+        the call and open a pull request putting that exact line back.</div>
+      {{end}}
+    </div>
 
     <!-- agent observability: tool health + conversation health, computed from your own
          agent_tool_call / agent_turn events, plus the label breakdown whose VALUES your

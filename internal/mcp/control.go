@@ -9,11 +9,10 @@ package mcp
 import (
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
-	"github.com/Arjun0606/smolanalytics/internal/event"
+	"github.com/Arjun0606/smolanalytics/internal/planhealth"
 	"github.com/Arjun0606/smolanalytics/internal/trackplan"
 )
 
@@ -252,76 +251,21 @@ func (s *Server) callControl(name string, args json.RawMessage) (bool, string, e
 		if err := unmarshalArgs(args, &p); err != nil {
 			return true, "", err
 		}
-		from := time.Time{}
-		if p.WindowHours > 0 {
-			from = time.Now().UTC().Add(-time.Duration(p.WindowHours) * time.Hour)
-		}
-
-		type stat struct {
-			count    int
-			lastSeen time.Time
-			props    map[string]bool
-		}
-		seen := map[string]*stat{}
-		if err := s.store.Scan(from, time.Time{}, func(e event.Event) error {
-			st := seen[e.Name]
-			if st == nil {
-				st = &stat{props: map[string]bool{}}
-				seen[e.Name] = st
-			}
-			st.count++
-			if e.Timestamp.After(st.lastSeen) {
-				st.lastSeen = e.Timestamp
-			}
-			for k := range e.Properties {
-				st.props[k] = true
-			}
-			return nil
-		}); err != nil {
+		// One definition, shared with the dashboard. This computation used to live here inline,
+		// which is why the screen a person actually lands on had no notion of a tracking plan at
+		// all: the verdict was reachable by an agent and by nothing else.
+		h, err := planhealth.Compute(s.store, plan, time.Duration(p.WindowHours)*time.Hour)
+		if err != nil {
 			return true, "", err
 		}
-
-		planned := map[string]bool{}
-		report := make([]map[string]any, 0, len(plan.Events))
-		healthy := true
-		for _, pe := range plan.Events {
-			planned[pe.Name] = true
-			st := seen[pe.Name]
-			row := map[string]any{"event": pe.Name}
-			if st == nil {
-				row["status"] = "MISSING — never seen"
-				healthy = false
-			} else {
-				row["status"] = "flowing"
-				row["count"] = st.count
-				row["last_seen"] = st.lastSeen.Format(time.RFC3339)
-				var missing []string
-				for _, prop := range pe.Properties {
-					if !st.props[prop] {
-						missing = append(missing, prop)
-					}
-				}
-				if len(missing) > 0 {
-					row["missing_properties"] = missing
-					healthy = false
-				}
-			}
-			report = append(report, row)
-		}
-		var unplanned []string
-		for name := range seen {
-			if !planned[name] && !strings.HasPrefix(name, "$") { // autocapture events are expected
-				unplanned = append(unplanned, name)
-			}
-		}
-		sort.Strings(unplanned)
 		// the declared plan rides along so `smolanalytics plan pull` (and any agent)
 		// can read the intent itself, not just the verdict against it.
 		return true, jsonStr(map[string]any{
-			"healthy":          healthy,
+			"healthy":          h.Healthy,
 			"plan":             plan,
-			"planned":          report,
-			"unplanned_events": unplanned,
+			"planned":          h.Events,
+			"unplanned_events": h.Unplanned,
+			"headline":         h.Headline(),
 			"note":             "MISSING = tracking code for that event isn't firing (or hasn't run yet); missing_properties = the event arrives without keys the plan expects.",
 		}), nil
 	}

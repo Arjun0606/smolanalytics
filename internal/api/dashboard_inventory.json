@@ -16,6 +16,7 @@
     "pane-funnel",
     "pane-goals",
     "pane-heatmap",
+    "pane-instrumentation",
     "pane-live",
     "pane-paths",
     "pane-retention",

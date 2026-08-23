@@ -17,6 +17,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Arjun0606/smolanalytics/internal/planhealth"
+
 	"github.com/Arjun0606/smolanalytics/internal/agent"
 	"github.com/Arjun0606/smolanalytics/internal/aicrawl"
 	"github.com/Arjun0606/smolanalytics/internal/aivis"
@@ -328,10 +330,16 @@ type dashVM struct {
 	// land" — and hid the scope block, which is where the chips that caused it live. There was
 	// no way back except editing the URL by hand.
 	EverHadData bool
-	DevHidden   int    // count of env=development events hidden from production reports
-	ShowingDev  bool   // true when ?env=development — viewing the hidden dev traffic
-	Base        string // this server's base URL, for ready-to-paste snippets
-	WriteKey    string // this instance's write key — real snippets, not placeholders (key is public-by-design: it ships in tracked pages' HTML)
+	// Instrumentation is the tracking plan measured against the log — the same verdict the
+	// instrumentation_health MCP tool returns, from internal/planhealth, so the screen and the
+	// tool cannot tell different stories. Before this the dashboard had no notion of a tracking
+	// plan at all: the product's central claim was reachable by an agent and invisible to the
+	// person who paid for it.
+	Instrumentation planhealth.Health
+	DevHidden       int    // count of env=development events hidden from production reports
+	ShowingDev      bool   // true when ?env=development — viewing the hidden dev traffic
+	Base            string // this server's base URL, for ready-to-paste snippets
+	WriteKey        string // this instance's write key — real snippets, not placeholders (key is public-by-design: it ships in tracked pages' HTML)
 	// CloudURL is the header's "Cloud ↗" href. Defaults to smolanalytics.com (right for
 	// every self-hosted install); the hosted product overrides it via SMOLANALYTICS_CLOUD_URL
 	// so the link leads back to the project the user came from, not the marketing home page.
@@ -1689,6 +1697,9 @@ func buildAIVis(vm *dashVM, evs []event.Event, names []string, days int, asof ti
 	vm.AIVis = av
 }
 
+// instrumentationWindow is how far back the tracking-plan verdict looks. Stated on screen.
+const instrumentationWindow = 30 * 24 * time.Hour
+
 func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	renderStart := time.Now()
 	if r.URL.Path != "/" { // GET / is a catch-all; anything else is a real 404
@@ -2161,22 +2172,40 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		cloudURL = s.cloudURL
 	}
 
+	// INSTRUMENTATION HEALTH, on a window of its own.
+	//
+	// Deliberately NOT the page's selected range. "Is my tracking working" is a different question
+	// from "what happened this week", and tying them means switching the chart to 24h reports a
+	// perfectly healthy weekly event as missing. Thirty days is wide enough that a low-traffic
+	// project does not read as broken overnight, and the pane states the window rather than
+	// leaving the reader to assume it matches the chips above.
+	//
+	// A store error here must not take the page down: instrumentation is one pane, and an empty
+	// verdict renders as "we could not read this" while every other report still works.
+	var instr planhealth.Health
+	if s.trackplan != nil {
+		if h, err := planhealth.Compute(s.store, s.trackplan.Get(), instrumentationWindow); err == nil {
+			instr = h
+		}
+	}
+
 	// ONE pass, both halves. The investigation and the ledger are built together — a second call
 	// would re-read the clock and re-sweep, and the page would be able to print an armed count
 	// that disagreed with the findings underneath it.
 	dk := s.desk(evs, nowT)
 
 	vm := dashVM{
-		HasConversion: len(fsteps) >= 2,
-		TotalUsers:    distinctUsers(evs),
-		Signups:       sig30,
-		OverallConv:   pct(fr.OverallConversion),
-		Events:        names,
-		ProductEvents: productEvents(names, 8),
-		Updated:       time.Now().UTC().Format("Jan 2, 15:04 MST"),
-		HasData:       len(evs) > 0,
-		EverHadData:   totalAll > 0,
-		Verdict:       verdict,
+		HasConversion:   len(fsteps) >= 2,
+		TotalUsers:      distinctUsers(evs),
+		Signups:         sig30,
+		OverallConv:     pct(fr.OverallConversion),
+		Events:          names,
+		ProductEvents:   productEvents(names, 8),
+		Updated:         time.Now().UTC().Format("Jan 2, 15:04 MST"),
+		HasData:         len(evs) > 0,
+		EverHadData:     totalAll > 0,
+		Instrumentation: instr,
+		Verdict:         verdict,
 		// The full history, and the flags, so the kill list can see what shipped. Same inputs
 		// the CLI brief uses, so the page and the email cannot tell different stories.
 		Investigation: dk.Investigation,
