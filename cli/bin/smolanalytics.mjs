@@ -18,6 +18,7 @@ import { applyStrategy, upsertEnv, snippetHtml, MANUAL_SNIPPETS } from "../lib/i
 import { connectCmd } from "../lib/connect.mjs";
 import { planCheckCmd } from "../lib/plan.mjs";
 import { auditCmd } from "../lib/audit.mjs";
+import { deskCmd } from "../lib/desk.mjs";
 
 const C = {
   dim: (s) => `\x1b[2m${s}\x1b[0m`,
@@ -47,7 +48,7 @@ ${C.bold("smolanalytics")} — analytics you can ask in plain English
   ${C.bold("npx smolanalytics audit")}       what your app does that nothing is measuring
   ${C.dim("[dir]")}                 repo to scan (default: here). No account, no network.
 
-  ${C.bold("npx smolanalytics init")}        wire the tracker into this app
+  ${C.bold("npx smolanalytics desk")}        what it found, in your terminal\n  ${C.dim("--key <api key>")}       or SMOLANALYTICS_KEY\n\n  ${C.bold("npx smolanalytics init")}        wire the tracker into this app
 
   ${C.dim("--key   <write key>")}   public ingest key (or SMOLANALYTICS_WRITE_KEY)
   ${C.dim("--host  <url>")}         your instance, e.g. https://you.fly.dev
@@ -87,6 +88,14 @@ async function main() {
       dir: bare && !bare.startsWith("--") ? bare : flag("dir") || ".",
       json: hasFlag("json"),
       all: hasFlag("all"),
+    });
+    return;
+  }
+  if (cmd === "desk") {
+    process.exitCode = await deskCmd({
+      url: flag("url") || flag("host") || process.env.SMOLANALYTICS_HOST || "",
+      key: flag("key") || process.env.SMOLANALYTICS_KEY || "",
+      project: flag("project") || "",
     });
     return;
   }
