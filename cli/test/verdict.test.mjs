@@ -18,7 +18,15 @@
 import { test, describe, after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { testCmd } from "../lib/test.mjs";
+
+// A failing verdict now captures evidence, and the default directory is relative to the CWD —
+// which under `npm test` is this repository. Evidence from a test OF the runner does not belong
+// in the runner's repo, so every run here points it at a scratch directory instead.
+const evidenceDir = mkdtempSync(path.join(tmpdir(), "smolanalytics-evidence-"));
 
 let chromium = null;
 try {
@@ -50,7 +58,7 @@ async function run(reply, opts = {}) {
   };
   try {
     const code = await testCmd({
-      url, test: "the cart can be checked out", maxSteps: 2, log: (...a) => lines.push(a.join(" ")), onRun: (r) => runs.push(r), ...opts,
+      url, test: "the cart can be checked out", maxSteps: 2, evidenceDir, log: (...a) => lines.push(a.join(" ")), onRun: (r) => runs.push(r), ...opts,
     });
     return { code, runs, out: lines.join("\n").replace(/\x1b\[[0-9;]*m/g, "") };
   } finally {

@@ -198,6 +198,16 @@ describe("the workflow does what the README promises", () => {
     assert.ok(!steps.some((s) => /^actions\/cache@/.test(String(s?.uses || ""))), "the all-in-one cache action is the one that does not save on failure");
   });
 
+  test("the failure evidence is uploaded, because a screenshot on a recycled runner is not evidence", () => {
+    const up = steps.find((s) => String(s?.uses || "").startsWith("actions/upload-artifact@"));
+    assert.ok(up, "nothing uploads .smolanalytics/evidence: the screenshots die with the runner");
+    assert.equal(up.with.path, ".smolanalytics/evidence", "must upload the directory the CLI writes evidence to");
+    // With continue-on-error deleted — which this file tells the reader to do — a default-condition
+    // upload is skipped on exactly the runs that produced evidence. Same trap as the cache save.
+    assert.equal(up.if, "always()");
+    assert.equal(up.with["if-no-files-found"], "ignore", "a green run writes no evidence, and that is not a warning");
+  });
+
   test("it skips the pull requests that cannot be tested, rather than failing them", () => {
     // Both of these run with an empty ANTHROPIC_API_KEY and a read-only GITHUB_TOKEN, so every test
     // would error and then the comment would 403. A tool that red-Xs every outside contribution and
@@ -252,6 +262,13 @@ describe("the README's copy of the workflow is the same workflow", () => {
     const job2 = doc.jobs.e2e;
     assert.equal(String(job2.if || "").replace(/\s+/g, " "), String(job.if || "").replace(/\s+/g, " "));
     assert.equal(job2["timeout-minutes"], job["timeout-minutes"]);
+  });
+
+  test("it uploads the failure evidence the same way", () => {
+    const up = rsteps.find((s) => String(s?.uses || "").startsWith("actions/upload-artifact@"));
+    assert.ok(up, "the README's workflow leaves failure evidence to die with the runner");
+    assert.equal(up.with.path, ".smolanalytics/evidence");
+    assert.equal(up.if, "always()");
   });
 
   test("it restores and saves the recordings the same way", () => {

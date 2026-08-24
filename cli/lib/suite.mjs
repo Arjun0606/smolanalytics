@@ -13,11 +13,15 @@
 // already built, and comments with the GITHUB_TOKEN that Actions hands every job for free. The
 // customer grants nothing and we write nothing to their repository.
 //
-// THE THREE STATUSES ARE THE PRODUCT, AND THIS FILE NEVER BLURS THEM:
+// THE STATUSES ARE THE PRODUCT, AND THIS FILE NEVER BLURS THEM:
 //   passed / failed  the app did, or did not, do what the sentence describes. Failed is a bug report.
 //   stale            a RECORDING stopped fitting. A replay cannot tell "renamed" from "removed", so
 //                    it is never red and never worded as a failure; the agent re-checks it.
 //   errored          this runner could not run — no browser, no key, no network. Never the app.
+//   flaky            the test failed and then passed when retried from a clean page. Not a pass —
+//                    silently swallowing a retry is how an intermittent bug hides for months — and
+//                    not a bug report either: nothing about the app was pinned down. "This test is
+//                    unreliable" is the whole claim, and it warns without failing the build.
 // Blur them and a copy change pages somebody at 2am, or an outage on our side reads to a customer
 // as their checkout being broken.
 
@@ -345,7 +349,12 @@ export async function runSuite({
   headed = false,
   yes = false,
   maxSteps = 40,
+  retries = 1,
+  evidenceDir = "",
+  teardown = "",
+  emailDomain = "",
   log = console.log,
+  env = process.env,
   runTest = testCmd,
   mkdir = (d) => mkdirSync(d, { recursive: true }),
   hasPlan = (p) => existsSync(p),
@@ -361,7 +370,7 @@ export async function runSuite({
   }
 
   const results = [];
-  for (const t of tests) {
+  for (const [i, t] of tests.entries()) {
     log(`\n${C.b(t.name)}  ${C.dim(t.file)}`);
     const started = Date.now();
     // Checked BEFORE the run, because a passing agent run writes one and we would then report that
@@ -377,6 +386,16 @@ export async function runSuite({
         headed,
         yes,
         maxSteps,
+        retries,
+        evidenceDir,
+        // Every test gets its OWN identity, so nine signups are nine findable rows rather than
+        // one that collides with itself on test two. That has to survive SMOLANALYTICS_RUN_ID,
+        // which pins one id for the whole CI run: the index suffix keeps the rows grouped under
+        // the CI id while keeping the identities apart. The index, not the test's name — two long
+        // names could collide again inside the 40 characters an email local part gets.
+        runId: env.SMOLANALYTICS_RUN_ID ? `${env.SMOLANALYTICS_RUN_ID}-${i + 1}` : "",
+        teardown,
+        emailDomain,
         log,
         onRun: (r) => runs.push(r),
       });
@@ -416,18 +435,23 @@ export function summarize(results) {
     failed: count("failed"),
     stale: count("stale"),
     errored: count("errored"),
+    flaky: count("flaky"),
     replayed: results.filter((r) => r.mode === "replay" && r.status === "passed").length,
     ms: results.reduce((a, r) => a + r.ms, 0),
   };
 }
 
 /**
- * The exit code contract, and why stale is not zero.
+ * The exit code contract, and why stale is not zero but flaky is.
  *
  * 1 means the application is broken — the only status that should ever redden a build.
  * 2 means this runner could not finish, which includes a recording that stopped fitting when there
  *   was no key to re-check it with. Exiting 0 there would report "all good" about a test nobody
  *   verified, which is the one lie a test tool cannot tell.
+ * 0 includes flaky, deliberately: the retry DID verify the behaviour the sentence describes, so
+ *   nothing known-broken ships — and a gate here trains people to re-run the build until it goes
+ *   green, which is the exact swallowing the flaky status exists to prevent. It is a warning, and
+ *   the comment and the terminal both say it out loud.
  */
 export function exitCode(results) {
   if (results.some((r) => r.status === "failed")) return 1;
@@ -444,8 +468,10 @@ const secs = (ms) => {
 
 // ---- the pull request comment -------------------------------------------------------------------
 
-const RANK = { failed: 0, errored: 1, stale: 2, passed: 3 };
-const LABEL = { passed: "pass", failed: "**fail**", stale: "stale", errored: "error" };
+// Flaky sits right under failed: after "what broke", the next most actionable line on a pull
+// request is "which test cannot be trusted".
+const RANK = { failed: 0, flaky: 1, errored: 2, stale: 3, passed: 4 };
+const LABEL = { passed: "pass", failed: "**fail**", stale: "stale", errored: "error", flaky: "flaky" };
 
 /**
  * The needle that makes the next push EDIT this comment instead of adding another.
@@ -461,6 +487,9 @@ export const markerFor = (suite) => `<!-- smolanalytics-run:${slug(suite)} -->`;
 export function commentBody(results, { url = "", suite = "tests", runUrl = "", problems = [] } = {}) {
   const s = summarize(results);
   const head = [`${s.passed} passed`];
+  // "flaky", never folded into passed: a headline that counts a retry as a pass is the lie the
+  // status exists to prevent.
+  if (s.flaky) head.push(`${s.flaky} flaky`);
   if (s.failed) head.unshift(`${s.failed} failed`);
   if (s.errored) head.push(`${s.errored} could not run`);
   if (s.stale) head.push(`${s.stale} stale`);
@@ -472,6 +501,9 @@ export function commentBody(results, { url = "", suite = "tests", runUrl = "", p
   const rows = [...results].sort((a, b) => RANK[a.status] - RANK[b.status] || a.name.localeCompare(b.name));
   const how = (r) =>
     r.status === "errored" ? "did not run"
+    // The reliability claim, not the mechanics: "agent, twice" would hide the one thing the
+    // reader needs, which is that this test's first answer could not be trusted.
+    : r.status === "flaky" ? "failed once, passed on retry"
     : r.refreshed ? "recording was stale, agent re-checked"
     // A stale row carries mode "replay" because a replay is what noticed. Saying "replayed, no
     // model calls" beside it reads as "ran fine, cost nothing", when in fact nothing was verified.
@@ -492,9 +524,10 @@ export function commentBody(results, { url = "", suite = "tests", runUrl = "", p
   ];
 
   // The failure text is the actual deliverable. It goes below the table in full, because the table
-  // cell truncates it and the person reading has not been watching the browser.
+  // cell truncates it and the person reading has not been watching the browser. Flaky is included:
+  // its reason names what failed and what then passed, which is the whole case for distrusting it.
   for (const r of rows) {
-    if (r.status !== "failed" && r.status !== "errored" && r.status !== "stale") continue;
+    if (r.status !== "failed" && r.status !== "errored" && r.status !== "stale" && r.status !== "flaky") continue;
     out.push("", `**${escapeCell(r.name)}** — ${code(r.file)}`, "", `> ${quote(r.reason || "no detail was recorded")}`);
   }
 
@@ -504,6 +537,9 @@ export function commentBody(results, { url = "", suite = "tests", runUrl = "", p
 
   const notes = [];
   if (s.replayed) notes.push(`${s.replayed} of ${s.total} ran from a recording, with no model calls.`);
+  if (s.flaky) {
+    notes.push("Flaky is not a pass and not a bug report: the test failed, was retried from a clean page, and then passed, so the test is unreliable rather than the app being known-broken. It does not fail the build — but a test that keeps doing this is hiding an intermittent bug.");
+  }
   if (s.stale || results.some((r) => r.refreshed)) {
     notes.push("Stale is not a failure: a recorded run stopped fitting the app, which a replay cannot tell apart from a rename. The agent re-checks it and rewrites the recording.");
   }
@@ -649,6 +685,10 @@ export async function suiteCmd({
   headed = false,
   yes = false,
   maxSteps = 40,
+  retries = 1,
+  evidenceDir = "",
+  teardown = "",
+  emailDomain = "",
   log = console.log,
   env = process.env,
   discoverImpl = discover,
@@ -706,16 +746,23 @@ export async function suiteCmd({
   // The directory to create is the one recordings actually land in — never a .json path, which
   // would be created as a directory and then collide with the file testCmd wants to write.
   const plansDir = /\.json$/i.test(plans) ? path.dirname(plans) : plans;
-  const results = await runSuiteImpl({ tests, url, plansDir, headed, yes, maxSteps, log, hasKey: Boolean(env.ANTHROPIC_API_KEY) });
+  const results = await runSuiteImpl({ tests, url, plansDir, headed, yes, maxSteps, retries, evidenceDir, teardown, emailDomain, log, env, hasKey: Boolean(env.ANTHROPIC_API_KEY) });
   const s = summarize(results);
 
   const parts = [`${s.total} test${s.total === 1 ? "" : "s"}`, `${s.passed} passed`];
   if (s.failed) parts.push(C.r(`${s.failed} failed`));
+  if (s.flaky) parts.push(C.y(`${s.flaky} flaky`));
   if (s.stale) parts.push(C.y(`${s.stale} stale`));
   if (s.errored) parts.push(C.y(`${s.errored} could not run`));
   log(`\n${parts.join(" · ")} ${C.dim(`· ${secs(s.ms)}`)}`);
   if (s.replayed) log(C.dim(`${s.replayed} replayed from a recording, with no model calls.`));
   for (const r of results.filter((r) => r.status === "failed")) log(`  ${C.r("fail")} ${r.name} ${C.dim(`· ${r.file}`)}`);
+  // Named like failed and stale are, and worded as reliability: a flaky line that read as a pass
+  // would bury the warning, and one that read as a bug would be a claim nobody verified.
+  for (const r of results.filter((r) => r.status === "flaky")) log(`  ${C.y("flaky")} ${r.name} ${C.dim("· failed once, passed on retry — unreliable, not counted as a pass")}`);
+  // The exit-code consequence is said here, not left for someone to discover in CI: a warning
+  // nobody knew was a warning reads as a pass.
+  if (s.flaky) log(C.dim("flaky does not fail the build: the retry verified the behaviour, so it warns instead of gating."));
   for (const r of results.filter((r) => r.status === "stale")) log(`  ${C.y("stale")} ${r.name} ${C.dim("· not a failure, the recording stopped fitting")}`);
   // Named, like the other two. "2 could not run" with no names is unactionable in a suite of
   // twenty, and errored is the status whose reason is the one thing the reader can act on.

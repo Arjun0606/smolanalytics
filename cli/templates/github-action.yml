@@ -125,6 +125,24 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx smolanalytics@latest test --suite tests/ --url "$URL" --comment
 
+      # THE EVIDENCE. On a failed (or flaky) test the runner writes a full-page screenshot, the
+      # page's visible text and the URL to .smolanalytics/evidence/<test>/ at the moment the test
+      # failed. A screenshot on the runner's disk that nobody uploads is NOT evidence — the runner
+      # is recycled minutes after the job ends — so it goes up as a workflow artifact, downloadable
+      # from the run page the pull request comment links to.
+      #
+      # `always()`, not the default condition: today continue-on-error marks the failing step green,
+      # but the day that line is deleted a default-condition upload would be skipped on exactly the
+      # runs that produced evidence. `ignore` because a green run writes no evidence files, and an
+      # empty directory is not a warning.
+      - name: upload failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smolanalytics-evidence
+          path: .smolanalytics/evidence
+          if-no-files-found: ignore
+
       # SAVED AS ITS OWN STEP, AND `if: always()`.
       #
       # The all-in-one actions/cache saves in a post step declared `post-if: success()`. That is
@@ -140,7 +158,9 @@ jobs:
           key: smolanalytics-recordings-${{ github.sha }}
 
 # EXIT CODES, if you gate on this later:
-#   0  every test passed
+#   0  every test passed. A FLAKY test — failed once, then passed when retried from a clean page —
+#      also exits 0: it is reported as a warning in the comment and named in the log, but the retry
+#      did verify the behaviour, so it does not gate a merge.
 #   1  a test failed — the app did not do what the sentence describes
 #   2  this runner could not finish: no browser, no key, no network, or a recording stopped fitting
 #      and there was no key to re-check it with. Never your application.

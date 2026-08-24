@@ -26,11 +26,12 @@
 // never for anyone who does not use it.
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { confirmProduction, newIdentity, postTeardown, substitute, PLACEHOLDER_LIST } from "./safety.mjs";
 
 const C = {
   b: (s) => `\x1b[1m${s}\x1b[0m`,
@@ -427,6 +428,121 @@ export function stalenessNote(r) {
   return `The recorded run no longer fits this app: at step ${r.at + 1}, ${what} could not be used (${r.detail}). That is not yet a bug — the control may simply have been renamed.`;
 }
 
+// ---- flake handling: one retry between a transient blip and a red X ---------------------------
+//
+// A suite people stop believing is worse than a suite that misses things, and the cheapest way to
+// lose belief is a false failure with a transient cause: a slow network, a cold serverless start,
+// an animation that had not settled. So a FAILED agent run is run once more, from a clean page —
+// a fresh browser context with no cookies, no storage, nothing left over from the run that failed.
+//
+// What a retry may never do is quietly turn a flake into a pass. A test that only passes on retry
+// is not healthy, and swallowing that is how a real intermittent bug hides for months. So a
+// fail-then-pass is `flaky`: its own verdict, never counted as passed, never worded as a bug in
+// the app, and its reason carries both halves.
+//
+// What is never retried: `errored` (our runner broke, and running a missing API key twice is just
+// slower), and a stale or outcome-changed replay (those already escalate to the agent, which IS
+// the retry).
+
+/**
+ * The verdict, given every agent attempt in order.
+ *
+ * A second attempt exists only because the first failed, so:
+ *   one attempt          → its own verdict, untouched.
+ *   a later attempt pass → `flaky`, and the reason names what failed AND what then passed —
+ *                          either half alone reads as a verdict nobody reached.
+ *   every attempt failed → `failed`, and the reason is the LAST run's: it is the run the evidence
+ *                          shows, and two independent observations of one defect make it a much
+ *                          stronger report than the first run alone. The first run stays in the
+ *                          steps, not in the headline.
+ */
+export function settle(attempts) {
+  const last = attempts[attempts.length - 1];
+  if (attempts.length === 1) return { status: last.passed ? "passed" : "failed", reason: last.why };
+  if (last.passed) {
+    return {
+      status: "flaky",
+      reason:
+        `Passed only on retry, which is not a pass. Run 1 failed: ${last1(attempts[0].why)} ` +
+        `Run ${attempts.length}, from a clean page, passed: ${last1(last.why)} ` +
+        `Nothing about the app changed in between, so this test is unreliable — if it keeps doing this, an intermittent bug is hiding behind it.`,
+    };
+  }
+  return {
+    status: "failed",
+    reason: `${last.why} (Observed twice: the test was retried from a clean page and failed both times.)`,
+  };
+}
+
+/** A why that ends mid-sentence would splice two runs' prose into one unreadable clause. */
+const last1 = (s) => {
+  const t = String(s).trim();
+  return /[.!?]$/.test(t) ? t : `${t}.`;
+};
+
+/**
+ * What report() puts on the wire.
+ *
+ * `flaky` is a CLI-side verdict on purpose. The cloud runs API refuses it as an incoming status
+ * (app/api/projects/[id]/runs/route.ts: "a single run is never flaky") because a row in the run
+ * log carries one run's own verdict, and flakiness is a shape across rows. This runner has already
+ * posted the failing first run as its own row by the time a retry passes, so the retry goes up as
+ * what that run was — a pass — and the flakiness is visible exactly where the cloud looks for it:
+ * a failed row and a passed row seconds apart, plus a reason that says so. Posting "flaky" instead
+ * would 400 and the run would never reach the project at all.
+ */
+export function wireRun(run) {
+  return run.status === "flaky" ? { ...run, status: "passed" } : run;
+}
+
+// ---- evidence at failure ----------------------------------------------------------------------
+//
+// A FAIL's reason describes the moment it broke; these files SHOW it: a full-page screenshot, the
+// page's visible text, and the URL, captured before anything navigates away. Only on failed and
+// flaky runs — a green run's screenshot is a disk slowly filling with nothing.
+
+/**
+ * Never called outside a try: evidence is a bonus on top of a verdict, not part of one. The agent
+ * already saw the failure, and a full disk here must not turn a real FAIL into our own error.
+ */
+export async function captureEvidence(page, dir) {
+  const out = { png: path.join(dir, "failure.png"), txt: path.join(dir, "failure.txt") };
+  mkdirSync(dir, { recursive: true });
+  await page.screenshot({ path: out.png, fullPage: true });
+  const text = await page.evaluate(() => document.body?.innerText ?? "").catch(() => "");
+  writeFileSync(out.txt, `URL: ${page.url()}\n\n${String(text).trim()}\n`);
+  return out;
+}
+
+/**
+ * On GitHub Actions, put the failure where somebody will actually look.
+ *
+ * A pull request comment cannot embed a file that exists only on the runner's disk, but the run
+ * summary can carry the failure and name the evidence files, so whoever opens the run knows what
+ * to download — the shipped workflow uploads the evidence directory as an artifact for exactly
+ * that click. Appended, never overwritten: other steps share this file.
+ */
+function appendStepSummary(env, { test, status, reason, evidence }) {
+  const file = env.GITHUB_STEP_SUMMARY;
+  if (!file) return;
+  const lines = [`### ${status}: ${test}`, "", String(reason)];
+  if (evidence) lines.push("", `Evidence: \`${evidence.png}\`, \`${evidence.txt}\``);
+  try {
+    appendFileSync(file, lines.join("\n") + "\n\n");
+  } catch {
+    /* the summary is a courtesy; a verdict must not change because this file was unwritable */
+  }
+}
+
+/**
+ * A filesystem-safe name for a test that has no recording to borrow one from. Mirrors suite.mjs's
+ * slug(), unimported: suite.mjs imports this file, and completing that cycle is how ESM hands one
+ * of the two files a half-initialised module.
+ */
+function fileId(s) {
+  return String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "test";
+}
+
 // ---- the browser, fetched only when this command is used --------------------------------------
 
 /**
@@ -548,7 +664,8 @@ async function report(run, log, onRun) {
     const res = await fetch(`${base}/api/projects/${encodeURIComponent(projectId)}/runs`, {
       method: "POST",
       headers: { authorization: `Bearer ${writeKey}`, "content-type": "application/json" },
-      body: JSON.stringify(run),
+      // wireRun, not run: `flaky` exists only on this side of the wire. See wireRun for why.
+      body: JSON.stringify(wireRun(run)),
     });
     log(res.ok ? C.dim("  recorded to your project.") : C.dim(`  not recorded (${res.status}) — the verdict above still stands.`));
   } catch (e) {
@@ -558,7 +675,78 @@ async function report(run, log, onRun) {
   }
 }
 
-export async function testCmd({ url, test, plan: planPath, headed, maxSteps = 40, yes, log = console.log, onRun, loadBrowser = loadPlaywright }) {
+/**
+ * One agent run against one page: navigate, perceive, act, until finish or the budget runs out.
+ *
+ * Returns a record and never reports, closes, or exits — the caller owns the verdict, because a
+ * failed attempt may be retried and only the caller knows whether this one settles it. A model
+ * refusal and a model API failure still throw: both are the runner breaking, and neither is
+ * retried. On the first attempt the throw lands in runOnce's catch as `errored`; on a retry the
+ * loop catches it and keeps the failing run's verdict, so our outage cannot bury their bug.
+ *
+ *   { kind: "finish", passed, why, proof, steps, ms }   the agent reached a verdict
+ *   { kind: "error", banner, why, steps, ms }           the runner did not — prose instead of a
+ *                                                       tool call, or the step budget ran out
+ */
+async function agentAttempt({ page, url, test, apiKey, model, maxSteps, log }) {
+  const started = Date.now();
+  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
+  let snap = await perceive(page);
+  const messages = [{ role: "user", content: `THE TEST:\n${test}\n\nStarting page:\n\n${render(snap)}` }];
+  const steps = [];
+
+  for (let n = 1; n <= maxSteps; n++) {
+    const res = await think(messages, apiKey, model);
+    // A refusal is not a test failure and must never be reported as one: that would tell somebody
+    // their checkout is broken because a safety classifier declined.
+    if (res.stop_reason === "refusal") throw new Error("the model declined to continue; this is not a verdict about the app under test");
+    messages.push({ role: "assistant", content: res.content });
+
+    const calls = (res.content || []).filter((b) => b.type === "tool_use");
+    if (!calls.length) {
+      // The model replied with prose instead of a tool call. That is THIS RUNNER misbehaving, not
+      // the application. Reporting it as FAIL/1 told somebody their checkout was broken because
+      // the model wandered off — the exact confusion the statuses exist to prevent.
+      return {
+        kind: "error", banner: "no verdict", steps, ms: Date.now() - started,
+        why: "The agent stopped without calling finish, so nothing was observed. This is the test runner, not your application.",
+      };
+    }
+
+    const results = [];
+    for (const call of calls) {
+      const a = toAction(call);
+      if (a.kind === "finish") {
+        return { kind: "finish", passed: a.passed, why: a.why, proof: a.proof, steps, ms: Date.now() - started };
+      }
+
+      const t0 = Date.now();
+      const el = snap.elements.find((e) => e.ref === a.ref);
+      const target = el ? { role: el.role, name: el.name } : undefined;
+      const out = await act(page, snap, a);
+      const step = { n, action: a, target, ok: out.ok, detail: out.detail, ms: Date.now() - t0 };
+      step.label = describe(step).trim().replace(/^[^ ]+ +\d+ /, "");
+      steps.push(step);
+      log(describe(step));
+      if (a.why) log(`     ${C.dim(a.why)}`);
+
+      snap = await perceive(page);
+      results.push({ type: "tool_result", tool_use_id: call.id, is_error: !out.ok, content: `${out.ok ? "done" : `FAILED: ${out.detail}`}\n\n${render(snap)}` });
+    }
+    messages.push({ role: "user", content: results });
+  }
+
+  // Out of budget is not a pass, and it is not a bug report either. An unfinished test observed
+  // NOTHING, so `failed`/1 would put a red X on a pull request and a "the app did not do what the
+  // sentence describes" next to a claim nobody made. Our step budget is our limit.
+  const ms = Date.now() - started;
+  return {
+    kind: "error", banner: `${maxSteps} steps · ${(ms / 1000).toFixed(1)}s`, steps, ms,
+    why: `The agent used all ${maxSteps} steps without reaching a verdict, so nothing was observed. This is the test runner, not your application: raise --max-steps, or split a test that describes more than one scenario.`,
+  };
+}
+
+async function runOnce({ url, test, plan: planPath, headed, maxSteps = 40, yes, retries = 1, evidenceDir = "", env = process.env, log = console.log, onRun, loadBrowser = loadPlaywright }) {
   if (!url || !test) {
     log(`
 ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No account.
@@ -567,7 +755,11 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
   --test "<text>"  what should work, in plain English
   --plan <file>    replay this recording first; only wake the agent if it no longer fits
   --headed         watch it happen
-  --yes            install the browser without asking
+  --yes            install the browser, and don't ask about a production-looking URL
+  --teardown <url> POST this run's identity there afterwards, so you can delete what it made
+  --email-domain <dom>  the domain in {{email}} (default example.com, which cannot receive mail)
+  --retries <n>    re-run a failing test from a clean page (default 1; 0 disables)
+  --evidence-dir <dir>  where a failure's screenshot and page text go (default .smolanalytics/evidence)
 
   ${C.dim('npx smolanalytics test --url https://yourapp.com --test "the pricing page shows a monthly price"')}
 `);
@@ -595,7 +787,8 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
     // went past this function's whole errored/exit-2 contract to the CLI's last-resort catch, which
     // exits 1. That is the code reserved for the customer's app being broken.
     browser = await pw.chromium.launch({ headless: !headed });
-    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    // let, not const: a retry replaces it with a clean one.
+    let page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     // REPLAY FIRST — the path almost every real run takes, and it calls no model at all.
     if (planPath && existsSync(planPath)) {
       // A recording we cannot read or cannot replay is NO recording — not a pass, and not an error
@@ -619,7 +812,10 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
         if (r.status === "passed") {
           log(`\n${C.g("PASS")}${C.dim(` — replayed ${r.steps} steps in ${(r.ms / 1000).toFixed(1)}s, no model calls.`)}`);
           await report({ test, status: "passed", mode: "replay", durationMs: r.ms, url, reason: "Replayed the recorded run; every step still worked." }, log, onRun);
-          await browser.close();
+          // Every close below a decided verdict carries .catch: close() can throw (seen once,
+          // intermittently, under load), and unhandled it falls into the catch-all — which would
+          // report errored/2 on top of a verdict that was already printed and posted.
+          await browser.close().catch(() => {});
           return 0;
         }
         // Everything below is "the recording no longer settles it" — the steps broke, the outcome
@@ -635,91 +831,158 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
       log(`\n${C.y("The agent needs a Claude API key.")}`);
       log(C.dim("  export ANTHROPIC_API_KEY=sk-ant-…    then run this again"));
       log(C.dim("  Replaying a recording (--plan) needs no key at all."));
-      await browser.close();
+      await browser.close().catch(() => {});
       return 2;
     }
 
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
-    let snap = await perceive(page);
-    const messages = [{ role: "user", content: `THE TEST:\n${test}\n\nStarting page:\n\n${render(snap)}` }];
-    const steps = [];
-
-    for (let n = 1; n <= maxSteps; n++) {
-      const res = await think(messages, apiKey, model);
-      // A refusal is not a test failure and must never be reported as one: that would tell somebody
-      // their checkout is broken because a safety classifier declined.
-      if (res.stop_reason === "refusal") throw new Error("the model declined to continue; this is not a verdict about the app under test");
-      messages.push({ role: "assistant", content: res.content });
-
-      const calls = (res.content || []).filter((b) => b.type === "tool_use");
-      if (!calls.length) {
-        // The model replied with prose instead of a tool call. That is THIS RUNNER misbehaving, not
-        // the application, so it errors and exits 2. Reporting it as FAIL/1 told somebody their
-        // checkout was broken because the model wandered off — the exact confusion the three
-        // statuses exist to prevent.
-        const ms = Date.now() - started;
-        const why = "The agent stopped without calling finish, so nothing was observed. This is the test runner, not your application.";
-        log(`\n${C.y("ERROR")} ${C.dim("· no verdict")}`);
-        log(`${why}\n`);
-        await report({ test, status: "errored", mode: "agent", durationMs: ms, url, reason: why }, log, onRun);
-        await browser.close();
-        return 2;
+    // How to replay a passing run, and where to keep the proof of a failing one. The evidence
+    // directory borrows the recording's name so one test's artefacts sit together, and falls back
+    // to the sentence when there is no recording to borrow from.
+    const evidencePath = path.join(
+      evidenceDir || path.join(".smolanalytics", "evidence"),
+      planPath ? path.basename(planPath).replace(/\.json$/i, "") : fileId(test),
+    );
+    const capture = async (pg) => {
+      try {
+        return await captureEvidence(pg, evidencePath);
+      } catch (e) {
+        log(C.dim(`could not capture evidence: ${e && e.message ? e.message : e}. The verdict above is unaffected.`));
+        return null;
       }
-
-      const results = [];
-      for (const call of calls) {
-        const a = toAction(call);
-        if (a.kind === "finish") {
-          const ms = Date.now() - started;
-          log(`\n${a.passed ? C.g("PASS") : C.r("FAIL")} ${C.dim(`· ${steps.length} steps · ${(ms / 1000).toFixed(1)}s`)}`);
-          log(`${a.why}\n`);
-          await report({
-            test, status: a.passed ? "passed" : "failed", mode: "agent", durationMs: ms, url, reason: a.why,
-            steps: a.passed ? undefined : steps.map((s) => ({ n: s.n, do: s.label, why: s.action.why, ok: s.ok, detail: s.detail, ms: s.ms })),
-          }, log, onRun);
-          if (a.passed && planPath) {
-            const p = compile(url, steps, a.proof);
-            if (p) {
-              writeFileSync(planPath, JSON.stringify(p, null, 2) + "\n");
-              log(C.dim(`recorded ${p.steps.length} steps and the proof ${JSON.stringify(p.proof)} to ${planPath} — the next run needs no model.`));
-            } else if (!String(a.proof || "").trim()) {
-              // No proof, no recording. Replaying clicks without checking the outcome is how a
-              // green check ends up over a broken checkout.
-              log(C.dim("not recorded: the run passed but named no proof text, so a replay could not tell a working page from a broken one."));
-            }
-          }
-          await browser.close();
-          return a.passed ? 0 : 1;
+    };
+    const record = (att, viaRetry) => {
+      if (!planPath) return;
+      const p = compile(url, att.steps, att.proof);
+      if (p) {
+        // The verdict is already decided and reported by the time this runs. A read-only checkout
+        // (a CI cache mount, a container image) turned a settled PASS into errored/2 here — an
+        // outage report about a run the agent watched succeed. The recording is only next run's
+        // speed, so losing it costs one more agent run, never the verdict.
+        try {
+          writeFileSync(planPath, JSON.stringify(p, null, 2) + "\n");
+        } catch (e) {
+          log(C.dim(`could not write the recording to ${planPath}: ${e && e.message ? e.message : e}. The verdict above is unaffected; the next run will use the agent again.`));
+          return;
         }
-
-        const t0 = Date.now();
-        const el = snap.elements.find((e) => e.ref === a.ref);
-        const target = el ? { role: el.role, name: el.name } : undefined;
-        const out = await act(page, snap, a);
-        const step = { n, action: a, target, ok: out.ok, detail: out.detail, ms: Date.now() - t0 };
-        step.label = describe(step).trim().replace(/^[^ ]+ +\d+ /, "");
-        steps.push(step);
-        log(describe(step));
-        if (a.why) log(`     ${C.dim(a.why)}`);
-
-        snap = await perceive(page);
-        results.push({ type: "tool_result", tool_use_id: call.id, is_error: !out.ok, content: `${out.ok ? "done" : `FAILED: ${out.detail}`}\n\n${render(snap)}` });
+        log(C.dim(`recorded ${p.steps.length} steps and the proof ${JSON.stringify(p.proof)} to ${planPath}${viaRetry ? " — from the retry, the run that passed" : ""} — the next run needs no model.`));
+      } else if (!String(att.proof || "").trim()) {
+        // No proof, no recording. Replaying clicks without checking the outcome is how a
+        // green check ends up over a broken checkout.
+        log(C.dim("not recorded: the run passed but named no proof text, so a replay could not tell a working page from a broken one."));
       }
-      messages.push({ role: "user", content: results });
+    };
+
+    let a = await agentAttempt({ page, url, test, apiKey, model, maxSteps, log });
+    if (a.kind === "error") {
+      // The RUNNER misbehaved — the model answered prose, or the step budget ran out. Nothing was
+      // observed, so it errors and exits 2, and it is NOT retried: paying for a second run of a
+      // broken runner reports the same nothing, twice as slowly.
+      const ms = Date.now() - started;
+      log(`\n${C.y("ERROR")} ${C.dim(`· ${a.banner}`)}`);
+      log(`${a.why}\n`);
+      await report({ test, status: "errored", mode: "agent", durationMs: ms, url, reason: a.why }, log, onRun);
+      await browser.close().catch(() => {});
+      return 2;
     }
 
-    // Out of budget is not a pass, and it is not a bug report either. An unfinished test observed
-    // NOTHING, so `failed`/1 would put a red X on a pull request and a "the app did not do what the
-    // sentence describes" next to a claim nobody made. The old copy even guessed the cause aloud
-    // ("usually the app did not do what the test expected"), which is a finding we did not observe.
-    // Our step budget is our limit: errored/2, which is never green and never blames their app.
+    if (a.passed) {
+      const ms = Date.now() - started;
+      log(`\n${C.g("PASS")} ${C.dim(`· ${a.steps.length} steps · ${(ms / 1000).toFixed(1)}s`)}`);
+      log(`${a.why}\n`);
+      await report({ test, status: "passed", mode: "agent", durationMs: ms, url, reason: a.why }, log, onRun);
+      record(a, false);
+      await browser.close().catch(() => {});
+      return 0;
+    }
+
+    // FAILED. Capture the page as the agent left it, before anything navigates away — this is the
+    // moment the reason describes, and it is gone the instant the page closes.
+    const attempts = [a];
+    let evidence = await capture(page);
+    // Whether the loop below ended because a RETRY broke. In that case every attempt in `attempts`
+    // has already been posted as its own row, and posting the settled verdict again put ONE
+    // observation on the wire twice — two failed rows for one failure, which reads to the cloud's
+    // reliability window as a test failing twice as often as it does.
+    let retryBroke = false;
+
+    while (!attempts[attempts.length - 1].passed && attempts.length <= retries) {
+      const prev = attempts[attempts.length - 1];
+      log(`\n${C.r("FAIL")} ${C.dim(`· run ${attempts.length} · ${prev.steps.length} steps · ${(prev.ms / 1000).toFixed(1)}s`)}`);
+      log(prev.why);
+      // The failing run goes up as its own row BEFORE the retry. Two runs are two real
+      // observations, and the project's run history — where reliability is derived — needs both:
+      // a retry that passes lands beside this row, and that pair is what flakiness looks like.
+      await report({
+        test, status: "failed", mode: "agent", durationMs: prev.ms, url, reason: prev.why,
+        steps: prev.steps.map((s) => ({ n: s.n, do: s.label, why: s.action.why, ok: s.ok, detail: s.detail, ms: s.ms })),
+      }, log, onRun);
+      // Said out loud because it is somebody's bill: a retry is a full second agent run.
+      log(C.y(`retrying from a clean page (retry ${attempts.length} of ${retries}) — another full agent run, roughly doubling this test's cost. --retries 0 disables it.`));
+      await page.close().catch(() => {});
+      // newPage() is a fresh browser context: no cookies, no storage, nothing left over from the
+      // failure. The retry reuses the run's IDENTITY on purpose — a fresh one would leak the first
+      // past the teardown hook, which posts exactly one. The cost is honest: a signup that
+      // half-completed on the failing run can make the retry fail differently ("email already
+      // exists"), and that lands as `failed`, never as a false pass.
+      let next;
+      try {
+        // newPage is INSIDE the try: a context that cannot open is the retry breaking, and the
+        // keep-the-failing-run's-verdict contract below has to cover it, not just the attempt.
+        page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+        next = await agentAttempt({ page, url, test, apiKey, model, maxSteps, log });
+      } catch (e) {
+        next = { kind: "error", banner: "retry", why: String(e && e.message ? e.message : e) };
+      }
+      if (next.kind === "error") {
+        // The RETRY broke — our side, not the app. But the first run observed a real failure, and
+        // `errored` here would bury it under our own outage. The verdict falls back to what
+        // --retries 0 would have said: failed, on the one observation we do have.
+        log(C.y(`the retry could not complete (${next.why}) — keeping the failing run's verdict.`));
+        retryBroke = true;
+        break;
+      }
+      attempts.push(next);
+      if (!next.passed) evidence = (await capture(page)) || evidence;
+    }
+
+    const settled = settle(attempts);
     const ms = Date.now() - started;
-    const why = `The agent used all ${maxSteps} steps without reaching a verdict, so nothing was observed. This is the test runner, not your application: raise --max-steps, or split a test that describes more than one scenario.`;
-    log(`\n${C.y("ERROR")} ${C.dim(`· ${maxSteps} steps · ${(ms / 1000).toFixed(1)}s`)}`);
-    log(`${why}\n`);
-    await report({ test, status: "errored", mode: "agent", durationMs: ms, url, reason: why }, log, onRun);
-    await browser.close();
-    return 2;
+    const lastAttempt = attempts[attempts.length - 1];
+    if (settled.status === "flaky") {
+      log(`\n${C.y("FLAKY")} ${C.dim(`· failed, then passed on retry · ${(ms / 1000).toFixed(1)}s total`)}`);
+      log(`${settled.reason}`);
+      // Not a red X: one false failure costs more trust than ten real catches earn, and a gate
+      // here trains people to re-run until green — the exact swallowing `flaky` exists to prevent.
+      log(C.dim("flaky is a warning, not a failure: exit 0. A test that keeps doing this is hiding an intermittent bug."));
+    } else {
+      log(`\n${C.r("FAIL")} ${C.dim(`· ${attempts.length > 1 ? `observed ${attempts.length} times · ` : ""}${lastAttempt.steps.length} steps · ${(ms / 1000).toFixed(1)}s`)}`);
+      log(`${settled.reason}\n`);
+    }
+    if (evidence) log(C.dim(`evidence: ${evidence.png} and ${evidence.txt}`));
+    appendStepSummary(env, { test, status: settled.status, reason: settled.reason, evidence });
+    // Not when the retry broke: every attempt was already posted as its own row before its retry
+    // started, so the settled verdict adds no new observation — posting it doubled one failure
+    // into two rows. The loop that finished normally still owes the settled row: it carries the
+    // verdict the in-loop rows were building toward (the flaky pair's second half, or the
+    // fail-confirmed-twice report with both runs' steps).
+    if (!retryBroke) {
+      await report({
+        test, status: settled.status, mode: "agent", durationMs: ms, url, reason: settled.reason,
+        // Every attempt's steps, tagged by run: "the first is kept in the steps" is the contract
+        // that lets the reason be the second run's without the first observation disappearing.
+        steps: attempts.flatMap((att, i) =>
+          att.steps.map((s) => ({
+            ...(attempts.length > 1 ? { run: i + 1 } : {}),
+            n: s.n, do: s.label, why: s.action.why, ok: s.ok, detail: s.detail, ms: s.ms,
+          }))),
+      }, log, onRun);
+    }
+    // The retry that passed is a genuine passing run with a proof, so it records like one. If the
+    // app is intermittently broken, the replay's proof check catches it as outcome-changed and
+    // escalates to the agent — never a silent green.
+    if (settled.status === "flaky") record(lastAttempt, true);
+    await browser.close().catch(() => {});
+    return settled.status === "flaky" ? 0 : 1;
   } catch (e) {
     // browser may be null: launch itself is what usually fails.
     await browser?.close().catch(() => {});
@@ -728,5 +991,74 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
     // Exit 2, not 1: the test did not fail, the runner did. A CI gate must tell those apart, or an
     // outage on our side reads to a customer as their app being broken.
     return 2;
+  }
+}
+
+/**
+ * The run, plus the three things that keep a real browser against a real app from being a surprise:
+ * a traceable identity, a warning before a production-looking URL, and an optional teardown hook.
+ * See lib/safety.mjs for why each one exists.
+ *
+ * A WRAPPER, not edits threaded through runOnce. runOnce has seven exit paths — no browser, replay
+ * passed, no key, a verdict, no tool call, out of steps, a throw — and teardown has to fire on all
+ * of them. The one that got forgotten would be the one that created the order.
+ */
+export async function testCmd(opts = {}) {
+  const { url, test, yes, teardown = "", emailDomain = "", runId = "", log = console.log, env = process.env, onRun, ask } = opts;
+  // The usage text, and the exit code that goes with it, stay exactly where they were.
+  if (!url || !test) return runOnce(opts);
+
+  const identity = newIdentity({
+    domain: emailDomain || env.SMOLANALYTICS_TEST_EMAIL_DOMAIN,
+    // The explicit option wins over the environment: SMOLANALYTICS_RUN_ID pins ONE id for a
+    // whole CI run, and a nine-test suite under one id is nine signups under one email — test two
+    // dies on "email already exists" and it reads as the app failing. runSuite passes a per-test
+    // id derived from it instead.
+    runId: runId || env.SMOLANALYTICS_RUN_ID,
+  });
+  const sub = substitute(test, identity);
+  for (const bad of sub.unknown) {
+    // Named and left in place. Silently dropping it would hand the model an empty field to invent
+    // a value for, and an invented value is a row nobody can find afterwards.
+    log(C.y(`${bad} is not a placeholder this runner knows, so it stays in the sentence as written.`));
+    log(C.dim(`  known: ${PLACEHOLDER_LIST}`));
+  }
+  if (sub.used.length) log(C.dim(`this run is ${identity.email} (${sub.used.map((k) => `{{${k}}}`).join(" ")})`));
+
+  const decision = await confirmProduction({ url, identity, yes, teardown, log, env, ask });
+  if (!decision.proceed) {
+    const why = `Stopped at the question about ${url}: nothing was opened and nothing was tested. Re-run with --yes to skip the question.`;
+    log(`\n${C.y("nothing ran")} ${C.dim(why)}\n`);
+    // The suite is told, so this test is named in the summary instead of vanishing. Not POSTed to
+    // a project: a run that never happened is not a verdict, and `mode` would have to be invented.
+    try {
+      onRun?.({ test: sub.text, status: "errored", mode: "agent", durationMs: 0, url, reason: why });
+    } catch {
+      /* a caller's bookkeeping must not change an exit code */
+    }
+    // 2, never 1. Declining is not the application being broken, and it is certainly not 0.
+    return 2;
+  }
+
+  let status = "errored";
+  try {
+    return await runOnce({
+      ...opts,
+      test: sub.text,
+      onRun: (r) => {
+        // Recorded BEFORE the caller's handler runs, so a handler that throws cannot cost the
+        // teardown its status.
+        status = r.status;
+        onRun?.(r);
+      },
+    });
+  } finally {
+    if (teardown) {
+      // In `finally`, so it fires on a failed run and on a crash too. A FAILED run is the likeliest
+      // one to have left a half-made account behind: the row was created, then the app broke.
+      const r = await postTeardown({ endpoint: teardown, identity, test: sub.text, url, status, env });
+      log(r.ok ? C.dim(`  teardown: ${r.detail}`) : C.y(`  teardown failed: ${r.detail}`));
+      if (!r.ok) log(C.dim(`  ${identity.email} may still exist. The verdict above is unaffected.`));
+    }
   }
 }

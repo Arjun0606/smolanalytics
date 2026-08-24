@@ -104,6 +104,51 @@ sentence and the next run checks the new sentence.
 
 This package ships `templates/example-test.md`, a working checkout suite to start from.
 
+### The data a test creates
+
+The agent really uses the app. A sentence about signing up creates an account; one about checking
+out can create an order. So every run carries its own obviously-synthetic identity, and you can
+write it straight into the sentence:
+
+```md
+## A new customer can sign up
+
+Sign up as {{email}} with the password {{password}}, then check the account page greets {{name}}.
+```
+
+The placeholders are `{{email}}` `{{password}}` `{{name}}` `{{username}}` `{{runid}}`, replaced
+before the sentence reaches the model. Every value starts with `smoltest` and carries the same run
+id — `smoltest+mfz01abc@example.com`, `smoltest_mfz01abc` — so one `LIKE 'smoltest%'` finds every
+row any run ever made, in any column. The default domain is `example.com`, reserved by RFC 2606:
+a test signup can never land a "welcome!" in a real inbox. If your form rejects it, point
+`--email-domain` at a catch-all you own.
+
+**A production-looking URL is warned about first.** When the URL has no staging, preview or
+localhost marker, the run says what it is about to do and under which identity — and, when a person
+is at the terminal, asks. People test against production on purpose, so `--yes` skips the question,
+and CI is told but never asked: a question nobody can see is a hung build.
+
+**`--teardown <url>` deletes what the run made.** After every run — passed, failed, or errored,
+because the failed run is the likeliest to have left half an account behind — the identity is
+POSTed there as JSON, so your own endpoint can clean up. The whole handler:
+
+```js
+// app/api/test-teardown/route.js — delete what a test run created.
+export async function POST(req) {
+  if (req.headers.get("authorization") !== `Bearer ${process.env.TEARDOWN_SECRET}`) {
+    return new Response("no", { status: 401 });
+  }
+  const run = await req.json(); // { runId, email, username, name, password, test, url, status, at }
+  await db.user.deleteMany({ where: { email: run.email } });
+  return Response.json({ ok: true });
+}
+```
+
+Set `SMOLANALYTICS_TEARDOWN_SECRET` where the tests run and it arrives as that `Authorization`
+header — an environment variable, not a flag, so it never lands in shell history or the command
+line CI prints at the top of every log. A teardown that fails is reported and changes nothing:
+the verdict and the exit code were decided before it fired.
+
 ### On every pull request
 
 Tests run on your own GitHub Actions runner, against the preview URL your host already builds, and
@@ -155,6 +200,16 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx smolanalytics@latest test --suite tests/ --url "$URL" --comment
 
+      # A failed test writes a screenshot + page text to .smolanalytics/evidence/. Evidence left
+      # on a recycled runner is no evidence at all, so it goes up as an artifact.
+      - name: upload failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smolanalytics-evidence
+          path: .smolanalytics/evidence
+          if-no-files-found: ignore
+
       # Its own step, because actions/cache only saves when the job succeeds — and the run that
       # repaired the most recordings is the one with a failing test in it.
       - if: always()
@@ -173,16 +228,18 @@ GitHub App and no install on your other repositories. `continue-on-error` is the
 new tool that puts a red X on somebody's pull request in week one gets uninstalled before it has
 earned the right to block a merge. Take it out when the suite has been right often enough.
 
-### Three results, kept apart
+### The results, kept apart
 
 | | |
 |---|---|
 | **pass** / **fail** | the app did, or did not, do what the sentence describes. A failure is a bug report: the page, the control, what was expected, what happened |
+| **flaky** | the test failed, then passed when retried from a clean page. Not a pass and not a bug report: the test is unreliable. It warns without failing the build — and a test that keeps doing this is hiding an intermittent bug |
 | **stale** | a recording stopped fitting. A replay cannot tell a renamed button from a deleted one, so this is never red and never worded as a failure — the agent re-checks it and rewrites the recording |
 | **errored** | this runner could not run: no browser, no key, no network. Never your app |
 
-Exit codes follow the same split: `0` all passed, `1` a test failed, `2` the runner could not
-finish. A pipeline that gates on `1` alone never reddens a build because our side had an outage.
+Exit codes follow the same split: `0` nothing failed (flaky exits 0 too — it is a warning, and the
+comment and the log both say so out loud), `1` a test failed, `2` the runner could not finish. A
+pipeline that gates on `1` alone never reddens a build because our side had an outage.
 
 ### Flags
 
@@ -195,7 +252,11 @@ finish. A pipeline that gates on `1` alone never reddens a build because our sid
 | `--plans <dir>` | where a suite keeps its recordings (default `.smolanalytics/recordings`) |
 | `--comment` | post the verdicts on the pull request (GitHub Actions) |
 | `--headed` | watch it happen |
-| `--yes` | install the browser without asking |
+| `--yes` | install the browser, and don't ask before a production-looking URL |
+| `--teardown <url>` | POST the run's identity there afterwards, so you can delete what it made |
+| `--email-domain <dom>` | the domain in `{{email}}` (default `example.com`) |
+| `--retries <n>` | re-run a failing test from a clean page; pass-on-retry is flaky, not passed (default 1; 0 disables) |
+| `--evidence-dir <dir>` | where a failure's screenshot and page text land (default `.smolanalytics/evidence`) |
 
 `ANTHROPIC_API_KEY` is the only key the agent needs, and it is yours — the model calls are billed to
 your account, not resold. Replaying a recording needs no key at all. `SMOLANALYTICS_MODEL` picks a

@@ -52,6 +52,11 @@ ${C.bold("smolanalytics")} — end-to-end tests without test code
   ${C.dim("--test \"<text>\"")}       what should work, in plain English
   ${C.dim("--plan <file>")}         replay the recording; wake the agent only if it stopped fitting
   ${C.dim("--headed")}              watch it happen
+  ${C.dim("--yes")}                 don't ask before a production-looking URL (CI is never asked)
+  ${C.dim("--teardown <url>")}      POST this run's identity there afterwards, to delete what it made
+  ${C.dim("--email-domain <dom>")}  the domain in {{email}} (default: example.com)
+  ${C.dim("--retries <n>")}         re-run a failing test from a clean page; pass-on-retry is flaky, not passed (default 1; 0 disables)
+  ${C.dim("--evidence-dir <dir>")}  where a failure's screenshot + page text land (default .smolanalytics/evidence)
 
   ${C.dim("--suite <dir>")}         a folder of .md files, one sentence per test
   ${C.dim("--comment")}             post the verdicts on the pull request (GitHub Actions)
@@ -111,6 +116,15 @@ async function main() {
     // test failed, which means the app did not do what the sentence describes. A crash of ours —
     // out of disk, a Playwright internal, a bug in this file — reaching the last-resort catch below
     // exits 1 and puts a bug report about our own crash on somebody else's pull request.
+    // Parsed once for both shapes. A typo'd count must not silently become 0 — that would turn
+    // retries OFF for someone who asked for more of them.
+    const retriesRaw = flag("retries");
+    if (retriesRaw !== undefined && !/^\d+$/.test(retriesRaw)) {
+      console.error(`${C.red("--retries needs a whole number")}, got ${JSON.stringify(retriesRaw)}. 1 retries a failing test once; 0 disables retries.`);
+      process.exitCode = 2;
+      return;
+    }
+    const retries = retriesRaw === undefined ? 1 : Number(retriesRaw);
     try {
       // --suite and --comment are the CI shape: many tests, one comment, a status per test. Without
       // either of them this stays the sixty-second command it already was, with the same output.
@@ -123,7 +137,11 @@ async function main() {
           comment,
           headed: hasFlag("headed"),
           yes: hasFlag("yes"),
+          teardown: flag("teardown") || "",
+          emailDomain: flag("email-domain") || "",
           maxSteps: Number(flag("max-steps")) || 40,
+          retries,
+          evidenceDir: flag("evidence-dir") || "",
         });
         return;
       }
@@ -133,7 +151,11 @@ async function main() {
         plan: flag("plan"),
         headed: hasFlag("headed"),
         yes: hasFlag("yes"),
+        teardown: flag("teardown") || "",
+        emailDomain: flag("email-domain") || "",
         maxSteps: Number(flag("max-steps")) || 40,
+        retries,
+        evidenceDir: flag("evidence-dir") || "",
       });
     } catch (err) {
       console.error(`\n${C.red("the run could not complete")} ${err?.message || err}`);
