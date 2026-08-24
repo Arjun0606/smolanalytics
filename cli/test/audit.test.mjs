@@ -319,11 +319,11 @@ test("compiling keeps what worked and refuses to produce an empty plan", () => {
     { ok: false, action: { kind: "click" }, target: { role: "button", name: "Save for later" } },
     { ok: true, action: { kind: "click" }, target: { role: "button", name: "Apply code" } },
   ];
-  const plan = compile("http://x/", steps);
+  const plan = compile("http://x/", steps, "Order placed");
   assert.equal(plan.steps.length, 2, "the agent's dead end was baked into the recording");
   // An empty plan would "pass" instantly by exercising nothing — the most dangerous artefact here.
-  assert.equal(compile("http://x/", []), null);
-  assert.equal(compile("http://x/", [{ ok: false, action: { kind: "click" } }]), null);
+  assert.equal(compile("http://x/", [], "Order placed"), null);
+  assert.equal(compile("http://x/", [{ ok: false, action: { kind: "click" } }], "Order placed"), null);
 });
 
 test("a stale recording is never worded as a bug", () => {

@@ -151,8 +151,18 @@ const TOOLS = [
     input_schema: { type: "object", properties: { url: { type: "string" }, why: { type: "string" } }, required: ["url", "why"], additionalProperties: false } },
   { name: "scroll", description: "Scroll when what you need is probably above or below the fold.",
     input_schema: { type: "object", properties: { direction: { type: "string", enum: ["up", "down"] }, why: { type: "string" } }, required: ["direction", "why"], additionalProperties: false } },
-  { name: "finish", description: "End the test. passed=true only if you directly OBSERVED what the test asked you to verify.",
-    input_schema: { type: "object", properties: { passed: { type: "boolean" }, why: { type: "string" } }, required: ["passed", "why"], additionalProperties: false } },
+  { name: "finish",
+    description:
+      "End the test. passed=true only if you directly OBSERVED what the test asked you to verify. " +
+      "On a pass you MUST supply `proof`: a short, distinctive run of text that was visible on the " +
+      "page and that would NOT be there if the test had failed. It is checked verbatim on later " +
+      "runs, so quote it exactly and keep it free of anything that changes run to run — an order " +
+      "number, a date, a total, a name.",
+    input_schema: { type: "object", properties: {
+      passed: { type: "boolean" },
+      why: { type: "string" },
+      proof: { type: "string", description: "Exact page text proving the pass. Required when passed is true." },
+    }, required: ["passed", "why", "proof"], additionalProperties: false } },
 ];
 
 const SYSTEM = `You are testing a web application by using it, the way a careful person would.
@@ -172,6 +182,13 @@ HOW TO DECIDE
 - FAIL when the application does not offer the path the test describes. Do not find a clever way
   around a broken control: routing around the defect is how a broken sign-up ships green.
 - Be economical. Every step costs money and time.
+
+WRITING THE PROOF
+When you pass, the proof field is the sentence a later run checks WITHOUT a model. Pick text that is on the
+page only because the thing worked: "Order placed", "Welcome back", "Discount applied". Do not pick
+a heading that is on the page whether or not the test passed, and do not include anything that
+changes between runs — an order number, a total, a timestamp, a username. If you cannot name such a
+text, you did not actually observe the outcome, and the honest answer is passed=false.
 
 WRITING THE FAILURE
 Your failure text is read by someone who was not watching. Name the page, the control, what you
@@ -219,7 +236,7 @@ function toAction(call) {
     case "press": return { kind: "press", key: String(i.key), why: String(i.why) };
     case "goto": return { kind: "goto", url: String(i.url), why: String(i.why) };
     case "scroll": return { kind: "scroll", direction: i.direction === "up" ? "up" : "down", why: String(i.why) };
-    case "finish": return { kind: "finish", passed: Boolean(i.passed), why: String(i.why) };
+    case "finish": return { kind: "finish", passed: Boolean(i.passed), why: String(i.why), proof: String(i.proof || "") };
     default: return { kind: "finish", passed: false, why: `unknown tool ${call.name}` };
   }
 }
@@ -239,7 +256,7 @@ function describe(step) {
 // ---- replay: the second run costs nothing -----------------------------------------------------
 
 /** Keep only what succeeded and can be replayed. The agent's dead ends are not part of the test. */
-export function compile(startUrl, steps) {
+export function compile(startUrl, steps, proof = "") {
   const out = [];
   for (const s of steps) {
     if (!s.ok) continue;
@@ -251,7 +268,15 @@ export function compile(startUrl, steps) {
   }
   // null, never an empty plan: a plan with no steps would "pass" instantly by exercising nothing,
   // which is the most dangerous artefact this code could produce.
-  return out.length ? { startUrl, steps: out } : null;
+  //
+  // And null without a PROOF, for the same reason one degree worse. A recording is a list of
+  // clicks; replaying it proves the buttons still exist, not that the app still works. Measured:
+  // a checkout recorded while it worked, replayed against a build where the same button now says
+  // "Something went wrong. Your card was not charged." — PASS in 0.5s, exit 0. A green check over
+  // a broken checkout is worse than having no test, and it is the exact corner this speed
+  // advantage was cutting.
+  if (!out.length || !String(proof).trim()) return null;
+  return { startUrl, steps: out, proof: String(proof).trim() };
 }
 
 /**
@@ -362,6 +387,23 @@ export async function replay(page, plan) {
       return { status: "stale", at: i, step: s, detail: String(e && e.message ? e.message : e).split("\n")[0], ms: Date.now() - started };
     }
   }
+  // THE STEPS WORKED. That is not the same as the test passing.
+  //
+  // The proof is the text the agent saw that would not be on the page if the test had failed. A
+  // recording without one is refused at compile time, but an older recording on disk may predate
+  // this, and treating a missing proof as "fine" would silently restore the bug: unproven, so the
+  // agent re-runs.
+  if (!plan.proof) {
+    return { status: "unproven", detail: "this recording predates outcome checking, so replaying it proves only that the steps still work", ms: Date.now() - started };
+  }
+  const text = await page.evaluate(() => document.body?.innerText ?? "").catch(() => "");
+  if (!String(text).includes(plan.proof)) {
+    // The flow still runs and the outcome changed. That is EITHER a regression or a reword, and a
+    // replay cannot tell them apart any more than it can tell a rename from a removal — so it says
+    // what it saw and lets the agent judge. Reporting it as a bug outright would page someone over
+    // a copy change; reporting it as a pass is the bug this whole change exists to kill.
+    return { status: "outcome-changed", proof: plan.proof, ms: Date.now() - started };
+  }
   return { status: "passed", steps: plan.steps.length, ms: Date.now() - started };
 }
 
@@ -372,6 +414,14 @@ export async function replay(page, plan) {
  * guessing wrong pages somebody at 2am over a copy change. Only the agent can tell them apart.
  */
 export function stalenessNote(r) {
+  // The recording did not settle it. Three ways that happens, and none of them is a bug report:
+  // only the agent can tell a rename from a removal, or a reword from a regression.
+  if (r.status === "outcome-changed") {
+    return `The recorded steps still work, but the page no longer says ${JSON.stringify(r.proof)} — the text that proved this test the last time it passed. That is either a regression or a reword, and a replay cannot tell which. Handing it to the agent.`;
+  }
+  if (r.status === "unproven") {
+    return `This recording predates outcome checking: replaying it would prove the steps still work and nothing about whether they still do the right thing. Running the agent to record one that can be checked.`;
+  }
   const s = r.step;
   const what = s.kind === "click" || s.kind === "fill" ? `the ${s.role} named "${s.name}"` : `a ${s.kind}`;
   return `The recorded run no longer fits this app: at step ${r.at + 1}, ${what} could not be used (${r.detail}). That is not yet a bug — the control may simply have been renamed.`;
@@ -572,8 +622,12 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
           await browser.close();
           return 0;
         }
-        log(`\n${C.y(stalenessNote(r))}\n`);
-        await report({ test, status: "stale", mode: "replay", durationMs: r.ms, url, reason: stalenessNote(r) }, log, onRun);
+        // Everything below is "the recording no longer settles it" — the steps broke, the outcome
+        // changed, or there was no proof to check. All three hand over to the agent rather than
+        // guessing, and none of them is reported as a bug on its own.
+        const note = stalenessNote(r);
+        log(`\n${C.y(note)}\n`);
+        await report({ test, status: "stale", mode: "replay", durationMs: r.ms, url, reason: note }, log, onRun);
       }
     }
 
@@ -624,10 +678,14 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
             steps: a.passed ? undefined : steps.map((s) => ({ n: s.n, do: s.label, why: s.action.why, ok: s.ok, detail: s.detail, ms: s.ms })),
           }, log, onRun);
           if (a.passed && planPath) {
-            const p = compile(url, steps);
+            const p = compile(url, steps, a.proof);
             if (p) {
               writeFileSync(planPath, JSON.stringify(p, null, 2) + "\n");
-              log(C.dim(`recorded ${p.steps.length} replayable steps to ${planPath} — the next run needs no model.`));
+              log(C.dim(`recorded ${p.steps.length} steps and the proof ${JSON.stringify(p.proof)} to ${planPath} — the next run needs no model.`));
+            } else if (!String(a.proof || "").trim()) {
+              // No proof, no recording. Replaying clicks without checking the outcome is how a
+              // green check ends up over a broken checkout.
+              log(C.dim("not recorded: the run passed but named no proof text, so a replay could not tell a working page from a broken one."));
             }
           }
           await browser.close();

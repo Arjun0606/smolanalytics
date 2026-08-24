@@ -120,7 +120,7 @@ const RECORDED = [
 ];
 
 test("compiling keeps what worked and drops the agent's fumbling", () => {
-  const plan = compile("http://x/", RECORDED);
+  const plan = compile("http://x/", RECORDED, "Order placed");
   // The failed click and the orienting scroll are not part of how the app works. Replaying them
   // would bake a ten-second timeout into every future run.
   assert.deepEqual(plan.steps, [
@@ -132,7 +132,7 @@ test("compiling keeps what worked and drops the agent's fumbling", () => {
 
 test("replaying a recorded run needs no model at all", noBrowser, async () => {
   const page = await open();
-  const r = await replay(page, compile(base, RECORDED));
+  const r = await replay(page, compile(base, RECORDED, "Order placed"));
   assert.equal(r.status, "passed", JSON.stringify(r));
   // It really drove the app, rather than passing by doing nothing.
   assert.match(await page.evaluate(() => document.body.innerText), /Order placed/);
@@ -143,7 +143,7 @@ test("a renamed control is reported as stale, never as a bug", noBrowser, async 
   // The distinction the whole design turns on. A replay cannot tell "renamed" from "removed", and
   // guessing wrong pages somebody at 2am over a copy change.
   const page = await open(APP.replace(">Proceed to checkout<", ">Checkout<"));
-  const r = await replay(page, compile(base, RECORDED));
+  const r = await replay(page, compile(base, RECORDED, "Order placed"));
   assert.equal(r.status, "stale");
   assert.equal(r.at, 2, "it should go stale on the checkout click, not before");
 
@@ -158,8 +158,72 @@ test("replay is fast enough to be worth recording", noBrowser, async () => {
   // The economic claim, measured rather than asserted. A replay as slow as an agent run removes
   // the reason to record one at all.
   const page = await open();
-  const r = await replay(page, compile(base, RECORDED));
+  const r = await replay(page, compile(base, RECORDED, "Order placed"));
   assert.equal(r.status, "passed");
   assert.ok(r.ms < 15_000, `replay took ${r.ms}ms`);
+  await page.close();
+});
+
+// THE GREEN CHECK OVER A BROKEN CHECKOUT.
+//
+// A recording is a list of clicks. Replaying it proves the buttons still exist — not that the app
+// still works. Measured before this guard existed, against a local app whose checkout button was
+// untouched but whose outcome had been changed to "Something went wrong. Your card was not
+// charged.":
+//
+//     PASS — replayed 1 steps in 0.5s, no model calls.   exit 0
+//
+// The single most dangerous thing this product could do, and it was the headline feature. A
+// recording now carries the PROOF the agent saw — text that is only on the page because the thing
+// worked — and replay checks it.
+//
+// Note what the fix does NOT do: it does not call the changed outcome a bug. A reworded
+// confirmation and a broken checkout look identical to a replay, exactly as a rename and a removal
+// do. It hands both to the agent, which can read the page and judge.
+
+test("a recording without proof is refused, not written", () => {
+  const steps = [{ ok: true, action: { kind: "click" }, target: { role: "button", name: "Pay" } }];
+  assert.equal(compile("http://x/", steps, ""), null, "a proofless recording would verify only that the button exists");
+  assert.equal(compile("http://x/", steps, "   "), null, "whitespace is not proof");
+  assert.ok(compile("http://x/", steps, "Order placed"), "a recording with proof is fine");
+});
+
+test("replay FAILS the outcome when the flow still runs but the result changed", noBrowser, async () => {
+  const WORKING = `<!doctype html><title>Shop</title><p id="m">2 items.</p>
+<button id="c">Proceed to checkout</button>
+<script>c.onclick=()=>m.textContent='Order placed. Your order number is A-1042.'</script>`;
+  const BROKEN = WORKING.replace(
+    "'Order placed. Your order number is A-1042.'",
+    "'Something went wrong. Your card was not charged.'",
+  );
+
+  const plan = compile(base, [{ ok: true, action: { kind: "click" }, target: { role: "button", name: "Proceed to checkout" } }], "Order placed");
+
+  // Against the working app the proof is on the page, so this is a real pass.
+  let page = await open(WORKING);
+  assert.equal((await replay(page, plan)).status, "passed");
+  await page.close();
+
+  // Same button, same click, different outcome. This is the regression a test exists to catch.
+  page = await open(BROKEN);
+  const r = await replay(page, plan);
+  assert.equal(r.status, "outcome-changed", "a broken checkout replayed as a pass");
+  assert.equal(r.proof, "Order placed");
+
+  const note = stalenessNote(r);
+  assert.match(note, /no longer says/);
+  assert.match(note, /regression or a reword/, "it must not assert which of the two it is");
+  await page.close();
+});
+
+test("an old recording with no proof is re-run rather than trusted", noBrowser, async () => {
+  // Recordings written before this change are on disk in people's repos and CI caches. Treating a
+  // missing proof as "fine" would silently restore the bug for exactly the users who have been
+  // running longest.
+  const page = await open();
+  const legacy = { startUrl: base, steps: [{ kind: "click", role: "button", name: "Proceed to checkout" }] };
+  const r = await replay(page, legacy);
+  assert.equal(r.status, "unproven");
+  assert.match(stalenessNote(r), /predates outcome checking/);
   await page.close();
 });

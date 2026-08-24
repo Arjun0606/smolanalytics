@@ -64,7 +64,7 @@ describe("what gets recorded", () => {
       { ok: true, action: { kind: "click" }, target: { role: "link", name: "Cart" } },
       { ok: false, action: { kind: "click" }, target: { role: "button", name: "Nope" } },
       { ok: true, action: { kind: "fill", text: "a@b.test" }, target: { role: "textbox", name: "Email" } },
-    ]);
+    ], "Order placed");
     assert.equal(plan.steps.length, 2);
     assert.deepEqual(plan.steps[1], { kind: "fill", role: "textbox", name: "Email", text: "a@b.test" });
   });
