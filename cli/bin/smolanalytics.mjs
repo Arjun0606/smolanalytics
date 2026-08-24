@@ -19,6 +19,7 @@ import { connectCmd } from "../lib/connect.mjs";
 import { planCheckCmd } from "../lib/plan.mjs";
 import { auditCmd } from "../lib/audit.mjs";
 import { deskCmd } from "../lib/desk.mjs";
+import { testCmd } from "../lib/test.mjs";
 
 const C = {
   dim: (s) => `\x1b[2m${s}\x1b[0m`,
@@ -43,7 +44,14 @@ const hasFlag = (name) => process.argv.includes(`--${name}`);
 
 function help() {
   console.log(`
-${C.bold("smolanalytics")} — analytics you can ask in plain English
+${C.bold("smolanalytics")} — end-to-end tests without test code
+
+  ${C.bold("npx smolanalytics test")}        one sentence, a real browser, a verdict
+  ${C.dim("--url  <url>")}          staging, a deploy preview, anything reachable
+  ${C.dim("--test \"<text>\"")}       what should work, in plain English
+  ${C.dim("--plan <file>")}         replay the recording; wake the agent only if it stopped fitting
+  ${C.dim("--headed")}              watch it happen
+  ${C.dim("No account. No GitHub app. Nothing written to your repo.")}
 
   ${C.bold("npx smolanalytics audit")}       what your app does that nothing is measuring
   ${C.dim("[dir]")}                 repo to scan (default: here). No account, no network.
@@ -88,6 +96,17 @@ async function main() {
       dir: bare && !bare.startsWith("--") ? bare : flag("dir") || ".",
       json: hasFlag("json"),
       all: hasFlag("all"),
+    });
+    return;
+  }
+  if (cmd === "test") {
+    process.exitCode = await testCmd({
+      url: flag("url"),
+      test: flag("test"),
+      plan: flag("plan"),
+      headed: hasFlag("headed"),
+      yes: hasFlag("yes"),
+      maxSteps: Number(flag("max-steps")) || 40,
     });
     return;
   }

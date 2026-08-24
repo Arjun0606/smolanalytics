@@ -7,6 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { compile, flatten, render as renderPage, stalenessNote } from "../lib/test.mjs";
 import { scanFile, auditRepo, render, VENDORS } from "../lib/audit.mjs";
 
 const kinds = (rel, src) => scanFile(rel, src).map((a) => a.kind);
@@ -270,4 +271,66 @@ test("the CLI's vendor list matches the engine's", () => {
   const jsIds = VENDORS.map((v) => v.id).sort();
   assert.deepEqual(jsIds, goIds,
     `vendor lists have drifted — engine: ${goIds.join(", ")} / cli: ${jsIds.join(", ")}`);
+});
+
+// `npx smolanalytics test` — THE SIXTY-SECOND PATH.
+//
+// The competing product's onboarding, timed on a real repo: a GitHub App across every repository,
+// an agent pushing a Dockerfile into your code, questions about which of FRED_API_KEY /
+// BRAVE_SEARCH_API_KEY / AWS_ACCESS_KEY_ID to set, SUPABASE_URL and OPENAI_API_KEY handed over, a
+// web + backend + Postgres build, then "ETA ~1h 13m". Twenty-eight minutes in it read 3%, then 0%,
+// then step 1 of 7 failed and the preview selection errored out.
+//
+// This command exists so ours is: a URL you already have, a sentence, a verdict. These guards pin
+// the three properties that make that claim true rather than aspirational.
+
+test("the parser reads roles, names, values and states out of an aria snapshot", () => {
+  // Captured from a live page, not imagined — the whole cost argument rests on reading the page as
+  // text rather than paying for a vision call per step.
+  const snap = [
+    '- heading "Sign in" [level=1]',
+    "- text: Email",
+    '- textbox "Email": a@b.com',
+    '- button "Sign in"',
+    '- button "Disabled thing" [disabled]',
+    '- checkbox "Remember me" [checked]',
+  ].join("\n");
+  const { elements } = flatten(snap);
+  const by = (n) => elements.find((e) => e.name === n);
+  assert.equal(by("Email").role, "textbox");
+  assert.equal(by("Email").value, "a@b.com", "a filled field must show its value so the agent does not retype it");
+  assert.match(by("Disabled thing").state, /disabled/);
+  assert.ok(!elements.some((e) => e.name === "Email" && e.role === "text"), "prose was offered as a control");
+});
+
+test("truncation is reported, never silent", () => {
+  // A model that cannot see the element it needs must be told to scroll. Dropping the tail silently
+  // makes it conclude the element does not exist and fail a working app.
+  const many = Array.from({ length: 30 }, (_, i) => `- button "b${i}"`).join("\n");
+  const { elements, truncated } = flatten(many, 10);
+  assert.equal(elements.length, 10);
+  assert.equal(truncated, 20);
+  assert.match(renderPage({ url: "u", title: "t", elements, truncated, text: "" }), /20 more not shown/);
+});
+
+test("compiling keeps what worked and refuses to produce an empty plan", () => {
+  const steps = [
+    { ok: true, action: { kind: "fill", text: "SAVE10" }, target: { role: "textbox", name: "Discount code" } },
+    { ok: false, action: { kind: "click" }, target: { role: "button", name: "Save for later" } },
+    { ok: true, action: { kind: "click" }, target: { role: "button", name: "Apply code" } },
+  ];
+  const plan = compile("http://x/", steps);
+  assert.equal(plan.steps.length, 2, "the agent's dead end was baked into the recording");
+  // An empty plan would "pass" instantly by exercising nothing — the most dangerous artefact here.
+  assert.equal(compile("http://x/", []), null);
+  assert.equal(compile("http://x/", [{ ok: false, action: { kind: "click" } }]), null);
+});
+
+test("a stale recording is never worded as a bug", () => {
+  // "The button was renamed" and "the button is gone" are indistinguishable from a replay, and
+  // guessing wrong pages somebody at 2am over a copy change.
+  const note = stalenessNote({ at: 2, step: { kind: "click", role: "button", name: "Proceed to checkout" }, detail: "Timeout 10000ms exceeded." });
+  assert.match(note, /Proceed to checkout/);
+  assert.match(note, /not yet a bug/);
+  assert.ok(!/\bfail/i.test(note), `a staleness note must not read as a failure: ${note}`);
 });
