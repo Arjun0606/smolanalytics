@@ -79,7 +79,7 @@ keeps for every project on the machine. Nothing is written to your project. Ever
 here still has zero dependencies.
 
 **The second run is free.** Add `--plan` and a passing run is recorded, then replayed with no model
-calls at all: 0.7s for a three-step test, measured. The agent wakes again only when the recording
+calls at all — fast enough that the model is the cost, not the browser (one measured flow: 8.0s with the agent, 1.4s replayed; yours will differ). The agent wakes again only when the recording
 stops fitting the app.
 
 ### A suite

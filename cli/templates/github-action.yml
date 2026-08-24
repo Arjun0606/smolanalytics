@@ -90,8 +90,8 @@ jobs:
       # ----------------------------------------------------------------------------------------
       # THE RECORDINGS. These two steps are the economics of the whole tool.
       #
-      # A passing run is recorded and replayed with no model calls at all — measured at 0.7s for a
-      # three-step test. But a CI runner starts empty every time. WITHOUT THIS CACHE every test on
+      # A passing run is recorded and replayed with no model calls at all, in about a second on a
+      # measured flow. But a CI runner starts empty every time. WITHOUT THIS CACHE every test on
       # every pull request is a fresh agent run: slower, and paid for per run, forever. With it, the
       # agent only wakes when a recording stops fitting the app.
       #
