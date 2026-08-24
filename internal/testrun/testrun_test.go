@@ -200,3 +200,66 @@ func TestDurationsAreReadable(t *testing.T) {
 		}
 	}
 }
+
+// ---- the suite: one row per test, worst first ----
+
+func TestTheSuiteIsDerivedNotStored(t *testing.T) {
+	// Held as its own list it would drift: a test renamed or deleted from the repo stays green
+	// forever because nothing ran it. Derived, the suite can only contain tests that actually ran.
+	now := time.Now().UTC()
+	runs := []Run{
+		{Test: "checkout", Status: StatusPassed, Mode: ModeReplay, StartedAt: now.Add(-3 * time.Hour)},
+		{Test: "checkout", Status: StatusFailed, Mode: ModeAgent, StartedAt: now.Add(-time.Hour), Reason: "no order number"},
+		{Test: "signup", Status: StatusPassed, Mode: ModeReplay, StartedAt: now.Add(-2 * time.Hour)},
+	}
+	s := Suite(runs)
+	if len(s) != 2 {
+		t.Fatalf("suite has %d rows, want one per test", len(s))
+	}
+	// worst first: checkout is failing, so it leads regardless of name or recency
+	if s[0].Test != "checkout" || s[0].Status != StatusFailed {
+		t.Fatalf("suite[0] = %+v, want the failing test first", s[0])
+	}
+	if s[0].Reason != "no order number" {
+		t.Error("the failing row does not carry its own explanation")
+	}
+	// it HAS passed before, so a recording exists — this is a regression, not a never-worked
+	if !s[0].Recorded || s[0].NeverPassed() {
+		t.Error("checkout passed three hours ago; it should read as recorded and previously green")
+	}
+	if s[0].Runs != 2 {
+		t.Errorf("runs = %d, want 2", s[0].Runs)
+	}
+}
+
+func TestNeverPassedIsNotTheSameAsRegressed(t *testing.T) {
+	// A test that never passed may describe something the product has never done, which is as
+	// likely to be a wrong test as a broken feature. Telling someone their checkout is broken when
+	// the test was wrong burns the trust this whole product runs on.
+	now := time.Now().UTC()
+	s := Suite([]Run{{Test: "refunds", Status: StatusFailed, Mode: ModeAgent, StartedAt: now}})
+	if !s[0].NeverPassed() {
+		t.Error("a test that has only ever failed does not read as never-passed")
+	}
+	if s[0].Recorded {
+		t.Error("a test that never passed cannot have a recording to replay")
+	}
+}
+
+func TestTheSuiteOrdersByAttentionNotAlphabet(t *testing.T) {
+	// A failing test at the bottom of an alphabetical list is a failing test nobody sees.
+	now := time.Now().UTC()
+	s := Suite([]Run{
+		{Test: "aaa passing", Status: StatusPassed, StartedAt: now},
+		{Test: "zzz failing", Status: StatusFailed, StartedAt: now.Add(-time.Hour)},
+		{Test: "mmm stale", Status: StatusStale, StartedAt: now},
+		{Test: "nnn errored", Status: StatusErrored, StartedAt: now},
+	})
+	got := []string{s[0].Test, s[1].Test, s[2].Test, s[3].Test}
+	want := []string{"zzz failing", "mmm stale", "nnn errored", "aaa passing"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("suite order = %v, want %v", got, want)
+		}
+	}
+}

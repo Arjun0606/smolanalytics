@@ -1858,6 +1858,39 @@
       {{end}}
     </div>
 
+
+    <!-- THE SUITE. The other first-class object, and the one this dashboard had no view of.
+         "What happened in the last hour" is the runs pane above; this one answers "what do we
+         check, and is each of those checks currently believed" — the question you ask before
+         trusting a green build.
+         Derived from the whole run log rather than stored, so it cannot list a test that no longer
+         runs. Ordered by how much attention a row needs: a failing test at the bottom of an
+         alphabetical list is a failing test nobody sees. -->
+    <div class="pane wide" id="pane-suite" style="order:30" data-stratum="runs">
+      <h3>the suite
+        <span class="sub">· every test we check, worst first · derived from your own run log</span></h3>
+      {{if .Suite}}
+      <table class="ctab instr-tbl">
+        <thead><tr><th>test</th><th>now</th><th>last passed</th><th class="instr-n">runs</th></tr></thead>
+        <tbody>
+        {{range .Suite}}
+          <tr>
+            <td>{{.Test}}{{if and .Reason (ne .Status "passed")}}<div class="runwhy">{{.Reason}}</div>{{end}}</td>
+            <td>{{if eq .Status "passed"}}<span class="ipill ok">passing</span>{{else if eq .Status "failed"}}<span class="ipill bad">failing</span>{{else if eq .Status "stale"}}<span class="ipill warn">recording stale</span>{{else}}<span class="ipill warn">could not run</span>{{end}}</td>
+            <td>{{if .NeverPassed}}<span class="runmode">never</span>{{else}}<span class="runmode">{{.LastPassed.Format "Jan 2"}}</span>{{end}}{{if not .Recorded}} <span class="runmode">· no recording, so every run costs a model</span>{{end}}</td>
+            <td class="instr-n">{{.Runs}}</td>
+          </tr>
+        {{end}}
+        </tbody>
+      </table>
+      <div class="instr-note">A test that has <em>never</em> passed is not the same as one that regressed: it may describe
+        something this product has never done, which is as likely to be a wrong test as a broken feature. The column says which.</div>
+      {{else}}
+      <div class="instr-note">No tests yet. Each one is a sentence in a markdown file next to your code &mdash;
+        the agent works out how to carry it out, so there is nothing here to keep up to date when the UI moves.</div>
+      {{end}}
+    </div>
+
     <!-- INSTRUMENTATION, second only to the runs above it.
          Every report below this answers "what do the numbers say". This one answers "are the
          numbers real", which precedes all of them: a funnel computed over an event that stopped

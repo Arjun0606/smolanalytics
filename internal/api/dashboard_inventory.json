@@ -8,7 +8,8 @@
     "pane-flags",
     "pane-instrumentation",
     "pane-live",
-    "pane-runs"
+    "pane-runs",
+    "pane-suite"
   ],
   "controls": [
     "askq",

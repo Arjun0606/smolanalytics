@@ -341,10 +341,13 @@ type dashVM struct {
 	// primary object of the product, and the first thing on the deck.
 	Runs        []testrun.Run
 	RunsSummary testrun.Summary
-	DevHidden   int    // count of env=development events hidden from production reports
-	ShowingDev  bool   // true when ?env=development — viewing the hidden dev traffic
-	Base        string // this server's base URL, for ready-to-paste snippets
-	WriteKey    string // this instance's write key — real snippets, not placeholders (key is public-by-design: it ships in tracked pages' HTML)
+	// Suite is one row per test — what we check, and whether each check is currently believed.
+	// Derived from the run log so it cannot contain a test that no longer runs.
+	Suite      []testrun.SuiteEntry
+	DevHidden  int    // count of env=development events hidden from production reports
+	ShowingDev bool   // true when ?env=development — viewing the hidden dev traffic
+	Base       string // this server's base URL, for ready-to-paste snippets
+	WriteKey   string // this instance's write key — real snippets, not placeholders (key is public-by-design: it ships in tracked pages' HTML)
 	// CloudURL is the header's "Cloud ↗" href. Defaults to smolanalytics.com (right for
 	// every self-hosted install); the hosted product overrides it via SMOLANALYTICS_CLOUD_URL
 	// so the link leads back to the project the user came from, not the marketing home page.
@@ -2193,6 +2196,14 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		runs = s.runs.Recent(12)
 	}
 
+	// The suite is derived from the WHOLE log, not the twelve rows the runs pane shows: a test that
+	// last ran yesterday is still part of the suite, and dropping it because it is off the end of a
+	// recent-runs list would quietly shrink what we claim to check.
+	var suite []testrun.SuiteEntry
+	if s.runs != nil {
+		suite = testrun.Suite(s.runs.Recent(0))
+	}
+
 	var instr planhealth.Health
 	if s.trackplan != nil {
 		if h, err := planhealth.Compute(s.store, s.trackplan.Get(), instrumentationWindow); err == nil {
@@ -2218,6 +2229,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		Instrumentation: instr,
 		Runs:            runs,
 		RunsSummary:     testrun.Summarize(runs),
+		Suite:           suite,
 		Verdict:         verdict,
 		// The full history, and the flags, so the kill list can see what shipped. Same inputs
 		// the CLI brief uses, so the page and the email cannot tell different stories.

@@ -305,3 +305,99 @@ func (s *Store) persist() error {
 	}
 	return os.Rename(tmp, s.path)
 }
+
+// ---- THE SUITE ---------------------------------------------------------------------------------
+//
+// The other first-class object, and the one the dashboard had no view of at all: not "what happened
+// in the last hour" but "what do we check, and is each of those checks currently believed".
+//
+// It is DERIVED from the run log rather than stored separately, and that is deliberate. A suite
+// held as its own list drifts from the runs: a test gets renamed, or deleted from the repo, and the
+// list still shows it green forever because nothing ran it. Deriving means the suite can only ever
+// contain tests that actually ran, and "last passed" is a fact rather than a record someone forgot
+// to update.
+
+// SuiteEntry is one test, as of its most recent run.
+type SuiteEntry struct {
+	Test string `json:"test"`
+	// Status of the LATEST run. What the suite believes right now.
+	Status string `json:"status"`
+	Mode   string `json:"mode"`
+	// LastPassed is the newest run that passed, zero if it never has. A test that has never passed
+	// is a different thing from one that has regressed, and the pane says which.
+	LastPassed time.Time `json:"last_passed,omitempty"`
+	LastRun    time.Time `json:"last_run"`
+	Runs       int       `json:"runs"`
+	// Recorded means a passing run exists to replay, so this test costs nothing to re-run. The
+	// column that shows a customer which of their tests are still expensive.
+	Recorded bool `json:"recorded"`
+	// Reason is the latest run's sentence, carried so a failing row explains itself in place.
+	Reason string `json:"reason,omitempty"`
+}
+
+// Suite collapses the run log into one row per test, worst first.
+//
+// Ordering is by how much attention the row needs, not by name or recency: a failing test at the
+// bottom of an alphabetical list is a failing test nobody sees.
+func Suite(runs []Run) []SuiteEntry {
+	byTest := map[string]*SuiteEntry{}
+	order := []string{}
+	for _, r := range runs {
+		if r.Test == "" {
+			continue
+		}
+		e := byTest[r.Test]
+		if e == nil {
+			e = &SuiteEntry{Test: r.Test}
+			byTest[r.Test] = e
+			order = append(order, r.Test)
+		}
+		e.Runs++
+		if r.StartedAt.After(e.LastRun) {
+			e.LastRun = r.StartedAt
+			e.Status = r.Status
+			e.Mode = r.Mode
+			e.Reason = r.Reason
+		}
+		if r.Status == StatusPassed {
+			e.Recorded = true
+			if r.StartedAt.After(e.LastPassed) {
+				e.LastPassed = r.StartedAt
+			}
+		}
+	}
+	out := make([]SuiteEntry, 0, len(order))
+	for _, name := range order {
+		out = append(out, *byTest[name])
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if rank(out[i].Status) != rank(out[j].Status) {
+			return rank(out[i].Status) < rank(out[j].Status)
+		}
+		return out[i].LastRun.After(out[j].LastRun)
+	})
+	return out
+}
+
+// rank orders statuses by how much attention they need. Failed first: it is the only one that says
+// something is wrong with the customer's product.
+func rank(status string) int {
+	switch status {
+	case StatusFailed:
+		return 0
+	case StatusStale:
+		return 1
+	case StatusErrored:
+		return 2
+	default:
+		return 3
+	}
+}
+
+// NeverPassed reports a test that has run and never once passed.
+//
+// Worth its own question because it means something different from a regression: the test may
+// describe something the product has never done, which is as likely to be a wrong test as a broken
+// feature — and telling someone their checkout is broken when the test was wrong burns the trust
+// this product runs on.
+func (e SuiteEntry) NeverPassed() bool { return e.LastPassed.IsZero() }
