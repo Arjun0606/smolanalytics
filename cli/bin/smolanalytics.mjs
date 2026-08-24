@@ -107,29 +107,39 @@ async function main() {
   if (cmd === "test") {
     const suite = flag("suite");
     const comment = hasFlag("comment");
-    // --suite and --comment are the CI shape: many tests, one comment, a status per test. Without
-    // either of them this stays the sixty-second command it already was, with the same output.
-    if (suite || comment) {
-      process.exitCode = await suiteCmd({
-        suite,
+    // NOTHING THAT ESCAPES HERE MAY EXIT 1. The workflow template publishes the contract: 1 means a
+    // test failed, which means the app did not do what the sentence describes. A crash of ours —
+    // out of disk, a Playwright internal, a bug in this file — reaching the last-resort catch below
+    // exits 1 and puts a bug report about our own crash on somebody else's pull request.
+    try {
+      // --suite and --comment are the CI shape: many tests, one comment, a status per test. Without
+      // either of them this stays the sixty-second command it already was, with the same output.
+      if (suite || comment) {
+        process.exitCode = await suiteCmd({
+          suite,
+          url: flag("url"),
+          test: flag("test"),
+          plans: flag("plans") || flag("plan-dir") || (suite ? undefined : flag("plan")) || DEFAULT_PLANS_DIR,
+          comment,
+          headed: hasFlag("headed"),
+          yes: hasFlag("yes"),
+          maxSteps: Number(flag("max-steps")) || 40,
+        });
+        return;
+      }
+      process.exitCode = await testCmd({
         url: flag("url"),
         test: flag("test"),
-        plans: flag("plans") || flag("plan-dir") || (suite ? undefined : flag("plan")) || DEFAULT_PLANS_DIR,
-        comment,
+        plan: flag("plan"),
         headed: hasFlag("headed"),
         yes: hasFlag("yes"),
         maxSteps: Number(flag("max-steps")) || 40,
       });
-      return;
+    } catch (err) {
+      console.error(`\n${C.red("the run could not complete")} ${err?.message || err}`);
+      console.error(`  This is the test runner, not your application. Nothing was learned about this change.\n`);
+      process.exitCode = 2;
     }
-    process.exitCode = await testCmd({
-      url: flag("url"),
-      test: flag("test"),
-      plan: flag("plan"),
-      headed: hasFlag("headed"),
-      yes: hasFlag("yes"),
-      maxSteps: Number(flag("max-steps")) || 40,
-    });
     return;
   }
   if (cmd === "desk") {
@@ -276,5 +286,7 @@ ${snippetHtml(host, key)}
 
 main().catch((err) => {
   console.error(`\n${C.red("failed")} ${err?.message || err}\n`);
-  process.exitCode = 1;
+  // `test` is the one command whose exit code is a published contract (see templates/github-action
+  // .yml): 1 says the application is broken. Our own crash is never that.
+  process.exitCode = process.argv[2] === "test" ? 2 : 1;
 });

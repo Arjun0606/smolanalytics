@@ -33,6 +33,6 @@
   "author": "Arjun Varma",
   "license": "MIT",
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   }
 }

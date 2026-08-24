@@ -41,6 +41,11 @@ const HEADING = /^(#{1,6})\s+(.+?)\s*#*\s*$/;
 const FENCE = /^\s*(```|~~~)/;
 const LIST = /^\s*(?:[-*+]\s+|\d+[.)]\s+)/;
 const QUOTE = /^\s*>\s?/;
+// A `---` between two tests is the most ordinary thing in a markdown file. Folded into the body it
+// is handed to the agent as part of what to look for on the page: "Click Buy. ---".
+const RULE = /^ {0,3}(?:(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,})$/;
+// The frontmatter grammar, reused to recover from a block whose closing `---` was forgotten.
+const KV = /^([A-Za-z][\w-]*)\s*:\s*(.*)$/;
 
 /**
  * Which heading depth is a test, given every depth the file uses.
@@ -79,19 +84,81 @@ export function slug(s) {
  * would have been handed.
  */
 export function frontmatter(text) {
-  const m = /^\uFEFF?---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(String(text));
-  if (!m) return { meta: {}, body: String(text) };
+  // THE BOM COMES OFF HERE, ONCE, FOR EVERYTHING DOWNSTREAM. VS Code on Windows and Visual Studio
+  // both write UTF-8 with one by default. Left on, it sits in front of the first `#`, that heading
+  // stops matching HEADING, and the test under it is dropped with no message at all — a green suite
+  // one test lighter than the folder.
+  const src = String(text).replace(/^\uFEFF/, "");
+  if (!/^---[ \t]*(?:\r?\n|$)/.test(src)) return { meta: {}, body: src, unterminated: false, dropped: "" };
+  const lines = src.split(/\r?\n/);
+
+  // Scanned by line rather than matched as one block, so the closing delimiter is exactly `---` and
+  // an empty `---\n---` pair is recognised instead of leaving its two delimiters in the sentence.
+  let close = -1;
+  for (let i = 1; i < lines.length; i++) {
+    if (/^---[ \t]*$/.test(lines[i])) {
+      close = i;
+      break;
+    }
+  }
+  if (close !== -1) {
+    // A closed block is frontmatter, and it is trusted as such without inspecting what is in it:
+    // real frontmatter holds list values and `#` comments, and refusing those would fold genuine
+    // metadata back into the sentence, which is the failure this whole function exists to prevent.
+    const block = lines.slice(1, close);
+    return { meta: read(block.join("\n")), body: lines.slice(close + 1).join("\n"), unterminated: false, dropped: block.join("\n") };
+  }
+
+  // THE CLOSING `---` IS THE EASIEST LINE IN THE FILE TO FORGET, and forgetting it used to hand the
+  // agent "--- title: Checkout criticality: critical Click Buy." while throwing the written name
+  // away for the filename. Recover the way the block was obviously meant to read: the opening
+  // delimiter plus the run of `key: value` lines under it, stopping at the first line that is not
+  // one. That stop keeps prose after a blank line out of the metadata.
+  let end = 1;
+  while (end < lines.length && lines[end].trim() && KV.test(lines[end].trim())) end++;
+  // A bare `---` with no keys under it is a horizontal rule someone put at the top of the file, not
+  // a forgotten fence. Drop the rule and say nothing: there is no missing delimiter to go and fix.
+  if (end === 1) return { meta: {}, body: lines.slice(1).join("\n"), unterminated: false, dropped: "" };
+  return { meta: read(lines.slice(1, end).join("\n")), body: lines.slice(end).join("\n"), unterminated: true, dropped: "" };
+}
+
+function read(block) {
   const meta = {};
-  for (const line of m[1].split(/\r?\n/)) {
-    const kv = /^([A-Za-z][\w-]*)\s*:\s*(.*)$/.exec(line.trim());
+  for (const line of block.split(/\r?\n/)) {
+    const kv = KV.exec(line.trim());
     if (!kv) continue;
     meta[kv[1].toLowerCase()] = kv[2].trim().replace(/^["']|["']$/g, "");
   }
-  return { meta, body: String(text).slice(m[0].length) };
+  return meta;
 }
 
-export function parseSuite(file, text) {
-  const { meta, body: afterMeta } = frontmatter(text);
+/**
+ * Did a removed block hold a document rather than metadata?
+ *
+ * `# text` is both a markdown heading and a YAML comment, so a heading alone proves nothing — a
+ * frontmatter comment would raise a false alarm on a file where nothing was lost, and a warning
+ * that cries wolf gets skipped on the day it is right. What no valid YAML block contains is a bare
+ * unindented line with no colon, no `-` and no `#`: that is prose. Prose plus a heading is a
+ * document, and a document between two `---` lines was somebody's tests being deleted.
+ */
+function wasDocument(block) {
+  if (!block) return false;
+  const lines = block.split(/\r?\n/);
+  const prose = (l) => l.trim() && !/^\s/.test(l) && !KV.test(l) && !/^#/.test(l) && !/^[-*+]/.test(l);
+  return lines.some((l) => HEADING.test(l)) && lines.some(prose);
+}
+
+export function parseSuite(file, text, onNote = () => {}) {
+  const { meta, body: afterMeta, unterminated, dropped } = frontmatter(text);
+  if (unterminated) {
+    onNote(`${file}: the frontmatter block at the top is never closed. Add a line containing only --- after the last key. The keys were read anyway and kept out of the test.`);
+  }
+  // A file that opens with a horizontal rule and has another one later looks exactly like a closed
+  // frontmatter block, and everything between the two rules is removed as metadata — which can be
+  // whole tests. A test you believe is running and is not is worse than one you know is missing.
+  if (wasDocument(dropped)) {
+    onNote(`${file}: everything between the first two --- lines was removed as frontmatter, and it contained a heading. If that --- was meant as a horizontal rule, delete it: the tests under it did not run.`);
+  }
   const stripped = String(afterMeta).replace(/<!--[\s\S]*?-->/g, "");
   const lines = [];
   let fence = null;
@@ -133,6 +200,8 @@ export function parseSuite(file, text) {
       continue;
     }
     if (!cur) continue;
+    // Checked before the list marker is stripped, so `- - -` is read as the rule it is.
+    if (RULE.test(line)) continue;
     const t = line.replace(QUOTE, "").replace(LIST, "").trim();
     if (t) cur.body.push(t);
   }
@@ -142,7 +211,7 @@ export function parseSuite(file, text) {
 
   // No headings at all: the file is one test. Someone whose whole test is a single sentence should
   // not have to learn a document structure to run it.
-  const body = lines.map((l) => l.replace(QUOTE, "").replace(LIST, "").trim()).filter(Boolean).join(" ");
+  const body = lines.filter((l) => !RULE.test(l)).map((l) => l.replace(QUOTE, "").replace(LIST, "").trim()).filter(Boolean).join(" ");
   if (!body) return [];
   // A frontmatter title names a single-test file. It is what the person wrote down as the point of
   // the test, and it is what appears on the pull request — the filename is a fallback, not a name.
@@ -174,13 +243,25 @@ const nodeIo = {
   },
 };
 
-function walk(dir, io, out = []) {
+const why = (e) => (e && e.message ? e.message : String(e));
+
+function walk(dir, io, out = [], errors = []) {
+  let entries;
+  try {
+    entries = io.list(dir);
+  } catch (e) {
+    // COLLECTED, NEVER THROWN. Thrown, this reaches the CLI's last-resort catch, which prints a red
+    // `failed` and exits 1 — the code reserved for "the application is broken". A locked folder on
+    // the runner would redden the build with a bug report about the customer's app.
+    errors.push(`${dir} could not be read: ${why(e)}. This is the test runner reading your folder, not your application.`);
+    return out;
+  }
   // Sorted, always. Recording filenames and the pull request table are both derived from this
   // order, and a table that reshuffles between runs makes a reviewer re-read the whole thing.
-  for (const e of io.list(dir).sort((a, b) => a.name.localeCompare(b.name))) {
+  for (const e of entries.sort((a, b) => a.name.localeCompare(b.name))) {
     if (e.name.startsWith(".") || e.name === "node_modules") continue;
     const p = path.join(dir, e.name);
-    if (e.dir) walk(p, io, out);
+    if (e.dir) walk(p, io, out, errors);
     else if (/\.md$/i.test(e.name)) out.push(p);
   }
   return out;
@@ -188,9 +269,13 @@ function walk(dir, io, out = []) {
 
 /** Find every test under a directory (or in a single file), each with the recording it owns. */
 export function discover(target, plansDir = DEFAULT_PLANS_DIR, io = nodeIo) {
-  if (!io.exists(target)) return { tests: [], missing: target };
+  // `errors` is "we could not read this" — our problem, exit 2, never a verdict about the app.
+  // `notes` is "we read it and had to interpret something" — printed, and it changes nothing.
+  const errors = [];
+  const notes = [];
+  if (!io.exists(target)) return { tests: [], missing: target, errors, notes };
   const isDir = io.isDir(target);
-  const files = isDir ? walk(target, io) : [target];
+  const files = isDir ? walk(target, io, [], errors) : [target];
   // A recording is named after the test's path WITHIN the suite, never the path as typed. Otherwise
   // `--suite tests/` and `--suite /home/me/app/tests` name the same test's recording differently,
   // a developer's local runs and CI never share a cache, and every CI run is a fresh agent run —
@@ -200,7 +285,15 @@ export function discover(target, plansDir = DEFAULT_PLANS_DIR, io = nodeIo) {
   const taken = new Set();
   for (const f of files) {
     const within = path.relative(base, f).replace(/\.md$/i, "");
-    for (const t of parseSuite(f, io.read(f))) {
+    let text;
+    try {
+      text = io.read(f);
+    } catch (e) {
+      // One file we cannot open must not lose the eight beside it that we can.
+      errors.push(`${f} could not be read: ${why(e)}. Nothing in it ran. This is the test runner reading your file, not your application.`);
+      continue;
+    }
+    for (const t of parseSuite(f, text, (n) => notes.push(n))) {
       // Two tests sharing one recording file would overwrite each other's plan on every run, and
       // each would then find the other's recording and report it stale forever.
       let id = `${slug(within)}--${slug(t.name)}`;
@@ -213,16 +306,22 @@ export function discover(target, plansDir = DEFAULT_PLANS_DIR, io = nodeIo) {
       tests.push({ ...t, id, planPath: path.join(plansDir, `${id}.json`) });
     }
   }
-  return { tests, missing: "" };
+  return { tests, missing: "", errors, notes };
 }
 
 // ---- running them -----------------------------------------------------------------------------
 
-/** testCmd's exit code, for the paths that end before any verdict is produced. */
+/**
+ * testCmd's exit code, for the paths that end before any verdict is produced.
+ *
+ * 1 does NOT become `failed` here. Exit 1 means "a test failed", but a run that reached this
+ * function reported no verdict at all — and noVerdictReason, printed in the same row, says so in
+ * as many words. A row reading **fail** beside "the run ended without a verdict, so nothing was
+ * observed" is a bug report about a bug nobody saw, on somebody's pull request. `errored` is what
+ * we actually know, and it still exits 2, so no gate reads it as green.
+ */
 function fromExit(code) {
-  if (code === 0) return "passed";
-  if (code === 1) return "failed";
-  return "errored";
+  return code === 0 ? "passed" : "errored";
 }
 
 /**
@@ -233,7 +332,7 @@ function fromExit(code) {
  * a new user hits first. Name the actual missing thing.
  */
 export function noVerdictReason(code, { hasKey, hasPlan }) {
-  if (code === 1) return "The run ended without a verdict, so nothing was observed.";
+  if (code === 1) return "The run ended without a verdict, so nothing was observed. This is the test runner, not your application.";
   if (!hasKey && !hasPlan) return "There is no recording for this test yet and ANTHROPIC_API_KEY is not set, so nothing ran.";
   if (!hasKey) return "ANTHROPIC_API_KEY is not set, so the agent could not run.";
   return "This runner could not run the test; the log names the reason. This is the test runner, not your application.";
@@ -336,35 +435,54 @@ export function exitCode(results) {
   return 0;
 }
 
-const secs = (ms) => `${(ms / 1000).toFixed(1)}s`;
+// One NaN in a report makes a reader distrust the verdict printed next to it, so a duration we do
+// not have renders as nothing at all.
+const secs = (ms) => {
+  const n = Number(ms);
+  return Number.isFinite(n) && n >= 0 ? `${(n / 1000).toFixed(1)}s` : "";
+};
 
 // ---- the pull request comment -------------------------------------------------------------------
 
 const RANK = { failed: 0, errored: 1, stale: 2, passed: 3 };
 const LABEL = { passed: "pass", failed: "**fail**", stale: "stale", errored: "error" };
 
-export const markerFor = (suite) => `<!-- smolanalytics-e2e:${slug(suite)} -->`;
+/**
+ * The needle that makes the next push EDIT this comment instead of adding another.
+ *
+ * Deliberately the same shape lib/pr-comment.mjs matches with its MARKER_RE. Two markers for one
+ * comment means the day anything switches between them, every open pull request silently grows a
+ * second verdict that nobody edits again.
+ */
+export const markerFor = (suite) => `<!-- smolanalytics-run:${slug(suite)} -->`;
 
-export function commentBody(results, { url = "", suite = "tests", runUrl = "" } = {}) {
+export function commentBody(results, { url = "", suite = "tests", runUrl = "", problems = [] } = {}) {
   const s = summarize(results);
   const head = [`${s.passed} passed`];
   if (s.failed) head.unshift(`${s.failed} failed`);
   if (s.errored) head.push(`${s.errored} could not run`);
   if (s.stale) head.push(`${s.stale} stale`);
+  // A folder we could not open produces no row, so without this the comment reads "3 passed" about
+  // a suite that is four files long. On CI this comment IS the report — the terminal output nobody
+  // opens is not a second chance to mention it.
+  if (problems.length) head.push(`${problems.length} not read`);
 
   const rows = [...results].sort((a, b) => RANK[a.status] - RANK[b.status] || a.name.localeCompare(b.name));
   const how = (r) =>
     r.status === "errored" ? "did not run"
     : r.refreshed ? "recording was stale, agent re-checked"
+    // A stale row carries mode "replay" because a replay is what noticed. Saying "replayed, no
+    // model calls" beside it reads as "ran fine, cost nothing", when in fact nothing was verified.
+    : r.status === "stale" ? "recording stopped fitting"
     : r.mode === "replay" ? "replayed, no model calls"
     : r.mode === "agent" ? "agent"
     : "";
 
   const out = [
     markerFor(suite),
-    `**${head.join(" · ")}** in ${secs(s.ms)}`,
+    secs(s.ms) ? `**${head.join(" · ")}** in ${secs(s.ms)}` : `**${head.join(" · ")}**`,
     "",
-    url ? `Against \`${url}\`${runUrl ? ` · [run log](${runUrl})` : ""}` : "",
+    url ? `Against ${code(url)}${runUrl ? ` · [run log](${runUrl})` : ""}` : "",
     "",
     "| | test | how | time |",
     "| --- | --- | --- | --- |",
@@ -375,7 +493,11 @@ export function commentBody(results, { url = "", suite = "tests", runUrl = "" } 
   // cell truncates it and the person reading has not been watching the browser.
   for (const r of rows) {
     if (r.status !== "failed" && r.status !== "errored" && r.status !== "stale") continue;
-    out.push("", `**${escapeCell(r.name)}** — \`${r.file}\``, "", `> ${(r.reason || "no detail was recorded").replace(/\n+/g, " ")}`);
+    out.push("", `**${escapeCell(r.name)}** — ${code(r.file)}`, "", `> ${quote(r.reason || "no detail was recorded")}`);
+  }
+
+  for (const p of problems) {
+    out.push("", "**Part of the suite was not read.** This is the test runner, not your application.", "", `> ${quote(p)}`);
   }
 
   const notes = [];
@@ -386,10 +508,56 @@ export function commentBody(results, { url = "", suite = "tests", runUrl = "" } 
   if (s.errored) notes.push("Errors are this runner, not your app.");
   if (notes.length) out.push("", "---", "", `<sub>${notes.join(" ")}</sub>`);
 
-  return out.filter((l) => l !== null).join("\n").replace(/\n{3,}/g, "\n\n") + "\n";
+  const body = out.filter((l) => l !== null).join("\n").replace(/\n{3,}/g, "\n\n") + "\n";
+  if (body.length <= BODY_LIMIT) return body;
+  // Cut on a line boundary so the trim never lands inside a table row or a blockquote, and say so:
+  // a report that is silently missing its tail is worse than one that admits it.
+  const cut = body.slice(0, BODY_LIMIT);
+  const whole = cut.slice(0, cut.lastIndexOf("\n") + 1) || cut;
+  return `${whole}\n_Trimmed to fit GitHub's comment limit. The whole run is in the job log._\n`;
 }
 
-const escapeCell = (s) => String(s).replace(/\|/g, "\\|").replace(/\n+/g, " ");
+/**
+ * A test's name is a markdown heading a customer wrote, rendered into a table cell we built.
+ *
+ * `<details>` in a heading collapsed every row under it, so those tests vanished from the table
+ * while still being counted in the headline above it. `**` broke out of its cell. A `|` was already
+ * escaped; the others were not, and they are just as ordinary in a heading as a pipe is.
+ */
+const escapeCell = (s) =>
+  String(s)
+    .replace(/\r?\n+/g, " ")
+    .replace(/</g, "&lt;")
+    .replace(/([|*_`[\]\\])/g, "\\$1");
+
+/** A code span whose fence outlives any backtick run inside it — a preview URL is not our text. */
+function code(s) {
+  const t = String(s).replace(/\r?\n+/g, " ").trim();
+  if (!t) return "";
+  let longest = 0;
+  for (const m of t.matchAll(/`+/g)) longest = Math.max(longest, m[0].length);
+  const fence = "`".repeat(longest + 1);
+  const pad = longest || /^`|`$/.test(t) ? " " : "";
+  return `${fence}${pad}${t}${pad}${fence}`;
+}
+
+/**
+ * Prose we quote back, with its structure defanged and its words left alone.
+ *
+ * Only `<` is escaped: the reason IS the bug report, and mangling its asterisks would cost more
+ * than a stray italic. Truncated per reason so that one stack trace pasted into a verdict cannot
+ * spend the whole comment's budget and push the other tests' reasons out of the report.
+ */
+const quote = (s) => {
+  const t = String(s).replace(/\r?\n+/g, " ").replace(/</g, "&lt;").trim();
+  return t.length <= REASON_LIMIT ? t : `${t.slice(0, REASON_LIMIT).trimEnd()}… (truncated)`;
+};
+
+// GitHub rejects a comment body over 65,536 characters with a 422, which loses the WHOLE report
+// rather than its tail — on exactly the run where the most went wrong. Measured: 60 failing tests
+// with an ordinary agent verdict each came to 140,053 characters.
+const BODY_LIMIT = 65_000;
+const REASON_LIMIT = 4_000;
 
 /** Which pull request we are on. Actions states this three different ways depending on the event. */
 export function prNumber(env, readFile = (p) => readFileSync(p, "utf8")) {
@@ -492,6 +660,9 @@ export async function suiteCmd({
   }
 
   let tests = [];
+  // Reading the folder went wrong somewhere. Never a verdict about the app: it is printed as ours
+  // and it holds the exit code at 2, below the 1 that means the application is broken.
+  let problems = [];
   if (suite) {
     const found = discoverImpl(suite, plans);
     if (found.missing) {
@@ -499,7 +670,15 @@ export async function suiteCmd({
       log(C.dim("  --suite points at a folder of .md files, one sentence per test. See templates/example-test.md."));
       return 2;
     }
+    for (const n of found.notes || []) log(C.y(`\n${n}`));
+    for (const e of found.errors || []) log(C.y(`\n${e}`));
+    problems = found.errors || [];
     tests = found.tests;
+    if (problems.length && !tests.length) {
+      // Zero tests and a folder we could not open is the one case that must not print "no tests
+      // found", which reads like the folder is empty when it is only shut.
+      return 2;
+    }
     if (!tests.length) {
       log(`\n${C.y(`no tests found in ${suite}`)}`);
       log(C.dim("  A test is a markdown heading and one sentence under it. An empty folder is not a passing suite."));
@@ -536,15 +715,21 @@ export async function suiteCmd({
   if (s.replayed) log(C.dim(`${s.replayed} replayed from a recording, with no model calls.`));
   for (const r of results.filter((r) => r.status === "failed")) log(`  ${C.r("fail")} ${r.name} ${C.dim(`· ${r.file}`)}`);
   for (const r of results.filter((r) => r.status === "stale")) log(`  ${C.y("stale")} ${r.name} ${C.dim("· not a failure, the recording stopped fitting")}`);
+  // Named, like the other two. "2 could not run" with no names is unactionable in a suite of
+  // twenty, and errored is the status whose reason is the one thing the reader can act on.
+  for (const r of results.filter((r) => r.status === "errored")) log(`  ${C.y("error")} ${r.name} ${C.dim(`· ${r.reason}`)}`);
 
   if (comment) {
     const runUrl = env.GITHUB_RUN_ID && env.GITHUB_REPOSITORY
       ? `${(env.GITHUB_SERVER_URL || "https://github.com").replace(/\/+$/, "")}/${env.GITHUB_REPOSITORY}/actions/runs/${env.GITHUB_RUN_ID}`
       : "";
     const key = suite || "test";
-    const posted = await postCommentImpl({ body: commentBody(results, { url, suite: key, runUrl }), marker: markerFor(key), env });
+    const posted = await postCommentImpl({ body: commentBody(results, { url, suite: key, runUrl, problems }), marker: markerFor(key), env });
     log(posted.posted ? C.dim(`  ${posted.updated ? "updated" : "posted"} the pull request comment.`) : C.dim(`  no comment posted: ${posted.reason}`));
   }
 
-  return exitCode(results);
+  // A real bug still outranks our own problem: exit 1 stays 1. Anything else with an unreadable
+  // file in it is 2, because part of the folder was never checked and 0 would call that all good.
+  const code = exitCode(results);
+  return code === 1 ? 1 : problems.length ? 2 : code;
 }

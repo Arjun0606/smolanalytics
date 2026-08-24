@@ -7,6 +7,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import {
   parseSuite,
+  frontmatter,
   testDepth,
   slug,
   discover,
@@ -266,6 +267,9 @@ describe("the pull request comment", () => {
   test("it carries a marker so the next push edits it instead of adding another", () => {
     assert.ok(body.startsWith(markerFor("tests/")));
     assert.equal(markerFor("tests/"), markerFor("tests"), "a trailing slash must not orphan the previous comment");
+    // lib/pr-comment.mjs looks for its own comments with this pattern. If the two ever disagree,
+    // whichever one runs second posts a duplicate instead of editing.
+    assert.match(markerFor("tests/"), /<!--\s*smolanalytics-run(?::[A-Za-z0-9._-]+)?\s*-->/);
   });
 
   test("the failure is at the top and its full text is in the body", () => {
@@ -390,4 +394,230 @@ test("a file with no frontmatter still works, and CRLF does not break it", () =>
   const [b] = parseSuite("/x/b.md", "---\r\ntitle: Windows\r\n---\r\n\r\nDo it.\r\n");
   assert.equal(b.name, "Windows");
   assert.equal(b.test, "Do it.");
+});
+
+// ---- what a real folder of markdown actually contains -------------------------------------------
+
+describe("markdown people actually write", () => {
+  test("a byte-order mark does not delete the first test in the file", () => {
+    // VS Code on Windows and Visual Studio both write UTF-8 with a BOM by default. The BOM sits in
+    // front of the first `#`, that heading stops being a heading, and the test under it is dropped
+    // with no message at all: a green suite silently one test lighter than the folder.
+    const src = "# A shopper can pay\nClick Buy.\n\n# The cart survives a reload\nReload it.\n";
+    assert.deepEqual(
+      parseSuite("t/a.md", "﻿" + src).map((t) => t.name),
+      parseSuite("t/a.md", src).map((t) => t.name),
+    );
+  });
+
+  test("a thematic break is not part of the sentence", () => {
+    // `---` between two tests is the most ordinary thing in a markdown file. Folded into the body it
+    // is handed to the agent as part of what to look for on the page.
+    const [a, b] = parseSuite("t/a.md", "## A shopper can pay\nClick Buy.\n\n---\n\n## The cart survives a reload\nReload it.\n");
+    assert.equal(a.test, "Click Buy.");
+    assert.equal(b.test, "Reload it.");
+    assert.equal(parseSuite("t/a.md", "## T\nDo it.\n\n***\n")[0].test, "Do it.");
+    assert.equal(parseSuite("t/a.md", "## T\nDo it.\n\n___\n")[0].test, "Do it.");
+  });
+
+  test("a leading --- that swallowed a heading is reported, never silently dropped", () => {
+    // A file opening with a horizontal rule and carrying another one later is indistinguishable
+    // from a closed frontmatter block, so everything between them is removed as metadata. Here that
+    // is a whole test. A test you believe is running and is not is worse than one you know is gone.
+    const notes = [];
+    const tests = parseSuite("t/a.md", "---\n\n# A shopper can pay\nClick Buy.\n\n---\n\n# The cart survives\nReload it.\n", (n) => notes.push(n));
+    assert.equal(tests.length, 1, "one test really did disappear");
+    assert.equal(notes.length, 1, notes.join(" "));
+    assert.match(notes[0], /did not run/);
+    assert.match(notes[0], /t\/a\.md/);
+  });
+
+  test("frontmatter holding a list or a comment is still frontmatter", () => {
+    // Refusing to trust a closed block unless every line is `key: value` would fold real metadata
+    // back into the sentence — the exact failure stripping frontmatter exists to prevent.
+    const notes = [];
+    const [t] = parseSuite("t/a.md", "---\ntitle: Checkout\n# owned by payments\ntags:\n  - smoke\n  - slow\n---\nClick Buy.\n", (n) => notes.push(n));
+    assert.equal(t.name, "Checkout");
+    assert.equal(t.test, "Click Buy.");
+    assert.deepEqual(notes, [], "nothing was lost, so nothing to report");
+  });
+
+  test("an empty frontmatter block leaves no delimiter behind", () => {
+    // `---` on two consecutive lines is a real, if pointless, frontmatter block. frontmatter() is
+    // exported, so a caller other than parseSuite must not get a delimiter handed back as body.
+    assert.deepEqual(frontmatter("---\n---\nBody.\n").body, "Body.\n");
+    assert.deepEqual(frontmatter("---\n---\nBody.\n").meta, {});
+  });
+
+  test("a rule in a file with no headings is not part of the one sentence it holds", () => {
+    // The single-sentence file is the shape a first-time user writes. A `---` under the sentence is
+    // handed to the agent as something to look for on the page.
+    assert.equal(parseSuite("t/sign-up.md", "A new email address can create an account.\n\n---\n")[0].test,
+      "A new email address can create an account.");
+  });
+
+  test("a frontmatter block that is never closed does not reach the agent, and says so", () => {
+    // The closing `---` is the easiest thing in the file to forget. Left folded in, the agent is
+    // told to go and find `title: Checkout criticality: critical` on the page, and the name the
+    // person wrote is thrown away for the filename.
+    const notes = [];
+    const [t] = parseSuite("t/checkout.md", "---\ntitle: Checkout\ncriticality: critical\n\nClick Buy.\n", (n) => notes.push(n));
+    assert.equal(t.test, "Click Buy.");
+    assert.equal(t.name, "Checkout");
+    assert.equal(notes.length, 1);
+    assert.match(notes[0], /t\/checkout\.md/);
+    assert.match(notes[0], /never closed/i);
+  });
+});
+
+describe("a folder we cannot read is our problem, not a failing app", () => {
+  test("an unreadable file is collected, never thrown", () => {
+    // Thrown, this reaches the CLI's last-resort catch, which prints a red `failed` and exits 1.
+    // Exit 1 is the code reserved for "the application is broken". A permissions problem on the
+    // runner would redden the build with a bug report about the customer's app.
+    const { tests, errors } = discover("tests", ".rec", {
+      exists: () => true,
+      isDir: (p) => p === "tests",
+      list: () => [{ name: "a.md", dir: false }, { name: "b.md", dir: false }],
+      read: (p) => {
+        if (p.endsWith("a.md")) throw Object.assign(new Error("EACCES: permission denied, open 'tests/a.md'"), { code: "EACCES" });
+        return "## Buy\nbuy it.\n";
+      },
+    });
+    assert.equal(errors.length, 1);
+    assert.match(errors[0], /tests[/\\]a\.md/);
+    assert.match(errors[0], /permission denied/);
+    assert.equal(tests.length, 1, "the readable file still produced its test");
+  });
+
+  test("an unreadable subdirectory is collected, never thrown", () => {
+    const { tests, errors } = discover("tests", ".rec", {
+      exists: () => true,
+      isDir: (p) => !p.endsWith(".md"),
+      list: (p) => {
+        if (p !== "tests") throw Object.assign(new Error("EACCES: permission denied, scandir 'tests/locked'"), { code: "EACCES" });
+        return [{ name: "a.md", dir: false }, { name: "locked", dir: true }];
+      },
+      read: () => "## Buy\nbuy it.\n",
+    });
+    assert.equal(errors.length, 1);
+    assert.match(errors[0], /locked/);
+    assert.equal(tests.length, 1);
+  });
+
+  test("the run says which tests could not run, and exits 2, not 1", async () => {
+    const lines = [];
+    const code = await suiteCmd({
+      suite: "tests", url: "https://x.test", log: (l) => lines.push(String(l)), env: {},
+      discoverImpl: () => ({ tests: [{ file: "tests/a.md", name: "A shopper can pay", test: "buy", id: "a", planPath: ".rec/a.json" }], missing: "", errors: [], notes: [] }),
+      runSuiteImpl: async ({ tests }) => tests.map((t) => ({ ...t, status: "errored", mode: "agent", ms: 5, reason: "No browser is installed. This is the test runner, not your application." })),
+    });
+    assert.equal(code, 2, "our runner failing is never exit 1");
+    const out = lines.join("\n");
+    // "1 could not run" with no name is unactionable in a suite of twenty. Failed and stale are
+    // both named here; errored was the only status the reader could not act on.
+    assert.match(out, /A shopper can pay/);
+    assert.match(out, /not your application/);
+    assert.ok(!/\bfail\b/i.test(out.split("\n").filter((l) => l.includes("A shopper can pay")).join(" ")), out);
+  });
+
+  test("a note about a file we did read reaches the terminal", async () => {
+    const lines = [];
+    await suiteCmd({
+      suite: "tests", url: "https://x.test", log: (l) => lines.push(String(l)), env: { ANTHROPIC_API_KEY: "k" },
+      discoverImpl: () => ({
+        tests: [{ file: "tests/a.md", name: "A shopper can pay", test: "buy", id: "a", planPath: ".rec/a.json" }],
+        missing: "", errors: [], notes: ["tests/a.md: the frontmatter block at the top is never closed."],
+      }),
+      runSuiteImpl: async ({ tests }) => tests.map((t) => ({ ...t, status: "passed", mode: "replay", ms: 1, reason: "ok" })),
+    });
+    // A note nobody prints is a note nobody acts on, and this one names a file that will keep
+    // running under the wrong name until someone fixes the delimiter.
+    assert.match(lines.join("\n"), /never closed/);
+  });
+
+  test("a folder that could not be read stops the run instead of reporting a green suite", async () => {
+    const lines = [];
+    let ran = false;
+    const code = await suiteCmd({
+      suite: "tests", url: "https://x.test", log: (l) => lines.push(String(l)), env: {},
+      discoverImpl: () => ({ tests: [], missing: "", errors: ["tests/locked could not be read: EACCES: permission denied"], notes: [] }),
+      runSuiteImpl: async () => { ran = true; return []; },
+    });
+    assert.equal(code, 2);
+    assert.equal(ran, false);
+    assert.match(lines.join("\n"), /could not be read/);
+    // "no tests found" reads as "the folder is empty". It was not empty, it was shut, and those
+    // are two completely different things to go and do something about.
+    assert.doesNotMatch(lines.join("\n"), /no tests found/);
+  });
+});
+
+describe("the exit code when part of the folder was never read", () => {
+  test("passing tests do not turn a folder we could not read into a green run", async () => {
+    // The worst shape this can take: nine tests pass, a tenth folder was locked, and exit 0 reports
+    // "all good" about a part of the suite nobody looked at.
+    const code = await suiteCmd({
+      suite: "tests", url: "https://x.test", log: () => {}, env: { ANTHROPIC_API_KEY: "k" },
+      discoverImpl: () => ({
+        tests: [{ file: "tests/a.md", name: "A shopper can pay", test: "buy", id: "a", planPath: ".rec/a.json" }],
+        missing: "", errors: ["tests/locked could not be read: EACCES"], notes: [],
+      }),
+      runSuiteImpl: async ({ tests }) => tests.map((t) => ({ ...t, status: "passed", mode: "replay", ms: 700, reason: "ok" })),
+    });
+    assert.equal(code, 2);
+  });
+
+  test("a real bug still outranks a folder we could not read", async () => {
+    const code = await suiteCmd({
+      suite: "tests", url: "https://x.test", log: () => {}, env: { ANTHROPIC_API_KEY: "k" },
+      discoverImpl: () => ({
+        tests: [{ file: "tests/a.md", name: "A shopper can pay", test: "buy", id: "a", planPath: ".rec/a.json" }],
+        missing: "", errors: ["tests/locked could not be read: EACCES"], notes: [],
+      }),
+      runSuiteImpl: async ({ tests }) => tests.map((t) => ({ ...t, status: "failed", mode: "agent", ms: 700, reason: "the button did nothing" })),
+    });
+    assert.equal(code, 1, "exit 1 is the app being broken, and that is still the headline");
+  });
+});
+
+describe("the comment never overstates what happened", () => {
+  test("a stale row does not claim the recording replayed", () => {
+    // `replayed, no model calls` beside `stale` reads as "ran fine, cost nothing". The recording
+    // stopped fitting; nothing was verified.
+    const b = commentBody([{ name: "An empty cart says so", file: "t/cart.md", status: "stale", mode: "replay", ms: 1200, reason: "The recorded run no longer fits this app." }], {});
+    const row = b.split("\n").find((l) => l.includes("An empty cart says so"));
+    assert.ok(!/no model calls/.test(row), row);
+    assert.ok(!/fail/i.test(row), row);
+    assert.match(row, /stopped fitting/);
+  });
+
+  test("a folder that was never read is on the pull request, not only in a log nobody opens", async () => {
+    const b = commentBody([{ name: "x", file: "f.md", status: "passed", mode: "replay", ms: 700 }],
+      { problems: ["tests/locked could not be read: EACCES: permission denied"] });
+    // "1 passed" alone, about a suite that is two folders long, is the tool reporting all-clear on
+    // something it never looked at.
+    assert.match(b, /1 not read/);
+    assert.match(b, /tests\/locked/);
+    assert.match(b, /not your application/);
+    assert.ok(!/fail/i.test(b.split("\n").filter((l) => /locked|not read/.test(l)).join(" ")));
+
+    let sent = "";
+    await suiteCmd({
+      suite: "tests", url: "https://x.test", comment: true, log: () => {}, env: { ANTHROPIC_API_KEY: "k" },
+      discoverImpl: () => ({
+        tests: [{ file: "tests/a.md", name: "A shopper can pay", test: "buy", id: "a", planPath: ".rec/a.json" }],
+        missing: "", errors: ["tests/locked could not be read: EACCES"], notes: [],
+      }),
+      runSuiteImpl: async ({ tests }) => tests.map((t) => ({ ...t, status: "passed", mode: "replay", ms: 1, reason: "ok" })),
+      postCommentImpl: async ({ body }) => { sent = body; return { posted: true }; },
+    });
+    assert.match(sent, /tests\/locked/, "suiteCmd dropped it on the way to the comment");
+  });
+
+  test("a missing duration renders as nothing, never as NaN", () => {
+    // One NaN in a report makes a reader distrust the verdict printed next to it.
+    const b = commentBody([{ name: "x", file: "f.md", status: "passed", mode: "replay" }], {});
+    assert.ok(!/NaN/.test(b), b);
+  });
 });

@@ -69,3 +69,63 @@ describe("what gets recorded", () => {
     assert.deepEqual(plan.steps[1], { kind: "fill", role: "textbox", name: "Email", text: "a@b.test" });
   });
 });
+
+// A RECORDING IS UNTRUSTED INPUT.
+//
+// compile() refuses to WRITE an empty plan, and that guard was read as covering the whole risk. It
+// does not: every recording this product replays in CI is one it READ back, out of an
+// actions/cache entry that survived a cancelled job, a rebase, a hand-edit, or a version of this
+// CLI that wrote a different shape. Measured against a real Chromium before this existed:
+//
+//   {"startUrl":"…","steps":[]}       → "PASS — replayed 0 steps, no model calls." exit 0
+//   {"startUrl":"…","steps":"nope"}   → "PASS — replayed 4 steps, no model calls." exit 0
+//   {"startUrl":"…","steps":[{"kind":"cl   → exit 2, forever: the corrupt file is never replaced
+//
+// The first two are the worst artefact this codebase can produce — a green verdict on a pull
+// request nobody tested. The third reddens a healthy app until somebody clears a cache by hand.
+import { readPlan } from "../lib/test.mjs";
+
+describe("a recording is only believed if it can be replayed", () => {
+  const good = { startUrl: "https://x.test/", steps: [{ kind: "click", role: "button", name: "Buy" }] };
+
+  test("a real recording is used", () => {
+    assert.deepEqual(readPlan(JSON.stringify(good)).plan, good);
+  });
+
+  test("no steps is not a passing test, it is no recording", () => {
+    const r = readPlan(JSON.stringify({ startUrl: "https://x.test/", steps: [] }));
+    assert.equal(r.plan, null);
+    assert.match(r.problem, /no steps/i);
+  });
+
+  test("steps that are not a list cannot be counted as steps", () => {
+    // `"nope".length` is 4, and four unrecognised steps ran as four no-ops and reported PASS.
+    assert.equal(readPlan(JSON.stringify({ startUrl: "https://x.test/", steps: "nope" })).plan, null);
+  });
+
+  test("a step missing what its kind needs is not replayable", () => {
+    // getByRole(undefined) throws inside the try and reads as stale — a rename that never happened.
+    for (const step of [{ kind: "click", role: "button" }, { kind: "fill", role: "textbox", name: "Email" }, { kind: "goto" }, { kind: "press" }, { kind: "swim", why: "?" }]) {
+      const r = readPlan(JSON.stringify({ startUrl: "https://x.test/", steps: [step] }));
+      assert.equal(r.plan, null, JSON.stringify(step));
+      assert.match(r.problem, /step 1/);
+    }
+  });
+
+  test("a truncated file names itself as the problem instead of ending the run", () => {
+    const r = readPlan('{"startUrl":"https://x.test/","steps":[{"kind":"cl');
+    assert.equal(r.plan, null);
+    assert.match(r.problem, /not valid JSON/i);
+  });
+
+  test("null, a list, a number: none of them is a recording", () => {
+    for (const text of ["null", "[]", "42", '"a"']) assert.equal(readPlan(text).plan, null, text);
+  });
+
+  test("the problem is a sentence about the recording, never about the app", () => {
+    for (const text of ["null", '{"steps":[]}', '{"steps":"nope"}', "{"]) {
+      const { problem } = readPlan(text);
+      assert.ok(!/\bfail/i.test(problem), problem);
+    }
+  });
+});

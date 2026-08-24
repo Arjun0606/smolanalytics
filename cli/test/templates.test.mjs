@@ -178,10 +178,38 @@ describe("the workflow does what the README promises", () => {
   });
 
   test("the recordings are cached, or the economic argument evaporates", () => {
-    const cache = steps.find((s) => String(s?.uses || "").startsWith("actions/cache@"));
-    assert.ok(cache, "no actions/cache step: every CI run would be a fresh agent run");
-    assert.equal(cache.with.path, ".smolanalytics/recordings", "must cache the directory the CLI writes recordings to");
-    assert.match(String(cache.with["restore-keys"]), /smolanalytics-recordings-/, "without restore-keys the cache never hits");
+    const restore = steps.find((s) => String(s?.uses || "").startsWith("actions/cache/restore@"));
+    assert.ok(restore, "nothing restores the recordings: every CI run would be a fresh agent run");
+    assert.equal(restore.with.path, ".smolanalytics/recordings", "must cache the directory the CLI writes recordings to");
+    assert.match(String(restore.with["restore-keys"]), /smolanalytics-recordings-/, "without restore-keys the cache never hits");
+  });
+
+  test("the recordings are saved even when a test fails", () => {
+    // The all-in-one actions/cache saves in a post step declared `post-if: success()`. With
+    // continue-on-error deleted — which this file tells the reader to do — a run with one failing
+    // test would drop every recording the agent repaired in it, and that is the run that repaired
+    // the most. The cache would then quietly stop paying for itself.
+    const save = steps.find((s) => String(s?.uses || "").startsWith("actions/cache/save@"));
+    assert.ok(save, "nothing saves the recordings");
+    assert.equal(save.if, "always()", "a save that only runs on success loses exactly the runs worth saving");
+    assert.equal(save.with.path, ".smolanalytics/recordings");
+    const all = steps.map((s) => String(s?.uses || s?.name || ""));
+    assert.ok(all.indexOf("actions/cache/save@v4") > all.findIndex((u) => u === "e2e" || u.includes("cache/restore")), "the save has to come after the run");
+    assert.ok(!steps.some((s) => /^actions\/cache@/.test(String(s?.uses || ""))), "the all-in-one cache action is the one that does not save on failure");
+  });
+
+  test("it skips the pull requests that cannot be tested, rather than failing them", () => {
+    // Both of these run with an empty ANTHROPIC_API_KEY and a read-only GITHUB_TOKEN, so every test
+    // would error and then the comment would 403. A tool that red-Xs every outside contribution and
+    // every dependency bump is a tool somebody deletes on the Friday.
+    const cond = String(job.if || "").replace(/\s+/g, " ");
+    assert.match(cond, /head\.repo\.full_name == github\.repository/, "a fork's pull request gets no secrets");
+    assert.match(cond, /dependabot\[bot\]/, "Actions withholds repository secrets from dependabot");
+  });
+
+  test("a hung browser cannot bill six hours of somebody's minutes", () => {
+    assert.ok(Number.isInteger(job["timeout-minutes"]), "no job timeout: the Actions default is six hours");
+    assert.ok(job["timeout-minutes"] <= 60, `${job["timeout-minutes"]} minutes is not a safeguard`);
   });
 
   test("every action is pinned", () => {
@@ -196,6 +224,46 @@ describe("the workflow does what the README promises", () => {
     // uncommenting one of them must not have to fix an id to make the run step work.
     const offered = workflow.match(/^\s*#?\s*id: preview$/gm) || [];
     assert.equal(offered.length, 3, "three preview options, one id");
+  });
+});
+
+// The README carries a shortened copy of the same workflow. Two copies of a workflow is one copy
+// too many: the run line already has a drift guard, and so does everything else a reader would be
+// burned by if only one of the two files was updated.
+describe("the README's copy of the workflow is the same workflow", () => {
+  const block = /```yaml\n([\s\S]*?)```/.exec(readme);
+  const doc = block ? parseYaml(block[1]) : null;
+  const rsteps = doc?.jobs?.e2e?.steps || [];
+
+  // `on: pull_request` and `on:\n  pull_request:` are the same trigger; the README uses the short
+  // one because it is a starter block, and comparing them has to know that.
+  const triggers = (d) => {
+    const on = d.on ?? d.true ?? {};
+    return typeof on === "string" ? [on] : Object.keys(on);
+  };
+
+  test("it parses, and triggers and permits the same things", () => {
+    assert.ok(doc, "the README no longer shows a workflow at all");
+    assert.deepEqual(doc.permissions, wf.permissions);
+    assert.deepEqual(triggers(doc), triggers(wf));
+  });
+
+  test("it skips the same pull requests and stops running at the same point", () => {
+    const job2 = doc.jobs.e2e;
+    assert.equal(String(job2.if || "").replace(/\s+/g, " "), String(job.if || "").replace(/\s+/g, " "));
+    assert.equal(job2["timeout-minutes"], job["timeout-minutes"]);
+  });
+
+  test("it restores and saves the recordings the same way", () => {
+    const pick = (list, prefix) => list.find((s) => String(s?.uses || "").startsWith(prefix));
+    for (const prefix of ["actions/cache/restore@", "actions/cache/save@"]) {
+      const mine = pick(rsteps, prefix);
+      const theirs = pick(steps, prefix);
+      assert.ok(mine, `the README's workflow has no ${prefix} step`);
+      assert.equal(mine.with.path, theirs.with.path);
+      assert.equal(String(mine.with.key), String(theirs.with.key));
+    }
+    assert.equal(pick(rsteps, "actions/cache/save@").if, "always()");
   });
 });
 

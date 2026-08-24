@@ -294,6 +294,56 @@ export function rebase(plan, url) {
   return { ...plan, startUrl: url, steps };
 }
 
+/**
+ * A RECORDING IS UNTRUSTED INPUT, and the only thing that may come of a bad one is "no recording".
+ *
+ * compile() refuses to write an empty plan, and that was read as covering the risk. It does not.
+ * Every recording replayed in CI is one we READ BACK — out of an actions/cache entry that outlived
+ * a cancelled job, a hand-edit, a merge, or a version of this CLI that wrote a different shape.
+ * Measured against a real Chromium before this function existed:
+ *
+ *   steps: []       replayed nothing and printed "PASS — replayed 0 steps, no model calls", exit 0.
+ *   steps: "nope"   has .length 4, so four unrecognised steps ran as four no-ops and printed
+ *                   "PASS — replayed 4 steps". A green verdict on a pull request nobody tested is
+ *                   the worst artefact this codebase can produce.
+ *   a truncated file threw out of JSON.parse into the run's catch-all: exit 2 on a healthy app,
+ *                   on every push, until somebody worked out that a cache had to be cleared by
+ *                   hand — because the corrupt file is only ever replaced by a passing agent run,
+ *                   and that path was never reached.
+ *
+ * So: parse it, and prove every step is one replay can actually perform. Anything else returns
+ * plan:null with a sentence about the RECORDING — never a verdict about the app — and the caller
+ * runs the agent, which records over it.
+ */
+const STEP_NEEDS = {
+  click: ["role", "name"],
+  fill: ["role", "name", "text"],
+  press: ["key"],
+  goto: ["url"],
+};
+
+export function readPlan(text) {
+  let raw;
+  try {
+    raw = JSON.parse(String(text));
+  } catch (e) {
+    return { plan: null, problem: `the recording is not valid JSON (${String(e && e.message ? e.message : e).split("\n")[0]}).` };
+  }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { plan: null, problem: "the recording is not an object." };
+  if (!Array.isArray(raw.steps)) return { plan: null, problem: "the recording has no steps list." };
+  if (raw.steps.length === 0) return { plan: null, problem: "the recording has no steps, so replaying it would check nothing." };
+  for (let i = 0; i < raw.steps.length; i++) {
+    const s = raw.steps[i];
+    const need = s && typeof s === "object" ? STEP_NEEDS[s.kind] : undefined;
+    // An unrecognised kind matches none of replay()'s branches, so it would be skipped in silence
+    // and counted as a step that worked. `text` may be "" — clearing a field is a real step.
+    if (!need) return { plan: null, problem: `step ${i + 1} of the recording is not something this version can replay.` };
+    const missing = need.filter((k) => typeof s[k] !== "string" || (k !== "text" && !s[k]));
+    if (missing.length) return { plan: null, problem: `step ${i + 1} of the recording is missing ${missing.join(" and ")}.` };
+  }
+  return { plan: raw, problem: "" };
+}
+
 export async function replay(page, plan) {
   const started = Date.now();
   await page.goto(plan.startUrl, { waitUntil: "domcontentloaded" });
@@ -304,6 +354,9 @@ export async function replay(page, plan) {
       else if (s.kind === "click") await page.getByRole(s.role, { name: s.name, exact: true }).click({ timeout: 10_000 });
       else if (s.kind === "fill") await page.getByRole(s.role, { name: s.name, exact: true }).fill(s.text, { timeout: 10_000 });
       else if (s.kind === "press") await page.keyboard.press(s.key);
+      // readPlan rejects these before we get here; this is for anyone calling replay() directly.
+      // Falling through in silence would count a step nobody performed as a step that worked.
+      else throw new Error(`step ${i + 1} is a ${JSON.stringify(s.kind)}, which this version cannot replay`);
       await page.waitForLoadState("networkidle", { timeout: 3000 }).catch(() => {});
     } catch (e) {
       return { status: "stale", at: i, step: s, detail: String(e && e.message ? e.message : e).split("\n")[0], ms: Date.now() - started };
@@ -366,7 +419,7 @@ function browserCacheDir() {
 
 async function loadPlaywright(log, yes) {
   try {
-    return await import("playwright");
+    return { pw: await import("playwright") };
   } catch {
     /* not resolvable from this file: try the project, then our own cache */
   }
@@ -374,7 +427,7 @@ async function loadPlaywright(log, yes) {
     const entry = resolveFrom(dir, "playwright");
     if (!entry) continue;
     try {
-      return await importPlaywright(entry);
+      return { pw: await importPlaywright(entry) };
     } catch {
       /* a partial install; keep going and reinstall over it */
     }
@@ -387,7 +440,7 @@ async function loadPlaywright(log, yes) {
   log(C.dim(`It goes in ${home}. Nothing is written to your project.`));
   if (!yes && process.stdin.isTTY) {
     log(C.dim("Re-run with --yes to install without asking."));
-    return null;
+    return { pw: null, problem: "Playwright is not installed and this run was not given --yes, so the browser was never fetched." };
   }
   log(C.dim("installing…"));
   try {
@@ -398,12 +451,12 @@ async function loadPlaywright(log, yes) {
     }
   } catch (e) {
     log(C.r(`could not create ${home}: ${e && e.message}`));
-    return null;
+    return { pw: null, problem: `The browser cache ${home} could not be created (${e && e.message}).` };
   }
   const r = spawnSync("npm", ["install", "--silent", "--prefix", home, "playwright"], { stdio: "inherit" });
   if (r.status !== 0) {
     log(C.r(`could not install Playwright into ${home}. Install it yourself with: npm i playwright && npx playwright install chromium`));
-    return null;
+    return { pw: null, problem: `Playwright could not be installed into ${home}. Install it with: npm i playwright && npx playwright install chromium` };
   }
   // Run the copy we just installed, not `npx playwright`, which would download the CLI a second
   // time and can pick a different version than the library we are about to import.
@@ -413,14 +466,14 @@ async function loadPlaywright(log, yes) {
     : spawnSync("npx", ["playwright", "install", "chromium"], { stdio: "inherit" });
   if (install.status !== 0) {
     log(C.r("Playwright installed but Chromium did not. Run: npx playwright install chromium"));
-    return null;
+    return { pw: null, problem: "Playwright installed but Chromium did not. Run: npx playwright install chromium" };
   }
   const entry = resolveFrom(home, "playwright");
   try {
-    return await importPlaywright(entry);
+    return { pw: await importPlaywright(entry) };
   } catch (e) {
     log(C.r(`Playwright installed but could not be loaded: ${e && e.message}`));
-    return null;
+    return { pw: null, problem: `Playwright installed but could not be loaded: ${e && e.message}` };
   }
 }
 
@@ -455,7 +508,7 @@ async function report(run, log, onRun) {
   }
 }
 
-export async function testCmd({ url, test, plan: planPath, headed, maxSteps = 40, yes, log = console.log, onRun }) {
+export async function testCmd({ url, test, plan: planPath, headed, maxSteps = 40, yes, log = console.log, onRun, loadBrowser = loadPlaywright }) {
   if (!url || !test) {
     log(`
 ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No account.
@@ -471,30 +524,57 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
     return 1;
   }
 
-  const pw = await loadPlaywright(log, yes);
-  if (!pw) return 2;
+  const { pw, problem } = await loadBrowser(log, yes);
+  if (!pw) {
+    // REPORTED, not just logged. A suite with no verdict for this test falls back to guessing why
+    // (see noVerdictReason), and on a first CI run it guesses "ANTHROPIC_API_KEY is not set" —
+    // sending someone to add a secret they already have, over a browser that never downloaded.
+    await report({ test, status: "errored", mode: "agent", durationMs: 0, url, reason: `${problem || "The browser could not be started."} This is the test runner, not your application.` }, log, onRun);
+    return 2;
+  }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   const model = process.env.SMOLANALYTICS_MODEL || "claude-opus-5";
 
-  const browser = await pw.chromium.launch({ headless: !headed });
-  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   const started = Date.now();
+  let browser = null;
 
   try {
+    // INSIDE the try. `chromium.launch()` is the single most common way a browser run dies on a CI
+    // runner — "Host system is missing dependencies to run browsers" — and thrown from out here it
+    // went past this function's whole errored/exit-2 contract to the CLI's last-resort catch, which
+    // exits 1. That is the code reserved for the customer's app being broken.
+    browser = await pw.chromium.launch({ headless: !headed });
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     // REPLAY FIRST — the path almost every real run takes, and it calls no model at all.
     if (planPath && existsSync(planPath)) {
-      const plan = rebase(JSON.parse(readFileSync(planPath, "utf8")), url);
-      log(C.dim(`replaying ${plan.steps.length} recorded steps (no model)…`));
-      const r = await replay(page, plan);
-      if (r.status === "passed") {
-        log(`\n${C.g("PASS")}${C.dim(` — replayed ${r.steps} steps in ${(r.ms / 1000).toFixed(1)}s, no model calls.`)}`);
-        await report({ test, status: "passed", mode: "replay", durationMs: r.ms, url, reason: "Replayed the recorded run; every step still worked." }, log, onRun);
-        await browser.close();
-        return 0;
+      // A recording we cannot read or cannot replay is NO recording — not a pass, and not an error
+      // either. Saying so and running the agent is the only outcome that ends with a correct
+      // verdict and a recording that works next time. See readPlan for what this survived.
+      let text = "";
+      let problem = "";
+      try {
+        text = readFileSync(planPath, "utf8");
+      } catch (e) {
+        problem = `it could not be read (${e && e.message ? e.message : e}).`;
       }
-      log(`\n${C.y(stalenessNote(r))}\n`);
-      await report({ test, status: "stale", mode: "replay", durationMs: r.ms, url, reason: stalenessNote(r) }, log, onRun);
+      const { plan: recorded, problem: bad } = problem ? { plan: null, problem } : readPlan(text);
+      if (!recorded) {
+        log(C.y(`Ignoring ${planPath}: ${bad}`));
+        log(C.dim("  Running the agent instead, which records over it."));
+      } else {
+        const plan = rebase(recorded, url);
+        log(C.dim(`replaying ${plan.steps.length} recorded steps (no model)…`));
+        const r = await replay(page, plan);
+        if (r.status === "passed") {
+          log(`\n${C.g("PASS")}${C.dim(` — replayed ${r.steps} steps in ${(r.ms / 1000).toFixed(1)}s, no model calls.`)}`);
+          await report({ test, status: "passed", mode: "replay", durationMs: r.ms, url, reason: "Replayed the recorded run; every step still worked." }, log, onRun);
+          await browser.close();
+          return 0;
+        }
+        log(`\n${C.y(stalenessNote(r))}\n`);
+        await report({ test, status: "stale", mode: "replay", durationMs: r.ms, url, reason: stalenessNote(r) }, log, onRun);
+      }
     }
 
     if (!apiKey) {
@@ -570,15 +650,21 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
       messages.push({ role: "user", content: results });
     }
 
-    // Out of budget is explicitly NOT a pass: an unfinished test observed nothing.
+    // Out of budget is not a pass, and it is not a bug report either. An unfinished test observed
+    // NOTHING, so `failed`/1 would put a red X on a pull request and a "the app did not do what the
+    // sentence describes" next to a claim nobody made. The old copy even guessed the cause aloud
+    // ("usually the app did not do what the test expected"), which is a finding we did not observe.
+    // Our step budget is our limit: errored/2, which is never green and never blames their app.
     const ms = Date.now() - started;
-    log(`\n${C.r("FAIL")} ${C.dim(`· ${maxSteps} steps · ${(ms / 1000).toFixed(1)}s`)}`);
-    log(`The test did not reach a verdict within ${maxSteps} steps. Usually the app did not do what the test expected and the agent kept looking, or the test describes more than one scenario and should be split.\n`);
-    await report({ test, status: "failed", mode: "agent", durationMs: ms, url, reason: `No verdict within ${maxSteps} steps.` }, log, onRun);
+    const why = `The agent used all ${maxSteps} steps without reaching a verdict, so nothing was observed. This is the test runner, not your application: raise --max-steps, or split a test that describes more than one scenario.`;
+    log(`\n${C.y("ERROR")} ${C.dim(`· ${maxSteps} steps · ${(ms / 1000).toFixed(1)}s`)}`);
+    log(`${why}\n`);
+    await report({ test, status: "errored", mode: "agent", durationMs: ms, url, reason: why }, log, onRun);
     await browser.close();
-    return 1;
+    return 2;
   } catch (e) {
-    await browser.close().catch(() => {});
+    // browser may be null: launch itself is what usually fails.
+    await browser?.close().catch(() => {});
     log(C.r(`\nthe run could not complete: ${e && e.message ? e.message : e}`));
     await report({ test, status: "errored", mode: "agent", durationMs: Date.now() - started, url, reason: `The run could not complete: ${e && e.message}. This is the test runner, not your application.` }, log, onRun);
     // Exit 2, not 1: the test did not fail, the runner did. A CI gate must tell those apart, or an

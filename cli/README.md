@@ -73,8 +73,9 @@ PASS · 2 steps · 11.4s
 The pricing page lists $29 a month under Pro.
 ```
 
-Driving a browser needs Playwright and Chromium, so those are fetched the first time you run this
-one command, into `~/.cache/smolanalytics`. Nothing is written to your project. Every other command
+Driving a browser needs Playwright and Chromium, so both are fetched the first time you run this
+one command: Playwright into `~/.cache/smolanalytics`, Chromium into the browser cache Playwright
+keeps for every project on the machine. Nothing is written to your project. Every other command
 here still has zero dependencies.
 
 **The second run is free.** Add `--plan` and a passing run is recorded, then replayed with no model
@@ -97,17 +98,17 @@ line for that product at the price the product page listed.
 npx smolanalytics test --suite tests/ --url https://yourapp.com
 ```
 
-Each test gets its own recording under `.smolanalytics/recordings`, named after its heading. Rename
-a heading and that test is recorded again from scratch; edit the sentence and the next run checks
-the new sentence.
+Each test gets its own recording under `.smolanalytics/recordings`, named after the file and the
+heading it came from. Rename a heading and that test is recorded again from scratch; edit the
+sentence and the next run checks the new sentence.
 
-`templates/example-test.md` in this package is a working checkout suite to start from.
+This package ships `templates/example-test.md`, a working checkout suite to start from.
 
 ### On every pull request
 
 Tests run on your own GitHub Actions runner, against the preview URL your host already builds, and
-the verdicts are posted as one comment that is edited in place on every push. Copy
-`templates/github-action.yml` into `.github/workflows/`, or start here:
+the verdicts are posted as one comment that is edited in place on every push. Paste this into
+`.github/workflows/e2e.yml`:
 
 ```yaml
 name: e2e
@@ -120,6 +121,11 @@ permissions:
 jobs:
   e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Neither of these gets your secrets, so both would error every test and then 403 the comment.
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository
+      && github.actor != 'dependabot[bot]'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -134,7 +140,7 @@ jobs:
           max_timeout: 600
 
       # Without this every run is an agent run, and the replay never pays off.
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
         with:
           path: .smolanalytics/recordings
           key: smolanalytics-recordings-${{ github.sha }}
@@ -148,10 +154,19 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx smolanalytics@latest test --suite tests/ --url "$URL" --comment
+
+      # Its own step, because actions/cache only saves when the job succeeds — and the run that
+      # repaired the most recordings is the one with a failing test in it.
+      - if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .smolanalytics/recordings
+          key: smolanalytics-recordings-${{ github.sha }}
 ```
 
-The commented version in `templates/github-action.yml` also carries the other two ways to get a
-URL: pass one straight in for staging, or build and serve a static site in the job.
+The same file ships in this package as `templates/github-action.yml`, with comments and with the
+other two ways to get a URL: pass one straight in for staging, or build and serve a static site in
+the job.
 
 `GITHUB_TOKEN` is the one Actions gives every job for free, which is why the comment needs no
 GitHub App and no install on your other repositories. `continue-on-error` is there on purpose: a

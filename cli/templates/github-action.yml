@@ -35,10 +35,19 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
 
-    # A pull request opened FROM A FORK gets no secrets and a read-only token: ANTHROPIC_API_KEY
-    # would be empty and the comment would 403. Skipping says that plainly. Failing on every
-    # outside contribution is how a new tool gets uninstalled.
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    # A hung browser otherwise runs to the six-hour default and bills six hours of somebody's
+    # minutes for a test that was never going to finish. Raise it if your suite is large enough
+    # that a run where every recording woke the agent takes longer than this.
+    timeout-minutes: 30
+
+    # WHO DOES NOT GET SECRETS, and would therefore run every test against an empty key and then
+    # 403 on the comment. Skipping says that plainly; failing on every one of these is how a new
+    # tool gets uninstalled.
+    #   a fork's pull request  — no secrets, read-only token
+    #   dependabot             — same repository, but Actions withholds repository secrets from it
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository
+      && github.actor != 'dependabot[bot]'
 
     steps:
       - uses: actions/checkout@v4
@@ -79,7 +88,7 @@ jobs:
       #     echo "url=http://localhost:4173" >> "$GITHUB_OUTPUT"
 
       # ----------------------------------------------------------------------------------------
-      # THE RECORDINGS. This step is the economics of the whole tool.
+      # THE RECORDINGS. These two steps are the economics of the whole tool.
       #
       # A passing run is recorded and replayed with no model calls at all — measured at 0.7s for a
       # three-step test. But a CI runner starts empty every time. WITHOUT THIS CACHE every test on
@@ -87,20 +96,20 @@ jobs:
       # agent only wakes when a recording stops fitting the app.
       #
       # The key is per-commit so each run saves a fresh entry; restore-keys takes the newest earlier
-      # one, and a pull request falls back to the cache from the default branch. Recordings that the
-      # agent rewrote during this run are what gets saved, so a repaired recording carries forward.
+      # one, and a pull request falls back to the cache from the default branch.
       # ----------------------------------------------------------------------------------------
-      - name: cache the recordings
-        uses: actions/cache@v4
+      - name: restore the recordings
+        uses: actions/cache/restore@v4
         with:
           path: .smolanalytics/recordings
           key: smolanalytics-recordings-${{ github.sha }}
           restore-keys: |
             smolanalytics-recordings-
 
-      # Chromium is downloaded here each run (about 20 seconds) and deliberately not cached: it
-      # would spend most of this repository's 10 GB cache budget and evict the recordings, which are
-      # the part worth keeping.
+      # Chromium is downloaded here each run and deliberately not cached. A Chromium entry is
+      # hundreds of megabytes against a repository's 10 GB cache allowance, so a handful of runs
+      # would fill it and GitHub would evict the oldest entries — the recordings, which are the
+      # part worth keeping and the part that cannot be re-downloaded.
       - name: e2e
         # WEEK ONE: REPORT, DO NOT BLOCK. A new tool that puts a red X on somebody's pull request
         # before it has earned any trust gets uninstalled instead of read. The comment is still
@@ -115,6 +124,20 @@ jobs:
           # Provided automatically by Actions. This is the whole of the GitHub access this needs.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx smolanalytics@latest test --suite tests/ --url "$URL" --comment
+
+      # SAVED AS ITS OWN STEP, AND `if: always()`.
+      #
+      # The all-in-one actions/cache saves in a post step declared `post-if: success()`. That is
+      # invisible until the day you delete the continue-on-error above — and from that day, a run
+      # with one failing test throws away every recording the agent repaired in it. The failing run
+      # is the run that re-recorded the most, so the next push pays the agent for all of them again,
+      # and the cache quietly stops paying for itself.
+      - name: save the recordings
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .smolanalytics/recordings
+          key: smolanalytics-recordings-${{ github.sha }}
 
 # EXIT CODES, if you gate on this later:
 #   0  every test passed
