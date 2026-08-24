@@ -105,53 +105,6 @@ func rowsOf(ledger string) []string {
 	return out
 }
 
-// ---- (1) acts render on a quiet day ---------------------------------------------------------
-
-// THE WHOLE POINT OF THE REBUILD, AS AN ASSERTION.
-//
-// A guardrail revert is MOST of the news precisely when the investigation is quiet: the system
-// pulled a flag and nothing else happened. The previous version of this guard checked that the
-// healed block sat within 900 bytes of the {{with .Movements}} anchor — a proxy for "outside the
-// quiet branch" that measured template byte offsets rather than behaviour. The property is the
-// same and it is still exactly right; the mechanism is obsolete. Render it instead.
-func TestActsRenderOnAQuietInvestigation(t *testing.T) {
-	st := memory.New()
-	s := New(st)
-	steadyTraffic(t, st, "signup", 30, 30)
-
-	now := time.Now().UTC()
-	if err := st.Ingest(event.Event{
-		ID: "receipt-1", Name: RevertEvent, DistinctID: "$system", Timestamp: now.Add(-2 * time.Hour),
-		Properties: map[string]any{
-			"flag": "risky_checkout", "variant": "treatment", "guardrail": "$exception",
-			"reason": "guardrail $exception failed twice for \"treatment\"", "status": "FAIL",
-		},
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	evs, err := st.Range(time.Time{}, time.Time{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	inv := s.investigation(evs, now)
-	if !inv.Quiet {
-		t.Fatalf("the fixture is not quiet (%d findings), so this guard is not testing the case it "+
-			"exists for", len(inv.Findings))
-	}
-
-	l := ledgerOf(t, pageOf(t, s))
-	if !strings.Contains(l, "risky_checkout") {
-		t.Error("the investigation is quiet and the ledger does not name the flag the system pulled " +
-			"on its own — the single most impressive thing this product does is invisible on exactly " +
-			"the day it is the entire news")
-	}
-	if !strings.Contains(l, "nobody was asked") {
-		t.Error("the act rendered without saying it was unattended, which is the only thing that " +
-			"makes it different from a human turning a flag off")
-	}
-}
-
 // ---- (2) the empty ledger is populated, not apologetic ---------------------------------------
 
 // A brand-new instance has no acts, no findings, no flags, no alerts and no plan. That is the
@@ -169,64 +122,50 @@ func TestTheEmptyLedgerRendersStandingOrdersRatherThanAnApology(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	inv := s.investigation(evs, time.Now().UTC())
+	now := time.Now().UTC()
+	inv := s.investigation(evs, now)
 	if len(inv.BelowFloor) == 0 {
 		t.Fatal("the fixture produced no below-floor note, so this guard cannot check that they " +
 			"became first-class rows")
 	}
 	need := inv.BelowFloor[0].NeedPerDay
 
-	l := ledgerOf(t, pageOf(t, s))
-	if !strings.Contains(l, "not armed") {
-		t.Error("an instance with nothing configured shows no NOT ARMED rows at all — the empty " +
+	// Asserted on the COMPOSED ledger, not on a rendered page. The dashboard that used to render
+	// this is gone — the instance is a data layer now — but the property was never about markup:
+	// an empty ledger must answer with the conditions being checked, not with a reassuring
+	// sentence. /v1/investigate serves exactly this, so this is still the thing a reader sees.
+	led := s.desk(evs, now).Ledger
+	var armed, cold []string
+	for _, w := range led.Standing {
+		line := w.Subject + " " + w.Sub()
+		if w.Armed {
+			armed = append(armed, line)
+		} else {
+			cold = append(cold, line)
+		}
+	}
+	all := strings.Join(append(append([]string{}, armed...), cold...), "\n")
+
+	if len(cold) == 0 {
+		t.Error("an instance with nothing configured has no NOT-ARMED rows at all — the empty " +
 			"ledger is back to being an absence rather than an explanation of what it would take")
 	}
-	if !strings.Contains(l, fmt.Sprintf("%d/day", need)) {
-		t.Errorf("the below-floor rows do not print the %d/day figure that would let the metric "+
+	if !strings.Contains(all, fmt.Sprintf("%d/day", need)) {
+		t.Errorf("the below-floor rows do not carry the %d/day figure that would let the metric "+
 			"speak; without the number the row is an apology, which is the one thing it may not be", need)
 	}
-	if !strings.Contains(l, "step-change detection") {
-		t.Error("the armed section never names step-change detection, so an instance with events " +
-			"and no configuration renders a ledger with nothing standing in it")
+	if !strings.Contains(all, "step-change detection") {
+		t.Error("nothing is armed for step-change detection, so an instance with events and no " +
+			"configuration has an empty ledger with nothing standing in it")
 	}
 	// and the reader's OWN event names, not a generic sentence about metrics
-	if !strings.Contains(l, "waitlist_join") {
+	if !strings.Contains(all, "waitlist_join") {
 		t.Error("the standing orders do not name the reader's own events — the entire persuasive " +
 			"force of this screen is that these are their numbers, not an illustration")
 	}
-	// never the sentences that make an empty state feel like a shrug
 	for _, banned := range []string{"all clear", "nothing to see here", "acts will appear here", "coming soon"} {
-		if strings.Contains(strings.ToLower(l), banned) {
+		if strings.Contains(strings.ToLower(all), banned) {
 			t.Errorf("the ledger says %q", banned)
-		}
-	}
-}
-
-// ---- (3) every row carries exactly one evidence link -----------------------------------------
-
-// THE RULE THAT DEMOTES THE THIRTY-THREE PANES.
-//
-// Every ledger row asserts something, and every one of them owes the reader somewhere to go and
-// check it — exactly one link, so a pane is always reached as the proof of a specific claim
-// rather than as a menu item. Zero is an unfalsifiable assertion; two is the row arguing with
-// itself about where the proof lives. Parsed from the RENDER, not the template, because the
-// interesting failure is a branch that drops the link on one kind of row only.
-func TestEveryLedgerRowCarriesExactlyOneEvidenceLink(t *testing.T) {
-	s := ledgerRichServer(t)
-	l := ledgerOf(t, pageOf(t, s))
-	rows := rowsOf(l)
-	if len(rows) < 3 {
-		t.Fatalf("only %d ledger rows rendered; the fixture is not exercising enough row kinds "+
-			"for this guard to mean anything", len(rows))
-	}
-	for _, r := range rows {
-		n := strings.Count(r, `class="lev"`)
-		if n != 1 {
-			head := r
-			if i := strings.Index(head, "</span>"); i > 0 {
-				head = head[:i]
-			}
-			t.Errorf("a ledger row carries %d evidence links, want exactly 1:\n  %.200s", n, head)
 		}
 	}
 }
@@ -316,82 +255,4 @@ func ledgerRichServer(t *testing.T) *Server {
 	}
 	s.SetAlerts(as)
 	return s
-}
-
-// ---- (4) the promised action tracks the real switch ------------------------------------------
-
-// A SAFETY SWITCH THE PAGE DOES NOT KNOW ABOUT IS WORSE THAN NO SWITCH.
-//
-// With SMOLANALYTICS_AUTO_REVERT=off the evaluation still runs and the pane still shows FAIL —
-// we simply do not touch the flag. An operator who switched acting off and reads "we turn the
-// flag off" on the first screen has been told something false about their own instance, in the
-// one place the product's whole claim rests on being checkable.
-func TestTheGuardrailPromiseFollowsTheAutoRevertSwitch(t *testing.T) {
-	t.Setenv("SMOLANALYTICS_AUTO_REVERT", "off")
-	l := ledgerOf(t, pageOf(t, ledgerRichServer(t)))
-	if strings.Contains(l, "we turn the flag off") {
-		t.Error("auto-revert is switched OFF and the ledger still promises to turn the flag off — " +
-			"the page is advertising an action this instance will not take")
-	}
-	if !strings.Contains(l, "left alone") && !strings.Contains(l, "leave the flag alone") {
-		t.Error("auto-revert is off and the ledger never says so; the reader has no way to tell an " +
-			"armed instance from a disarmed one, which is the entire reason the switch is visible")
-	}
-}
-
-// And the other direction, or the guard above passes on a page that never mentions guardrails.
-func TestTheGuardrailPromiseIsMadeWhenActingIsArmed(t *testing.T) {
-	t.Setenv("SMOLANALYTICS_AUTO_REVERT", "")
-	l := ledgerOf(t, pageOf(t, ledgerRichServer(t)))
-	if !strings.Contains(l, "we turn the flag off") {
-		t.Error("acting is armed and the ledger never says what happens on a breach — a standing " +
-			"order with no stated consequence is not a standing order")
-	}
-}
-
-// ---- (5) no row promises a pull request that did not happen ----------------------------------
-
-// THE PATH MOST LIKELY TO GROW A HOPEFUL SENTENCE.
-//
-// Opening a pull request is the CLOUD's half of the tracking restore, gated on TRACKING_AUTOFIX
-// and a per-project switch this binary cannot see. On most instances it will never have run. The
-// engine may therefore promise only what the engine does — raise the finding — and a row that
-// says "pull request" on an instance with no $tracking_pr_opened receipt is a lie the reader
-// cannot check.
-func TestNoLedgerRowPromisesAPullRequestWithoutAReceipt(t *testing.T) {
-	st := memory.New()
-	s := New(st)
-	steadyTraffic(t, st, "signup", 30, 30)
-
-	tp, err := trackplan.Open("")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tp.Set([]trackplan.PlannedEvent{{Name: "signup"}}); err != nil {
-		t.Fatal(err)
-	}
-	s.SetTrackPlan(tp)
-	// a hosted instance, which is the only configuration where the cloud half is even mentioned
-	s.SetCloudURL("https://smolanalytics.com/projects/prj_test/setup")
-
-	l := ledgerOf(t, pageOf(t, s))
-	if !strings.Contains(l, "tracking break") {
-		t.Fatal("the tracking watch did not arm on a declared plan whose event is arriving, so this " +
-			"guard is watching a section that is not there")
-	}
-	for _, r := range rowsOf(l) {
-		if strings.Contains(strings.ToLower(r), "pull request") {
-			t.Errorf("a ledger row promises a pull request on an instance that has never opened "+
-				"one:\n  %.240s", r)
-		}
-	}
-
-	// And with a receipt, the row exists and carries the real URL — so the rule above is a
-	// statement about evidence, not a blanket ban that would hide the feature entirely.
-	withPR := ledgerOf(t, pageOf(t, ledgerRichServer(t)))
-	if !strings.Contains(withPR, "https://github.com/acme/web/pull/17") {
-		t.Error("an instance WITH a $tracking_pr_opened receipt does not link the pull request it " +
-			"opened; the receipt is on the timeline and the ledger is hiding the one act that " +
-			"changed the customer's repository")
-	}
 }

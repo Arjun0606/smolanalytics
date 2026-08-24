@@ -503,7 +503,10 @@ func serve(st store.Store, closeStore func() error, guardPublic bool) {
 		}
 		log.Printf("smolanalytics: no password set — dashboard/exports/MCP are unauthenticated (ok on %s)", displayURL(addr))
 	}
-	log.Printf("smolanalytics: dashboard on %s · MCP at %s/mcp", displayURL(addr), displayURL(addr))
+	// Not "dashboard": this instance has no screen. It ingests events, answers /v1, and serves
+	// MCP to the customer's own editor — saying otherwise sends people looking for a page that
+	// was deliberately removed.
+	log.Printf("smolanalytics: instance on %s · MCP at %s/mcp · your project page is where the runs are", displayURL(addr), displayURL(addr))
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}

@@ -255,11 +255,16 @@ func TestTheTrackingReceiptIsNotBilled(t *testing.T) {
 
 // THE PAGE MUST NOT SAY "0 PEOPLE AFFECTED".
 //
-// The slab is the largest type on the dashboard and it hardcoded the word "people" under a
-// Cost.People readout. A tracking break's cost is deliberately 0 — see investigate.BasisBlind —
-// so the one finding meaning "your numbers have stopped being true" would have led the page with
-// a zero and the word people: a false statement, in 64px, about the thing most worth reading.
-func TestTheDashboardNeverRendersATrackingBreakAsZeroPeople(t *testing.T) {
+// A tracking break's cost is deliberately 0 — see investigate.BasisBlind — because we did not
+// measure the people, we stopped counting them. The dashboard slab used to render that zero under
+// the hardcoded word "people", stating in 64px that nobody was affected by the one finding meaning
+// "your numbers have stopped being true".
+//
+// The slab is gone with the dashboard, but the property is not about a slab: any surface that
+// reads this finding must be able to tell "no people" from "we cannot say". So the assertion moved
+// down to the finding itself, where every renderer gets it — the cost carries a blind basis rather
+// than a measured zero.
+func TestATrackingBreakIsNeverCostedAsZeroPeople(t *testing.T) {
 	t.Setenv("SMOLANALYTICS_PASSWORD", "op-pass-1234")
 	st := memory.New()
 	s := New(st)
@@ -279,14 +284,14 @@ func TestTheDashboardNeverRendersATrackingBreakAsZeroPeople(t *testing.T) {
 		t.Fatalf("the tracking break is not the lead finding, so the slab is rendering something else: %+v", inv.Findings)
 	}
 
-	body := renderDash(t, s, "op-pass-1234")
-	slab := body[strings.Index(body, `class="slab-figure"`):]
-	slab = slab[:strings.Index(slab, `class="slab-body"`)]
-	if strings.Contains(slab, "people affected") {
-		t.Errorf("the slab claims people were affected by instrumentation loss we never measured: %s", slab)
+	lead := inv.Findings[0]
+	// The cost must not present itself as a measured zero. BasisBlind is what lets a renderer say
+	// "we stopped counting" instead of "nobody was affected".
+	if lead.Cost.Basis != investigate.BasisBlind {
+		t.Errorf("a tracking break is costed as %q, so a renderer cannot tell a real zero from a blind one", lead.Cost.Basis)
 	}
-	if strings.Contains(slab, `>0<`) {
-		t.Errorf("the slab leads with a zero, which reads as 'nothing is wrong': %s", slab)
+	if strings.Contains(strings.ToLower(lead.Cost.SizeText), "people") {
+		t.Errorf("the cost text claims people for loss we never measured: %q", lead.Cost.SizeText)
 	}
 }
 

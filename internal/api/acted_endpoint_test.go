@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 
@@ -64,56 +63,5 @@ func TestMarkActedEndpoint(t *testing.T) {
 	}
 	if e, ok := ac.Get("regression|checkout|2026-08-01"); !ok || e.Note != "shipped a fix" {
 		t.Fatalf("the mark did not reach the store: %+v ok=%v", e, ok)
-	}
-}
-
-// The desk's mark-acted button and the route table must agree on the path. They live in two
-// files, and a rename in either one leaves a button that returns 404 with no test noticing —
-// the exact one-surface-behind failure this codebase keeps re-learning.
-func TestDeskActedButtonPostsToTheRegisteredRoute(t *testing.T) {
-	const path = "/v1/findings/acted"
-	tmpl, err := os.ReadFile("dashboard.tmpl.html")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(tmpl), "fetch('"+path+"'") {
-		t.Fatalf("the desk no longer posts to %s", path)
-	}
-	api, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(api), `"POST `+path+`"`) {
-		t.Fatalf("the route table no longer registers POST %s", path)
-	}
-	// And every mark-acted button must sit in a row that carries a fingerprint to send.
-	//
-	// The old form of this looked for one literal interpolation, `data-fp="{{.Fingerprint}}"`,
-	// which asserted an EDIT rather than the property: the ledger ranges with an index variable
-	// so the row writes `data-fp="{{$f.Fingerprint}}"`, and the guard failed on markup that was
-	// entirely correct. Worse, it would have passed on markup where the attribute sat on a row
-	// with no button in it. Structural now: walk back from each button to its enclosing row.
-	src := string(tmpl)
-	buttons := 0
-	for i := 0; ; {
-		j := strings.Index(src[i:], `class="lacted"`)
-		if j < 0 {
-			break
-		}
-		at := i + j
-		i = at + 1
-		buttons++
-		row := strings.LastIndex(src[:at], `<div class="lrow`)
-		if row < 0 {
-			t.Fatalf("a mark-acted button at offset %d is not inside a ledger row at all", at)
-		}
-		open := src[row : row+strings.Index(src[row:], ">")+1]
-		if !strings.Contains(open, "data-fp=") {
-			t.Errorf("the row holding a mark-acted button carries no fingerprint, so the POST has "+
-				"nothing to send:\n  %s", open)
-		}
-	}
-	if buttons == 0 {
-		t.Fatal("no mark-acted button in the template; this guard is watching nothing")
 	}
 }

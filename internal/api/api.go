@@ -482,7 +482,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/surveys/{id}/results", s.surveyResults)
 	mux.HandleFunc("GET /v1/surveys/active", s.activeSurveys) // public: write-key + CORS, for the SDK widget
 	mux.HandleFunc("OPTIONS /v1/surveys/active", s.preflight)
-	mux.HandleFunc("GET /", s.dashboard)
+	mux.HandleFunc("GET /", s.root)
 	return recoverMW(s.authMW(mux))
 }
 
