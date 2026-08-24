@@ -49,6 +49,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/share"
 	"github.com/Arjun0606/smolanalytics/internal/store"
 	"github.com/Arjun0606/smolanalytics/internal/survey"
+	"github.com/Arjun0606/smolanalytics/internal/testrun"
 	"github.com/Arjun0606/smolanalytics/internal/trackplan"
 	"github.com/Arjun0606/smolanalytics/internal/trends"
 	"github.com/Arjun0606/smolanalytics/internal/webhook"
@@ -95,23 +96,25 @@ func serveArchivo(w http.ResponseWriter, r *http.Request) {
 var Version = "0.1.0"
 
 type Server struct {
-	store        store.Store
-	mcp          *mcp.Server
-	insights     *insights.Store
-	cohorts      *cohort.Store
-	settings     *settings.Store
-	audit        *audit.Log
-	webhooks     *webhook.Store
-	alerts       *alert.Store
-	shares       *share.Store
-	aliases      *alias.Map
-	gsc          *gsc.Store
-	goals        *goal.Store
-	deploys      *deploys.Store   // deploy markers → "which ship moved the metric"
-	flags        *flag.Store      // feature flags → boolean/multivariate, targeted, deterministic
-	acted        *acted.Store     // the outcome ledger: findings a human marked acted-on
-	trackplan    *trackplan.Store // the declared instrumentation: what this app MEANS to send
-	surveys      *survey.Store    // in-product micro-surveys (NPS/rating/choice/text)
+	store     store.Store
+	mcp       *mcp.Server
+	insights  *insights.Store
+	cohorts   *cohort.Store
+	settings  *settings.Store
+	audit     *audit.Log
+	webhooks  *webhook.Store
+	alerts    *alert.Store
+	shares    *share.Store
+	aliases   *alias.Map
+	gsc       *gsc.Store
+	goals     *goal.Store
+	deploys   *deploys.Store   // deploy markers → "which ship moved the metric"
+	flags     *flag.Store      // feature flags → boolean/multivariate, targeted, deterministic
+	acted     *acted.Store     // the outcome ledger: findings a human marked acted-on
+	trackplan *trackplan.Store // the declared instrumentation: what this app MEANS to send
+	// runs is the record of the agent using the app: the product's primary object.
+	runs         *testrun.Store
+	surveys      *survey.Store // in-product micro-surveys (NPS/rating/choice/text)
 	exports      *exportlink.Store
 	defined      *defined.Store // retroactive zero-code events (Heap wedge)
 	writeKey     string         // PUBLIC ingest key (embedded in the SDK): authorizes POST /v1/events ONLY. Never reads.
@@ -159,6 +162,10 @@ func (s *Server) SetFlags(f *flag.Store) { s.flags = f; s.mcp.SetFlags(f) }
 // SetActed wires the outcome ledger: which findings a human said they acted on. Optional, like
 // every sidecar store; without it the desk simply never shows the verified line.
 func (s *Server) SetActed(a *acted.Store) { s.acted = a; s.mcp.SetActed(a) }
+
+// SetRuns wires the test-run log. Optional: an instance with no runner attached renders the pane's
+// empty state, which says how to write the first test rather than showing a zero.
+func (s *Server) SetRuns(r *testrun.Store) { s.runs = r }
 
 // SetSurveys attaches the survey store (shared with MCP + the SDK active-surveys endpoint).
 func (s *Server) SetSurveys(sv *survey.Store) { s.surveys = sv; s.mcp.SetSurveys(sv) }

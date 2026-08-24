@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Arjun0606/smolanalytics/internal/planhealth"
+	"github.com/Arjun0606/smolanalytics/internal/testrun"
 
 	"github.com/Arjun0606/smolanalytics/internal/agent"
 	"github.com/Arjun0606/smolanalytics/internal/aicrawl"
@@ -336,10 +337,14 @@ type dashVM struct {
 	// plan at all: the product's central claim was reachable by an agent and invisible to the
 	// person who paid for it.
 	Instrumentation planhealth.Health
-	DevHidden       int    // count of env=development events hidden from production reports
-	ShowingDev      bool   // true when ?env=development — viewing the hidden dev traffic
-	Base            string // this server's base URL, for ready-to-paste snippets
-	WriteKey        string // this instance's write key — real snippets, not placeholders (key is public-by-design: it ships in tracked pages' HTML)
+	// Runs is the newest test runs and their summary — what the agent found using the app. The
+	// primary object of the product, and the first thing on the deck.
+	Runs        []testrun.Run
+	RunsSummary testrun.Summary
+	DevHidden   int    // count of env=development events hidden from production reports
+	ShowingDev  bool   // true when ?env=development — viewing the hidden dev traffic
+	Base        string // this server's base URL, for ready-to-paste snippets
+	WriteKey    string // this instance's write key — real snippets, not placeholders (key is public-by-design: it ships in tracked pages' HTML)
 	// CloudURL is the header's "Cloud ↗" href. Defaults to smolanalytics.com (right for
 	// every self-hosted install); the hosted product overrides it via SMOLANALYTICS_CLOUD_URL
 	// so the link leads back to the project the user came from, not the marketing home page.
@@ -2182,6 +2187,12 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	//
 	// A store error here must not take the page down: instrumentation is one pane, and an empty
 	// verdict renders as "we could not read this" while every other report still works.
+	// The newest runs. Capped for the page; the full log lives in the store.
+	var runs []testrun.Run
+	if s.runs != nil {
+		runs = s.runs.Recent(12)
+	}
+
 	var instr planhealth.Health
 	if s.trackplan != nil {
 		if h, err := planhealth.Compute(s.store, s.trackplan.Get(), instrumentationWindow); err == nil {
@@ -2205,6 +2216,8 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		HasData:         len(evs) > 0,
 		EverHadData:     totalAll > 0,
 		Instrumentation: instr,
+		Runs:            runs,
+		RunsSummary:     testrun.Summarize(runs),
 		Verdict:         verdict,
 		// The full history, and the flags, so the kill list can see what shipped. Same inputs
 		// the CLI brief uses, so the page and the email cannot tell different stories.

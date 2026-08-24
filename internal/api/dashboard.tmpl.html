@@ -425,6 +425,8 @@
   .ipill.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 45%,transparent)}
   .ipill.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 45%,transparent)}
   .ipill.bad{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 60%,transparent);font-weight:600}
+  .runwhy{margin-top:2px;color:var(--sec);font-size:var(--fs-lbl);line-height:1.45;max-width:52ch}
+  .runmode{font-family:var(--mono,ui-monospace,monospace);font-size:var(--fs-lbl);color:var(--sec)}
   /* The face rule inside a two-column table: the left cell names a thing (mono), the right cell
      explains it in sentences (sans). Declaring mono on the table put entire paragraphs about
      always-valid inference and non-inferiority in a typewriter face — the same defect as the
@@ -1797,6 +1799,8 @@
          inside HTML comments, so an unpaired one here is a parse error at EOF.) -->
     <h2 class="stratum" id="sec-agent" data-stratum="agent" data-short="agent" style="order:{{if .HasAgentEvents}}100{{else}}700{{end}}">
       <span class="stitle">what your agent did</span><span class="ssub">agent observability</span><span class="srule"></span><span class="scount"></span></h2>
+    <h2 class="stratum" id="sec-runs" data-stratum="runs" data-short="test runs" style="order:10">
+      <span class="stitle">did anything break</span><span class="ssub">test runs</span><span class="srule"></span><span class="scount"></span></h2>
     <h2 class="stratum" id="sec-measure" data-stratum="measure" data-short="instrumentation" style="order:50">
       <span class="stitle">is any of this being measured</span><span class="ssub">instrumentation</span><span class="srule"></span><span class="scount"></span></h2>
     <h2 class="stratum" id="sec-convert" data-stratum="convert" data-short="conversion" style="order:200">
@@ -1814,7 +1818,47 @@
 
 
 
-    <!-- INSTRUMENTATION, and it leads the deck on purpose.
+
+    <!-- TEST RUNS, and they lead the deck because they are what this product is.
+         Every other pane answers a question about your users. This one answers the question you
+         opened the page to ask: did the thing I just shipped break anything.
+         Server-rendered from .Runs, like the instrumentation pane and for the same reason — the
+         verdict is already in the template context, so there is nothing to spin on.
+         The `mode` column is the economic argument made visible: a wall of `replay` rows and one
+         `agent` row is the customer seeing, without being told, that they pay for a model only
+         when something actually changed. -->
+    <div class="pane wide" id="pane-runs" style="order:20" data-stratum="runs">
+      <h3>test runs
+        <span class="sub">· an agent using your app, newest first · computed from your own run log</span></h3>
+      {{if .Runs}}
+      <div class="instr-head">
+        <span class="instr-meter{{if and (eq .RunsSummary.Failed 0) (eq .RunsSummary.Errored 0)}} ok{{else}} bad{{end}}">{{.RunsSummary.Passed}}/{{.RunsSummary.Total}}</span>
+        <span class="instr-line">{{.RunsSummary.Headline}}</span>
+      </div>
+      <table class="ctab instr-tbl">
+        <thead><tr><th>test</th><th>verdict</th><th>ran as</th><th class="instr-n">took</th></tr></thead>
+        <tbody>
+        {{range .Runs}}
+          <tr>
+            <td>{{.Test}}{{if .Reason}}<div class="runwhy">{{.Reason}}</div>{{end}}</td>
+            <td>{{if eq .Status "passed"}}<span class="ipill ok">passed</span>{{else if eq .Status "failed"}}<span class="ipill bad">failed</span>{{else if eq .Status "stale"}}<span class="ipill warn">recording stale</span>{{else}}<span class="ipill warn">could not run</span>{{end}}</td>
+            <td><span class="runmode">{{.Mode}}</span></td>
+            <td class="instr-n">{{if .Took}}{{.Took}}{{else}}&mdash;{{end}}</td>
+          </tr>
+        {{end}}
+        </tbody>
+      </table>
+      {{if .RunsSummary.CostNote}}<div class="instr-note">{{.RunsSummary.CostNote}}</div>{{end}}
+      {{else}}
+      <div class="instr-note">{{.RunsSummary.Headline}}
+        A test is one sentence in a markdown file &mdash; &ldquo;a returning customer can check out with a
+        saved card&rdquo; &mdash; and the agent works out how to do it in a real browser. Nothing here is a
+        selector you have to keep up to date, which is the reason end-to-end suites get muted and then
+        deleted.</div>
+      {{end}}
+    </div>
+
+    <!-- INSTRUMENTATION, second only to the runs above it.
          Every report below this answers "what do the numbers say". This one answers "are the
          numbers real", which precedes all of them: a funnel computed over an event that stopped
          firing looks exactly like a funnel over a product nobody used.
@@ -1862,19 +1906,7 @@
          own model wrote (we never run one). Renders on every instance: with no agent
          events it teaches what to send rather than showing a blank panel. It leads the
          deck once those events exist, and sits at the end of it until they do. -->
-    <div class="pane wide" id="pane-agent" style="order:{{if .HasAgentEvents}}110{{else}}710{{end}}" data-stratum="agent">
-      <h3>your AI agent <span class="sub">· only relevant if you are building one · computed by /v1/agent</span></h3>
-      <div id="agConv"><div class="exsummary">…</div></div>
-
-      <h3 style="margin-top:18px">which tools are slow or failing <span class="sub">· one row per tool, click for its failures · computed by /v1/agent/tools</span></h3>
-      <div id="agTools"><div class="exsummary">…</div></div>
-
-      <h3 style="margin-top:18px">conversation labels
-        <input id="agLabel" list="agLabelNames" value="intent" autocomplete="off" aria-label="label name" title="the label name your model wrote with label_conversation" style="margin-left:8px;max-width:150px">
-        <datalist id="agLabelNames"><option value="intent"></option><option value="sentiment"></option><option value="frustration"></option><option value="topic"></option></datalist>
-        <span class="sub">· what your conversations were about · computed by /v1/agent/labels</span></h3>
-      <div id="agLabels"><div class="exsummary">…</div></div>
-    </div>
+    
 
     {{if .HasWeb}}
     
@@ -1882,32 +1914,12 @@
          because the question it answers ("what do they do ON this page") is the one
          a top-pages row raises. the grid the server bucketed into is the grid we
          paint — cols and row_px come back on the response, never re-derived here. -->
-    <div class="pane wide" id="pane-heatmap" style="order:430" data-stratum="behave">
-      <!-- titled "heatmap" because that is what the feature is called everywhere else the
-           user meets it (/v1/heatmap, the MCP tool, the docs, the ask bar). It read "click
-           map" here, so anyone hunting the page for "heatmap" found nothing and concluded
-           we had not built it. The plain-English name stays in the explainer. -->
-      <h3>heatmap
-        {{if .TopPages}}<select id="hmPath" class="zonesel" style="margin-left:8px" title="which page to map">
-          {{range .TopPages}}<option value="{{.Value}}">{{.Value}}</option>{{end}}
-        </select>{{else}}<span class="agmeta" style="margin-left:8px">no pages captured yet &mdash; the picker appears with the first $pageview</span>{{end}}
-        <select id="hmVp" class="zonesel" title="viewport bucket, from the width captured on each click">
-          <option value="all">all widths</option>
-          <option value="desktop">desktop</option>
-          <option value="tablet">tablet</option>
-          <option value="mobile">mobile</option>
-        </select>
-        <span class="sub">· the click map: where autocaptured clicks land, same window and filters as every zone above · computed by /v1/heatmap</span></h3>
-      <div id="hmOut"><div class="exsummary">…</div></div>
-    </div>
+    
     
     {{else}}
     <!-- no $pageview has ever landed: teach the web side rather than dropping four
          panes off the page and leaving a product-only instance looking half-built. -->
-    <div class="pane wide" id="pane-web-empty" style="order:410" data-stratum="behave">
-      <h3>pages, referrers and the heatmap</h3>
-      <div class="exsummary">this instance has events but no <b>$pageview</b> yet, so there is nothing to rank by page, referrer or click position. drop <b>&lt;script src="{{.Base}}/sdk.js"&gt;&lt;/script&gt;</b> into your app and top pages, entry pages, referrers and the click map all fill in from the first visit. a backend-only instance that never serves HTML stays product-only on purpose, and that is a fine place to be.</div>
-    </div>
+    
     {{end}}
 
     {{if .HasGeo}}
@@ -1928,55 +1940,12 @@
     
     {{end}}
 
-    <div class="pane wide" id="pane-funnel" style="order:210" data-stratum="convert">
-      <h3>{{if .FunnelIsGuessed}}browsing, not a funnel yet{{else}}{{.FunnelTitle}}{{end}}
-        <select id="funnelOrder" class="zonesel" title="step matching discipline" style="margin-left:8px">
-          <option value="ordered" {{if eq .FunnelOrder "ordered"}}selected{{end}}>in order</option>
-          <option value="strict" {{if eq .FunnelOrder "strict"}}selected{{end}}>strictly consecutive</option>
-          <option value="unordered" {{if eq .FunnelOrder "unordered"}}selected{{end}}>any order</option>
-        </select>
-        <span style="text-transform:none;letter-spacing:0">· each step counts {{if .GrainProp}}<b>accounts</b> (by {{.GrainProp}}) that reached it — an account counts once anyone in it does{{else}}people who reached it{{end}} along this path, so a step can read below that event's raw total in the chart · computed by /v1/funnel</span>{{if .GrainProp}}<a class="hlink" style="margin-left:8px" href="{{.GrainOffHref}}" title="count individual people again, keeping this window and these filters">count people instead</a>{{end}}</h3>
-      {{if .FunnelIsGuessed}}
-      <div class="agmeta" style="margin-bottom:12px">
-        nobody has told us what counts as success here, so these are just the three things the
-        tracker sees most. it shows the tracker working, not your product.
-        {{if .Proposal.Steps}}
-        <div style="margin-top:10px">
-          <b>from the pages people actually walk, your funnel looks like:</b>
-          <div style="margin:8px 0">
-            {{range $i, $s := .Proposal.Steps}}{{if $i}} <span class="mut">→</span> {{end}}<b>{{$s.Path}}</b> <span class="mut">{{$s.People}}</span>{{end}}
-          </div>
-          {{if .Proposal.Confident}}<span class="mut">that narrows the way a real funnel does. it is still a guess — visiting /signup is not the same as signing up — so confirm it by tracking the event itself.</span>
-          {{else}}<span class="mut">{{.Proposal.Why}}</span>{{end}}
-        </div>
-        {{else if .Proposal.Why}}
-        <div style="margin-top:8px" class="mut">{{.Proposal.Why}}</div>
-        {{end}}
-      </div>
-      {{end}}
-      {{range .Funnel}}
-        {{if not .First}}<div class="fdrop">↓ {{.PctPrev}}% continue · {{.Dropped}} dropped</div>{{end}}
-        <div class="fstep"><div class="fbarwrap" data-whostep="{{.Event}}" title="click: the people who reached this step"><div class="fbar" style="width:{{.PctTop}}%"></div><div class="fmeta"><span class="fname">{{ev .Event}}</span><span class="fnums"><span class="c">{{.Count}}</span><span class="p">{{.PctTop}}%</span></span></div></div></div>
-      {{else}}
-        <div class="exsummary">no funnel yet. a funnel is two or more named events in the order you expect people to do them, so track at least a second one and this builds itself: signup, activate, checkout are picked up automatically when they exist, and any other pair is one question away in the ask bar above ("funnel from X to Y"). the steps count people who reached each one along this path, never raw event totals.</div>
-      {{end}}
-    </div>
+    
 
     {{if .HasConvBy}}
-    <div class="pane" id="pane-conversion" style="order:220" data-stratum="convert">
-      <h3>conversion by {{.ConvByTitle}}</h3>
-      <div class="segconv">
-        {{range .ConvBySeg}}<div class="sc"><div class="sc-h"><span class="sc-name"{{if .Code}} data-cc="{{.Code}}"{{end}}>{{if .Flag}}<span class="cflag" aria-hidden="true">{{.Flag}}</span>{{end}}{{.Value}}</span><span class="sc-conv">{{.Conv}}%</span></div><div class="sc-track"><div class="sc-fill" style="width:{{.Conv}}%"></div></div><div class="sc-sub">{{.Users}} user{{if ne .Users 1}}s{{end}}</div></div>{{end}}
-        {{if .ConvByThin}}<div class="sc-thin">{{.ConvByThin}} more with fewer than 10 users &mdash; too few to rate</div>{{end}}
-        {{if .ConvByNone}}<div class="sc-thin">{{.ConvByNone}} people carry no {{.ConvByTitle}} at all and are not counted above &mdash; set it on the event, or these rows describe a minority of your users</div>{{end}}
-      </div>
-    </div>
+    
     {{else}}
-    <div class="pane paneempty" id="pane-conversion" style="order:220" data-stratum="convert">
-      <h3>conversion by property</h3>
-      <div class="pe">no property on your events has enough distinct values yet to split a conversion rate by.</div>
-      <div class="pehint">send a property like <code>plan</code> or <code>source</code> on the events in your funnel and this splits by it automatically.</div>
-    </div>
+    
     {{end}}
 
     {{if .HasSource}}
@@ -1986,24 +1955,11 @@
     {{end}}
 
     {{if .HasPaths}}
-    <div class="pane wide" id="pane-paths" style="order:420" data-stratum="behave">
-      <h3>user journeys <span class="sub">· what users do after {{.PathStart}}</span></h3>
-      <div style="display:flex;gap:14px;overflow-x:auto;padding-bottom:2px">
-        {{range .PathLevels}}
-        <div style="min-width:170px;flex:1">
-          <div class="zonelbl" style="margin:0 0 6px">then ({{.Depth}})</div>
-          {{range .Steps}}<div class="seg"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}
-        </div>
-        {{end}}
-      </div>
-    </div>
+    
     {{else}}
     <!-- no starting event with enough users after it. teach what the report needs
          rather than dropping the journeys card off the deck entirely. -->
-    <div class="pane wide" id="pane-paths" style="order:420" data-stratum="behave">
-      <h3>user journeys</h3>
-      <div class="exsummary">nothing to branch from yet. this walks three steps forward from a starting event and needs users who did something <em>after</em> it, so a single event type or a single visit has nowhere to go. track one more moment (a $pageview counts) and the tree fills in, or ask "what do users do after signup" in the bar above to point it at any event you like.</div>
-    </div>
+    
     {{end}}
 
     {{if .HasLifecycle}}
@@ -2039,383 +1995,13 @@
          question than the page says it is.
          (Do not write template actions in these comments: html/template parses actions
          inside HTML comments, so an unpaired one here is a parse error at EOF.) -->
-    <div class="pane wide" id="pane-aivis" style="order:361" data-stratum="acquire">
-      <h3>AI visibility
-        <span class="sub">· what the AI engines say about you, next to what they send you · same window and filters as every zone above · computed by /v1/ai-visibility</span></h3>
-      {{with .AIVis}}
-      {{if .Checks}}
-      <div data-empty="0">
-        <div class="agrow">
-          <span class="agprov">computed · {{comma .Checks}} sampled run{{if ne .Checks 1}}s{{end}}</span>
-          <span class="agmeta">{{range $i, $e := .Engines}}{{if $i}}, {{end}}{{$e.Engine}}{{end}} &middot; {{len .Prompts}} prompt{{if ne (len .Prompts) 1}}s{{end}} &middot; last {{.Days}} days</span>
-        </div>
-        <div class="stickrow">
-          {{with .Latest}}
-          <div class="sk"><div class="skv acc">{{.MentionedPct}}%</div><div class="skl">mentioned</div></div>
-          <div class="sk"><div class="skv">{{.RecommendedPct}}%</div><div class="skl">recommended</div></div>
-          <div class="sk"><div class="skv">{{.Runs}}</div><div class="skl">runs that week</div></div>
-          {{end}}
-          {{if $.HasWeb}}<div class="sk"><div class="skv">{{comma $.AIVisitors}}</div><div class="skl">visitors from AI</div></div>{{end}}
-        </div>
-        {{if .LatestLabel}}<div class="agmeta" style="margin-top:6px">the three rate tiles are the week of {{.LatestLabel}} alone, over the run count beside them — the table below is the whole {{.Days}}-day window.</div>{{end}}
-        {{if .Note}}<div class="inote err">{{.Note}}</div>{{end}}
+    
 
-        {{if .Ships}}
-        <div class="agmeta" style="margin-top:16px"><b>Which ship moved it.</b> Each release compared against the seven days of sampled answers either side of it. This is correlation, not proof, which is why the run counts are printed and why a row only reads as a change when both sides carry enough runs to tell one from sampling noise.</div>
-        <div class="tscroll">
-        <table class="ctab">
-          <tr><th>shipped</th><th>commit</th><th class="n">recommended</th><th class="n">runs</th><th>read</th></tr>
-          {{range .Ships}}
-          <tr>
-            <td class="mut">{{.At.Format "Jan 2"}}</td>
-            <td>{{if .ShortSHA}}<code>{{.ShortSHA}}</code> {{end}}{{.Message}}</td>
-            <td class="n">{{.RecommendedBefore}}% &rarr; {{.RecommendedAfter}}%</td>
-            <td class="n mut">{{.RunsBefore}} / {{.RunsAfter}}</td>
-            <td>{{if .Significant}}{{if eq .Direction "improvement"}}<span class="acc">{{.RecommendedDelta}}pp better</span>{{else}}<span style="color:var(--warn)">{{.RecommendedDelta}}pp worse</span>{{end}}{{else}}<span class="mut">{{.Why}}</span>{{end}}</td>
-          </tr>
-          {{end}}
-        </table>
-        </div>
-        {{end}}
+    
 
-        {{if .BrandCount}}
-        <div class="stickrow" style="margin-top:14px">
-          {{if .BrandRank}}<div class="sk"><div class="skv{{if gt .BrandRank 3}}{{else}} acc{{end}}">#{{.BrandRank}}</div><div class="skl">of {{.BrandCount}} brands named</div></div>
-          {{else}}<div class="sk"><div class="skv" style="color:var(--warn)">not named</div><div class="skl">in any sampled answer</div></div>{{end}}
-          {{range .Share}}{{if .Us}}<div class="sk"><div class="skv">{{.SharePct}}%</div><div class="skl">share of voice</div></div>{{end}}{{end}}
-          {{if .GroundRuns}}<div class="sk"><div class="skv">{{.CitedRate}}%</div><div class="skl">web runs citing you</div></div>{{end}}
-        </div>
-        <div class="agmeta" style="margin-top:6px">rank is over every brand these answers named, us included — stated plainly even when it stings, because a visibility number you can&rsquo;t place against the alternatives is decoration.</div>
-        {{end}}
+    
 
-        {{if .SOV.Has}}
-        <div class="zonelbl zsep" style="margin:0 0 8px">share of voice · you against everyone the engines name
-          <span class="sub">% of all brand mentions that week · amber is you</span></div>
-        <div class="sovwrap">
-          <svg viewBox="-2 -6 648 162" preserveAspectRatio="none" style="width:100%;height:190px;display:block;overflow:visible" role="img" aria-label="share of voice over time">
-            <g class="sovgrid"><line x1="0" y1="0" x2="640" y2="0"/><line x1="0" y1="37.5" x2="640" y2="37.5"/><line x1="0" y1="75" x2="640" y2="75"/><line x1="0" y1="112.5" x2="640" y2="112.5"/><line x1="0" y1="150" x2="640" y2="150"/></g>
-            {{range .SOV.Series}}<polyline class="sovline{{if .Us}} us{{end}}" points="{{.Points}}" stroke="{{.Color}}"/>
-            <circle cx="{{.Dot.X}}" cy="{{.Dot.Y}}" r="{{if .Us}}4{{else}}3{{end}}" fill="{{.Color}}"/>{{end}}
-          </svg>
-          <div class="sovax"><span>100</span><span>75</span><span>50</span><span>25</span><span>0</span></div>
-          <div style="display:flex;justify-content:space-between;color:var(--mut2);font-family:var(--mono);font-size:var(--fs-lbl);margin-top:2px"><span>{{.SOV.First}}</span><span>share of every brand mention, %</span><span>{{.SOV.Last}}</span></div>
-        </div>
-        <div class="sovleg">{{range .SOV.Series}}<span><i style="background:{{.Color}}"></i>{{if .Us}}<b>you</b>{{else}}{{.Name}}{{end}} <b>{{.Last}}%</b> now &middot; {{.Share}}% overall</span>{{end}}</div>
-        {{end}}
-
-        {{if .SentRated}}
-        <div class="zonelbl zsep" style="margin:0 0 8px">how they talk about you
-          <span class="sub">across {{.SentRated}} scored answer{{if ne .SentRated 1}}s{{end}} · not being named is counted apart from being named badly</span></div>
-        <div class="sentbar">
-          {{if .SentPos}}<i style="background:var(--ok);width:{{.SentPos}}fr;flex:{{.SentPos}}" title="positive"></i>{{end}}
-          {{if .SentNeu}}<i style="background:var(--line3);flex:{{.SentNeu}}" title="neutral"></i>{{end}}
-          {{if .SentNeg}}<i style="background:var(--warn);flex:{{.SentNeg}}" title="negative"></i>{{end}}
-        </div>
-        <div class="agmeta">{{.SentPos}} positive · {{.SentNeu}} neutral · {{.SentNeg}} negative{{if .Sentiment.Absent}} · {{.Sentiment.Absent}} didn&rsquo;t name you at all{{end}}</div>
-        {{end}}
-
-        {{if .RankRows}}
-        <div class="zonelbl zsep" style="margin:0 0 8px">where you land when they rank
-          <span class="sub">position among the tools an answer listed, over the runs that ranked you</span></div>
-        {{range .RankRows}}<div class="seg"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{end}}
-        {{end}}
-
-        {{if .GroundRuns}}
-        <div class="zonelbl zsep" style="margin:0 0 8px">read, versus picked
-          <span class="sub">of the web-search answers that cited your own domain</span></div>
-        <div class="agmeta">Your domain was cited in <b>{{.CitedRuns}} of {{.GroundRuns}}</b> web-search answers ({{.CitedRate}}%). Of those, <b>{{.CitedRec}}</b> recommended you and <b>{{.CitedNotRec}}</b> recommended someone else.</div>
-        {{if .CitedNotRec}}<div class="agmeta" style="margin-top:6px">Being read and passed over is not a content problem — the page was found. Models pick the names they already know and fetch sources afterwards, so that gap closes off your site: reviews, directory listings, and the roundups the model learned from.</div>{{end}}
-        {{end}}
-
-        {{if .ShowTrend}}
-        <div class="zonelbl zsep" style="margin:0 0 8px">your own visibility · % of that week's runs
-          <span class="sub">amber = mentioned at all · grey = recommended as a pick · hatched = still filling or under 3 runs</span></div>
-        <div class="bars" style="height:112px;padding-top:20px">
-          {{range .Weeks}}<div class="col{{if .Thin}} part{{end}}"><span class="tip">{{.Tip}}</span><div class="bar" style="height:{{.MentPct}}%"></div><div class="ghost" style="height:{{.RecPct}}%"></div></div>{{end}}
-        </div>
-        <div style="display:flex;justify-content:space-between;color:var(--mut2);font-family:var(--mono);font-size:var(--fs-lbl);margin-top:4px"><span>{{.FirstWeek}}</span><span>y-axis 0&ndash;100%</span><span>{{.LastWeek}}</span></div>
-        <!-- the grey series IS "recommended as a pick", and the legend above names it in
-             words. Reading it off the chart requires seeing two greys apart; reading it
-             here does not. -->
-        <details class="charttable">
-          <summary>data table · mentioned and recommended per week &#9662;</summary>
-          <div class="tscroll">
-          <table class="ctab charteq">
-            <thead><tr><th>week</th><th class="n">mentioned</th><th class="n">recommended</th><th>settled?</th></tr></thead>
-            <tbody>
-            {{range .Weeks}}<tr><td>{{.Label}}</td><td class="n">{{.MentPct}}%</td><td class="n">{{.RecPct}}%</td><td class="mut">{{if .Thin}}under 3 runs{{else}}yes{{end}}</td></tr>{{end}}
-            </tbody>
-          </table>
-          </div>
-        </details>
-        {{else}}
-        <div class="agmeta" style="margin-top:14px">one week of checks in this window, so there is no trend to draw — a single bar is a reading, not a direction. <a href="{{.WidenURL}}">widen to 90 days</a>, or let another week of sampling land.</div>
-        {{end}}
-
-        <div class="zonelbl zsep" style="margin:0 0 8px">per engine
-          <span class="sub">grounded and ungrounded stay separate rows — the engine name carries the mode</span></div>
-        <div class="tscroll">
-        <table class="ctab">
-          <thead><tr><th>engine</th><th class="n">runs</th><th class="n">mentioned</th><th class="n">recommended</th><th class="n">avg rank</th><th>model on newest run</th></tr></thead>
-          <tbody>
-          {{range .Engines}}<tr>
-            <td>{{.Engine}}</td>
-            <td class="n">{{.Runs}}</td>
-            <td class="n">{{.Mentioned}} of {{.Runs}} <span class="mut">({{.MentionedPct}}%)</span></td>
-            <td class="n">{{.Recommended}} of {{.Runs}} <span class="mut">({{.RecommendedPct}}%)</span></td>
-            <td class="n">{{if .AvgRank}}{{.AvgRank}} <span class="mut">(of {{.Ranked}})</span>{{else}}<span class="mut">never ranked</span>{{end}}</td>
-            <td class="mut">{{if .LatestModel}}{{.LatestModel}}{{else}}not sent{{end}}</td>
-          </tr>{{end}}
-          </tbody>
-        </table>
-        </div>
-        <div class="agmeta">every rate ships with the runs it came from — read the pair, never the percentage alone. avg rank is the mean 1-based position among the tools an answer named, over the runs that ranked you at all.</div>
-
-        <div class="zonelbl zsep" style="margin:0 0 8px">how each engine describes you
-          <span class="sub">newest sample per engine, with the model id and run date that produced it</span></div>
-        {{range .Verbatims}}<blockquote class="gverb">{{.Text}}<span class="gvmeta">{{.Engine}} · {{.Model}} · {{.When}}{{if .Ago}} · {{.Ago}}{{end}}</span></blockquote>{{else}}<div class="agmeta">no verbatim came back on any engine's newest run. the runner sends one line as <b>verbatim</b>; nothing here is written from the numbers.</div>{{end}}
-
-        <div class="webcols" style="margin-top:18px">
-          <div>
-            <h3>prompts tracked</h3>
-            {{range .Prompts}}<div class="seg" title="{{.Prompt}}"><div class="segtrack"><div class="segbar" style="width:{{.MentionedPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Prompt}}</span><span class="segnums">{{.Mentioned}}/{{.Runs}}</span></div></div>{{else}}<div class="exsummary">no prompt text came back on these checks. the runner sends the question it asked as <b>prompt</b>.</div>{{end}}
-            <div class="agmeta">bar = the share of that prompt's own runs that mentioned you; the number is mentioned-over-runs.</div>
-          </div>
-          <div>
-            <h3>competitors named alongside you</h3>
-            {{range .Comps}}<div class="seg"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}}</span></div></div>{{else}}<div class="exsummary">no competitor names in these answers. the runner sends them as a comma-separated <b>competitors</b> property; nothing is read out of the verbatim here.</div>{{end}}
-            <div class="agmeta">counts, not rates: how many sampled answers named them at all. these rows are deliberately not click-to-filter — <b>competitors</b> is a property only check events carry, so filtering the page to it would empty every other card.</div>
-          </div>
-        </div>
-
-        <div class="zonelbl zsep" style="margin:0 0 8px">what they actually sent you
-          <span class="sub">the other half: real visitors who arrived from an AI assistant, same window</span></div>
-        {{if $.HasWeb}}
-        {{range $.AIRefs}}<div class="seg"><div class="segtrack"><div class="segbar" style="width:{{.BarPct}}%"></div></div><div class="segmeta"><span class="segname">{{.Value}}</span><span class="segnums">{{.Count}} · {{.Pct}}%</span></div></div>{{else}}<div class="exsummary">no visitor arrived from an AI assistant in this window. the host is read off each visitor's first pageview, so this fills in the moment someone clicks through from one.</div>{{end}}{{with moreNote (len $.AIRefs) $.AIRefsTotal}}<div class="morerows">{{.}}</div>{{end}}
-        {{else}}
-        <div class="exsummary">this instance has no <b>$pageview</b>, so the traffic half is not measurable here. what the engines say is above; what they send is only knowable once the page they link to is tracked.</div>
-        {{end}}
-        <div class="agmeta">two different units, side by side on purpose: everything above counts sampled <b>answers</b>, this counts real <b>visitors</b>. neither is a conversion rate over the other. the names differ too — a sampled engine is <b>claude</b> or <b>claude-grounded</b>, a referrer is the host <b>claude.ai</b>.</div>
-      </div>
-
-      {{else}}
-      <!-- Two empty states, because there are two different situations with two different
-           fixes, and answering both with one sentence is how a filtered-out report reads
-           as a feature nobody ever built. Wrapped in data-empty so the quiet-card rule
-           collapses the card to its explanation instead of a full card of nothing. -->
-      <div data-empty="1">
-        {{if .Ever}}
-        <div class="exsummary">this instance has recorded <b>$geo_check</b> events, but none in this window{{if .Scoped}} that match the filters above{{end}}. visibility is sampled on a schedule rather than continuously, so a short window can hold zero checks — <a href="{{.WidenURL}}">widen to 90 days</a>.{{if .Scoped}} a check event carries <b>engine</b>, <b>prompt</b> and <b>rank</b>; it carries no <b>site</b> or <b>path</b>, so a site or page filter excludes every one of them. clear the filters to see them.{{end}}</div>
-        {{else}}
-        {{if and .Managed .SamplingFunded}}
-        <div class="exsummary">This starts by itself. We read the site your own traffic already comes from, work out your category and competitors, write 25 questions a real buyer would ask, and put them to the AI engines on a schedule &mdash; recording each answer here. Sampling costs a real model call per question, so how often the set runs is set by your plan rather than promised as a fixed cadence, and the card always says when each reading was taken.</div>
-        <div class="agmeta" style="margin-top:8px">Nothing to configure. When you want to change the questions, add your own, or stop the sampling, they live on <a href="{{.CloudURL}}" target="_blank" rel="noopener">your setup page</a>.</div>
-        {{else if .Managed}}
-        <!-- Hosted, but the cloud has already decided it will not schedule sampling here: each
-             question costs a real model call, funded from the plan's AI allowance, which is zero
-             on a trial. Saying "this starts by itself" to someone it will never start for is the
-             single most expensive sentence on the page — they wait, nothing arrives, and they
-             conclude the product does not work rather than that they are on the wrong plan. -->
-        <div class="exsummary">Sampling the AI engines is not running on your plan. Each question here costs a real model call, so it is funded from your plan&rsquo;s AI allowance &mdash; a trial has none, which is what keeps the trial free. It is not something you switch on here.</div>
-        <div class="agmeta" style="margin-top:8px">On a paid plan this starts by itself: we read the site your traffic already comes from, work out your category and competitors, write 25 questions a real buyer would ask, and put them to the AI engines on a schedule. Until then this card stays empty rather than showing you numbers we did not measure. <a href="{{.CloudURL}}" target="_blank" rel="noopener">See plans &rarr;</a></div>
-        {{else}}
-        <div class="exsummary">Nothing has sampled the AI engines for this product yet. You&rsquo;re self-hosting, so the sampling is yours to run: post one <b>$geo_check</b> event per answer you sample and this card reads them — the same rows <b>/v1/ai-visibility</b> and the <b>ai_visibility</b> MCP tool read, so the three can never disagree.</div>
-        <details style="margin-top:8px"><summary class="hlink">the event to post &rarr;</summary>
-        <pre class="code" style="font-size:var(--fs-lbl);margin:8px 0 0">curl -X POST {{$.Base}}/v1/events \
-  -H "Authorization: Bearer {{if $.WriteKey}}{{$.WriteKey}}{{else}}YOUR_WRITE_KEY{{end}}" \
-  -H "User-Agent: my-geo-runner/1.0" \
-  -d '{"name":"$geo_check","distinct_id":"geo-runner","properties":{
-        "engine":"claude",
-        "prompt":"best analytics for indie devs",
-        "mentioned":true,
-        "recommended":true,
-        "rank":1,
-        "competitors":"PostHog, Plausible",
-        "verbatim":"analytics you can just ask questions",
-        "model_version":"claude-sonnet-4-6"}}'</pre>
-        <div class="agmeta">One POST per sampled answer. <b>rank</b> is the 1-based position among the tools that answer named (0 = named but not ranked), <b>competitors</b> is comma-separated, <b>verbatim</b> is one line of how it described you, and <b>model_version</b> is the exact model id — a quote with no model and date is not evidence. Put the mode in the engine name (<b>claude</b> vs <b>claude-grounded</b>): a model that knows you and a live web search that surfaces you are different claims. Sample each prompt several times a week and let the rates settle. <b>Send a User-Agent header</b> — $-prefixed events arriving without one are dropped at ingest as crawler traffic, silently.</div>
-        </details>
-        {{end}}
-        {{end}}
-      </div>
-      {{end}}
-      {{end}}
-    </div>
-
-    <div class="pane wide" id="pane-aicrawl" style="order:360" data-stratum="acquire">
-      <h3>AI crawlers
-        <span class="sub">· who actually fetched your pages, from your own server · a JavaScript pixel cannot see any of this · computed by /v1/ai-crawlers</span></h3>
-      {{with .AICrawl}}
-      {{if .Hits}}
-      <div data-empty="0">
-        <div class="agrow">
-          <span class="agprov">computed · {{comma .Hits}} fetch{{if ne .Hits 1}}es{{end}}</span>
-          <span class="agmeta">{{len .Crawlers}} crawler{{if ne (len .Crawlers) 1}}s{{end}} · {{comma .Pages}} page{{if ne .Pages 1}}s{{end}} read · last {{.Days}} days</span>
-        </div>
-        <div class="stickrow">
-          <div class="sk"><div class="skv acc">{{comma .User}}</div><div class="skl">live assistant fetches</div></div>
-          <div class="sk"><div class="skv">{{comma .Search}}</div><div class="skl">search indexing</div></div>
-          <div class="sk"><div class="skv">{{comma .Training}}</div><div class="skl">training</div></div>
-          {{if .Errors}}<div class="sk"><div class="skv" style="color:var(--warn)">{{comma .Errors}}</div><div class="skl">served an error</div></div>{{end}}
-          {{/* Shown rather than silently dropped. A total that quietly shrank is one nobody can
-               reconcile against their own server logs, and "we ignored 11 fake requests" reads as
-               more trustworthy than a number that merely happens to be right. */}}
-          {{if .Probes}}<div class="sk"><div class="skv">{{comma .Probes}}</div><div class="skl">scans ignored</div></div>{{end}}
-        </div>
-        {{if $.HasWeb}}
-        {{/* The comparison, in the product and not only on the marketing site. Two counts of the
-             same window side by side is the whole argument, and a reader who has to do the
-             division themselves will not do it. */}}
-        <div class="agmeta" style="margin-top:10px">
-          Over this same window <b>{{comma $.Visitors}}</b> {{if eq $.Visitors 1}}person{{else}}people{{end}}
-          visited, and <b>{{comma .Hits}}</b> machine {{if eq .Hits 1}}read{{else}}reads{{end}} happened.
-          Every analytics tool that counts with a JavaScript pixel &mdash; including this one, until the
-          reporter below started reporting from your server &mdash; sees only the first number.
-          {{if and .User (not $.AIVisitors)}} And <b>{{comma .User}}</b> of those reads happened because
-          someone asked an assistant about you, of whom <b>none</b> then arrived: the answer was the
-          destination, so there was no visit to record.{{end}}
-        </div>
-        {{end}}
-        <div class="agmeta" style="margin-top:6px">A <b>live assistant fetch</b> is a person asking ChatGPT, Claude or Perplexity something right now and it pulling your page to answer them{{if .UserPct}} — {{.UserPct}}% of the fetches here{{end}}. That is a human intent signal, not a robot, and it is the reason these three are counted apart instead of lumped into "bot traffic".</div>
-
-        {{if .Bars}}
-        <div class="sovwrap" style="margin-top:14px">
-          <div class="crawlbars">
-            {{range .Bars}}<div class="crawlday{{if .Today}} ctoday{{end}}" title="{{.Label}} · {{.Hits}} fetch{{if ne .Hits 1}}es{{end}} · {{.User}} live, {{.Search}} search, {{.Training}} training"><i class="cseg-t" style="height:{{.TrainingPct}}%"></i><i class="cseg-s" style="height:{{.SearchPct}}%"></i><i class="cseg-u" style="height:{{.UserPct}}%"></i></div>{{end}}
-          </div>
-          <div class="crawlax"><span>{{.FirstDay}}</span><span>peak {{comma .Peak}}/day</span><span>{{.LastDay}}</span></div>
-          <div class="sovleg"><span><i class="cseg-u"></i>answering a person</span><span><i class="cseg-s"></i>indexing for answers</span><span><i class="cseg-t"></i>training</span></div>
-        </div>
-        <!-- each column's split was only in a title= on a div with no role, so nothing but a
-             mouse could ever get at it. Same numbers, as text. -->
-        <details class="charttable">
-          <summary>data table · fetches per day by purpose &#9662;</summary>
-          <div class="tscroll">
-          <table class="ctab charteq">
-            <thead><tr><th>day</th><th class="n">fetches</th><th class="n">live</th><th class="n">search</th><th class="n">training</th></tr></thead>
-            <tbody>
-            {{range .Bars}}<tr><td>{{.Label}}{{if .Today}} <span class="mut">(today)</span>{{end}}</td><td class="n">{{comma .Hits}}</td><td class="n">{{comma .User}}</td><td class="n">{{comma .Search}}</td><td class="n">{{comma .Training}}</td></tr>{{end}}
-            </tbody>
-          </table>
-          </div>
-        </details>
-        {{end}}
-
-        <div class="tscroll">
-        <table class="ctab" style="margin-top:14px">
-          <tr><th>crawler</th><th>run by</th><th>why</th><th class="n">fetches</th><th class="n">pages</th><th class="n">errors</th><th>last seen</th></tr>
-          {{range .Crawlers}}
-          <tr>
-            <td><b>{{.Crawler}}</b></td>
-            <td>{{.Operator}}</td>
-            <!-- accent ONLY when Live: present tense has to be earned. This said "answering
-                 someone now" for every user-purpose crawler forever, so a fetch from last
-                 Tuesday read as an assistant mid-answer. -->
-            <td class="nw">{{if .Live}}<span class="acc">{{.PurposeText}}</span>{{else}}{{.PurposeText}}{{end}}</td>
-            <td class="n">{{comma .Hits}}</td>
-            <td class="n">{{comma .Pages}}</td>
-            <td class="n">{{if .Errors}}<span style="color:var(--warn)">{{comma .Errors}}</span>{{else}}0{{end}}</td>
-            <!-- the TIME, which is what "last seen" means. This column rendered LastPath — a
-                 path, under a header promising a time — so the table carried no timestamp at
-                 all and a stale row was indistinguishable from a live one. Path kept, demoted
-                 to where it belongs: the thing it last fetched. -->
-            <td class="nw">{{if .LastAgo}}{{.LastAgo}}{{if .LastPath}}<span class="cpath">{{.LastPath}}</span>{{end}}{{else}}<span class="nodata">never</span>{{end}}</td>
-          </tr>
-          {{end}}
-        </table>
-        </div>
-
-        {{if .Gaps}}
-        <div class="agmeta" style="margin-top:14px"><b>Read by people, never read by an assistant.</b> No AI can cite a page it has never fetched, and these have proven human demand. Link to them from a page the crawlers do reach, or list them in your sitemap.</div>
-        <div class="tscroll">
-        <table class="ctab">
-          <tr><th>page</th><th class="n">human views</th><th class="n">visitors</th></tr>
-          {{range .Gaps}}<tr><td>{{.Path}}</td><td class="n">{{comma .Views}}</td><td class="n">{{comma .Visitors}}</td></tr>{{end}}
-        </table>
-        </div>
-        {{end}}
-      </div>
-      {{else}}
-      <div data-empty="1">
-        {{if .Ever}}
-        <div class="agmeta">Your server has reported AI-crawler visits before, but none landed in this window{{if .Scoped}} under the filters currently applied{{end}}. {{if .Scoped}}<a href="{{.WidenURL}}">Widen to 90 days with no filters</a> to check.{{else}}Either the crawlers have not come back, or the reporter stopped running.{{end}}</div>
-        {{else}}
-        <div class="agmeta">GPTBot, ClaudeBot and PerplexityBot run no JavaScript, so the tracking snippet on your pages is invisible to them and every analytics tool you have — ours included — reports zero AI crawlers. The only way to see them is from the server that answered the request.</div>
-        {{if .Managed}}
-        <div class="agmeta" style="margin-top:8px">Turn it on from <a href="{{.CloudURL}}">your project settings</a>: we open a pull request that adds the reporter to your repo, or hand you the snippet to paste. Six lines, no dependency, and it never delays a response.</div>
-        {{else}}
-        <div class="agmeta" style="margin-top:8px">Self-hosting? Report each hit from your own middleware — match the user agent, then fire and forget:</div>
-        <pre class="code">curl -s -X POST {{$.Base}}/v1/events \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer {{if $.WriteKey}}{{$.WriteKey}}{{else}}YOUR_WRITE_KEY{{end}}" \
-  -d '{"name":"$ai_crawl","distinct_id":"$crawler","properties":{
-        "crawler":"GPTBot",
-        "operator":"OpenAI",
-        "purpose":"training",
-        "path":"/pricing",
-        "status":200,
-        "site":"your-product.com"}}'</pre>
-        <div class="agmeta"><b>purpose</b> is <b>training</b>, <b>search</b> or <b>user</b> — keep them apart, a live fetch answering a person is worth more than a training sweep and averaging them hides it. This is the one $-prefixed event that survives the bot filter, precisely because it is reported from inside a crawler's request.</div>
-        {{end}}
-        {{end}}
-      </div>
-      {{end}}
-      {{end}}
-    </div>
-
-    <div class="pane" id="pane-goals" style="order:230" data-stratum="convert">
-      <h3>goals<span class="sub">· conversions against the goals you defined · a fixed 30-day window, not the range selected above · computed by /v1/goals</span></h3>
-      {{if .Goals}}
-      <div class="goalrow">
-        {{range .Goals}}<div class="goalcard"><div class="gname">{{.Name}}</div><div class="gnum">{{.Conversions}} <span class="gpct">{{.Pct}}%</span></div>{{if .TopChannel}}<div class="gchan">top channel: {{.TopChannel}}</div>{{end}}</div>{{end}}
-      </div>
-      {{end}}
-      {{if .HasGoalsStore}}
-      <!-- the create row used to be the ELSE arm of "do any goals exist", so the moment you
-           created your first goal the only way to add a second disappeared from the UI. It
-           now renders whenever the store is available, under whatever goals you already have. -->
-      <div class="exrow" style="margin-bottom:0">
-        <input id="gName" autocomplete="off" placeholder="goal name (e.g. Signed up)" aria-label="goal name">
-        <input id="gValue" autocomplete="off" placeholder="event name, or /path* glob" aria-label="goal event name or path glob">
-        <button id="gCreate">Create goal</button>
-      </div>
-      <!-- gNote is where the create handler writes validation and server errors, so it must
-           exist in BOTH states. Rendering it only when the list is empty would make a failed
-           create throw on a null and report nothing at all to the user. -->
-      <div class="exsummary" id="gNote">{{if not .Goals}}no goals yet. name what counts as success. a value starting with / matches a page path; anything else is an event name.{{end}}</div>
-      {{else}}
-      <div class="exsummary">goals are not enabled on this instance, so there is nothing to name or count. they persist to a <b>.goals.json</b> beside your event data; when the engine cannot open that file it starts without them and logs the reason. fix the path or the permissions on that file, restart, and the create-a-goal row appears here.</div>
-      {{end}}
-    </div>
-
-    <div class="pane wide" id="pane-retention" style="order:510" data-stratum="return">
-      <h3>returning {{if .GrainProp}}accounts{{else}}users{{end}}
-        <select id="retDays" class="zonesel" style="margin-left:8px" aria-label="how many periods of retention to show">
-          <option value="7" {{if eq .RetDays 7}}selected{{end}}>7 periods</option>
-          <option value="30" {{if eq .RetDays 30}}selected{{end}}>30 periods</option>
-          <option value="90" {{if eq .RetDays 90}}selected{{end}}>90 periods</option>
-        </select>
-        <select id="retBucket" class="zonesel" aria-label="retention period length">
-          <option value="day" {{if eq .RetBucket "day"}}selected{{end}}>daily</option>
-          <option value="week" {{if eq .RetBucket "week"}}selected{{end}}>weekly</option>
-          <option value="month" {{if eq .RetBucket "month"}}selected{{end}}>monthly</option>
-        </select>
-        <select id="retRoll" class="zonesel" title="on = returned in exactly period N; on-or-after = still active at period N or later">
-          <option value="" {{if not .RetRolling}}selected{{end}}>returned on</option>
-          <option value="1" {{if .RetRolling}}selected{{end}}>on or after</option>
-        </select>
-        <span style="text-transform:none;letter-spacing:0">· computed by /v1/retention</span><span class="sub">&middot; weekly cohorts: of the people new that week, how many came back &middot; across all recorded history, not the range selected above &middot; computed by /v1/retention</span></h3>
-      {{if .RetentionReady}}
-      <table class="heat">
-        <thead><tr><th>Cohort</th><th>n</th>{{range .RetDayHeaders}}<th>{{.}}</th>{{end}}</tr></thead>
-        <tbody>
-          {{range .Retention}}<tr><td class="lab">{{.Date}}</td><td class="lab">{{.Size}}</td>{{range .Cells}}{{if .Empty}}<td class="empty"></td>{{else}}<td style="{{.Style}}"><div class="cell">{{.Label}}</div></td>{{end}}{{end}}</tr>{{end}}
-        </tbody>
-      </table>
-      {{else}}
-      <div class="exsummary">retention needs a few days of history. once your first visitors have a chance to come back, their cohorts fill in here.</div>
-      {{end}}
-    </div>
+    
 
     <!-- ship and learn: the three panes that close the loop between what you shipped
          and what it did. deploys marks the ships, flags runs the experiment, surveys
@@ -2485,30 +2071,13 @@
          experiment. That is the wrong way round: the design is the part people skip, and
          hiding the tool behind having already used it guarantees they keep skipping it.
          This pane exists at zero experiments and says what one would give you. ══════════ -->
-    <div class="pane wide" id="pane-experiments" style="order:615" data-stratum="ship">
-      <h3>test a change
-        <span class="sub">· show two versions, find out which one wins — and whether your traffic can even answer that · computed by /v1/experiments</span></h3>
-      <div class="exrow" style="margin-bottom:10px">
-        <input id="expKey" autocomplete="off" placeholder="what are you changing? e.g. pricing_page" aria-label="what are you changing">
-        <select id="expGoal" class="zonesel" aria-label="what counts as a win">
-          <option value="">what counts as a win?</option>
-          {{range .Events}}{{if not (evauto .)}}<option value="{{.}}">{{.}}</option>{{end}}{{end}}
-        </select>
-        <button id="expPlan">How long would it take?</button>
-      </div>
-      <div id="expNew"></div>
-      <div id="expOut"><div class="exsummary">…</div></div>
-    </div>
+    
 
     <!-- ══ ACCOUNTS ═════════════════════════════════════════════════════════════════════
          B2B grain. An account converts when ANYONE in it converts, which is the number a
          B2B product is paid on and which the user funnel cannot express — one admin buying
          at a fifty-seat customer is 100% account conversion and 2% user conversion. ═════ -->
-    <div class="pane wide" id="pane-accounts" style="order:240" data-stratum="convert">
-      <h3>accounts
-        <span class="sub">· your customers as companies, not seats — and the funnel + retention recounted per account · across all recorded history, not the range selected above · computed by /v1/groups</span></h3>
-      <div id="acctOut"><div class="exsummary">…</div></div>
-    </div>
+    
 
     <!-- ══ PEOPLE ═══════════════════════════════════════════════════════════════════════
          Profiles derived at query time, never stored. "Why does the profile say pro when
@@ -2519,22 +2088,7 @@
     <!-- ══ DERIVED METRICS ══════════════════════════════════════════════════════════════
          One series over another. Without it the answer to "signups per visitor" is export
          two charts and open a spreadsheet, which is the moment someone stops using this. -->
-    <div class="pane wide" id="pane-formula" style="order:235" data-stratum="convert">
-      <h3>derived metrics
-        <span class="sub">· one series divided by another — signups per visitor, revenue per active user · aligned by DATE, and an undefined bucket says so instead of drawing a zero · computed by /v1/formula</span></h3>
-      <div class="exrow" style="margin-bottom:10px">
-        <input id="fmA" autocomplete="off" placeholder="numerator event (signup)" aria-label="numerator event">
-        <select id="fmOp" class="zonesel" aria-label="operator">
-          <option value="/">÷ per</option>
-          <option value="-">− minus</option>
-          <option value="+">+ plus</option>
-          <option value="*">× times</option>
-        </select>
-        <input id="fmB" autocomplete="off" placeholder="denominator event ($pageview)" aria-label="denominator event">
-        <button id="fmRun">Compute</button>
-      </div>
-      <div id="fmOut"><div class="agmeta">pick two events. the result is computed bucket-by-bucket from your raw events, and any bucket where the denominator is zero is drawn as a gap, never as a zero — "nobody visited" and "nobody converted" are different facts.</div></div>
-    </div>
+    
 
     <!-- ══ ALERTS ═══════════════════════════════════════════════════════════════════════
          Every alert kind except `count` asks nothing of you: relative compares against the
@@ -2552,16 +2106,7 @@
          event stream, because all three answer "what did one person actually do". this
          is an event-based journey inspector — the steps are the events that were
          captured, so it never claims to be a screen or DOM recording. -->
-    <div class="pane wide" id="pane-sessions" style="order:450" data-stratum="behave">
-      <h3>sessions
-        <select id="sesLimit" class="zonesel" style="margin-left:8px" title="how many of the newest sessions to list">
-          <option value="25">25 newest</option>
-          <option value="50" selected>50 newest</option>
-          <option value="100">100 newest</option>
-        </select>
-        <span class="sub">· one row per visit, click a row for its step-by-step journey · rebuilt from your event log at query time, not a screen recording · computed by /v1/sessions</span></h3>
-      <div id="sesOut" class="capped"><div class="exsummary">…</div></div>
-    </div>
+    
 
     <div class="pane" id="pane-live" style="order:810" data-stratum="raw">
       <h3>live <span class="sub">· events as they land</span></h3>
@@ -2572,16 +2117,7 @@
          The query engine had one door: the run_sql MCP tool. So the deepest thing this
          product can do was reachable only by someone already talking to it through an
          agent, and invisible to anyone who just opened the dashboard. ═══════════════════ -->
-    <div class="pane wide" id="pane-sql" style="order:830" data-stratum="raw">
-      <h3>sql
-        <span class="sub">· read-only SELECT straight over your raw events — for the question no report covers · same engine and same production scope as every card above · it does NOT apply the range selected above: a console is for the question a report cannot answer, so it reads all recorded history unless your own WHERE says otherwise · computed by /v1/sql</span></h3>
-      <div class="exrow" style="margin-bottom:10px">
-        <input id="sqlQ" autocomplete="off" spellcheck="false" aria-label="SQL query"
-               placeholder="SELECT prop.country AS country, count(*) AS n FROM events GROUP BY country ORDER BY n DESC LIMIT 10">
-        <button id="sqlRun">Run</button>
-      </div>
-      <div id="sqlOut"><div class="agmeta">SELECT only, one table (<b>events</b>). Columns: <b>name</b>, <b>distinct_id</b>, <b>timestamp</b>, <b>id</b>; properties as <b>prop.&lt;key&gt;</b>. Press Run for the full grammar.</div></div>
-    </div>
+    
 
     <div class="pane" id="pane-events" style="order:820" data-stratum="raw">
       <h3>event stream <span class="sub">· latest 200 · computed by /v1/events/recent</span></h3>

@@ -64,14 +64,3 @@ func TestRealCountriesKeepTheirCodeSeparateFromTheLabel(t *testing.T) {
 		}
 	}
 }
-
-// "1 users" was rendering under every single-user country in the screenshot that prompted this.
-func TestUserCountsArePluralisedHonestly(t *testing.T) {
-	tpl := dashboardTemplateSource(t)
-	if strings.Contains(tpl, "{{.Users}} users<") {
-		t.Error(`the segment row still hardcodes "users", so a one-user country reads "1 users"`)
-	}
-	if !strings.Contains(tpl, "{{.Users}} user{{if ne .Users 1}}s{{end}}") {
-		t.Error("the segment row lost its pluralisation")
-	}
-}

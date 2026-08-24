@@ -41,6 +41,7 @@ import (
 	"github.com/Arjun0606/smolanalytics/internal/store/memory"
 	"github.com/Arjun0606/smolanalytics/internal/store/segment"
 	"github.com/Arjun0606/smolanalytics/internal/survey"
+	"github.com/Arjun0606/smolanalytics/internal/testrun"
 	"github.com/Arjun0606/smolanalytics/internal/trackplan"
 	"github.com/Arjun0606/smolanalytics/internal/webhook"
 )
@@ -351,6 +352,14 @@ func serve(st store.Store, closeStore func() error, guardPublic bool) {
 		app.SetActed(ac)
 	} else {
 		log.Printf("smolanalytics: outcome ledger disabled (%v)", err)
+	}
+	// The test-run log: what the agent found using the app. Optional in exactly the same way the
+	// outcome ledger is — a failure to open it disables the pane and says so, rather than stopping
+	// an instance whose analytics half works perfectly well without it.
+	if rs, err := testrun.Open(sp(".runs.json")); err == nil {
+		app.SetRuns(rs)
+	} else {
+		log.Printf("smolanalytics: test-run log disabled (%v)", err)
 	}
 	// The vendor read. Off unless SMOLANALYTICS_CONNECT_VENDOR is set; see connect_vendor.go for
 	// why this wire had to exist at all (the connector was complete and called by nothing).

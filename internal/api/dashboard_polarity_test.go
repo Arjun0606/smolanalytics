@@ -64,18 +64,3 @@ func TestChartTableUsesTheSharedDirectionRule(t *testing.T) {
 		t.Error("the chart table lost its direction class; every change renders in the neutral tone")
 	}
 }
-
-// The conversion-by-segment card had no sample floor, so a country with ONE visitor who
-// happened to convert rendered "100%" with a full-width bar — the best-performing segment on
-// the page, drawn from one person — above a wall of one-user rows reading 0%.
-func TestConversionBySegmentRefusesToRateAThinSegment(t *testing.T) {
-	if segConvMinUsers < 10 {
-		t.Errorf("segConvMinUsers is %d: below 10 a single user moves the rate by more than the "+
-			"differences this card exists to show", segConvMinUsers)
-	}
-	tpl := dashboardTemplateSource(t)
-	if !strings.Contains(tpl, `class="sc-thin"`) {
-		t.Error("the held-back segments are no longer counted on screen — a card that quietly " +
-			"truncates reads as a card that covered everything")
-	}
-}

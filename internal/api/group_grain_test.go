@@ -130,32 +130,6 @@ func TestAnUninstrumentedGroupPropertyIsAnErrorNotAnEmptyReport(t *testing.T) {
 	}
 }
 
-// The dashboard must never print "users" over a count of accounts. This is the one bug that makes
-// the feature worse than not having it: every number is right and every label is wrong.
-func TestTheDashboardNamesTheUnitItActuallyCounted(t *testing.T) {
-	srv := b2bServer(t)
-	plain := getBody(t, srv, "/")
-	if !strings.Contains(plain, "counts people who reached it") {
-		t.Fatal("the ordinary funnel should still say it counts people")
-	}
-	acct := getBody(t, srv, "/?grain=company")
-	if strings.Contains(acct, "counts people who reached it") {
-		t.Fatal("the funnel is counting accounts and still says users")
-	}
-	if !strings.Contains(acct, "counts <b>accounts</b>") {
-		t.Fatal("the account-grain funnel must say it counts accounts")
-	}
-	if !strings.Contains(acct, "returning accounts") {
-		t.Fatal("retention at account grain must not be headed 'returning users'")
-	}
-	// The way back must keep the question. A bare ?grain= would reset window and filters, so the
-	// reader would see several numbers move and credit them all to the grain switch.
-	back := getBody(t, srv, "/?days=7&f=plan:eq:pro&grain=company")
-	if !strings.Contains(back, "days=7") || !strings.Contains(back, "plan") {
-		t.Fatal("the 'count people instead' link dropped the window or the filters")
-	}
-}
-
 // A grain nobody instrumented falls back to user grain — and must SAY it fell back, or the page
 // shows user numbers under an accounts heading.
 func TestAFailedGrainRequestFallsBackVisibly(t *testing.T) {

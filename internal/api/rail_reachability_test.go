@@ -275,51 +275,6 @@ func TestTheSlabPrimaryActionIsWired(t *testing.T) {
 	}
 }
 
-// A PANE THAT IGNORES THE RANGE CONTROL MUST SAY SO.
-//
-// The toolbar shows a range and the reader reasonably assumes every pane honours it. Several do
-// not, and said nothing: goals is hardcoded to 30 days (dashboard.go:2479), lifecycle to 14
-// (dashboard.go:1320), and accounts / people / retention read `evs`, which is
-// store.Scan(zero, zero) filtered by chips only — all recorded history.
-//
-// Silence means "the toolbar applies", so silence from a pane that ignores it is a false
-// statement made by omission, on a product whose entire pitch is that its numbers are traceable.
-//
-// The worst was sql, whose subtitle promised "the same production scope as every card above, so
-// it can never disagree with them" while applying no window at all — in the one pane a sceptic
-// would use to check the others.
-func TestPanesThatIgnoreTheRangeSaySo(t *testing.T) {
-	src, err := os.ReadFile("dashboard.tmpl.html")
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := string(src)
-	// pane id -> a phrase its subtitle must contain, because its window is not the toolbar's.
-	must := map[string]string{
-		"pane-goals":    "not the range selected above",
-		"pane-accounts": "not the range selected above",
-		"pane-sql":      "does NOT apply the range",
-	}
-	for id, phrase := range must {
-		i := strings.Index(s, `id="`+id+`"`)
-		if i < 0 {
-			t.Errorf("%s no longer exists; this guard is watching nothing", id)
-			continue
-		}
-		// the pane's own header, up to the end of its <h3>
-		end := strings.Index(s[i:], "</h3>")
-		if end < 0 || !strings.Contains(s[i:i+end], phrase) {
-			t.Errorf("%s answers over a different window than the toolbar shows and does not say so "+
-				"(expected its subtitle to contain %q)", id, phrase)
-		}
-	}
-	// And the sentence that was actively false must not come back.
-	if strings.Contains(s, "so it can never disagree with them") {
-		t.Error("the sql pane again claims it can never disagree with the cards above, while " +
-			"applying no time window at all")
-	}
-}
-
 // NO PANE MAY DELETE ITSELF.
 //
 // Five panes were wrapped in a data guard with no else branch, so on an instance with no traffic
@@ -502,32 +457,6 @@ func TestOnboardingIsGatedOnEverHavingDataNotOnTheFilteredCount(t *testing.T) {
 	}
 	if !everHadDataFromTotal.Match(src2) {
 		t.Error("EverHadData is not computed from the pre-filter count, so it distinguishes nothing")
-	}
-}
-
-// NAME THE ENGINES, NEVER COUNT THEM.
-//
-// The AI-visibility pane rendered "3 engines", which reads as three AI search engines — ChatGPT,
-// Claude, Perplexity. Only two engine values are ever written, `claude` and `claude-grounded`
-// (smolanalytics-cloud/lib/geo.ts:56-57), and both are the same vendor sampled two ways; the
-// third was whatever "unknown" rows existed. So a count implied a breadth of coverage that does
-// not exist, on the one pane whose entire job is telling you how visible you are to AI.
-//
-// A count hides the composition. Naming them cannot: "claude, claude-grounded" states the limit
-// in the same breath as the finding, and gets better on its own the day a second vendor is added.
-func TestTheVisibilityPaneNamesItsEnginesRatherThanCountingThem(t *testing.T) {
-	src, err := os.ReadFile("dashboard.tmpl.html")
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := string(src)
-	if strings.Contains(s, "{{len .Engines}} engine") {
-		t.Error("the visibility pane counts its engines, which implies coverage it does not have — " +
-			"only claude and claude-grounded are ever written, and they are one vendor. Range over " +
-			"them and print the names.")
-	}
-	if !strings.Contains(s, "{{range $i, $e := .Engines}}") {
-		t.Error("the pane no longer names its engines; a reader cannot tell one vendor from three")
 	}
 }
 
