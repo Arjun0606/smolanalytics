@@ -20,6 +20,7 @@ import { planCheckCmd } from "../lib/plan.mjs";
 import { auditCmd } from "../lib/audit.mjs";
 import { deskCmd } from "../lib/desk.mjs";
 import { testCmd } from "../lib/test.mjs";
+import { suiteCmd, DEFAULT_PLANS_DIR } from "../lib/suite.mjs";
 
 const C = {
   dim: (s) => `\x1b[2m${s}\x1b[0m`,
@@ -51,6 +52,10 @@ ${C.bold("smolanalytics")} — end-to-end tests without test code
   ${C.dim("--test \"<text>\"")}       what should work, in plain English
   ${C.dim("--plan <file>")}         replay the recording; wake the agent only if it stopped fitting
   ${C.dim("--headed")}              watch it happen
+
+  ${C.dim("--suite <dir>")}         a folder of .md files, one sentence per test
+  ${C.dim("--comment")}             post the verdicts on the pull request (GitHub Actions)
+  ${C.dim("--plans <dir>")}         where recordings are kept (default: ${DEFAULT_PLANS_DIR})
   ${C.dim("No account. No GitHub app. Nothing written to your repo.")}
 
   ${C.bold("npx smolanalytics audit")}       what your app does that nothing is measuring
@@ -100,6 +105,23 @@ async function main() {
     return;
   }
   if (cmd === "test") {
+    const suite = flag("suite");
+    const comment = hasFlag("comment");
+    // --suite and --comment are the CI shape: many tests, one comment, a status per test. Without
+    // either of them this stays the sixty-second command it already was, with the same output.
+    if (suite || comment) {
+      process.exitCode = await suiteCmd({
+        suite,
+        url: flag("url"),
+        test: flag("test"),
+        plans: flag("plans") || flag("plan-dir") || (suite ? undefined : flag("plan")) || DEFAULT_PLANS_DIR,
+        comment,
+        headed: hasFlag("headed"),
+        yes: hasFlag("yes"),
+        maxSteps: Number(flag("max-steps")) || 40,
+      });
+      return;
+    }
     process.exitCode = await testCmd({
       url: flag("url"),
       test: flag("test"),

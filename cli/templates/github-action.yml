@@ -1,0 +1,123 @@
+# smolanalytics — end-to-end tests without test code, on every pull request.
+#
+# Copy this file to .github/workflows/e2e.yml, then:
+#   1. add ANTHROPIC_API_KEY to this repository's secrets (Settings → Secrets and variables → Actions)
+#   2. put your tests in tests/, one sentence each — see example-test.md
+#   3. keep ONE of the three "the preview URL" steps below and delete the other two
+#
+# That is the whole install. No GitHub App on your repositories, no agent pushing a Dockerfile into
+# your code, no environment built before you are allowed to see anything. This runs on your own
+# Actions runner, against a URL your host already builds for the pull request, and comments using
+# the token Actions hands every job for free.
+
+name: e2e
+
+on:
+  pull_request:
+
+# THESE TWO, AND NOTHING ELSE.
+#   contents: read        actions/checkout reads tests/ out of this repository.
+#   pull-requests: write  the verdict is one comment on the pull request, edited in place on every
+#                         push. Without it everything runs and only the comment fails, with a 403.
+# Naming them here also takes everything else away: a compromised step in this workflow cannot push
+# code, cut a release, or reach another repository.
+permissions:
+  contents: read
+  pull-requests: write
+
+# One run per pull request. Push twice in a minute and two runs drive two browsers against the same
+# preview and race to edit the same comment; the older one is not worth reading by then anyway.
+concurrency:
+  group: e2e-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+
+    # A pull request opened FROM A FORK gets no secrets and a read-only token: ANTHROPIC_API_KEY
+    # would be empty and the comment would 403. Skipping says that plainly. Failing on every
+    # outside contribution is how a new tool gets uninstalled.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # ----------------------------------------------------------------------------------------
+      # THE PREVIEW URL — keep (a), (b) or (c). Delete the other two.
+      # All three set the same output, so the run step below does not change.
+      # ----------------------------------------------------------------------------------------
+
+      # (a) VERCEL. Vercel builds the preview itself; this waits for that deployment to be ready
+      #     and reads its URL. Netlify and Render have equivalent actions.
+      - name: the preview URL
+        id: preview
+        uses: patrickedqvist/wait-for-vercel-preview@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          max_timeout: 600
+
+      # (b) A URL YOU ALREADY HAVE — staging, or a preview at a predictable address.
+      # - name: the preview URL
+      #   id: preview
+      #   run: echo "url=https://staging.example.com" >> "$GITHUB_OUTPUT"
+
+      # (c) BUILD AND SERVE IT HERE, for a static site with no preview host. The server is
+      #     backgrounded, so wait for it: a test against a port nothing is listening on yet reports
+      #     a broken app when the app is fine.
+      # - name: the preview URL
+      #   id: preview
+      #   run: |
+      #     npm ci
+      #     npm run build
+      #     npx --yes serve --listen 4173 dist &
+      #     npx --yes wait-on --timeout 60000 http://localhost:4173
+      #     echo "url=http://localhost:4173" >> "$GITHUB_OUTPUT"
+
+      # ----------------------------------------------------------------------------------------
+      # THE RECORDINGS. This step is the economics of the whole tool.
+      #
+      # A passing run is recorded and replayed with no model calls at all — measured at 0.7s for a
+      # three-step test. But a CI runner starts empty every time. WITHOUT THIS CACHE every test on
+      # every pull request is a fresh agent run: slower, and paid for per run, forever. With it, the
+      # agent only wakes when a recording stops fitting the app.
+      #
+      # The key is per-commit so each run saves a fresh entry; restore-keys takes the newest earlier
+      # one, and a pull request falls back to the cache from the default branch. Recordings that the
+      # agent rewrote during this run are what gets saved, so a repaired recording carries forward.
+      # ----------------------------------------------------------------------------------------
+      - name: cache the recordings
+        uses: actions/cache@v4
+        with:
+          path: .smolanalytics/recordings
+          key: smolanalytics-recordings-${{ github.sha }}
+          restore-keys: |
+            smolanalytics-recordings-
+
+      # Chromium is downloaded here each run (about 20 seconds) and deliberately not cached: it
+      # would spend most of this repository's 10 GB cache budget and evict the recordings, which are
+      # the part worth keeping.
+      - name: e2e
+        # WEEK ONE: REPORT, DO NOT BLOCK. A new tool that puts a red X on somebody's pull request
+        # before it has earned any trust gets uninstalled instead of read. The comment is still
+        # posted and the step is still marked failed in the log. Delete this line once the suite has
+        # been right often enough that a failure should stop a merge.
+        continue-on-error: true
+        env:
+          # Referenced as "$URL" below rather than interpolated into the script, because a value
+          # that came from another action must never be pasted into a shell command.
+          URL: ${{ steps.preview.outputs.url }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Provided automatically by Actions. This is the whole of the GitHub access this needs.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx smolanalytics@latest test --suite tests/ --url "$URL" --comment
+
+# EXIT CODES, if you gate on this later:
+#   0  every test passed
+#   1  a test failed — the app did not do what the sentence describes
+#   2  this runner could not finish: no browser, no key, no network, or a recording stopped fitting
+#      and there was no key to re-check it with. Never your application.

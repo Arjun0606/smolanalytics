@@ -9,6 +9,7 @@
   "files": [
     "bin",
     "lib",
+    "templates",
     "README.md"
   ],
   "scripts": {

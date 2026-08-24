@@ -26,7 +26,11 @@
 // never for anyone who does not use it.
 
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { homedir } from "node:os";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 const C = {
   b: (s) => `\x1b[1m${s}\x1b[0m`,
@@ -83,9 +87,18 @@ export function flatten(snapshot, cap = 120) {
   return { elements: out, truncated: Math.max(0, seen - out.length) };
 }
 
+/**
+ * Read the page.
+ *
+ * `page.locator("body").ariaSnapshot()`, not `page.ariaSnapshot()`. The page-level method only
+ * arrived in a recent Playwright; the locator form has existed since 1.49 and returns byte-identical
+ * output. Customers do not all install the newest version, and "page.ariaSnapshot is not a function"
+ * is a crash rather than a graceful degradation — caught by running the browser tests against a
+ * 1.52 that happened to be on this machine.
+ */
 async function perceive(page) {
   const [aria, title, text] = await Promise.all([
-    page.ariaSnapshot().catch(() => ""),
+    page.locator("body").ariaSnapshot().catch(() => ""),
     page.title().catch(() => ""),
     page.evaluate(() => document.body?.innerText ?? "").catch(() => ""),
   ]);
@@ -241,6 +254,46 @@ export function compile(startUrl, steps) {
   return out.length ? { startUrl, steps: out } : null;
 }
 
+/**
+ * Point a recording at the URL being tested RIGHT NOW.
+ *
+ * A recording is made against one deploy preview and replayed against the next one, and a preview
+ * hostname is different on every pull request. Replaying plan.startUrl verbatim drove the browser
+ * to the deployment the recording was made on: green, in a few hundred milliseconds, having never
+ * opened the change under review — or stale, because that preview had since been torn down. Both
+ * are worse than no test. Caching recordings between CI runs is what makes this cheap, so the
+ * recording has to survive the URL changing.
+ *
+ * Only origins matching the recorded start are rewritten. A step that navigates to a payment
+ * provider or an identity provider must keep pointing at the provider, not at this preview.
+ */
+export function rebase(plan, url) {
+  if (!url) return plan;
+  let from = "";
+  try {
+    from = new URL(plan.startUrl).origin;
+  } catch {
+    return { ...plan, startUrl: url };
+  }
+  let to = "";
+  try {
+    to = new URL(url).origin;
+  } catch {
+    return plan;
+  }
+  if (from === to) return { ...plan, startUrl: url };
+  const steps = (plan.steps || []).map((s) => {
+    if (s.kind !== "goto" || typeof s.url !== "string") return s;
+    try {
+      const u = new URL(s.url);
+      return u.origin === from ? { ...s, url: to + u.pathname + u.search + u.hash } : s;
+    } catch {
+      return s;
+    }
+  });
+  return { ...plan, startUrl: url, steps };
+}
+
 export async function replay(page, plan) {
   const started = Date.now();
   await page.goto(plan.startUrl, { waitUntil: "domcontentloaded" });
@@ -273,36 +326,117 @@ export function stalenessNote(r) {
 
 // ---- the browser, fetched only when this command is used --------------------------------------
 
+/**
+ * Find Playwright — and if it is not here, put it somewhere that is not the customer's repository.
+ *
+ * THREE PLACES, IN THIS ORDER, EACH FOR A FAILURE THAT ACTUALLY HAPPENS.
+ *
+ * 1. A plain import: in development, or when this CLI is installed as a dependency, it is already
+ *    resolvable and nothing should be downloaded.
+ * 2. The project's own node_modules, resolved from the working directory. Under `npx` this file
+ *    lives in ~/.npm/_npx/<hash>/node_modules/smolanalytics/lib and ESM resolution walks up from
+ *    THERE — it never looks at the repo the command was run in. So the previous version installed
+ *    into the repo and then imported from the npx directory, found nothing, and told CI the browser
+ *    could not be loaded. On a laptop with Playwright already installed it also downloaded a second
+ *    copy for no reason.
+ * 3. A cache directory under the user's home. `npm install` in the working directory creates
+ *    node_modules/ and a package-lock.json inside the project, and in a repo with no package.json it
+ *    creates them from nothing. "Nothing written to your repo" is the entire reason to use this
+ *    instead of the alternative, and that has to be true of the browser too.
+ */
+function resolveFrom(dir, spec) {
+  try {
+    return createRequire(path.join(dir, "package.json")).resolve(spec);
+  } catch {
+    return "";
+  }
+}
+
+async function importPlaywright(entry) {
+  const m = await import(pathToFileURL(entry).href);
+  // Playwright's entry point is CommonJS. Depending on the version, import() hands back the exports
+  // directly or wrapped in .default; picking the wrong one fails later as "cannot read chromium of
+  // undefined", a hundred lines from the cause.
+  return m && m.chromium ? m : m.default;
+}
+
+function browserCacheDir() {
+  return process.env.SMOLANALYTICS_CACHE || path.join(homedir(), ".cache", "smolanalytics");
+}
+
 async function loadPlaywright(log, yes) {
   try {
     return await import("playwright");
   } catch {
-    /* not installed yet */
+    /* not resolvable from this file: try the project, then our own cache */
   }
+  for (const dir of [process.cwd(), browserCacheDir()]) {
+    const entry = resolveFrom(dir, "playwright");
+    if (!entry) continue;
+    try {
+      return await importPlaywright(entry);
+    } catch {
+      /* a partial install; keep going and reinstall over it */
+    }
+  }
+
+  const home = browserCacheDir();
   log("");
   log(C.b("This command drives a real browser, which needs Playwright (~50MB) and Chromium."));
   log(C.dim("Every other command here has zero dependencies, so it is fetched only now, only once."));
+  log(C.dim(`It goes in ${home}. Nothing is written to your project.`));
   if (!yes && process.stdin.isTTY) {
     log(C.dim("Re-run with --yes to install without asking."));
     return null;
   }
   log(C.dim("installing…"));
-  const r = spawnSync("npm", ["install", "--no-save", "--silent", "playwright"], { stdio: "inherit" });
-  if (r.status !== 0) {
-    log(C.r("could not install Playwright. Install it yourself with: npm i playwright && npx playwright install chromium"));
+  try {
+    mkdirSync(home, { recursive: true });
+    // npm needs a package.json at the prefix or it warns and behaves differently between versions.
+    if (!existsSync(path.join(home, "package.json"))) {
+      writeFileSync(path.join(home, "package.json"), JSON.stringify({ name: "smolanalytics-browser", private: true, version: "1.0.0" }, null, 2) + "\n");
+    }
+  } catch (e) {
+    log(C.r(`could not create ${home}: ${e && e.message}`));
     return null;
   }
-  spawnSync("npx", ["playwright", "install", "chromium"], { stdio: "inherit" });
+  const r = spawnSync("npm", ["install", "--silent", "--prefix", home, "playwright"], { stdio: "inherit" });
+  if (r.status !== 0) {
+    log(C.r(`could not install Playwright into ${home}. Install it yourself with: npm i playwright && npx playwright install chromium`));
+    return null;
+  }
+  // Run the copy we just installed, not `npx playwright`, which would download the CLI a second
+  // time and can pick a different version than the library we are about to import.
+  const bin = path.join(home, "node_modules", ".bin", process.platform === "win32" ? "playwright.cmd" : "playwright");
+  const install = existsSync(bin)
+    ? spawnSync(bin, ["install", "chromium"], { stdio: "inherit" })
+    : spawnSync("npx", ["playwright", "install", "chromium"], { stdio: "inherit" });
+  if (install.status !== 0) {
+    log(C.r("Playwright installed but Chromium did not. Run: npx playwright install chromium"));
+    return null;
+  }
+  const entry = resolveFrom(home, "playwright");
   try {
-    return await import("playwright");
+    return await importPlaywright(entry);
   } catch (e) {
     log(C.r(`Playwright installed but could not be loaded: ${e && e.message}`));
     return null;
   }
 }
 
-/** Post the verdict, if a project is configured. Never throws, never affects the exit code. */
-async function report(run, log) {
+/**
+ * Post the verdict, if a project is configured, and hand it to whoever is running this test.
+ *
+ * onRun is how `--suite` gets a STATUS rather than an exit code. Three statuses do not fit in one
+ * integer, and a suite that had to guess "stale" from log text would eventually print "failed" for
+ * a renamed button. Never throws, never affects the exit code.
+ */
+async function report(run, log, onRun) {
+  try {
+    onRun?.(run);
+  } catch {
+    /* a caller's bookkeeping must not change a verdict */
+  }
   const projectId = process.env.SMOLANALYTICS_PROJECT;
   const writeKey = process.env.SMOLANALYTICS_WRITE_KEY;
   if (!projectId || !writeKey) return;
@@ -321,7 +455,7 @@ async function report(run, log) {
   }
 }
 
-export async function testCmd({ url, test, plan: planPath, headed, maxSteps = 40, yes, log = console.log }) {
+export async function testCmd({ url, test, plan: planPath, headed, maxSteps = 40, yes, log = console.log, onRun }) {
   if (!url || !test) {
     log(`
 ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No account.
@@ -350,17 +484,17 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
   try {
     // REPLAY FIRST — the path almost every real run takes, and it calls no model at all.
     if (planPath && existsSync(planPath)) {
-      const plan = JSON.parse(readFileSync(planPath, "utf8"));
+      const plan = rebase(JSON.parse(readFileSync(planPath, "utf8")), url);
       log(C.dim(`replaying ${plan.steps.length} recorded steps (no model)…`));
       const r = await replay(page, plan);
       if (r.status === "passed") {
         log(`\n${C.g("PASS")}${C.dim(` — replayed ${r.steps} steps in ${(r.ms / 1000).toFixed(1)}s, no model calls.`)}`);
-        await report({ test, status: "passed", mode: "replay", durationMs: r.ms, url, reason: "Replayed the recorded run; every step still worked." }, log);
+        await report({ test, status: "passed", mode: "replay", durationMs: r.ms, url, reason: "Replayed the recorded run; every step still worked." }, log, onRun);
         await browser.close();
         return 0;
       }
       log(`\n${C.y(stalenessNote(r))}\n`);
-      await report({ test, status: "stale", mode: "replay", durationMs: r.ms, url, reason: stalenessNote(r) }, log);
+      await report({ test, status: "stale", mode: "replay", durationMs: r.ms, url, reason: stalenessNote(r) }, log, onRun);
     }
 
     if (!apiKey) {
@@ -385,10 +519,17 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
 
       const calls = (res.content || []).filter((b) => b.type === "tool_use");
       if (!calls.length) {
-        log(`\n${C.r("FAIL")} ${C.dim("· no verdict")}`);
-        log("The run ended without the agent calling finish, so nothing was observed.\n");
+        // The model replied with prose instead of a tool call. That is THIS RUNNER misbehaving, not
+        // the application, so it errors and exits 2. Reporting it as FAIL/1 told somebody their
+        // checkout was broken because the model wandered off — the exact confusion the three
+        // statuses exist to prevent.
+        const ms = Date.now() - started;
+        const why = "The agent stopped without calling finish, so nothing was observed. This is the test runner, not your application.";
+        log(`\n${C.y("ERROR")} ${C.dim("· no verdict")}`);
+        log(`${why}\n`);
+        await report({ test, status: "errored", mode: "agent", durationMs: ms, url, reason: why }, log, onRun);
         await browser.close();
-        return 1;
+        return 2;
       }
 
       const results = [];
@@ -401,7 +542,7 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
           await report({
             test, status: a.passed ? "passed" : "failed", mode: "agent", durationMs: ms, url, reason: a.why,
             steps: a.passed ? undefined : steps.map((s) => ({ n: s.n, do: s.label, why: s.action.why, ok: s.ok, detail: s.detail, ms: s.ms })),
-          }, log);
+          }, log, onRun);
           if (a.passed && planPath) {
             const p = compile(url, steps);
             if (p) {
@@ -433,13 +574,13 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
     const ms = Date.now() - started;
     log(`\n${C.r("FAIL")} ${C.dim(`· ${maxSteps} steps · ${(ms / 1000).toFixed(1)}s`)}`);
     log(`The test did not reach a verdict within ${maxSteps} steps. Usually the app did not do what the test expected and the agent kept looking, or the test describes more than one scenario and should be split.\n`);
-    await report({ test, status: "failed", mode: "agent", durationMs: ms, url, reason: `No verdict within ${maxSteps} steps.` }, log);
+    await report({ test, status: "failed", mode: "agent", durationMs: ms, url, reason: `No verdict within ${maxSteps} steps.` }, log, onRun);
     await browser.close();
     return 1;
   } catch (e) {
     await browser.close().catch(() => {});
     log(C.r(`\nthe run could not complete: ${e && e.message ? e.message : e}`));
-    await report({ test, status: "errored", mode: "agent", durationMs: Date.now() - started, url, reason: `The run could not complete: ${e && e.message}. This is the test runner, not your application.` }, log);
+    await report({ test, status: "errored", mode: "agent", durationMs: Date.now() - started, url, reason: `The run could not complete: ${e && e.message}. This is the test runner, not your application.` }, log, onRun);
     // Exit 2, not 1: the test did not fail, the runner did. A CI gate must tell those apart, or an
     // outage on our side reads to a customer as their app being broken.
     return 2;
