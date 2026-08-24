@@ -450,9 +450,11 @@ const LABEL = { passed: "pass", failed: "**fail**", stale: "stale", errored: "er
 /**
  * The needle that makes the next push EDIT this comment instead of adding another.
  *
- * Deliberately the same shape lib/pr-comment.mjs matches with its MARKER_RE. Two markers for one
- * comment means the day anything switches between them, every open pull request silently grows a
- * second verdict that nobody edits again.
+ * There is exactly ONE of these, and there was briefly two. A parallel build produced a second
+ * commentBody/postComment pair in lib/pr-comment.mjs with a different marker; nothing imported it,
+ * but had both ever run, every push would have left two verdicts on the pull request and neither
+ * would have edited the other. That file is deleted. If a second marker shape ever appears, this
+ * is the comment that should stop you.
  */
 export const markerFor = (suite) => `<!-- smolanalytics-run:${slug(suite)} -->`;
 
