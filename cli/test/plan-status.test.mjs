@@ -17,11 +17,15 @@ import { HEALTHY_STATUS } from "../lib/plan.mjs";
 // healthy event. Add a status in Go without teaching the CLI and this fails here rather than in a
 // customer's pipeline.
 
-const control = readFileSync(new URL("../../internal/mcp/control.go", import.meta.url), "utf8");
+// The vocabulary moved: it was inline in internal/mcp/control.go until the dashboard needed the
+// same verdict and the computation was extracted. This test caught the move, which is the point —
+// the strings are a wire contract with somebody's CI, and they must not be able to relocate
+// silently.
+const control = readFileSync(new URL("../../internal/planhealth/planhealth.go", import.meta.url), "utf8");
 
 test("the CLI accepts the status the server actually sends for a healthy event", () => {
   // The literal assigned to row["status"] on the path where the event WAS seen.
-  const emitted = [...control.matchAll(/row\["status"\]\s*=\s*"([^"]+)"/g)].map((m) => m[1]);
+  const emitted = [...control.matchAll(/Status(?:Flowing|Missing)\s*=\s*"([^"]+)"/g)].map((m) => m[1]);
   assert.ok(emitted.length >= 2, `could not read the status vocabulary out of control.go: ${emitted}`);
 
   const unhealthy = emitted.filter((s) => /missing/i.test(s));
