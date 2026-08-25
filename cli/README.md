@@ -1,56 +1,40 @@
 # smolanalytics
 
-Wire [smolanalytics](https://smolanalytics.com) into your app with one command.
+**End-to-end tests without test code.** You write one sentence describing what should work. An
+agent opens a real browser, works out how to do it, and returns a verdict. On a pull request, one
+comment says what broke.
 
 ```sh
-npx smolanalytics init --host https://your-instance --key sa_xxx
+npx smolanalytics test --url https://yourapp.com --test "checkout works"
 ```
 
-It works out what your project is, edits the one file that needs editing, and tells you
-exactly which file it touched before it touches it.
+No account, no GitHub App, nothing written to your repository. It needs a URL you already have —
+staging, a deploy preview, or localhost through a tunnel — your own `ANTHROPIC_API_KEY`, and that
+sentence. Playwright is fetched on first use and nothing else is installed: this package has no
+dependencies.
 
-```
-  detected  Next.js (App Router)
-  file      app/layout.tsx
-  edited    app/layout.tsx
-  edited    .env.local
-```
+There is no test code to maintain, because there is no test code. When a button moves, there is no
+selector to update — the agent looks at the page again and works it out.
 
-## What it does
+**A run that passes is recorded, and the recording replays with no model calls at all.** The agent
+comes back only when the recording stops fitting the app, which is exactly when judgement is worth
+paying for.
 
-**Edits the file for you** on Next.js (App and Pages Router), SvelteKit, Vite, Create React
-App, and plain HTML. It inserts before `</head>` where there is one, and after `<body>` in a
-Next.js layout that builds its head from `metadata` — that's the default `create-next-app`
-shape and the case most install snippets get wrong.
+## The commands
 
-**Prints the install and changes nothing** on Nuxt and Astro. Neither one installs as a
-script tag in an HTML file: Nuxt's belongs in `nuxt.config`, and Astro needs `is:inline` or
-the bundler reorders the script so `init` runs before the SDK exists. Editing those with a
-generic snippet would give you a page that looks instrumented and sends nothing, so it shows
-you the version that works instead.
-
-**Adds** `SMOLANALYTICS_HOST` and `SMOLANALYTICS_WRITE_KEY` to your existing `.env.local` or
-`.env`. It will not create one if you don't already keep one.
-
-It is **idempotent**: run it twice and the second run leaves everything alone. It never
-half-edits a file, and when it can't find a safe place to insert it says so and prints the
-snippet instead of guessing.
-
-## Flags
-
-| flag | |
+| | |
 |---|---|
-| `--host <url>` | your instance, e.g. `https://you.fly.dev` (or `SMOLANALYTICS_HOST`) |
-| `--key <key>` | public write key (or `SMOLANALYTICS_WRITE_KEY`) |
-| `--yes` | don't ask before editing |
-| `--print` | print the snippet, change nothing |
+| `test --url <url> --test "<sentence>"` | one test, right now |
+| `test --suite tests/ --url <url>` | a folder of tests; add `--comment` on a pull request |
+| `suggest --url <url>` | walk the app and write the tests worth having into `tests/*.md` |
+| `audit` | read the repo you are standing in and name the user actions nothing measures |
+| `init` / `connect` / `plan check` | the tracking half — see [The tracking half](#the-tracking-half) |
 
-The write key is **public** and ingest-only — it cannot read your data. Reads use a separate
-secret key that is never embedded in a page.
+## What it costs to run
 
-## Where the key comes from
-
-Your project's setup page on smolanalytics.com prints both keys.
+The runner executes on your machine or your own CI runner, on your own model key, so the cost is
+yours and it is small. A pass is recorded once and replayed for free afterwards. One measured flow
+on one app: 8.0s with the agent, 1.4s replayed — the shape is the claim, not the figure.
 
 ## End-to-end tests
 
@@ -256,10 +240,37 @@ pipeline that gates on `1` alone never reddens a build because our side had an o
 | `--email-domain <dom>` | the domain in `{{email}}` (default `example.com`) |
 | `--retries <n>` | re-run a failing test from a clean page; pass-on-retry is flaky, not passed (default 1; 0 disables) |
 | `--evidence-dir <dir>` | where a failure's screenshot and page text land (default `.smolanalytics/evidence`) |
+| `--layout=off` \| `=strict` | layout sanity notes (covered controls, zero-size targets, overflow). Report-only by default; `strict` lets a finding fail the run |
+| `--wait-preview <sec>` | in GitHub Actions with no `--url`, how long to wait for this pull request's own preview deployment (default 240) |
 
 `ANTHROPIC_API_KEY` is the only key the agent needs, and it is yours — the model calls are billed to
 your account, not resold. Replaying a recording needs no key at all. `SMOLANALYTICS_MODEL` picks a
 different model.
+
+### Where the tests come from, if you have none
+
+```sh
+npx smolanalytics suggest --url https://your-staging-url.com
+```
+
+A real browser walks the app — same-origin pages only, reading, never clicking or submitting —
+and writes the flows worth testing into `tests/*.md`, in the format `test --suite` already runs.
+
+**It only proposes what it actually saw.** Every proposal has to quote text that appears on a page
+the crawl read; one that cannot is dropped, out loud, with the reason. A model asked "what should
+an app like this test?" answers from every app it has ever read about — password resets, wishlists,
+coupon codes — and one such file is worse than an empty folder, because it fails forever against a
+feature that never existed and teaches you to distrust the files beside it.
+
+Flows that create data get the placeholders from `--teardown`'s vocabulary — `{{email}}`,
+`{{password}}`, `{{runid}}` — so every row a test makes is one you can find afterwards. Existing
+files are never overwritten; a second run says what it skipped.
+
+| flag | |
+|---|---|
+| `--out <dir>` | where the tests land (default `tests/`) |
+| `--max <n>` | how many to propose (default 6) |
+| `--yes` | don't ask before writing |
 
 ### What this never asks you for
 
@@ -273,15 +284,69 @@ the first test runs. It buys something real: it can test an app that has no depl
 It also means the first thing you learn is whether the build worked, an hour later, rather than
 whether your checkout works, a minute later. If you already have a URL, you do not need any of it.
 
+## The tracking half
+
+The same walk that tests your product knows which user actions exist, so it also writes and
+maintains your analytics tracking — inside the SDK you already run (PostHog, Mixpanel, Amplitude,
+Google Analytics, Plausible or Segment). This does not replace them. It keeps their instrumentation
+correct, which is the job nobody owns.
+
+```sh
+npx smolanalytics audit                 # what nothing is measuring, file and line. No account.
+npx smolanalytics init --host <url> --key <key>   # wire the tracker into this project
+npx smolanalytics connect               # wire the reports into your editor over MCP
+npx smolanalytics plan check            # fail CI when a planned event stops firing
+```
+
+`audit` needs no account and makes no network call. Your project's setup page on
+smolanalytics.com prints the host and keys the other commands want.
+
+### What `init` does
+
+**Edits the file for you** on Next.js (App and Pages Router), SvelteKit, Vite, Create React
+App, and plain HTML. It inserts before `</head>` where there is one, and after `<body>` in a
+Next.js layout that builds its head from `metadata` — that's the default `create-next-app`
+shape and the case most install snippets get wrong.
+
+**Prints the install and changes nothing** on Nuxt and Astro. Neither one installs as a
+script tag in an HTML file: Nuxt's belongs in `nuxt.config`, and Astro needs `is:inline` or
+the bundler reorders the script so `init` runs before the SDK exists. Editing those with a
+generic snippet would give you a page that looks instrumented and sends nothing, so it shows
+you the version that works instead.
+
+**Adds** `SMOLANALYTICS_HOST` and `SMOLANALYTICS_WRITE_KEY` to your existing `.env.local` or
+`.env`. It will not create one if you don't already keep one.
+
+It is **idempotent**: run it twice and the second run leaves everything alone. It never
+half-edits a file, and when it can't find a safe place to insert it says so and prints the
+snippet instead of guessing.
+
+#### `init` flags
+
+| flag | |
+|---|---|
+| `--host <url>` | your instance, e.g. `https://you.fly.dev` (or `SMOLANALYTICS_HOST`) |
+| `--key <key>` | public write key (or `SMOLANALYTICS_WRITE_KEY`) |
+| `--yes` | don't ask before editing |
+| `--print` | print the snippet, change nothing |
+
+The write key is **public** and ingest-only — it cannot read your data. Reads use a separate
+secret key that is never embedded in a page.
+
+
+The write key is **public** and ingest-only — it cannot read your data. Reads use a separate
+secret key that is never embedded in a page.
+
 ## Why this exists
 
-Self-hosting PostHog means ClickHouse, Kafka, Redis and a Postgres. Plausible and Umami
-install easily but stop at web analytics, so no funnels, no retention, no cohorts.
+End-to-end tests are the ones everybody agrees they should have and nobody keeps. You write them,
+a button moves, forty of them go red for no reason, and within a month the suite is muted and the
+next regression ships to customers instead.
 
-smolanalytics is one Go binary with no external database, and it does both: visitors and
-referrers alongside funnels, retention, paths and cohorts, plus feature flags, A/B tests,
-heatmaps and surveys. You ask it in plain English from the dashboard or your editor over MCP,
-using your own model, so the AI part costs nothing.
+Removing the maintenance is only half of it. A suite is worth having only while people still
+believe it, so the verdicts stay apart on purpose — a stale recording is never reported as a bug,
+our own runner failing is never reported as your app failing, and a test that passed only on retry
+is called flaky rather than green.
 
 Commercial software, licensed not sold — see LICENSE. Your tests, recordings and evidence are
 plain files in your own repository and stay yours.
