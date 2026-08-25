@@ -10,7 +10,8 @@
     "bin",
     "lib",
     "templates",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "test": "node --test test/*.test.mjs"
@@ -31,7 +32,7 @@
   ],
   "homepage": "https://smolanalytics.com",
   "author": "Arjun Varma",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "engines": {
     "node": ">=20"
   }

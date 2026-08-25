@@ -1,0 +1,72 @@
+smolanalytics — Software Licence Agreement
+Copyright (c) 2026 Arjun Varma. All rights reserved.
+
+This software is commercial software. It is licensed, not sold.
+
+1. GRANT
+
+   Subject to your compliance with this agreement, you are granted a
+   non-exclusive, non-transferable, revocable licence to download, install and
+   run this package for the purpose of testing and instrumenting software that
+   you own or are authorised to work on, including inside your own continuous
+   integration systems.
+
+   You may run it as many times, on as many machines, and against as many of
+   your own applications as you like. Use of the hosted service at
+   smolanalytics.com is governed separately by the terms published there.
+
+2. RESTRICTIONS
+
+   You may not redistribute, resell, sublicense, rent or lease this package or
+   any part of it; publish it, or a derivative of it, to any package registry
+   or public repository; modify, adapt, translate or create derivative works
+   from it; reverse engineer, decompile or disassemble it, or attempt to derive
+   its source, except to the extent this restriction is unenforceable under
+   applicable law; remove or alter any copyright, trademark or licence notice;
+   or use it to build, train or improve a competing product or service.
+
+3. RESERVATION OF RIGHTS
+
+   This is not open source software. No rights are granted other than those
+   stated in section 1. All right, title and interest in the software, and all
+   intellectual property in it, remain with the copyright holder.
+
+4. YOUR CONTENT
+
+   The tests you write, the recordings this software produces, and any evidence
+   it captures are yours. They are plain files in your own repository, and this
+   licence claims nothing in them. Nothing here restricts what you may do with
+   your own test suite, or requires you to keep using this software to read it.
+
+5. NO WARRANTY
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+
+   This software drives a real browser against applications you point it at and
+   reports a verdict. It is a testing tool: it does not guarantee that any
+   application is free of defects, and a passing result is not a warranty about
+   your software. You remain responsible for what you point it at, and for the
+   data any test creates.
+
+6. LIMITATION OF LIABILITY
+
+   IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR
+   OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+   ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+   DEALINGS IN THE SOFTWARE.
+
+7. TERMINATION
+
+   This licence terminates automatically if you breach it. On termination you
+   must stop using the software and delete your copies. Section 4 survives:
+   your tests and recordings remain yours.
+
+8. THIRD-PARTY COMPONENTS
+
+   This package has no npm dependencies. It downloads Playwright on first use
+   of the browser-driving commands; Playwright is licensed by its own authors
+   under the Apache Licence 2.0 and is not covered by this agreement.
+
+Questions about licensing: karjunvarma2001@gmail.com

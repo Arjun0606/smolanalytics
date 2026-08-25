@@ -50,8 +50,7 @@ secret key that is never embedded in a page.
 
 ## Where the key comes from
 
-Self-hosting the MIT Go binary prints both keys when it starts. On the hosted plane they're
-on the project's setup page.
+Your project's setup page on smolanalytics.com prints both keys.
 
 ## End-to-end tests
 
@@ -284,4 +283,5 @@ referrers alongside funnels, retention, paths and cohorts, plus feature flags, A
 heatmaps and surveys. You ask it in plain English from the dashboard or your editor over MCP,
 using your own model, so the AI part costs nothing.
 
-MIT, every feature in the free binary, self-host forever.
+Commercial software, licensed not sold — see LICENSE. Your tests, recordings and evidence are
+plain files in your own repository and stay yours.
