@@ -339,6 +339,58 @@ describe("findings against verdicts and exit codes", () => {
     assert.match(out, /layout: .*covered by/, "context under a failure is still worth printing");
   });
 
+  // STRICT MAY TURN A PASS INTO A FAILURE AND NOTHING ELSE. The five statuses are the product:
+  // failed means the app is broken, flaky means the test is unreliable, errored means we are. A
+  // layout finding that could reach any of them would be a checker rewriting verdicts it did not
+  // observe — and `strict` is an opt-in to gating on findings, not to relabelling runs.
+  test("strict never touches a verdict it did not decide: failed, flaky and errored are its own", noBrowser, async () => {
+    // FAILED stays failed, on the AGENT's reason, in strict. The page under it is genuinely
+    // covered, so there is a finding to be tempted by.
+    const failed = await run(() => finish(false, "On /covered, the checkout total is missing."), { layout: "strict" });
+    assert.equal(failed.code, 1);
+    assert.deepEqual(failed.runs.map((r) => r.status), ["failed"]);
+    assert.equal(failed.runs[0].reason, "On /covered, the checkout total is missing.", "strict overwrote a real bug report with a layout note");
+    assert.match(failed.out, /layout: .*covered by/, "the note is still context under the failure");
+
+    // FLAKY stays flaky and stays exit 0. Failed once, passed on the retry — a red X here would
+    // train people to re-run until green, which is the swallowing `flaky` exists to prevent.
+    const flaky = await run((attempt) => (attempt === 1 ? finish(false, "The cart was empty.") : finish(true, "The cart lists 2 items.", "2 items in your cart")), { layout: "strict", retries: 1 });
+    assert.equal(flaky.code, 0, "strict turned a flaky run into a failure");
+    assert.deepEqual(flaky.runs.map((r) => r.status), ["failed", "flaky"]);
+    assert.ok(!/--layout=strict/.test(flaky.runs[1].reason), `the flaky reason became a layout finding: ${flaky.runs[1].reason}`);
+    assert.match(flaky.out, /layout: .*covered by/, "findings still ride along as a note");
+
+    // ERRORED stays errored and stays exit 2, and carries no findings at all: nothing was
+    // observed, so there is no page the audit is entitled to describe.
+    const errored = await run(() => [{ type: "text", text: "I think the cart looks fine." }], { layout: "strict" });
+    assert.equal(errored.code, 2, "an errored run must stay our outage, never the app's failure");
+    assert.deepEqual(errored.runs.map((r) => r.status), ["errored"]);
+    assert.equal(errored.runs[0].layout, undefined);
+    assert.ok(!/^layout: /m.test(errored.out), errored.out);
+  });
+
+  // STALE is the fifth. A recording that stopped fitting the app is neither a pass nor a bug, and
+  // the audit never runs on it — there is no settled outcome for a finding to sit under.
+  test("a stale replay carries no findings and keeps its own status", noBrowser, async () => {
+    const dir = scratch();
+    const planPath = path.join(dir, "cart.json");
+    writeFileSync(planPath, JSON.stringify({ startUrl: `${base}/covered`, steps: [{ kind: "click", role: "link", name: "Details" }], proof: "your order is confirmed" }));
+    const key = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    try {
+      const lines = [];
+      const runs = [];
+      const code = await testCmd({ url: `${base}/covered`, test: "the cart lists its items", plan: planPath, layout: "strict", evidenceDir: scratch(), log: (...a) => lines.push(a.join(" ")), onRun: (r) => runs.push(r) });
+      const out = lines.join("\n").replace(/\x1b\[[0-9;]*m/g, "");
+      assert.deepEqual(runs.map((r) => r.status), ["stale"]);
+      assert.equal(runs[0].layout, undefined, "a stale verdict must not carry findings about a page nothing was settled on");
+      assert.ok(!/^layout: /m.test(out), out);
+      assert.equal(code, 2, "no key to escalate to the agent: our outage, not the app's failure");
+    } finally {
+      if (key !== undefined) process.env.ANTHROPIC_API_KEY = key;
+    }
+  });
+
   test("a target that shrinks to nothing after its click is named, end to end", noBrowser, async () => {
     const { code, out } = await run((attempt, msgCount) =>
       msgCount === 1

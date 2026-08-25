@@ -109,7 +109,18 @@ async function linksOn(page) {
  */
 async function open(page, url) {
   try {
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    const res = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    // A STATUS IS NOT A PAGE. goto() only rejects when the navigation itself fails, so a 404 and a
+    // 500 arrive here as successes and their error documents were surveyed like any other page.
+    // Measured on a fixture whose nav links to /wishlist and /coupons, both 404: the crawl read
+    // both, `URL: .../wishlist` went into the corpus, and proposals for a wishlist and a coupon
+    // flow — neither of which this app has — passed the evidence check and were written as files.
+    // A dead link in somebody's navigation was manufacturing the exact fabrication the rest of
+    // this file exists to prevent. A 500 on the START page was worse: the survey read "Internal
+    // Server Error", proposed nothing from it, and exited 0 saying the pages showed no flow worth
+    // testing — a shrug, when the honest answer is that the app never served us a page.
+    const status = res ? res.status() : 0;
+    if (status >= 400) return `the server answered ${status}`;
     return "";
   } catch (e) {
     const detail = String(e && e.message ? e.message : e).split("\n")[0];
@@ -255,14 +266,37 @@ async function propose(pagesBlock, max, apiKey, model) {
  * real drops. */
 const norm = (s) => String(s).toLowerCase().replace(/\s+/g, " ").trim();
 
-/** Everything the model was shown, flattened for the evidence check: exactly the perceived pages,
- * nothing else, so "it is in the corpus" and "the model could have read it" are the same claim. */
+/**
+ * Everything the model was shown, for the evidence check: exactly the perceived pages, nothing
+ * else, so "it is in the corpus" and "the model could have read it" are the same claim.
+ *
+ * ONE ENTRY PER PAGE, not one flat string. Measured: flattened, the pages are joined by a newline
+ * that norm() turns into a space, so the last words of /pricing and the first words of /login
+ * become a phrase that appears on NEITHER page — and a quote of that phrase passed the evidence
+ * check. `"browse the catalogue. http"` was accepted against this fixture. A quoted run has to sit
+ * on one page the crawl really read, which is what a page-at-a-time corpus makes checkable.
+ *
+ * THE PATH, NOT THE WHOLE URL. `/checkout` in a URL is evidence that a checkout page exists, and
+ * the model is shown it. The ORIGIN in front of it is the address the person typed: it is on every
+ * page, identical, and says nothing about what the app does — but it put `http`, `://`, `127.0.0.1`
+ * and the whole start URL into the corpus, and each of those was accepted as proof of a wishlist.
+ * Evidence that quotes a full URL still matches, because a URL-shaped quote is reduced to its path
+ * before the comparison.
+ */
 export function corpusOf(pages) {
-  return norm(
-    pages
-      .map((p) => [p.url, p.title, ...p.elements.map((e) => `${e.name} ${e.value || ""}`), p.text].join("\n"))
-      .join("\n"),
+  return pages.map((p) =>
+    norm([pathOf(p.url), p.title, ...p.elements.map((e) => `${e.name} ${e.value || ""}`), p.text].join("\n")),
   );
+}
+
+/** The part of a URL that describes the app rather than where it is running. */
+function pathOf(url) {
+  try {
+    const u = new URL(String(url));
+    return `${u.pathname}${u.search}`;
+  } catch {
+    return String(url ?? "");
+  }
 }
 
 /**
@@ -355,17 +389,110 @@ export function traceable(sentence) {
  * name still has to appear on a page that was really read, which is the property that matters.
  * Runs under three characters are refused, because "a" is on every page ever written and a
  * check that always passes is the same bug facing the other way.
+ *
+ * EVERY QUOTED RUN, NOT ANY ONE OF THEM. The first fix accepted a proposal if ANY candidate
+ * matched, and a model does not always quote once: `the "Add to wishlist" button next to "Buy
+ * Pro"` was accepted against a fixture that has no wishlist, because "Buy Pro" is real. That is
+ * the fabrication this function exists to stop, wearing one true quote as a coat. A model told to
+ * quote VERBATIM is claiming every run it puts in quotation marks, so every run has to be there.
+ *
+ * The three-character floor is the same idea as the rest of this check, and on its own it was not
+ * enough: `"the"`, `"your"` and `"http"` all clear it, all appear on nearly every page, and each
+ * of them laundered an invented flow through this fixture. So a run must carry at least one word
+ * that is not pure grammar, and it must match WHOLE WORDS — `"idge"` inside "widgets" is a
+ * fragment of a word, not a quote of anything.
  */
 export function evidenceIsReal(evidence, corpus) {
-  const quoted = String(evidence).match(/["'\u201c\u2018]([^"'\u201d\u2019]+)["'\u201d\u2019]/g) || [];
-  const candidates = [
-    evidence,
-    ...quoted.map((q) => q.slice(1, -1)),
-  ];
-  return candidates.some((c) => {
-    const n = norm(c);
-    return n.length >= 3 && corpus.includes(n);
+  // A plain string is still read, as a single page, so a caller holding one page's text can ask.
+  const pages = Array.isArray(corpus) ? corpus : [corpus];
+  const runs = quotedRuns(String(evidence));
+  const candidates = runs.length ? runs : [String(evidence)];
+  return candidates.every((c) => {
+    const n = asPathIfUrl(norm(c));
+    if (!longEnough(n) || !hasSubstance(n)) return false;
+    // One page, not the pages joined: a phrase that only exists across the seam between two of
+    // them is a phrase nobody could have read.
+    return pages.some((page) => containsRun(page, n));
   });
+}
+
+/**
+ * Closed-class words, and the scaffolding of a URL. This is not a stopword list for search: its
+ * only job is to name the runs that are on every page of every app, so that quoting one proves
+ * nothing about this one. Deliberately no content words — "new", "page", "search" and "cart" are
+ * all real control names somewhere, and dropping a genuine proposal is the failure this check has
+ * already committed once.
+ */
+const NOISE = new Set(
+  "a an and are as at be been but by for from had has have in into is it its of on or that the their them they this to was were will with you your http https www".split(" "),
+);
+
+/**
+ * At least one word that is not pure grammar. Punctuation alone ("://") has no words at all.
+ *
+ * SPLIT ON UNICODE LETTERS, NOT [a-z0-9]. Measured, and it would have re-committed this file's
+ * original sin against every app not written in a Latin script: `購入する` contains no [a-z0-9] at
+ * all, so it tokenised to nothing, counted as substance-free, and EVERY proposal for a Japanese
+ * app was dropped — "no flows to propose", exit 0, no files. The same held for Chinese, Russian,
+ * Greek, Hebrew and Arabic. \p{L} is what "a word" means outside English.
+ */
+function hasSubstance(n) {
+  return n.split(/[^\p{L}\p{N}]+/u).some((t) => t && !NOISE.has(t));
+}
+
+/**
+ * Three characters, because "a" and "of" are on every page ever written — but two will do when
+ * they are not Latin: one CJK character is a whole word, so `購入` ("purchase") is a real name for
+ * a real button, and the three-character floor would throw it away.
+ */
+function longEnough(n) {
+  return n.length >= 3 || (n.length >= 2 && /[^\x00-\x7f]/.test(n));
+}
+
+/** A quote of a whole URL is a quote of its path: the origin is where the app runs, not what it does. */
+function asPathIfUrl(n) {
+  if (!/^https?:\/\//.test(n)) return n;
+  try {
+    const u = new URL(n);
+    return `${u.pathname}${u.search}`.replace(/\/+$/, "") || "/";
+  } catch {
+    return n;
+  }
+}
+
+/**
+ * Substring, but only on whole-word boundaries: a run of text, never a fragment of a word.
+ *
+ * The boundary is [a-z0-9] rather than \p{L} deliberately. Japanese and Chinese are written
+ * without spaces, so every quote from such a page sits INSIDE a longer run of letters, and a
+ * Unicode-letter boundary would reject all of them. Latin words get the boundary that stops
+ * "idge" matching inside "widgets"; scripts that have no word boundaries are matched as they are
+ * written.
+ */
+function containsRun(page, needle) {
+  const edge = /[a-z0-9]/;
+  for (let i = page.indexOf(needle); i !== -1; i = page.indexOf(needle, i + 1)) {
+    const before = i === 0 ? " " : page[i - 1];
+    const after = i + needle.length >= page.length ? " " : page[i + needle.length];
+    if (!edge.test(before) && !edge.test(after)) return true;
+  }
+  return false;
+}
+
+/**
+ * The runs a model put in quotation marks, paired properly.
+ *
+ * The apostrophe is why this is not one regular expression. Treating ' as an opening quote turns
+ * `button "Don't Panic"` into a quote of `Don`, and under the rule that every quoted run must be
+ * real, an English contraction would drop a true proposal. A ' delimits only where a quote mark
+ * stands: at the edge of the run, never inside a word.
+ */
+function quotedRuns(s) {
+  const out = [];
+  for (const re of [/"([^"]+)"/g, /“([^”]+)”/g, /‘([^’]+)’/g, /(?:^|[\s(\[])'([^']+)'(?=$|[\s.,;:!?)\]])/g]) {
+    for (const m of s.matchAll(re)) out.push(m[1]);
+  }
+  return out;
 }
 
 export function vet(raw, corpus, max) {
@@ -508,8 +635,19 @@ ${C.b("npx smolanalytics suggest")} — walk the running app, propose the tests 
     mkdirSync(out, { recursive: true });
     let written = 0;
     let skipped = 0;
+    // Names claimed by THIS run. slug() maps to [a-z0-9-] and falls back to "test", so two titles
+    // can want one filename — "A shopper can pay" and "A shopper can pay!" both, and EVERY title
+    // in an app that is not written in a Latin script, all of which slug to "test". Without this,
+    // the second proposal hit the never-overwrite guard and was reported as "it already exists",
+    // which was not true: this run had just written it. A Japanese app got one file out of six and
+    // was told the other five were already there.
+    const claimed = new Set();
     for (const p of kept) {
-      const file = path.join(out, `${slug(p.title)}.md`);
+      const base = slug(p.title);
+      let name = base;
+      for (let i = 2; claimed.has(name); i++) name = `${base}-${i}`;
+      claimed.add(name);
+      const file = path.join(out, `${name}.md`);
       // NEVER overwritten. A file already there is either the user's own test or an earlier run's
       // that they have since edited; a suggester that rewrites somebody's suite on re-run is a
       // suggester that ran once.

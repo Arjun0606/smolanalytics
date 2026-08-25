@@ -36,7 +36,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { suggestCmd, crawl, vet, corpusOf, traceable, depersonalize, fileBody, evidenceIsReal } from "../lib/suggest.mjs";
-import { parseSuite } from "../lib/suite.mjs";
+import { discover, parseSuite } from "../lib/suite.mjs";
 
 let chromium = null;
 try {
@@ -64,7 +64,7 @@ const elsewhere = createServer((req, res) => {
 });
 await new Promise((r) => elsewhere.listen(0, "127.0.0.1", r));
 const elsewhereUrl = `http://127.0.0.1:${elsewhere.address().port}/`;
-after(() => new Promise((r) => elsewhere.close(() => r())));
+after(() => new Promise((r) => { elsewhere.closeAllConnections?.(); elsewhere.close(() => r()); }));
 
 /** Every path the browser asked for, so "never followed" is checked at the server, not in the log. */
 let hits = [];
@@ -105,7 +105,7 @@ const app = createServer((req, res) => {
 });
 await new Promise((r) => app.listen(0, "127.0.0.1", r));
 const url = `http://127.0.0.1:${app.address().port}/`;
-after(() => new Promise((r) => app.close(() => r())));
+after(() => new Promise((r) => { app.closeAllConnections?.(); app.close(() => r()); }));
 
 const scratch = () => mkdtempSync(path.join(tmpdir(), "smolanalytics-suggest-"));
 const outDir = () => path.join(scratch(), "tests");
@@ -209,7 +209,7 @@ describe("the walk: what it reads, and what it refuses to touch", () => {
       assert.equal(seen.length, 8, `the browser requested ${seen.length} URLs: ${JSON.stringify(seen)}`);
     } finally {
       await browser.close();
-      await new Promise((r) => wide.close(() => r()));
+      await new Promise((r) => { wide.closeAllConnections?.(); wide.close(() => r()); });
     }
   });
 
@@ -230,7 +230,7 @@ describe("the walk: what it reads, and what it refuses to touch", () => {
       assert.equal(pages.length, 3);
     } finally {
       await browser.close();
-      await new Promise((r) => deep.close(() => r()));
+      await new Promise((r) => { deep.closeAllConnections?.(); deep.close(() => r()); });
     }
   });
 
@@ -738,4 +738,270 @@ test("vet keeps a proposal whose evidence is role-decorated, and still drops an 
 
   assert.deepEqual(kept.map((k) => k.title), ["A user can upgrade to Pro"]);
   assert.deepEqual(dropped.map((d) => d.title), ["A user can reset a password"]);
+});
+
+// ================================================================================================
+// WHAT THE FIRST FIX STILL LET THROUGH.
+//
+// The evidence check was repaired once, after a real key proved it dropped four true proposals out
+// of four. That repair — accept the run the model put in quotation marks, not only the whole
+// string — was right, and it opened three ways to launder a fabrication past the same rule. Each
+// of these was MEASURED against the fixture below before it was fixed: `vet()` kept invented
+// password-reset, wishlist and coupon proposals, and they were written to disk as files.
+// ================================================================================================
+
+describe("evidence that is not evidence", () => {
+  /** The app the corpus is built from: no wishlist, no coupon, no password reset, as ever. */
+  const shop = () =>
+    corpusOf([
+      { url: "http://127.0.0.1:8080/", title: "Widget Store", elements: [{ name: "Pricing" }, { name: "Sign in" }], text: "Widget Store — the best widgets for your team. Browse the catalogue." },
+      { url: "http://127.0.0.1:8080/pricing", title: "Pricing", elements: [{ name: "Buy Pro" }], text: "Pro plan is $29 / month." },
+    ]);
+
+  test("one true quote does not carry a false one in beside it", () => {
+    const corpus = shop();
+    // MEASURED, and the reason `some` became `every`: a model does not always quote once. This is
+    // the shape that got through — a real control named next to an invented one, in a single
+    // evidence string. "Buy Pro" is on the pricing page, "Add to wishlist" is on no page of any
+    // app the crawl read, and the proposal it justified was a wishlist test.
+    assert.equal(evidenceIsReal('the "Add to wishlist" button next to "Buy Pro"', corpus), false);
+    const { kept, dropped } = vet(
+      [{ title: "A shopper can use their wishlist", sentence: "Add a widget to the wishlist.", criticality: "normal", evidence: 'the "Add to wishlist" button next to "Buy Pro"' }],
+      corpus,
+      6,
+    );
+    assert.deepEqual(kept, [], "an invented control was written into somebody's suite because a real one was quoted beside it");
+    assert.deepEqual(dropped.map((d) => d.title), ["A shopper can use their wishlist"]);
+    // Every run quoted, still true, is still evidence: the rule tightened, it did not invert.
+    assert.equal(evidenceIsReal('the "Buy Pro" button under "Pricing"', corpus), true);
+  });
+
+  test("a quote may not span two pages, because nobody could have read it there", () => {
+    const corpus = shop();
+    // Flattened into one string, the pages were joined by a newline that normalising turns into a
+    // space — so the last words of the home page and the first of /pricing formed a phrase that is
+    // on NEITHER page, and quoting it passed. A corpus is a list of pages for this reason.
+    assert.equal(evidenceIsReal("browse the catalogue. /pricing", corpus), false);
+    assert.equal(evidenceIsReal("Browse the catalogue.", corpus), true, "a run that IS on one page must still pass");
+  });
+
+  test("the words on every page, and the address of the app, prove nothing about it", () => {
+    const corpus = shop();
+    // All of these cleared the three-character floor, all are in the corpus, and each one was
+    // accepted as proof of a flow the app does not have.
+    for (const nothing of ['"the"', '"your"', '"http"', 'link "://"', '"127.0.0.1"', '"http://127.0.0.1:8080/"']) {
+      assert.equal(evidenceIsReal(nothing, corpus), false, `${nothing} was accepted as evidence of a flow`);
+    }
+    // The path is not the origin: /pricing is something this app HAS, and the model is shown it.
+    assert.equal(evidenceIsReal("/pricing", corpus), true);
+    assert.equal(evidenceIsReal('"http://127.0.0.1:8080/pricing"', corpus), true, "a model that quotes the whole URL quoted a real page");
+  });
+
+  test("a quote is a run of words, not a fragment of one", () => {
+    const corpus = shop();
+    assert.equal(evidenceIsReal('"idge"', corpus), false, '"idge" is inside "widgets" and is a quote of nothing');
+    assert.equal(evidenceIsReal('"widgets"', corpus), true);
+  });
+
+  test("an app not written in English still gets its proposals", () => {
+    // MEASURED WHILE FIXING THE RULE ABOVE, and it is this file's original sin wearing another
+    // language: splitting a run on [a-z0-9] to look for a word finds NOTHING in 購入する, so every
+    // proposal for a Japanese app was substance-free, every one was dropped, and the run said "no
+    // flows to propose" and exited 0 — the silent, green, useless answer, for every app in every
+    // script but ours. Russian, Arabic, Greek and Korean all did the same.
+    const corpus = corpusOf([
+      { url: "http://127.0.0.1:8080/checkout", title: "ご購入手続き", elements: [{ name: "購入する" }, { name: "カートに追加" }], text: "ご購入手続き 送料無料" },
+    ]);
+    assert.equal(evidenceIsReal("購入する", corpus), true);
+    assert.equal(evidenceIsReal('ボタン "購入する"', corpus), true, "the role decoration a model adds is not language-specific");
+    // Two characters, because one CJK character is a whole word and the three-character floor was
+    // written for English.
+    assert.equal(evidenceIsReal("購入", corpus), true);
+    // And the rule still bites: these are the wishlist and the coupon this app does not have.
+    assert.equal(evidenceIsReal("ほしい物リスト", corpus), false);
+    assert.equal(evidenceIsReal("クーポン", corpus), false);
+    const { kept, dropped } = vet(
+      [
+        { title: "購入できる", sentence: "商品を購入する。", criticality: "critical", evidence: "購入する" },
+        { title: "ほしい物リストが使える", sentence: "ほしい物リストを開く。", criticality: "normal", evidence: "ほしい物リスト" },
+      ],
+      corpus,
+      6,
+    );
+    assert.deepEqual(kept.map((k) => k.title), ["購入できる"]);
+    assert.deepEqual(dropped.map((d) => d.title), ["ほしい物リストが使える"]);
+  });
+
+  test("an apostrophe is not a quotation mark, and a contraction must not cost a true proposal", () => {
+    // The cost of requiring EVERY quoted run to be real: if ' opened a quote, `button "Don't
+    // Panic"` would be read as a quote of `Don`, and an English contraction would drop a genuine
+    // flow — the exact failure this whole check has already committed once.
+    const corpus = corpusOf([{ url: "http://127.0.0.1:8080/login", title: "Sign in", elements: [{ name: "Sign in" }], text: "Don't have an account? Create one." }]);
+    assert.equal(evidenceIsReal(`button "Don't have an account?"`, corpus), true);
+    assert.equal(evidenceIsReal(`the 'Sign in' button`, corpus), true, "a single-quoted run is still a quoted run");
+    assert.equal(evidenceIsReal(`button "Don't have a wishlist?"`, corpus), false);
+  });
+});
+
+// ---- pages the server refused ------------------------------------------------------------------
+
+describe("a page the app did not serve is not a page", () => {
+  test("a 404 behind a dead nav link is skipped, and cannot become evidence for a flow", noBrowser, async () => {
+    // MEASURED, AND IT MANUFACTURED FABRICATIONS. goto() only rejects when the navigation itself
+    // fails, so a 404 arrived as a success and its error document was surveyed like any other
+    // page: `URL: .../wishlist` went into the corpus, and a proposal quoting "wishlist" passed the
+    // evidence check and was written as a file. A dead link in somebody's navigation was inventing
+    // features for them.
+    const ghost = createServer((req, res) => {
+      if (req.url === "/") {
+        res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+        // The link is NAMED "More" on purpose. A nav link that reads "Wishlist" is itself evidence
+        // that the app offers one, however broken the page behind it — so it would prove nothing
+        // about where the corpus came from. Named "More", the only place the word "wishlist"
+        // exists is the URL of the page the server refused to serve.
+        res.end(html("Shop", '<h1>Shop</h1><nav><a href="/wishlist">More</a></nav><button>Buy</button>'));
+        return;
+      }
+      res.writeHead(404, { "content-type": "text/html; charset=utf-8" });
+      res.end(html("Not found", "<h1>Page not found</h1>"));
+    });
+    await new Promise((r) => ghost.listen(0, "127.0.0.1", r));
+    const out = outDir();
+    try {
+      const r = await suggest({
+        at: `http://127.0.0.1:${ghost.address().port}/`,
+        out,
+        tests: [{ title: "A shopper can use their wishlist", sentence: "Open the wishlist and see saved items.", criticality: "normal", evidence: "wishlist" }],
+      });
+      assert.equal(r.code, 0, r.out);
+      assert.deepEqual(filesIn(out), [], "a 404 page's own URL became the evidence for a flow the app does not have");
+      // Said out loud, like every other page the walk declines to use.
+      assert.match(r.out, /could not open .*\/wishlist \(the server answered 404\) — skipped/, r.out);
+      // And never shown to the model either: "it is in the corpus" and "the model could have read
+      // it" have to stay the same claim.
+      assert.ok(!r.sent[0].messages[0].content.includes("/wishlist"), "a page the server said does not exist was shown to the model");
+    } finally {
+      await new Promise((r) => { ghost.closeAllConnections?.(); ghost.close(() => r()); });
+    }
+  });
+
+  test("a start page that 500s is exit 2 and says so, never a shrug about there being no flows", noBrowser, async () => {
+    // The old answer was exit 0 and "the pages visited showed no user flow worth a test", which
+    // reads as "your app is fine, there is just nothing here" — about an app that is down.
+    const boom = createServer((_, res) => {
+      res.writeHead(500, { "content-type": "text/html; charset=utf-8" });
+      res.end(html("Error", "<h1>Internal Server Error</h1>"));
+    });
+    await new Promise((r) => boom.listen(0, "127.0.0.1", r));
+    const out = outDir();
+    try {
+      const r = await suggest({ at: `http://127.0.0.1:${boom.address().port}/`, out, tests: REAL });
+      assert.equal(r.code, 2, `an app that never served a page is this runner having nothing to survey:\n${r.out}`);
+      assert.match(r.out, /the server answered 500/, `the status is the one useful fact:\n${r.out}`);
+      assert.ok(!/no flows to propose/.test(r.out), `a broken app was reported as an app with nothing worth testing:\n${r.out}`);
+      assert.deepEqual(filesIn(out), []);
+      // 2 is "this runner could not do its job". 1 would claim the application is broken, which is
+      // a verdict, and no survey is allowed to reach one.
+      assert.notEqual(r.code, 1);
+    } finally {
+      await new Promise((r) => { boom.closeAllConnections?.(); boom.close(() => r()); });
+    }
+  });
+});
+
+// ---- what happens when the walk or the model comes back with nothing ----------------------------
+
+describe("nothing to survey is reported, never written around", () => {
+  test("a start URL that redirects off this app leaves nothing readable, and that is exit 2", noBrowser, async () => {
+    // An auth wall or an SSO provider: the app answers, but every page belongs to somebody else,
+    // and somebody else's app is exactly the fabrication material this command keeps out. Zero
+    // pages read is not zero flows found — there is nothing to have an opinion about.
+    const out = outDir();
+    const r = await suggest({ at: `${url}away`, out, tests: REAL });
+    assert.equal(r.code, 2, r.out);
+    assert.match(r.out, /nothing was readable at that URL/, r.out);
+    assert.deepEqual(filesIn(out), []);
+  });
+
+  test("a model that refuses, and a model that answers without a proposal, are both exit 2", noBrowser, async () => {
+    for (const [label, body] of [
+      ["a refusal", { stop_reason: "refusal", content: [] }],
+      ["prose instead of a proposal list", { stop_reason: "end_turn", content: [{ type: "text", text: "Here are some ideas!" }] }],
+    ]) {
+      const realFetch = globalThis.fetch;
+      globalThis.fetch = async () => ({ ok: true, status: 200, text: async () => "", json: async () => body });
+      const out = outDir();
+      const lines = [];
+      try {
+        const code = await suggestCmd({
+          url,
+          out,
+          env: { ANTHROPIC_API_KEY: "sk-ant-test" },
+          log: (...a) => lines.push(a.join(" ")),
+          loadBrowser: async () => ({ pw: { chromium } }),
+        });
+        assert.equal(code, 2, `${label} is our model call not working, never a verdict about their app`);
+        assert.match(lines.join("\n"), /the survey could not complete/i, label);
+        assert.deepEqual(filesIn(out), [], label);
+      } finally {
+        globalThis.fetch = realFetch;
+      }
+    }
+  });
+});
+
+// ---- the handoff --------------------------------------------------------------------------------
+
+describe("the folder suggest writes is a folder the suite runner can run", () => {
+  test("discover() finds every file, and reads back the titles that were written", noBrowser, async () => {
+    // parseSuite on one file proves the FORMAT. This proves the HANDOFF: the same call
+    // `test --suite <dir>` makes, against the directory this command just created — filenames
+    // included, since discover() skips anything beginning with a dot and a title that slugs to
+    // nothing would have written exactly that.
+    const out = outDir();
+    await suggest({ tests: REAL, out });
+    const found = discover(out, path.join(scratch(), "plans"));
+    assert.deepEqual(found.errors, [], "the suite runner could not read what suggest wrote");
+    assert.deepEqual(found.notes, [], "the suite runner had to interpret something in a file we generated");
+    assert.ok(!found.missing, "the folder suggest just created was reported as missing");
+    assert.deepEqual(
+      found.tests.map((t) => t.name).sort(),
+      ["A shopper can buy Pro", "A shopper can search"],
+      "the names on the pull request are the titles the model wrote, not filenames with the dashes taken out",
+    );
+    for (const t of found.tests) {
+      assert.ok(!t.test.includes("---"), t.test);
+      assert.ok(!t.test.includes("criticality"), t.test);
+    }
+  });
+
+  test("two proposals whose titles make the same filename both survive", noBrowser, async () => {
+    // slug() keeps [a-z0-9-] and falls back to "test", so "A shopper can pay" and "A shopper can
+    // pay!" want one filename — and EVERY title in an app not written in a Latin script does. The
+    // second used to hit the never-overwrite guard and be reported as "it already exists", which
+    // was untrue: this run had written it a moment earlier. An app with Japanese titles got one
+    // file out of six and was told the other five were already there.
+    const out = outDir();
+    const r = await suggest({
+      out,
+      tests: [
+        { title: "A shopper can pay", sentence: "Pay for Pro and see the receipt.", criticality: "critical", evidence: "Buy Pro" },
+        { title: "A shopper can pay!", sentence: "Pay again and see the receipt.", criticality: "normal", evidence: "Buy Pro" },
+        { title: "支払いができる", sentence: "Pay from the pricing page and see the receipt.", criticality: "normal", evidence: "Buy Pro" },
+        { title: "検索ができる", sentence: "Search and see matching products.", criticality: "normal", evidence: "Search products" },
+      ],
+    });
+    assert.equal(r.code, 0, r.out);
+    assert.deepEqual(filesIn(out), ["a-shopper-can-pay-2.md", "a-shopper-can-pay.md", "test-2.md", "test.md"], r.out);
+    assert.match(r.out, /4 tests written/, r.out);
+    assert.ok(!/already exists/.test(r.out), `a file this run had just written was reported as somebody else's:\n${r.out}`);
+    // Still four separate tests to the runner, with the titles the model actually wrote.
+    const found = discover(out, path.join(scratch(), "plans"));
+    assert.deepEqual(found.tests.map((t) => t.name).sort(), ["A shopper can pay", "A shopper can pay!", "支払いができる", "検索ができる"].sort());
+    // And the never-overwrite rule is untouched: a file that was there BEFORE this run is still
+    // the person's own.
+    const r2 = await suggest({ out, tests: [{ title: "A shopper can pay", sentence: "Different sentence.", criticality: "normal", evidence: "Buy Pro" }] });
+    assert.match(r2.out, /already exists/, r2.out);
+    assert.match(readAll(out)["a-shopper-can-pay.md"], /Pay for Pro and see the receipt/, "a re-run rewrote a file it had written before");
+  });
 });

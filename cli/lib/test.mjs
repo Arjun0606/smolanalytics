@@ -870,10 +870,36 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
         return null;
       }
     };
-    const record = (att, viaRetry) => {
+    const record = async (att, viaRetry) => {
       if (!planPath) return;
       const p = compile(url, att.steps, att.proof);
       if (p) {
+        // THE PROOF IS CHECKED AGAINST THE PAGE BEFORE IT IS BELIEVED.
+        //
+        // compile() refuses an EMPTY proof. It cannot refuse a WRONG one, and a wrong one is the
+        // likelier mistake: the model is asked for "exact page text" and answers with a paraphrase
+        // of what it read — "Your order has been placed successfully" for a page that says "Thanks,
+        // your mug is on its way." Measured with a scripted model against a real Chromium: the run
+        // passed (exit 0), the recording was written, and the very next replay reported
+        //   the page no longer says "Your order has been placed successfully" — the text that
+        //   proved this test the last time it passed
+        // which is false in both halves. The page never said it, and no run was ever proved by it.
+        // Every subsequent run then went stale and woke the agent, so the recording could never
+        // settle: the replay saving — the whole economic claim — silently never arrived, and the
+        // customer was told their copy had changed when it had not.
+        //
+        // So: read the page the same way replay() will, and if the proof is not there, keep the
+        // verdict and drop the recording. This can only ever cost one more agent run, which is
+        // exactly what a recording that could never replay green was going to cost anyway, and it
+        // never touches the verdict or the exit code — the agent watched the test pass.
+        //
+        // Our own failure to read the page is NOT evidence against the proof: a closed context or
+        // a navigation in flight returns null here, and null records, as before.
+        const onPage = await page.evaluate(() => document.body?.innerText ?? "").catch(() => null);
+        if (typeof onPage === "string" && !onPage.includes(p.proof)) {
+          log(C.dim(`not recorded: the run passed, but the proof ${JSON.stringify(p.proof)} is not text on the page — a replay would report it as changed on every run. The next run uses the agent again.`));
+          return;
+        }
         // The verdict is already decided and reported by the time this runs. A read-only checkout
         // (a CI cache mount, a container image) turned a settled PASS into errored/2 here — an
         // outage report about a run the agent watched succeed. The recording is only next run's
@@ -921,7 +947,7 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
         // Still recorded: the walk itself passed and carries a proof, so the next run can replay
         // it for free — and the replay path re-audits the same page, so strict fails it again
         // without an agent run until the layout is actually fixed.
-        record(a, false);
+        await record(a, false);
         await browser.close().catch(() => {});
         return 1;
       }
@@ -929,7 +955,7 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
       log(`${a.why}\n`);
       for (const line of layoutNoteLines(lay)) log(C.dim(line));
       await report({ test, status: "passed", mode: "agent", durationMs: ms, url, reason: a.why, layout: lay }, log, onRun);
-      record(a, false);
+      await record(a, false);
       await browser.close().catch(() => {});
       return 0;
     }
@@ -1024,7 +1050,7 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
     // The retry that passed is a genuine passing run with a proof, so it records like one. If the
     // app is intermittently broken, the replay's proof check catches it as outcome-changed and
     // escalates to the agent — never a silent green.
-    if (settled.status === "flaky") record(lastAttempt, true);
+    if (settled.status === "flaky") await record(lastAttempt, true);
     await browser.close().catch(() => {});
     return settled.status === "flaky" ? 0 : 1;
   } catch (e) {

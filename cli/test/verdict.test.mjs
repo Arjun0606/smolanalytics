@@ -18,7 +18,7 @@
 import { test, describe, after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { testCmd } from "../lib/test.mjs";
@@ -176,4 +176,45 @@ test("a page that will not open is the same, and closing the browser is still at
   assert.equal(code, 2);
   assert.equal(runs[0].status, "errored");
   assert.equal(closed, true, "a leaked Chromium on a self-hosted runner outlives the job");
+});
+
+// A PROOF THE AGENT DID NOT ACTUALLY READ OFF THE PAGE.
+//
+// `finish` demands "exact page text", and a model asked for exact text sometimes returns a
+// paraphrase of it. compile() refuses an EMPTY proof and cannot refuse a WRONG one, so before this
+// guard existed the paraphrase was written to the recording and the NEXT run replayed it, found the
+// text missing, and reported "the page no longer says …, the text that proved this test the last
+// time it passed" — false in both halves, on a page nobody had touched. The recording could then
+// never settle: every run went stale and woke the agent, so the replay saving never arrived while
+// the customer was told their copy had changed.
+//
+// The verdict is not in question here — the agent watched the test pass, and this must not move it.
+// Only the recording is refused.
+describe("a recording is only written when its proof is really on the page", () => {
+  // One real click, then the verdict: compile() refuses a recording with no steps, so a run that
+  // finishes on turn one would be dropped for a reason that has nothing to do with the proof.
+  const finishWith = (proof) => {
+    let turn = 0;
+    return () => (++turn === 1
+      ? ok({ stop_reason: "tool_use", content: [{ type: "tool_use", id: "t1", name: "click", input: { ref: "e2", why: "check out" } }] })
+      : ok({ stop_reason: "tool_use", content: [{ type: "tool_use", id: "t2", name: "finish", input: { passed: true, why: "Checked out.", proof } }] }));
+  };
+
+  test("a proof that is not page text is refused, and the pass is untouched", noBrowser, async () => {
+    const plan = path.join(mkdtempSync(path.join(tmpdir(), "smolanalytics-plan-")), "checkout.json");
+    const r = await run(finishWith("Your order has been placed successfully"), { plan, retries: 0 });
+    assert.equal(r.code, 0, "the agent observed a pass; refusing the recording must not change that");
+    assert.equal(r.runs.at(-1).status, "passed");
+    assert.equal(existsSync(plan), false, "a recording that could never replay green must not be written");
+    assert.match(r.out, /not recorded/, "silence here is the bug: the reader must learn why the next run costs a model call");
+    assert.match(r.out, /Your order has been placed successfully/, "the refused proof has to be quoted, or nobody can fix the sentence");
+  });
+
+  test("a proof that IS page text still records", noBrowser, async () => {
+    const plan = path.join(mkdtempSync(path.join(tmpdir(), "smolanalytics-plan-")), "checkout.json");
+    const r = await run(finishWith("Your cart"), { plan, retries: 0 });
+    assert.equal(r.code, 0);
+    assert.equal(existsSync(plan), true, "the guard must not cost us the recordings that were always fine");
+    assert.equal(JSON.parse(readFileSync(plan, "utf8")).proof, "Your cart");
+  });
 });
