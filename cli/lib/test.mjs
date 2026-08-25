@@ -32,6 +32,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { confirmProduction, newIdentity, postTeardown, substitute, PLACEHOLDER_LIST } from "./safety.mjs";
+import { auditLayout, layoutFailure, layoutNoteLines, stepTargets } from "./layout.mjs";
 
 const C = {
   b: (s) => `\x1b[1m${s}\x1b[0m`,
@@ -97,7 +98,7 @@ export function flatten(snapshot, cap = 120) {
  * is a crash rather than a graceful degradation — caught by running the browser tests against a
  * 1.52 that happened to be on this machine.
  */
-async function perceive(page) {
+export async function perceive(page) {
   const [aria, title, text] = await Promise.all([
     page.locator("body").ariaSnapshot().catch(() => ""),
     page.title().catch(() => ""),
@@ -492,7 +493,12 @@ const last1 = (s) => {
  * would 400 and the run would never reach the project at all.
  */
 export function wireRun(run) {
-  return run.status === "flaky" ? { ...run, status: "passed" } : run;
+  // Layout findings also stay on this side of the wire: the runs API validates its inputs, and a
+  // field it has never heard of risks a 400 that silently loses the whole row — a verdict traded
+  // for an advisory note. The suite reads them from the run object handed to onRun, which is the
+  // un-stripped one.
+  const { layout, ...r } = run;
+  return r.status === "flaky" ? { ...r, status: "passed" } : r;
 }
 
 // ---- evidence at failure ----------------------------------------------------------------------
@@ -583,7 +589,7 @@ function browserCacheDir() {
   return process.env.SMOLANALYTICS_CACHE || path.join(homedir(), ".cache", "smolanalytics");
 }
 
-async function loadPlaywright(log, yes) {
+export async function loadPlaywright(log, yes) {
   try {
     return { pw: await import("playwright") };
   } catch {
@@ -746,7 +752,7 @@ async function agentAttempt({ page, url, test, apiKey, model, maxSteps, log }) {
   };
 }
 
-async function runOnce({ url, test, plan: planPath, headed, maxSteps = 40, yes, retries = 1, evidenceDir = "", env = process.env, log = console.log, onRun, loadBrowser = loadPlaywright }) {
+async function runOnce({ url, test, plan: planPath, headed, maxSteps = 40, yes, retries = 1, evidenceDir = "", layout: layoutMode = "report", env = process.env, log = console.log, onRun, loadBrowser = loadPlaywright }) {
   if (!url || !test) {
     log(`
 ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No account.
@@ -810,8 +816,22 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
         log(C.dim(`replaying ${plan.steps.length} recorded steps (no model)…`));
         const r = await replay(page, plan);
         if (r.status === "passed") {
+          // Layout sanity runs at verdict time on the page the replay ended on, scoped to the
+          // steps it walked. Report-only unless --layout=strict — see lib/layout.mjs for why a
+          // finding gating by default is the fastest way to lose this feature its trust.
+          const lay = await auditLayout(page, { mode: layoutMode, targets: stepTargets(plan.steps) });
+          const gate = layoutFailure(lay, layoutMode);
+          if (gate) {
+            log(`\n${C.r("FAIL")} ${C.dim(`· replayed ${plan.steps.length} steps · --layout=strict`)}`);
+            log(`${gate}\n`);
+            for (const line of layoutNoteLines(lay)) log(C.dim(line));
+            await report({ test, status: "failed", mode: "replay", durationMs: r.ms, url, reason: gate, layout: lay }, log, onRun);
+            await browser.close().catch(() => {});
+            return 1;
+          }
           log(`\n${C.g("PASS")}${C.dim(` — replayed ${r.steps} steps in ${(r.ms / 1000).toFixed(1)}s, no model calls.`)}`);
-          await report({ test, status: "passed", mode: "replay", durationMs: r.ms, url, reason: "Replayed the recorded run; every step still worked." }, log, onRun);
+          for (const line of layoutNoteLines(lay)) log(C.dim(line));
+          await report({ test, status: "passed", mode: "replay", durationMs: r.ms, url, reason: "Replayed the recorded run; every step still worked.", layout: lay }, log, onRun);
           // Every close below a decided verdict carries .catch: close() can throw (seen once,
           // intermittently, under load), and unhandled it falls into the catch-all — which would
           // report errored/2 on top of a verdict that was already printed and posted.
@@ -887,9 +907,28 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
 
     if (a.passed) {
       const ms = Date.now() - started;
+      // Layout sanity on the final page, scoped to what this run clicked and filled plus the
+      // visible controls it ended among. Report-only unless --layout=strict (lib/layout.mjs).
+      const lay = await auditLayout(page, { mode: layoutMode, targets: stepTargets(a.steps) });
+      const gate = layoutFailure(lay, layoutMode);
+      if (gate) {
+        log(`\n${C.r("FAIL")} ${C.dim(`· ${a.steps.length} steps · ${(ms / 1000).toFixed(1)}s · --layout=strict`)}`);
+        log(`${gate}\n`);
+        for (const line of layoutNoteLines(lay)) log(C.dim(line));
+        const ev = await capture(page);
+        if (ev) log(C.dim(`evidence: ${ev.png} and ${ev.txt}`));
+        await report({ test, status: "failed", mode: "agent", durationMs: ms, url, reason: gate, layout: lay }, log, onRun);
+        // Still recorded: the walk itself passed and carries a proof, so the next run can replay
+        // it for free — and the replay path re-audits the same page, so strict fails it again
+        // without an agent run until the layout is actually fixed.
+        record(a, false);
+        await browser.close().catch(() => {});
+        return 1;
+      }
       log(`\n${C.g("PASS")} ${C.dim(`· ${a.steps.length} steps · ${(ms / 1000).toFixed(1)}s`)}`);
       log(`${a.why}\n`);
-      await report({ test, status: "passed", mode: "agent", durationMs: ms, url, reason: a.why }, log, onRun);
+      for (const line of layoutNoteLines(lay)) log(C.dim(line));
+      await report({ test, status: "passed", mode: "agent", durationMs: ms, url, reason: a.why, layout: lay }, log, onRun);
       record(a, false);
       await browser.close().catch(() => {});
       return 0;
@@ -948,6 +987,10 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
     const settled = settle(attempts);
     const ms = Date.now() - started;
     const lastAttempt = attempts[attempts.length - 1];
+    // Layout sanity on the page the last attempt ended on. The verdict here is failed or flaky —
+    // never passed — so strict has nothing to flip: findings are the same advisory note in every
+    // mode, because "the checkout broke AND its button is under a banner" is context, not a gate.
+    const lay = await auditLayout(page, { mode: layoutMode, targets: stepTargets(lastAttempt.steps) });
     if (settled.status === "flaky") {
       log(`\n${C.y("FLAKY")} ${C.dim(`· failed, then passed on retry · ${(ms / 1000).toFixed(1)}s total`)}`);
       log(`${settled.reason}`);
@@ -958,6 +1001,7 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
       log(`\n${C.r("FAIL")} ${C.dim(`· ${attempts.length > 1 ? `observed ${attempts.length} times · ` : ""}${lastAttempt.steps.length} steps · ${(ms / 1000).toFixed(1)}s`)}`);
       log(`${settled.reason}\n`);
     }
+    for (const line of layoutNoteLines(lay)) log(C.dim(line));
     if (evidence) log(C.dim(`evidence: ${evidence.png} and ${evidence.txt}`));
     appendStepSummary(env, { test, status: settled.status, reason: settled.reason, evidence });
     // Not when the retry broke: every attempt was already posted as its own row before its retry
@@ -967,7 +1011,7 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
     // fail-confirmed-twice report with both runs' steps).
     if (!retryBroke) {
       await report({
-        test, status: settled.status, mode: "agent", durationMs: ms, url, reason: settled.reason,
+        test, status: settled.status, mode: "agent", durationMs: ms, url, reason: settled.reason, layout: lay,
         // Every attempt's steps, tagged by run: "the first is kept in the steps" is the contract
         // that lets the reason be the second run's without the first observation disappearing.
         steps: attempts.flatMap((att, i) =>

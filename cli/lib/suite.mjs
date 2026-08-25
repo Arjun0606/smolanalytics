@@ -28,6 +28,8 @@
 import { readdirSync, readFileSync, statSync, mkdirSync, existsSync } from "node:fs";
 import path from "node:path";
 import { testCmd } from "./test.mjs";
+import { suspectsForFailure } from "./suspect.mjs";
+import { layoutCommentLines } from "./layout.mjs";
 
 const C = {
   b: (s) => `\x1b[1m${s}\x1b[0m`,
@@ -351,6 +353,7 @@ export async function runSuite({
   maxSteps = 40,
   retries = 1,
   evidenceDir = "",
+  layout = "report",
   teardown = "",
   emailDomain = "",
   log = console.log,
@@ -359,6 +362,7 @@ export async function runSuite({
   mkdir = (d) => mkdirSync(d, { recursive: true }),
   hasPlan = (p) => existsSync(p),
   hasKey = Boolean(process.env.ANTHROPIC_API_KEY),
+  findSuspects = suspectsForFailure,
 }) {
   // Create the directory BEFORE the first test. testCmd writes the recording only after a test
   // passes, so a missing directory turns a green run into "errored" at the last instruction — the
@@ -388,6 +392,7 @@ export async function runSuite({
         maxSteps,
         retries,
         evidenceDir,
+        layout,
         // Every test gets its OWN identity, so nine signups are nine findable rows rather than
         // one that collides with itself on test two. That has to survive SMOLANALYTICS_RUN_ID,
         // which pins one id for the whole CI run: the index suffix keeps the rows grouped under
@@ -422,6 +427,14 @@ export async function runSuite({
       // A recording that went stale and was then re-verified is worth saying out loud: it is the
       // moment the tool did the thing it promises, and it explains why that test was slow today.
       refreshed: wentStale && status === "passed",
+      // Layout findings ride on the verdict-carrying run (lib/layout.mjs). Advisory: nothing about
+      // this field may touch status or exit code — the PR comment renders it as small type.
+      layout: Array.isArray(last?.layout) ? last.layout : [],
+      // Only on failed, and only ever a decoration: which changed files this PR's diff connects to
+      // what this run observed, each with its named evidence. [] is the common and correct answer —
+      // suspect.mjs refuses to rank a diff it cannot connect — and nothing about it may touch the
+      // status or the exit code.
+      suspects: status === "failed" ? findSuspects({ runs, reason, planPath: t.planPath, url, env }) : [],
     });
   }
   return results;
@@ -529,6 +542,19 @@ export function commentBody(results, { url = "", suite = "tests", runUrl = "", p
   for (const r of rows) {
     if (r.status !== "failed" && r.status !== "errored" && r.status !== "stale" && r.status !== "flaky") continue;
     out.push("", `**${escapeCell(r.name)}** — ${code(r.file)}`, "", `> ${quote(r.reason || "no detail was recorded")}`);
+    // At most two suspects, under the failure they belong to. Each line already carries its named
+    // evidence (suspect.mjs emits nothing without one); the file goes through code() because it is
+    // a path from the customer's diff, and the evidence through quote() because it quotes strings
+    // from their page — the same two rules as the URL and the reason above.
+    // FAILED ONLY, checked here and not just where the field is filled in. This loop also renders
+    // errored, stale and flaky, and blame under any of those blurs a status: errored is our runner
+    // breaking, stale cannot tell a rename from a removal, and flaky pinned nothing down. runSuite
+    // never puts suspects on those rows — this is the render refusing to print them if it ever does.
+    if (r.status === "failed") {
+      for (const s of (Array.isArray(r.suspects) ? r.suspects : []).slice(0, 2)) {
+        out.push(">", `> Suspect: ${code(s.file)} — ${quote(s.evidence)}`);
+      }
+    }
   }
 
   for (const p of problems) {
@@ -546,8 +572,24 @@ export function commentBody(results, { url = "", suite = "tests", runUrl = "", p
   if (s.errored) notes.push("Errors are this runner, not your app.");
   if (notes.length) out.push("", "---", "", `<sub>${notes.join(" ")}</sub>`);
 
+  // One small-type line per test with layout findings, at the very bottom: advisory by contract
+  // (lib/layout.mjs), so it renders after every verdict and is the first casualty below.
+  out.push(...layoutCommentLines(results));
+
   const body = out.filter((l) => l !== null).join("\n").replace(/\n{3,}/g, "\n\n") + "\n";
   if (body.length <= BODY_LIMIT) return body;
+  // Layout notes are dropped before anything else, whole: they are advisory, and a bug report's
+  // tail must never be trimmed while an advisory note above it survives.
+  if (results.some((r) => Array.isArray(r.layout) && r.layout.length)) {
+    return commentBody(results.map((r) => (Array.isArray(r.layout) && r.layout.length ? { ...r, layout: [] } : r)), { url, suite, runUrl, problems });
+  }
+  // Suspects are the next thing dropped when the comment must shrink: they are a hint about a
+  // failure, and the failure's own reason is the deliverable they must never crowd out. Rebuilt
+  // without them rather than sliced, so the cut below only ever falls on a body that is already
+  // hint-free — a mid-body slice was how a reason lost its tail while a guess above it survived.
+  if (results.some((r) => Array.isArray(r.suspects) && r.suspects.length)) {
+    return commentBody(results.map((r) => (Array.isArray(r.suspects) && r.suspects.length ? { ...r, suspects: [] } : r)), { url, suite, runUrl, problems });
+  }
   // Cut on a line boundary so the trim never lands inside a table row or a blockquote, and say so:
   // a report that is silently missing its tail is worse than one that admits it.
   const cut = body.slice(0, BODY_LIMIT);
@@ -687,6 +729,7 @@ export async function suiteCmd({
   maxSteps = 40,
   retries = 1,
   evidenceDir = "",
+  layout = "report",
   teardown = "",
   emailDomain = "",
   log = console.log,
@@ -746,7 +789,7 @@ export async function suiteCmd({
   // The directory to create is the one recordings actually land in — never a .json path, which
   // would be created as a directory and then collide with the file testCmd wants to write.
   const plansDir = /\.json$/i.test(plans) ? path.dirname(plans) : plans;
-  const results = await runSuiteImpl({ tests, url, plansDir, headed, yes, maxSteps, retries, evidenceDir, teardown, emailDomain, log, env, hasKey: Boolean(env.ANTHROPIC_API_KEY) });
+  const results = await runSuiteImpl({ tests, url, plansDir, headed, yes, maxSteps, retries, evidenceDir, layout, teardown, emailDomain, log, env, hasKey: Boolean(env.ANTHROPIC_API_KEY) });
   const s = summarize(results);
 
   const parts = [`${s.total} test${s.total === 1 ? "" : "s"}`, `${s.passed} passed`];
@@ -756,7 +799,12 @@ export async function suiteCmd({
   if (s.errored) parts.push(C.y(`${s.errored} could not run`));
   log(`\n${parts.join(" · ")} ${C.dim(`· ${secs(s.ms)}`)}`);
   if (s.replayed) log(C.dim(`${s.replayed} replayed from a recording, with no model calls.`));
-  for (const r of results.filter((r) => r.status === "failed")) log(`  ${C.r("fail")} ${r.name} ${C.dim(`· ${r.file}`)}`);
+  for (const r of results.filter((r) => r.status === "failed")) {
+    log(`  ${C.r("fail")} ${r.name} ${C.dim(`· ${r.file}`)}`);
+    // The same two suspect lines the comment gets, under the same failure. Dim, because they are a
+    // hint from the diff, and the red verdict above them is the fact.
+    for (const s of (Array.isArray(r.suspects) ? r.suspects : []).slice(0, 2)) log(C.dim(`       suspect: ${s.file} — ${s.evidence}`));
+  }
   // Named like failed and stale are, and worded as reliability: a flaky line that read as a pass
   // would bury the warning, and one that read as a bug would be a claim nobody verified.
   for (const r of results.filter((r) => r.status === "flaky")) log(`  ${C.y("flaky")} ${r.name} ${C.dim("· failed once, passed on retry — unreliable, not counted as a pass")}`);

@@ -21,6 +21,9 @@ import { auditCmd } from "../lib/audit.mjs";
 import { deskCmd } from "../lib/desk.mjs";
 import { testCmd } from "../lib/test.mjs";
 import { suiteCmd, DEFAULT_PLANS_DIR } from "../lib/suite.mjs";
+import { parseLayoutMode } from "../lib/layout.mjs";
+import { autoPreviewUrl } from "../lib/preview.mjs";
+import { suggestCmd } from "../lib/suggest.mjs";
 
 const C = {
   dim: (s) => `\x1b[2m${s}\x1b[0m`,
@@ -49,6 +52,7 @@ ${C.bold("smolanalytics")} — end-to-end tests without test code
 
   ${C.bold("npx smolanalytics test")}        one sentence, a real browser, a verdict
   ${C.dim("--url  <url>")}          staging, a deploy preview, anything reachable
+  ${C.dim("--wait-preview <sec>")}  Actions + no --url: wait for this PR's own preview deployment (default 240)
   ${C.dim("--test \"<text>\"")}       what should work, in plain English
   ${C.dim("--plan <file>")}         replay the recording; wake the agent only if it stopped fitting
   ${C.dim("--headed")}              watch it happen
@@ -57,11 +61,17 @@ ${C.bold("smolanalytics")} — end-to-end tests without test code
   ${C.dim("--email-domain <dom>")}  the domain in {{email}} (default: example.com)
   ${C.dim("--retries <n>")}         re-run a failing test from a clean page; pass-on-retry is flaky, not passed (default 1; 0 disables)
   ${C.dim("--evidence-dir <dir>")}  where a failure's screenshot + page text land (default .smolanalytics/evidence)
+  ${C.dim("--layout <mode>")}       layout sanity on the final page: report (default, notes only) | strict (findings fail a PASS) | off
 
   ${C.dim("--suite <dir>")}         a folder of .md files, one sentence per test
   ${C.dim("--comment")}             post the verdicts on the pull request (GitHub Actions)
   ${C.dim("--plans <dir>")}         where recordings are kept (default: ${DEFAULT_PLANS_DIR})
   ${C.dim("No account. No GitHub app. Nothing written to your repo.")}
+
+  ${C.bold("npx smolanalytics suggest")}     the tests worth writing, read off your running app
+  ${C.dim("--url  <url>")}          a browser walks a few pages and proposes the flows it can SEE
+  ${C.dim("--out  <dir>")}          where the .md files land (default tests/) — existing files are never overwritten
+  ${C.dim("--max  <n>")}            at most this many proposals (default 6; a small app honestly yields fewer)
 
   ${C.bold("npx smolanalytics audit")}       what your app does that nothing is measuring
   ${C.dim("[dir]")}                 repo to scan (default: here). No account, no network.
@@ -125,13 +135,37 @@ async function main() {
       return;
     }
     const retries = retriesRaw === undefined ? 1 : Number(retriesRaw);
+    // Same shape as --retries: `--layout=stric` silently meaning the default would quietly un-gate
+    // the one customer who explicitly opted into gating. A bare --layout gets the same refusal.
+    const layoutRaw = flag("layout") ?? (hasFlag("layout") ? "" : undefined);
+    const { mode: layout, problem: layoutProblem } = parseLayoutMode(layoutRaw);
+    if (layoutProblem) {
+      console.error(C.red(layoutProblem));
+      process.exitCode = 2;
+      return;
+    }
+    // NO --url INSIDE ACTIONS ON A PULL REQUEST: the preview host already told GitHub the URL, so
+    // ask the deployments API instead of asking the person (lib/preview.mjs says how and why).
+    // Anywhere else — a laptop, a push build — autoPreviewUrl skips and the missing --url keeps
+    // producing exactly the error it does today. A failed lookup is exit 2, the runner's code:
+    // no test ran, so nothing was learned about the app, and 1 would blame it anyway.
+    let url = flag("url");
+    if (!url) {
+      const preview = await autoPreviewUrl({ waitRaw: flag("wait-preview") });
+      if (preview.problem) {
+        console.error(`\n${C.red("no preview URL")} ${preview.problem}\n`);
+        process.exitCode = 2;
+        return;
+      }
+      if (preview.url) url = preview.url;
+    }
     try {
       // --suite and --comment are the CI shape: many tests, one comment, a status per test. Without
       // either of them this stays the sixty-second command it already was, with the same output.
       if (suite || comment) {
         process.exitCode = await suiteCmd({
           suite,
-          url: flag("url"),
+          url,
           test: flag("test"),
           plans: flag("plans") || flag("plan-dir") || (suite ? undefined : flag("plan")) || DEFAULT_PLANS_DIR,
           comment,
@@ -142,11 +176,12 @@ async function main() {
           maxSteps: Number(flag("max-steps")) || 40,
           retries,
           evidenceDir: flag("evidence-dir") || "",
+          layout,
         });
         return;
       }
       process.exitCode = await testCmd({
-        url: flag("url"),
+        url,
         test: flag("test"),
         plan: flag("plan"),
         headed: hasFlag("headed"),
@@ -156,12 +191,26 @@ async function main() {
         maxSteps: Number(flag("max-steps")) || 40,
         retries,
         evidenceDir: flag("evidence-dir") || "",
+        layout,
       });
     } catch (err) {
       console.error(`\n${C.red("the run could not complete")} ${err?.message || err}`);
       console.error(`  This is the test runner, not your application. Nothing was learned about this change.\n`);
       process.exitCode = 2;
     }
+    return;
+  }
+  if (cmd === "suggest") {
+    // A bare `--max` is refused rather than defaulted, the same shape as --retries and --layout
+    // above: flag() cannot tell `--max` with no value from no --max at all, and silently handing
+    // back the default 6 gives the person who typed a cap a different one than they asked for.
+    // suggestCmd owns the refusal so the library and the CLI cannot drift apart on what is valid.
+    process.exitCode = await suggestCmd({
+      url: flag("url"),
+      out: flag("out") || "tests",
+      max: flag("max") ?? (hasFlag("max") ? "" : undefined),
+      yes: hasFlag("yes"),
+    });
     return;
   }
   if (cmd === "desk") {

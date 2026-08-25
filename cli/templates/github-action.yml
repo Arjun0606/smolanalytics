@@ -59,6 +59,15 @@ jobs:
       # ----------------------------------------------------------------------------------------
       # THE PREVIEW URL — keep (a), (b) or (c). Delete the other two.
       # All three set the same output, so the run step below does not change.
+      #
+      # OR DELETE ALL THREE — --url is optional here. If your host announces its previews as
+      # GitHub deployments (Vercel, Netlify and Cloudflare Pages all do), delete this whole
+      # section, the `URL:` env line below, and the `--url "$URL"` part of the run line. With no
+      # --url, the CLI asks the deployments API — with the same GITHUB_TOKEN this job already has —
+      # for this pull request's own deployment, waiting up to 4 minutes (--wait-preview <sec>
+      # changes that) and printing a line per poll so the log never looks hung. If no ready
+      # deployment appears it stops with exit 2 and says what it looked for; it never guesses a
+      # URL and never falls back to your production domain.
       # ----------------------------------------------------------------------------------------
 
       # (a) VERCEL. Vercel builds the preview itself; this waits for that deployment to be ready
