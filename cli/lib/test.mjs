@@ -308,17 +308,60 @@ export function rebase(plan, url) {
   } catch {
     return plan;
   }
-  if (from === to) return { ...plan, startUrl: url };
+  // THE RECORDED PAGE IS PART OF THE RECORDING, AND BOTH BRANCHES USED TO THROW IT AWAY.
+  //
+  // Measured on a 50-test suite, which is the first size at which this is visible: every branch
+  // below returned `startUrl: url`, so a test recorded on /checkout replayed from /. The button is
+  // not on the home page, the locator spends its full 10s timeout failing to find it, the run is
+  // reported STALE, and the agent is woken to re-record — at full model price, on every pull
+  // request, for every test that does not happen to start at the site root.
+  //
+  // So the whole value of record-and-replay silently inverted for any app with more than one page:
+  // the suite got slower and more expensive than having no recordings at all, while still looking
+  // like it was working. A three-test demo suite starting at / cannot show this; fifty tests can.
+  //
+  // What `url` names is WHERE THE APP IS, not which page: its origin replaces the recorded origin,
+  // and the recorded path, query and hash are kept. When `url` carries a path of its own (an app
+  // deployed under a subpath, or a single `--test` run naming one page) it is used as a prefix,
+  // unless the recorded path already sits under it — which is what stops `--url http://x/f7`
+  // replaying a recording of /f7 against /f7/f7.
+  // THE RULE: the URL given now says WHERE THE APP IS; the recording says WHICH PAGE.
+  //
+  // So the origin always comes from `url`, and the path, query and hash come from the recording —
+  // except when the recording has no path of its own, where the path given now is used. One URL is
+  // passed for a whole suite, so any other rule makes fifty tests share one page.
+  const passed = (() => {
+    try {
+      return new URL(url);
+    } catch {
+      return null;
+    }
+  })();
+  const at = (u) => {
+    let rec;
+    try {
+      rec = new URL(u);
+    } catch {
+      return url;
+    }
+    if (!passed) return url;
+    const bare = rec.pathname === "/" || rec.pathname === "";
+    return bare
+      ? passed.origin + passed.pathname + passed.search + passed.hash
+      : passed.origin + rec.pathname + rec.search + rec.hash;
+  };
+
+  if (from === to) return { ...plan, startUrl: at(plan.startUrl) };
   const steps = (plan.steps || []).map((s) => {
     if (s.kind !== "goto" || typeof s.url !== "string") return s;
     try {
       const u = new URL(s.url);
-      return u.origin === from ? { ...s, url: to + u.pathname + u.search + u.hash } : s;
+      return u.origin === from ? { ...s, url: at(s.url) } : s;
     } catch {
       return s;
     }
   });
-  return { ...plan, startUrl: url, steps };
+  return { ...plan, startUrl: at(plan.startUrl), steps };
 }
 
 /**

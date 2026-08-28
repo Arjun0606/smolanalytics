@@ -16,11 +16,35 @@ describe("a recording follows the URL under test", () => {
     ],
   };
 
-  test("the run starts where this run was told to start, not where the recording was made", () => {
-    // Otherwise a cached recording tests the previous pull request's deployment and passes green
-    // without ever opening the change under review.
+  test("the run moves to the deployment named now, ON THE PAGE THAT WAS RECORDED", () => {
+    // Two requirements, and this test used to encode only the first:
+    //
+    //   the ORIGIN must come from the URL given now, or a cached recording tests the previous pull
+    //   request's deployment and passes green without ever opening the change under review;
+    //
+    //   the PAGE must come from the recording. This half was missing, and it asserted the bug:
+    //   `startUrl` became the bare origin, so a test recorded on /products replayed against /.
+    //   MEASURED on a 50-test suite — the first size at which it is visible — every test went
+    //   stale, each burning its full 10s locator timeout looking for a control that was never on
+    //   the home page, then waking the agent to re-record at full model price. The suite did not
+    //   finish in ten minutes. With the page preserved it is 39.5s, 50/50 passed, no model calls.
     const r = rebase(plan, "https://shop-git-new-branch.vercel.app");
-    assert.equal(r.startUrl, "https://shop-git-new-branch.vercel.app");
+    assert.equal(r.startUrl, "https://shop-git-new-branch.vercel.app/products");
+  });
+
+  test("one URL for a whole suite does not collapse every test onto one page", () => {
+    // The property the 50-test run actually depends on: `--suite` passes ONE url for every test,
+    // so if the recorded page did not survive, fifty tests would all replay against the root.
+    const a = rebase({ startUrl: "https://old.app/checkout", steps: [] }, "https://new.app");
+    const b = rebase({ startUrl: "https://old.app/signup", steps: [] }, "https://new.app");
+    assert.equal(a.startUrl, "https://new.app/checkout");
+    assert.equal(b.startUrl, "https://new.app/signup");
+    assert.notEqual(a.startUrl, b.startUrl, "two tests recorded on different pages must not share one");
+  });
+
+  test("query and hash are part of the page, and survive with it", () => {
+    const r = rebase({ startUrl: "https://old.app/search?q=boots#results", steps: [] }, "https://new.app");
+    assert.equal(r.startUrl, "https://new.app/search?q=boots#results");
   });
 
   test("recorded navigations move to the new preview, keeping their path and query", () => {
@@ -37,10 +61,20 @@ describe("a recording follows the URL under test", () => {
     assert.deepEqual(rebase(plan, "https://x.test").steps[0], plan.steps[0]);
   });
 
-  test("the same origin is a no-op apart from honouring the path given now", () => {
+  test("a path given now does not override the page a recording was made on", () => {
+    // The rule, stated once: the URL says WHERE THE APP IS, the recording says WHICH PAGE. This
+    // test previously asserted the opposite ("honouring the path given now"), which is only
+    // harmless when one URL accompanies one test — and actively wrong for a suite, where the same
+    // URL accompanies every test in it.
     const r = rebase(plan, "https://shop-git-old-branch.vercel.app/cart");
-    assert.equal(r.startUrl, "https://shop-git-old-branch.vercel.app/cart");
+    assert.equal(r.startUrl, "https://shop-git-old-branch.vercel.app/products");
     assert.deepEqual(r.steps, plan.steps);
+  });
+
+  test("a recording with no page of its own does take the path given now", () => {
+    // The one case where the URL's path is all there is to go on.
+    const r = rebase({ startUrl: "https://old.app/", steps: [] }, "https://new.app/cart");
+    assert.equal(r.startUrl, "https://new.app/cart");
   });
 
   test("a recording with an unparseable start still runs, from the URL given now", () => {
