@@ -31,8 +31,10 @@ import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { confirmProduction, newIdentity, postTeardown, substitute, PLACEHOLDER_LIST } from "./safety.mjs";
+import { confirmProduction, newIdentity, postTeardown, substitute, maskSecrets, unmaskSecrets, PLACEHOLDER_LIST } from "./safety.mjs";
 import { auditLayout, layoutFailure, layoutNoteLines, stepTargets } from "./layout.mjs";
+import { DEFAULT_AUTH_DIR, openSession } from "./auth.mjs";
+import { closedShadowRoots, embeddedNotes, frameLabel, inFrame, readFrames, visibleText } from "./frames.mjs";
 
 const C = {
   b: (s) => `\x1b[1m${s}\x1b[0m`,
@@ -102,14 +104,22 @@ export async function perceive(page) {
   const [aria, title, text] = await Promise.all([
     page.locator("body").ariaSnapshot().catch(() => ""),
     page.title().catch(() => ""),
-    page.evaluate(() => document.body?.innerText ?? "").catch(() => ""),
+    visibleText(page).catch(() => ""),
   ]);
   const { elements, truncated } = flatten(aria);
+  // EMBEDDED CONTENT. `ariaSnapshot()` renders a whole payment form as the single word "iframe",
+  // which flatten() then drops for having no name — so before this, the agent was shown a checkout
+  // page with two buttons on it and no hint that a third document existed. See lib/frames.mjs for
+  // the measurement. Never allowed to throw: perception is how the agent sees.
+  const f = await readFrames(page, flatten, { startRef: elements.length }).catch(() => null);
+  const closed = await closedShadowRoots(page).catch(() => []);
   return {
     url: page.url(),
     title,
-    elements,
-    truncated,
+    elements: f ? [...elements, ...f.elements] : elements,
+    truncated: truncated + (f ? f.truncated : 0),
+    frames: f ? f.frames : [],
+    closed,
     text: String(text).replace(/\n{3,}/g, "\n\n").trim().slice(0, 4000),
   };
 }
@@ -119,6 +129,9 @@ export function render(s) {
     const bits = [e.ref, e.role, JSON.stringify(e.name)];
     if (e.value) bits.push(`value=${JSON.stringify(e.value)}`);
     if (e.state) bits.push(`[${e.state}]`);
+    // Which document it is in, so the model's own reasoning and the step label it produces both
+    // say "inside the payment frame" rather than implying it was on the page.
+    if (e.frameName || (e.frame && e.frame.length)) bits.push(`in frame ${JSON.stringify(e.frameName || frameLabel(e.frame))}`);
     return "  " + bits.join(" ");
   });
   return [
@@ -129,6 +142,9 @@ export function render(s) {
     ...(lines.length ? lines : ["  (none found — the page may still be loading, or its content is in a canvas)"]),
     ...(s.truncated ? [`  … and ${s.truncated} more not shown. Scroll or filter rather than assuming an element is absent.`] : []),
     "",
+    // Empty on a page with no frames and no closed shadow roots, which is most of them — so this
+    // adds not one character to the ordinary case.
+    ...embeddedNotes({ frames: s.frames, closed: s.closed }),
     "PAGE TEXT:",
     s.text || "(empty)",
   ].join("\n");
@@ -137,7 +153,7 @@ export function render(s) {
 function locate(page, snap, ref) {
   const el = snap.elements.find((e) => e.ref === ref);
   if (!el) return null;
-  return page.getByRole(el.role, { name: el.name, exact: true });
+  return inFrame(page, el.frame).getByRole(el.role, { name: el.name, exact: true });
 }
 
 // ---- the agent --------------------------------------------------------------------------------
@@ -243,12 +259,15 @@ function toAction(call) {
   }
 }
 
-function describe(step) {
+function describe(step, secrets = []) {
   const a = step.action;
   const mark = step.ok ? C.g("✓") : C.r("✗");
+  // A click inside an embedded checkout that reads as a click on the page sends whoever debugs it
+  // to the wrong document. The frame is part of what happened, so it is part of the label.
+  const inF = step.target && step.target.frame && step.target.frame.length ? ` in frame "${frameLabel(step.target.frame)}"` : "";
   const label =
-    a.kind === "click" ? `click ${step.target ? `${step.target.role} "${step.target.name}"` : a.ref}`
-    : a.kind === "fill" ? `fill ${step.target ? `"${step.target.name}"` : a.ref} = ${JSON.stringify(a.text)}`
+    a.kind === "click" ? `click ${step.target ? `${step.target.role} "${step.target.name}"${inF}` : a.ref}`
+    : a.kind === "fill" ? `fill ${step.target ? `"${step.target.name}"${inF}` : a.ref} = ${JSON.stringify(maskSecrets(a.text, secrets))}`
     : a.kind === "goto" ? `goto ${a.url}`
     : a.kind === "press" ? `press ${a.key}`
     : `scroll ${a.direction}`;
@@ -258,13 +277,13 @@ function describe(step) {
 // ---- replay: the second run costs nothing -----------------------------------------------------
 
 /** Keep only what succeeded and can be replayed. The agent's dead ends are not part of the test. */
-export function compile(startUrl, steps, proof = "") {
+export function compile(startUrl, steps, proof = "", secrets = []) {
   const out = [];
   for (const s of steps) {
     if (!s.ok) continue;
     const a = s.action;
     if (a.kind === "click" && s.target) out.push({ kind: "click", ...s.target });
-    else if (a.kind === "fill" && s.target) out.push({ kind: "fill", ...s.target, text: a.text });
+    else if (a.kind === "fill" && s.target) out.push({ kind: "fill", ...s.target, text: maskSecrets(a.text, secrets) });
     else if (a.kind === "press") out.push({ kind: "press", key: a.key });
     else if (a.kind === "goto") out.push({ kind: "goto", url: a.url });
   }
@@ -410,19 +429,33 @@ export function readPlan(text) {
     if (!need) return { plan: null, problem: `step ${i + 1} of the recording is not something this version can replay.` };
     const missing = need.filter((k) => typeof s[k] !== "string" || (k !== "text" && !s[k]));
     if (missing.length) return { plan: null, problem: `step ${i + 1} of the recording is missing ${missing.join(" and ")}.` };
+    // `frame` is OPTIONAL, and its absence is the whole backward-compatibility story: every
+    // recording written before frames existed has no frame field and replays against the page
+    // exactly as it always did. When it IS present it drives frameLocator(), so a malformed one
+    // would silently aim the step at the page instead — the same control name may well exist out
+    // there, which is how a step nobody performed passes.
+    if (s.frame !== undefined) {
+      const bad = !Array.isArray(s.frame) || !s.frame.length || s.frame.some((x) => typeof x !== "string" || !x.trim());
+      if (bad) return { plan: null, problem: `step ${i + 1} of the recording names a frame this version cannot use.` };
+    }
   }
   return { plan: raw, problem: "" };
 }
 
-export async function replay(page, plan) {
+export async function replay(page, plan, secrets = []) {
   const started = Date.now();
   await page.goto(plan.startUrl, { waitUntil: "domcontentloaded" });
   for (let i = 0; i < plan.steps.length; i++) {
     const s = plan.steps[i];
     try {
       if (s.kind === "goto") await page.goto(s.url, { waitUntil: "domcontentloaded", timeout: 30_000 });
-      else if (s.kind === "click") await page.getByRole(s.role, { name: s.name, exact: true }).click({ timeout: 10_000 });
-      else if (s.kind === "fill") await page.getByRole(s.role, { name: s.name, exact: true }).fill(s.text, { timeout: 10_000 });
+      // inFrame() with no frame IS page.getByRole — see lib/frames.mjs. A recording made inside an
+      // embedded checkout replays into that same frame, with no model call, like any other step.
+      else if (s.kind === "click") await inFrame(page, s.frame).getByRole(s.role, { name: s.name, exact: true }).click({ timeout: 10_000 });
+      // The recording holds {{password}}, never the password. Resolve it from the environment at
+      // the moment of the fill, so the credential exists in memory for this keystroke and in no
+      // file we ever wrote.
+      else if (s.kind === "fill") await inFrame(page, s.frame).getByRole(s.role, { name: s.name, exact: true }).fill(unmaskSecrets(s.text, secrets), { timeout: 10_000 });
       else if (s.kind === "press") await page.keyboard.press(s.key);
       // readPlan rejects these before we get here; this is for anyone calling replay() directly.
       // Falling through in silence would count a step nobody performed as a step that worked.
@@ -441,7 +474,13 @@ export async function replay(page, plan) {
   if (!plan.proof) {
     return { status: "unproven", detail: "this recording predates outcome checking, so replaying it proves only that the steps still work", ms: Date.now() - started };
   }
-  const text = await page.evaluate(() => document.body?.innerText ?? "").catch(() => "");
+  // visibleText, not document.body.innerText: measured, a confirmation rendered inside an iframe
+  // or an open shadow root is absent from innerText entirely. Now that the agent can SEE into a
+  // frame it will quote its proof from one, and checking only the main document would report
+  // `outcome-changed` on a working flow and wake the agent at full price on every single run —
+  // the rebase() cost explosion, rebuilt. The main document's text still comes first and uncapped,
+  // so this is strictly additive: every proof that matched before matches still.
+  const text = await visibleText(page).catch(() => "");
   if (!String(text).includes(plan.proof)) {
     // The flow still runs and the outcome changed. That is EITHER a regression or a reword, and a
     // replay cannot tell them apart any more than it can tell a rename from a removal — so it says
@@ -468,7 +507,8 @@ export function stalenessNote(r) {
     return `This recording predates outcome checking: replaying it would prove the steps still work and nothing about whether they still do the right thing. Running the agent to record one that can be checked.`;
   }
   const s = r.step;
-  const what = s.kind === "click" || s.kind === "fill" ? `the ${s.role} named "${s.name}"` : `a ${s.kind}`;
+  const where = s && s.frame && s.frame.length ? ` inside the frame "${frameLabel(s.frame)}"` : "";
+  const what = s.kind === "click" || s.kind === "fill" ? `the ${s.role} named "${s.name}"${where}` : `a ${s.kind}`;
   return `The recorded run no longer fits this app: at step ${r.at + 1}, ${what} could not be used (${r.detail}). That is not yet a bug — the control may simply have been renamed.`;
 }
 
@@ -558,7 +598,9 @@ export async function captureEvidence(page, dir) {
   const out = { png: path.join(dir, "failure.png"), txt: path.join(dir, "failure.txt") };
   mkdirSync(dir, { recursive: true });
   await page.screenshot({ path: out.png, fullPage: true });
-  const text = await page.evaluate(() => document.body?.innerText ?? "").catch(() => "");
+  // The screenshot shows an embedded checkout; document.body.innerText does not contain one word
+  // of it. Whoever opens this file after a failure inside a payment frame needs the frame's text.
+  const text = await visibleText(page).catch(() => "");
   writeFileSync(out.txt, `URL: ${page.url()}\n\n${String(text).trim()}\n`);
   return out;
 }
@@ -771,7 +813,9 @@ async function agentAttempt({ page, url, test, apiKey, model, maxSteps, log }) {
 
       const t0 = Date.now();
       const el = snap.elements.find((e) => e.ref === a.ref);
-      const target = el ? { role: el.role, name: el.name } : undefined;
+      // `frame` only when there is one, so a recording of an ordinary page is byte-identical to
+      // what this wrote before frames existed. compile() spreads target straight into the step.
+      const target = el ? { role: el.role, name: el.name, ...(el.frame && el.frame.length ? { frame: el.frame } : {}) } : undefined;
       const out = await act(page, snap, a);
       const step = { n, action: a, target, ok: out.ok, detail: out.detail, ms: Date.now() - t0 };
       step.label = describe(step).trim().replace(/^[^ ]+ +\d+ /, "");
@@ -795,7 +839,7 @@ async function agentAttempt({ page, url, test, apiKey, model, maxSteps, log }) {
   };
 }
 
-async function runOnce({ url, test, plan: planPath, headed, maxSteps = 40, yes, retries = 1, evidenceDir = "", layout: layoutMode = "report", env = process.env, log = console.log, onRun, loadBrowser = loadPlaywright }) {
+async function runOnce({ url, test, plan: planPath, headed, maxSteps = 40, yes, retries = 1, evidenceDir = "", layout: layoutMode = "report", login = "", authFile = "", authDir = DEFAULT_AUTH_DIR, env = process.env, log = console.log, onRun, loadBrowser = loadPlaywright }) {
   if (!url || !test) {
     log(`
 ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No account.
@@ -829,6 +873,7 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
 
   const started = Date.now();
   let browser = null;
+  let session = null;
 
   try {
     // INSIDE the try. `chromium.launch()` is the single most common way a browser run dies on a CI
@@ -836,8 +881,25 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
     // went past this function's whole errored/exit-2 contract to the CLI's last-resort catch, which
     // exits 1. That is the code reserved for the customer's app being broken.
     browser = await pw.chromium.launch({ headless: !headed });
+    // AUTHENTICATED FLOWS (lib/auth.mjs). With neither --login nor --auth-file, session.newPage()
+    // IS browser.newPage() with the same viewport, and nothing else on this path runs at all.
+    // With one of them, every page this run opens — the first and every retry — is a clean context
+    // seeded from a saved session, verified against the login recording's own landing evidence.
+    session = await openSession({
+      browser, url, login, authFile, authDir, apiKey, maxSteps, env, log, perceive,
+      performLogin: (o) => agentAttempt({ url, apiKey, model, ...o }),
+    });
+    if (session.problem) {
+      // `errored` and exit 2, never `failed`/1: a session we could not establish says nothing
+      // whatsoever about whether the application under test works.
+      log(`\n${C.y("ERROR")} ${C.dim("· sign-in")}`);
+      log(`${session.problem}\n`);
+      await report({ test, status: "errored", mode: "agent", durationMs: Date.now() - started, url, reason: session.problem }, log, onRun);
+      await browser.close().catch(() => {});
+      return 2;
+    }
     // let, not const: a retry replaces it with a clean one.
-    let page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    let page = await session.newPage();
     // REPLAY FIRST — the path almost every real run takes, and it calls no model at all.
     if (planPath && existsSync(planPath)) {
       // A recording we cannot read or cannot replay is NO recording — not a pass, and not an error
@@ -938,7 +1000,14 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
         //
         // Our own failure to read the page is NOT evidence against the proof: a closed context or
         // a navigation in flight returns null here, and null records, as before.
-        const onPage = await page.evaluate(() => document.body?.innerText ?? "").catch(() => null);
+        //
+        // "the same way replay() will" is load-bearing, and it is why this reads visibleText and
+        // not document.body.innerText. Measured once perception could see into frames: the agent
+        // tested an embedded checkout, quoted "Payment received in full." out of the payment
+        // frame — correctly, it was on the screen — and this check could not find one word of it,
+        // so the recording was DROPPED on every green run. The test then cost a full agent run
+        // forever while printing a pass, which is the replay saving quietly never arriving.
+        const onPage = await visibleText(page).catch(() => null);
         if (typeof onPage === "string" && !onPage.includes(p.proof)) {
           log(C.dim(`not recorded: the run passed, but the proof ${JSON.stringify(p.proof)} is not text on the page — a replay would report it as changed on every run. The next run uses the agent again.`));
           return;
@@ -1036,7 +1105,9 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
       try {
         // newPage is INSIDE the try: a context that cannot open is the retry breaking, and the
         // keep-the-failing-run's-verdict contract below has to cover it, not just the attempt.
-        page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+        // session.newPage(), so the clean page the retry promises is still a SIGNED-IN clean page:
+        // a new context seeded from the saved session, carrying nothing from the run that failed.
+        page = await session.newPage();
         next = await agentAttempt({ page, url, test, apiKey, model, maxSteps, log });
       } catch (e) {
         next = { kind: "error", banner: "retry", why: String(e && e.message ? e.message : e) };

@@ -377,3 +377,43 @@ export async function postTeardown({
     clearTimeout(timer);
   }
 }
+
+/**
+ * A SECRET MUST NEVER BE THE THING WE WRITE DOWN.
+ *
+ * MEASURED, and it was live in a published release: `compile()` stored a fill step's text verbatim,
+ * so a login the agent had just performed produced
+ *   {"kind":"fill","name":"Password","text":"SuperSecret-hunter2!"}
+ * in `.smolanalytics/recordings/<test>.json` — a directory the shipped CI template CACHES with
+ * actions/cache and that users are told to commit, because committing recordings is the point.
+ * The same string went into the step label, which is printed to the terminal, posted in the pull
+ * request comment, written to GITHUB_STEP_SUMMARY, and saved beside the failure evidence.
+ *
+ * So the value is masked back to the placeholder it came from at the moment of recording, and
+ * resolved again from the environment at the moment of replay. The recording stays replayable and
+ * carries no credential; a leaked recording leaks the SHAPE of the login and nothing else.
+ *
+ * Pairs are {value, token}. A value under 4 characters is refused: masking "a" would rewrite every
+ * step that happens to contain it, and a recording corrupted by over-masking fails forever in a way
+ * nobody can read.
+ */
+export function maskSecrets(text, pairs = []) {
+  let out = String(text ?? "");
+  for (const { value, token } of pairs) {
+    if (typeof value !== "string" || value.length < 4 || !token) continue;
+    out = out.split(value).join(token);
+  }
+  return out;
+}
+
+/** The inverse, at replay time: turn {{password}} back into the value the environment holds now.
+ *  Unresolvable tokens are left exactly as they are — filling the literal text "{{password}}" and
+ *  failing honestly beats filling an empty string and reporting that the app rejected a good login. */
+export function unmaskSecrets(text, pairs = []) {
+  let out = String(text ?? "");
+  for (const { value, token } of pairs) {
+    if (typeof value !== "string" || !value || !token) continue;
+    out = out.split(token).join(value);
+  }
+  return out;
+}
