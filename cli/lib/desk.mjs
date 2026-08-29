@@ -9,6 +9,7 @@
 // that surprises you the first time you run it does not get run twice.
 
 import { callTool, endpointFor } from "./plan.mjs";
+import { redact } from "./auth.mjs";
 
 const C = {
   b: (s) => `\x1b[1m${s}\x1b[0m`,
@@ -90,7 +91,12 @@ export async function deskCmd({ url, key, project, log = console.log, fetchImpl 
     log("  npx smolanalytics desk --key sa_... --url https://YOUR-INSTANCE");
     log("  npx smolanalytics desk --key sa_org_... --project my-app     (cloud org token)");
     log("");
-    return 1;
+    // 2, NOT 1. This CLI's exit codes carry one meaning across every command: 1 says a test failed,
+    // which is a statement about the CUSTOMER'S application, and 2 says this runner could not
+    // finish. The README sells that split — "a pipeline that gates on 1 alone never reddens a build
+    // because our side had an outage" — and a missing key reddening a build on 1 is exactly the
+    // promise it breaks.
+    return 2;
   }
   const args = {};
   if (project) args.project = project;
@@ -107,7 +113,18 @@ export async function deskCmd({ url, key, project, log = console.log, fetchImpl 
     }
     return render(doc, log);
   } catch (err) {
-    log(err && err.refusal ? `desk: ${err.message}` : `desk could not reach your instance: ${err && err.message}`);
-    return 1;
+    // THE KEY MUST NOT SURVIVE INTO THE MESSAGE.
+    //
+    // Measured while writing this file's first test: an error whose text happened to echo the
+    // request — "fetch failed for https://…?key=sa_readkey_…" — was printed verbatim. We send the
+    // key as a header, but we do not control what an error carries: a proxy, a redirect, a DNS
+    // layer or a future refactor can each put it back in a URL, and the place it lands is a CI log,
+    // which is forever. So the failure path redacts rather than trusting the shape of somebody
+    // else's error string.
+    const why = err && err.refusal ? `desk: ${err.message}` : `desk could not reach your instance: ${err && err.message}`;
+    log(redact(why, [key]));
+    // Same contract as above: an unreachable instance is our side of the fence, never a verdict
+    // about anybody's product.
+    return 2;
   }
 }
