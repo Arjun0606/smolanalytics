@@ -76,6 +76,7 @@ ${C.bold("smolanalytics")} — end-to-end tests without test code
 
   ${C.dim("--suite <dir>")}         a folder of .md files, one sentence per test
   ${C.dim("--comment")}             post the verdicts on the pull request (GitHub Actions)
+  ${C.dim("--share")}               publish this run to a link anyone can open, and print it. Off unless you ask; one link per run, never per test.
   ${C.dim("--plans <dir>")}         where recordings are kept (default: ${DEFAULT_PLANS_DIR})
   ${C.dim("No account. No GitHub app. Nothing written to your repo.")}
 
@@ -220,6 +221,10 @@ async function main() {
           login: flag("login") || "",
           authFile: flag("auth-file") || "",
           authDir: flag("auth-dir") || undefined,
+          // --share (lib/share.mjs). Opt-in, and nothing about the run changes without it: the
+          // verdict, the exit code, the transcript and the JSON posted to a project are all what
+          // they were. One link for the whole suite, printed last.
+          share: hasFlag("share"),
         });
         return;
       }
@@ -241,6 +246,7 @@ async function main() {
         login: flag("login") || "",
         authFile: flag("auth-file") || "",
         authDir: flag("auth-dir") || undefined,
+        share: hasFlag("share"),
       });
     } catch (err) {
       console.error(`\n${C.red("the run could not complete")} ${err?.message || err}`);

@@ -33,6 +33,7 @@ import { suspectsForFailure } from "./suspect.mjs";
 import { layoutCommentLines } from "./layout.mjs";
 import { DEFAULT_AUTH_DIR } from "./auth.mjs";
 import { DEFAULT_ENGINE } from "./engines.mjs";
+import { prNumber, publishShare } from "./share.mjs";
 
 const C = {
   b: (s) => `\x1b[1m${s}\x1b[0m`,
@@ -386,6 +387,10 @@ export async function runSuite({
   // same order, same log, a Chromium per test, not one line of pool.mjs on the path.
   workers = 1,
   loadBrowser = loadPlaywright,
+  // --share (lib/share.mjs). Collection only: every test's run objects gain the extra facts a
+  // share page renders, and suiteCmd publishes ONE bundle for the whole suite afterwards. `publish:
+  // false` below is what stops fifty tests printing fifty links.
+  share = false,
 }) {
   // Create the directory BEFORE the first test. testCmd writes the recording only after a test
   // passes, so a missing directory turns a green run into "errored" at the last instruction — the
@@ -438,6 +443,8 @@ export async function runSuite({
         // One Chromium for the whole suite, a context per worker. undefined when --workers 1, and
         // lib/test.mjs's own default then applies.
         loadBrowser: pool.loadBrowser,
+        share,
+        publish: false,
         onRun: (r) => runs.push(r),
       });
     } catch (e) {
@@ -471,6 +478,10 @@ export async function runSuite({
       // suspect.mjs refuses to rank a diff it cannot connect — and nothing about it may touch the
       // status or the exit code.
       suspects: status === "failed" ? findSuspects({ runs, reason, planPath: t.planPath, url, env }) : [],
+      // The share record from the run that CARRIES the verdict, which is the last one: with
+      // --retries the failing first attempt is its own row and the settled row is the verdict.
+      // null without --share, and nothing downstream reads it then.
+      share: last?.share || null,
     };
   });
   await pool.close();
@@ -676,22 +687,15 @@ const quote = (s) => {
 const BODY_LIMIT = 65_000;
 const REASON_LIMIT = 4_000;
 
-/** Which pull request we are on. Actions states this three different ways depending on the event. */
-export function prNumber(env, readFile = (p) => readFileSync(p, "utf8")) {
-  if (env.GITHUB_EVENT_PATH) {
-    try {
-      const ev = JSON.parse(readFile(env.GITHUB_EVENT_PATH));
-      const n = ev?.pull_request?.number ?? ev?.issue?.number;
-      if (n) return Number(n);
-    } catch {
-      /* fall through to the ref */
-    }
-  }
-  const m = /refs\/pull\/(\d+)\//.exec(env.GITHUB_REF || "");
-  if (m) return Number(m[1]);
-  if (/^\d+$/.test(env.PR_NUMBER || "")) return Number(env.PR_NUMBER);
-  return 0;
-}
+/**
+ * Which pull request we are on. Actions states this three different ways depending on the event.
+ *
+ * It LIVES in lib/share.mjs now, because a single-test `--share` needs it too and lib/test.mjs
+ * cannot import this file — suite.mjs imports test.mjs, and completing that cycle is how ESM hands
+ * one of the two a half-initialised module. Re-exported here so every existing caller and every
+ * existing test keeps importing it from where it has always been.
+ */
+export { prNumber };
 
 /** Name the exact wrong thing. A 403 here has one cause and one fix, and guessing wastes an hour. */
 export function apiFailure(status, body = "") {
@@ -783,6 +787,10 @@ export async function suiteCmd({
   discoverImpl = discover,
   runSuiteImpl = runSuite,
   postCommentImpl = postComment,
+  // --share (lib/share.mjs). ONE link for the whole suite — see the call at the bottom of this
+  // function for why that is the right unit.
+  share = false,
+  publishShareImpl = publishShare,
 }) {
   if (!url) {
     log(`\n${C.y("--url is missing.")} --suite says which tests to run, --url says where to run them.`);
@@ -839,7 +847,7 @@ export async function suiteCmd({
   // would be created as a directory and then collide with the file testCmd wants to write.
   const plansDir = /\.json$/i.test(plans) ? path.dirname(plans) : plans;
   const wallStarted = Date.now();
-  const results = await runSuiteImpl({ tests, url, plansDir, headed, yes, maxSteps, retries, evidenceDir, layout, renderCheck, engine, login, authFile, authDir, teardown, seed, emailDomain, workers: lanes, log, env, hasKey: Boolean(env.ANTHROPIC_API_KEY) });
+  const results = await runSuiteImpl({ tests, url, plansDir, headed, yes, maxSteps, retries, evidenceDir, layout, renderCheck, engine, login, authFile, authDir, teardown, seed, emailDomain, workers: lanes, log, env, hasKey: Boolean(env.ANTHROPIC_API_KEY), share });
   const s = summarize(results);
 
   const parts = [`${s.total} test${s.total === 1 ? "" : "s"}`, `${s.passed} passed`];
@@ -885,5 +893,51 @@ export async function suiteCmd({
   // A real bug still outranks our own problem: exit 1 stays 1. Anything else with an unreadable
   // file in it is 2, because part of the folder was never checked and 0 would call that all good.
   const code = exitCode(results);
-  return code === 1 ? 1 : problems.length ? 2 : code;
+  const finalCode = code === 1 ? 1 : problems.length ? 2 : code;
+
+  // --share, LAST, and computed AFTER the exit code so that nothing below can reach it.
+  //
+  // ONE SHARE PER SUITE RUN, NOT ONE PER TEST, and this is the decision the whole feature turns on.
+  // The thing a person sends is "what happened on this pull request", and that is one page: a
+  // twenty-test suite printing twenty URLs is twenty addresses and no message, and nobody forwards
+  // twenty links. Loom prints one link per recording, not one per scene. Three consequences make it
+  // the cheaper choice as well as the better one: under --workers 8 a per-test share would
+  // interleave N POSTs into a transcript that is already buffered per test; a POST that fails would
+  // need N separate failure lines for one outage; and the single-test `test --share` becomes the
+  // degenerate one-test case of the SAME bundle, so the receiving half implements one shape rather
+  // than two. The cost, stated: a reader who wants only test 7 gets a page with twenty on it, and
+  // deep-linking to one test inside the page is the receiving half's job, not another POST.
+  if (share) {
+    // Wrapped HERE as well as inside publishShare, because this is where `finalCode` lives and the
+    // guarantee is about THIS variable. publishShareImpl is injectable, so the only guard that
+    // cannot be swapped out from under the exit code is the one on this side of the call.
+    try {
+    await publishShareImpl({
+      tests: results.map((r) => ({
+        name: r.name,
+        file: r.file,
+        sentence: r.test,
+        status: r.status,
+        mode: r.mode,
+        reason: r.reason,
+        proof: r.share?.proof || "",
+        durationMs: r.ms,
+        steps: r.share?.steps || [],
+        suspects: r.suspects || [],
+        evidence: r.share?.evidence || null,
+      })),
+      url,
+      engine,
+      suite: suite || "",
+      exitCode: finalCode,
+      projectId: env.SMOLANALYTICS_PROJECT || "",
+      env,
+      log,
+    });
+    } catch (e) {
+      log(C.dim(`  not shared: ${e && e.message ? e.message : e}. The verdict above still stands.`));
+    }
+  }
+
+  return finalCode;
 }

@@ -66,6 +66,32 @@ const ENCODERS = [encodeURIComponent, encodeURI];
  * that is dropped rather than smuggled past the rule, because masking "%2B" would rewrite every
  * URL on the page that happens to contain a plus.
  */
+/**
+ * The forms a browser writes a value in on its way into a URL, minus the value itself.
+ *
+ * Extracted from guardPairs so that the OTHER masking arm — the environment credentials in
+ * lib/share.mjs, which are plain strings rather than pairs — gets the same coverage from the same
+ * list. Before this, a seeded fixture id was safe percent-encoded and an ANTHROPIC_API_KEY was not,
+ * which is the same bug this file was written for, one arm over.
+ *
+ * A lone surrogate makes encodeURIComponent throw; that is not a URL-shaped value either way, so
+ * the form is skipped rather than allowed to take down a run.
+ */
+export function urlForms(value) {
+  const out = [];
+  if (typeof value !== "string" || !value) return out;
+  for (const enc of ENCODERS) {
+    let e = "";
+    try {
+      e = enc(value);
+    } catch {
+      continue;
+    }
+    if (e !== value && !out.includes(e)) out.push(e);
+  }
+  return out;
+}
+
 export function guardPairs(secrets = []) {
   const out = [];
   const seen = new Set();
@@ -84,15 +110,7 @@ export function guardPairs(secrets = []) {
     const encodedToken = /^\{\{.+\}\}$/.test(p.token)
       ? `${p.token.slice(0, -2)}${ENCODED_SUFFIX}}}`
       : `${p.token}${ENCODED_SUFFIX}`;
-    for (const enc of ENCODERS) {
-      let e = "";
-      try {
-        e = enc(p.value);
-      } catch {
-        continue; // a lone surrogate throws; it is not a URL-shaped value either way
-      }
-      if (e !== p.value) add(e, encodedToken);
-    }
+    for (const e of urlForms(p.value)) add(e, encodedToken);
   }
   return out.sort((a, b) => b.value.length - a.value.length);
 }

@@ -40,6 +40,7 @@ import { DEFAULT_ENGINE, ENGINE_LABEL, engineNote, launchEngine, recordedEngine,
 import { UPLOAD_TOOL, performUpload, uploadLabel, uploadNotes, uploadTargets } from "./upload.mjs";
 import { seedRun } from "./seed.mjs";
 import { maskUrl, resolveUrl } from "./seedguard.mjs";
+import { agentSteps, publishShare, replaySteps, scrubDeep } from "./share.mjs";
 
 const C = {
   b: (s) => `\x1b[1m${s}\x1b[0m`,
@@ -645,7 +646,14 @@ export function wireRun(run) {
   // field it has never heard of risks a 400 that silently loses the whole row — a verdict traded
   // for an advisory note. The suite reads them from the run object handed to onRun, which is the
   // un-stripped one.
-  const { layout, ...r } = run;
+  //
+  // `share` is stripped for the same reason and one stronger one. It exists only when somebody
+  // typed --share, and it carries the proof text, every step of a passing run and the path to a
+  // screenshot — none of which the runs API has ever been sent. Letting it through would mean the
+  // JSON posted to a project differed depending on whether a person asked for a link, which is
+  // precisely the "byte-identical without the flag" promise this feature makes. One field, one
+  // strip, and test/share.test.mjs compares the two payloads byte for byte.
+  const { layout, share, ...r } = run;
   return r.status === "flaky" ? { ...r, status: "passed" } : r;
 }
 
@@ -936,7 +944,20 @@ async function agentAttempt({ page, url, test, apiKey, model, maxSteps, log, sec
 // on purpose, so a credential source can be added to it without another parameter. [] — the default,
 // and what every run without --seed passes — makes maskSecrets and unmaskSecrets identity functions,
 // so nothing on this path changes by a single byte for anybody who has not asked for it.
-async function runOnce({ url, test, plan: planPath, headed, maxSteps = 40, yes, retries = 1, evidenceDir = "", layout: layoutMode = "report", renderCheck = true, login = "", authFile = "", authDir = DEFAULT_AUTH_DIR, secrets = [], engine = DEFAULT_ENGINE, env = process.env, log = console.log, onRun, loadBrowser = loadPlaywright }) {
+async function runOnce({ url, test, plan: planPath, headed, maxSteps = 40, yes, retries = 1, evidenceDir = "", layout: layoutMode = "report", renderCheck = true, login = "", authFile = "", authDir = DEFAULT_AUTH_DIR, secrets = [], engine = DEFAULT_ENGINE, env = process.env, log = console.log, onRun, loadBrowser = loadPlaywright, share = false }) {
+  // --share (lib/share.mjs). `share` collects the extra facts a share page renders and nothing
+  // else: the proof text, the steps of a run that PASSED (which nothing else here keeps), and where
+  // the failure screenshot landed. It is attached to the run object under one key, `share`, which
+  // wireRun strips before anything is posted to a project — so with the flag off this is an empty
+  // object spread into a literal, and with it on the wire payload is still identical.
+  //
+  // SCRUBBED HERE, at the moment the record is made, and not only when the bundle is assembled.
+  // A suite assembles ONE bundle for fifty tests and does not hold any individual test's seeded
+  // values — those live in testCmd, one level down — so a record that left this function carrying
+  // a fixture token would reach the bundle with nothing left that knows how to mask it. The paths
+  // in `evidence` are deliberately not walked: they are local filenames, they never appear in a
+  // bundle (only the bytes they point at do), and rewriting one would make the file unreadable.
+  const shareRec = (rec) => (share ? { share: { ...scrubDeep({ proof: rec.proof || "", steps: rec.steps || [] }, { secrets, env }), evidence: rec.evidence || null } } : {});
   if (!url || !test) {
     log(`
 ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No account.
@@ -963,7 +984,7 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
     // REPORTED, not just logged. A suite with no verdict for this test falls back to guessing why
     // (see noVerdictReason), and on a first CI run it guesses "ANTHROPIC_API_KEY is not set" —
     // sending someone to add a secret they already have, over a browser that never downloaded.
-    await report({ test, status: "errored", mode: "agent", durationMs: 0, url, reason: `${problem || "The browser could not be started."} This is the test runner, not your application.` }, log, onRun);
+    await report({ test, status: "errored", mode: "agent", durationMs: 0, url, reason: `${problem || "The browser could not be started."} This is the test runner, not your application.`, ...shareRec({ proof: "", steps: [], evidence: null }) }, log, onRun);
     return 2;
   }
 
@@ -997,7 +1018,7 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
       // whatsoever about whether the application under test works.
       log(`\n${C.y("ERROR")} ${C.dim("· sign-in")}`);
       log(`${session.problem}\n`);
-      await report({ test, status: "errored", mode: "agent", durationMs: Date.now() - started, url, reason: session.problem }, log, onRun);
+      await report({ test, status: "errored", mode: "agent", durationMs: Date.now() - started, url, reason: session.problem, ...shareRec({ proof: "", steps: [], evidence: null }) }, log, onRun);
       await browser.close().catch(() => {});
       return 2;
     }
@@ -1047,7 +1068,7 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
             log(`${gate}\n`);
             if (crossed) log(C.y(crossed));
             for (const line of layoutNoteLines(lay)) log(C.dim(line));
-            await report({ test, status: "failed", mode: "replay", durationMs: r.ms, url, reason: withNote(gate, crossed), layout: lay }, log, onRun);
+            await report({ test, status: "failed", mode: "replay", durationMs: r.ms, url, reason: withNote(gate, crossed), layout: lay, ...shareRec({ proof: plan.proof, steps: replaySteps(plan.steps), evidence: null }) }, log, onRun);
             await browser.close().catch(() => {});
             return 1;
           }
@@ -1063,14 +1084,14 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
             log(`${rgate}\n`);
             if (crossed) log(C.y(crossed));
             for (const line of renderNoteLines(rend.slice(1))) log(C.dim(line));
-            await report({ test, status: "failed", mode: "replay", durationMs: r.ms, url, reason: withNote(rgate, crossed), layout: lay }, log, onRun);
+            await report({ test, status: "failed", mode: "replay", durationMs: r.ms, url, reason: withNote(rgate, crossed), layout: lay, ...shareRec({ proof: plan.proof, steps: replaySteps(plan.steps), evidence: null }) }, log, onRun);
             await browser.close().catch(() => {});
             return 1;
           }
           log(`\n${C.g("PASS")}${C.dim(` — replayed ${r.steps} steps in ${(r.ms / 1000).toFixed(1)}s, no model calls.`)}`);
           if (crossed) log(C.y(crossed));
           for (const line of layoutNoteLines(lay)) log(C.dim(line));
-          await report({ test, status: "passed", mode: "replay", durationMs: r.ms, url, reason: withNote("Replayed the recorded run; every step still worked.", crossed), layout: lay }, log, onRun);
+          await report({ test, status: "passed", mode: "replay", durationMs: r.ms, url, reason: withNote("Replayed the recorded run; every step still worked.", crossed), layout: lay, ...shareRec({ proof: plan.proof, steps: replaySteps(plan.steps), evidence: null }) }, log, onRun);
           // Every close below a decided verdict carries .catch: close() can throw (seen once,
           // intermittently, under load), and unhandled it falls into the catch-all — which would
           // report errored/2 on top of a verdict that was already printed and posted.
@@ -1082,7 +1103,7 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
         // guessing, and none of them is reported as a bug on its own.
         const note = withNote(stalenessNote(r), engineNote(engineChange, engine, "stale"));
         log(`\n${C.y(note)}\n`);
-        await report({ test, status: "stale", mode: "replay", durationMs: r.ms, url, reason: note }, log, onRun);
+        await report({ test, status: "stale", mode: "replay", durationMs: r.ms, url, reason: note, ...shareRec({ proof: plan.proof, steps: replaySteps(plan.steps, { failedAt: typeof r.at === "number" ? r.at : -1, detail: r.detail || "" }), evidence: null }) }, log, onRun);
       }
     }
 
@@ -1175,7 +1196,7 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
       const ms = Date.now() - started;
       log(`\n${C.y("ERROR")} ${C.dim(`· ${a.banner}`)}`);
       log(`${a.why}\n`);
-      await report({ test, status: "errored", mode: "agent", durationMs: ms, url, reason: a.why }, log, onRun);
+      await report({ test, status: "errored", mode: "agent", durationMs: ms, url, reason: a.why, ...shareRec({ proof: "", steps: agentSteps(a.steps), evidence: null }) }, log, onRun);
       await browser.close().catch(() => {});
       return 2;
     }
@@ -1192,7 +1213,7 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
         for (const line of layoutNoteLines(lay)) log(C.dim(line));
         const ev = await capture(page);
         if (ev) log(C.dim(`evidence: ${ev.png} and ${ev.txt}`));
-        await report({ test, status: "failed", mode: "agent", durationMs: ms, url, reason: gate, layout: lay }, log, onRun);
+        await report({ test, status: "failed", mode: "agent", durationMs: ms, url, reason: gate, layout: lay, ...shareRec({ proof: a.proof, steps: agentSteps(a.steps), evidence: ev }) }, log, onRun);
         // Still recorded: the walk itself passed and carries a proof, so the next run can replay
         // it for free — and the replay path re-audits the same page, so strict fails it again
         // without an agent run until the layout is actually fixed.
@@ -1213,7 +1234,7 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
         // worth far less than the picture of the empty page it is describing.
         const ev = await capture(page);
         if (ev) log(C.dim(`evidence: ${ev.png} and ${ev.txt}`));
-        await report({ test, status: "failed", mode: "agent", durationMs: ms, url, reason: rgate, layout: lay }, log, onRun);
+        await report({ test, status: "failed", mode: "agent", durationMs: ms, url, reason: rgate, layout: lay, ...shareRec({ proof: a.proof, steps: agentSteps(a.steps), evidence: ev }) }, log, onRun);
         // Recorded, for the same reason the layout gate records: the walk itself passed and carries
         // a proof, so the replay path re-checks the render for free until the page is fixed.
         await record(a, false);
@@ -1223,7 +1244,7 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
       log(`\n${C.g("PASS")} ${C.dim(`· ${a.steps.length} steps · ${(ms / 1000).toFixed(1)}s`)}`);
       log(`${a.why}\n`);
       for (const line of layoutNoteLines(lay)) log(C.dim(line));
-      await report({ test, status: "passed", mode: "agent", durationMs: ms, url, reason: a.why, layout: lay }, log, onRun);
+      await report({ test, status: "passed", mode: "agent", durationMs: ms, url, reason: a.why, layout: lay, ...shareRec({ proof: a.proof, steps: agentSteps(a.steps), evidence: null }) }, log, onRun);
       await record(a, false);
       await browser.close().catch(() => {});
       return 0;
@@ -1249,6 +1270,10 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
       await report({
         test, status: "failed", mode: "agent", durationMs: prev.ms, url, reason: prev.why,
         steps: prev.steps.map((s) => ({ n: s.n, do: s.label, why: s.action.why, ok: s.ok, detail: s.detail, ms: s.ms })),
+        // The interim row of a run that will be settled below. It carries the screenshot taken at
+        // the moment this attempt broke, because a retry that then breaks (retryBroke) makes THIS
+        // the last word, and a share with no picture of the failure is the picture nobody has.
+        ...shareRec({ proof: "", steps: agentSteps(prev.steps), evidence }),
       }, log, onRun);
       // Said out loud because it is somebody's bill: a retry is a full second agent run.
       log(C.y(`retrying from a clean page (retry ${attempts.length} of ${retries}) — another full agent run, roughly doubling this test's cost. --retries 0 disables it.`));
@@ -1316,6 +1341,14 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
             ...(attempts.length > 1 ? { run: i + 1 } : {}),
             n: s.n, do: s.label, why: s.action.why, ok: s.ok, detail: s.detail, ms: s.ms,
           }))),
+        // Same rule for the share: every attempt's steps, tagged, so a `flaky` page shows the run
+        // that failed AND the run that then passed. Either half alone reads as a verdict nobody
+        // reached — the same reason settle() puts both into the prose.
+        ...shareRec({
+          proof: lastAttempt.proof || "",
+          steps: attempts.flatMap((att, i) => agentSteps(att.steps, { run: attempts.length > 1 ? i + 1 : 0 })),
+          evidence,
+        }),
       }, log, onRun);
     }
     // The retry that passed is a genuine passing run with a proof, so it records like one. If the
@@ -1328,7 +1361,7 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
     // browser may be null: launch itself is what usually fails.
     await browser?.close().catch(() => {});
     log(C.r(`\nthe run could not complete: ${e && e.message ? e.message : e}`));
-    await report({ test, status: "errored", mode: "agent", durationMs: Date.now() - started, url, reason: `The run could not complete: ${e && e.message}. This is the test runner, not your application.` }, log, onRun);
+    await report({ test, status: "errored", mode: "agent", durationMs: Date.now() - started, url, reason: `The run could not complete: ${e && e.message}. This is the test runner, not your application.`, ...shareRec({ proof: "", steps: [], evidence: null }) }, log, onRun);
     // Exit 2, not 1: the test did not fail, the runner did. A CI gate must tell those apart, or an
     // outage on our side reads to a customer as their app being broken.
     return 2;
@@ -1345,7 +1378,11 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
  * of them. The one that got forgotten would be the one that created the order.
  */
 export async function testCmd(opts = {}) {
-  const { url, test, yes, teardown = "", seed = "", emailDomain = "", runId = "", log = console.log, env = process.env, onRun, ask } = opts;
+  const { url, test, yes, teardown = "", seed = "", emailDomain = "", runId = "", log = console.log, env = process.env, onRun, ask, share = false, publish = share, engine = DEFAULT_ENGINE,
+    // Injectable for the same reason suiteCmd's is: the guarantee under test is that NOTHING this
+    // function does after the verdict can move the exit code, and a guard is only proved by a
+    // publisher that actually fails.
+    publishShareImpl = publishShare } = opts;
   // The usage text, and the exit code that goes with it, stay exactly where they were.
   if (!url || !test) return runOnce(opts);
 
@@ -1386,6 +1423,15 @@ export async function testCmd(opts = {}) {
   }
 
   let status = "errored";
+  // --share (lib/share.mjs). Every run object this command produces, kept so the bundle can be
+  // assembled from the same records the verdict was reported from — never from a second, parallel
+  // account of what happened, which is how two views of one run drift apart.
+  const shareRuns = [];
+  // The exit code, held in a variable rather than returned directly, so that the share below runs
+  // in the `finally` AFTER the value is fixed. That is not a style choice: it is what makes
+  // "sharing can never change an exit code" a property of the control flow rather than a promise.
+  let code = 2;
+  let shareSecrets = [];
   try {
     // --seed, BEFORE the browser opens and INSIDE this try, so a seed that half-built a fixture and
     // then failed is still cleaned up by the teardown hook in the finally below. After the
@@ -1408,7 +1454,8 @@ export async function testCmd(opts = {}) {
       }
       return 2;
     }
-    return await runOnce({
+    shareSecrets = seeded ? seeded.secrets : [];
+    code = await runOnce({
       ...opts,
       // The seeded sentence carries {{orderid}}, not the value, and `secrets` is what resolves it
       // at the model prompt and at a keystroke — the credential pattern, applied to a fixture id
@@ -1419,9 +1466,11 @@ export async function testCmd(opts = {}) {
         // Recorded BEFORE the caller's handler runs, so a handler that throws cannot cost the
         // teardown its status.
         status = r.status;
+        if (share) shareRuns.push(r);
         onRun?.(r);
       },
     });
+    return code;
   } finally {
     if (teardown) {
       // In `finally`, so it fires on a failed run and on a crash too. A FAILED run is the likeliest
@@ -1429,6 +1478,49 @@ export async function testCmd(opts = {}) {
       const r = await postTeardown({ endpoint: teardown, identity, test: sub.text, url, status, env });
       log(r.ok ? C.dim(`  teardown: ${r.detail}`) : C.y(`  teardown failed: ${r.detail}`));
       if (!r.ok) log(C.dim(`  ${identity.email} may still exist. The verdict above is unaffected.`));
+    }
+    // LAST, and after teardown, because the link is the line a person copies and it belongs at the
+    // bottom of the transcript where Loom puts it — not buried above a teardown note. `publish` is
+    // false when a suite is running this: the suite publishes ONE link for the whole run (see
+    // suiteCmd), because twenty links is twenty addresses and no message.
+    if (publish) {
+      // The verdict-carrying run is the LAST one: with --retries, the failing first attempt is
+      // posted as its own row and then settled, and the settled row is the run's verdict.
+      const last = shareRuns[shareRuns.length - 1];
+      // Wrapped, because this is a `finally`: a rejection here would replace the `return code`
+      // above with a rejected promise and hand bin/smolanalytics.mjs an exit 2 for a run that had
+      // already decided it was a 1. publishShare guards itself as well; this is the guard that
+      // sits on the same side of the call as the exit code.
+      try {
+      await publishShareImpl({
+        tests: last
+          ? [{
+              name: sub.text.slice(0, 80),
+              // No file: a `--test "…"` run has a sentence and no markdown behind it, and naming
+              // the RECORDING here would put a path on the page that is not the test.
+              file: "",
+              sentence: last.test || sub.text,
+              status: last.status,
+              mode: last.mode || "",
+              reason: last.reason || "",
+              proof: last.share?.proof || "",
+              durationMs: last.durationMs || 0,
+              steps: last.share?.steps || [],
+              suspects: [],
+              evidence: last.share?.evidence || null,
+            }]
+          : [],
+        url,
+        engine,
+        exitCode: code,
+        projectId: env.SMOLANALYTICS_PROJECT || "",
+        env,
+        secrets: shareSecrets,
+        log,
+      });
+      } catch (e) {
+        log(C.dim(`  not shared: ${e && e.message ? e.message : e}. The verdict above still stands.`));
+      }
     }
   }
 }
