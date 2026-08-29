@@ -30,6 +30,7 @@ import path from "node:path";
 import { testCmd } from "./test.mjs";
 import { suspectsForFailure } from "./suspect.mjs";
 import { layoutCommentLines } from "./layout.mjs";
+import { DEFAULT_AUTH_DIR } from "./auth.mjs";
 
 const C = {
   b: (s) => `\x1b[1m${s}\x1b[0m`,
@@ -354,6 +355,15 @@ export async function runSuite({
   retries = 1,
   evidenceDir = "",
   layout = "report",
+  // The false-green guard (lib/render.mjs), on by default and passed straight through: --no-render-check
+  // is a suite-wide switch or it is useless, since a suite is where nobody reads the terminal.
+  renderCheck = true,
+  // AUTHENTICATED FLOWS (lib/auth.mjs). Passed through untouched, and that is the whole point:
+  // every test in the suite is handed the same login sentence and the same auth directory, so the
+  // FIRST test signs in and writes the saved session and the other forty-nine reuse the file.
+  login = "",
+  authFile = "",
+  authDir = DEFAULT_AUTH_DIR,
   teardown = "",
   emailDomain = "",
   log = console.log,
@@ -393,6 +403,10 @@ export async function runSuite({
         retries,
         evidenceDir,
         layout,
+        renderCheck,
+        login,
+        authFile,
+        authDir,
         // Every test gets its OWN identity, so nine signups are nine findable rows rather than
         // one that collides with itself on test two. That has to survive SMOLANALYTICS_RUN_ID,
         // which pins one id for the whole CI run: the index suffix keeps the rows grouped under
@@ -730,6 +744,10 @@ export async function suiteCmd({
   retries = 1,
   evidenceDir = "",
   layout = "report",
+  renderCheck = true,
+  login = "",
+  authFile = "",
+  authDir = DEFAULT_AUTH_DIR,
   teardown = "",
   emailDomain = "",
   log = console.log,
@@ -789,7 +807,7 @@ export async function suiteCmd({
   // The directory to create is the one recordings actually land in — never a .json path, which
   // would be created as a directory and then collide with the file testCmd wants to write.
   const plansDir = /\.json$/i.test(plans) ? path.dirname(plans) : plans;
-  const results = await runSuiteImpl({ tests, url, plansDir, headed, yes, maxSteps, retries, evidenceDir, layout, teardown, emailDomain, log, env, hasKey: Boolean(env.ANTHROPIC_API_KEY) });
+  const results = await runSuiteImpl({ tests, url, plansDir, headed, yes, maxSteps, retries, evidenceDir, layout, renderCheck, login, authFile, authDir, teardown, emailDomain, log, env, hasKey: Boolean(env.ANTHROPIC_API_KEY) });
   const s = summarize(results);
 
   const parts = [`${s.total} test${s.total === 1 ? "" : "s"}`, `${s.passed} passed`];

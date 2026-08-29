@@ -33,6 +33,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { confirmProduction, newIdentity, postTeardown, substitute, maskSecrets, unmaskSecrets, PLACEHOLDER_LIST } from "./safety.mjs";
 import { auditLayout, layoutFailure, layoutNoteLines, stepTargets } from "./layout.mjs";
+import { auditRender, renderFailure, renderNoteLines } from "./render.mjs";
 import { DEFAULT_AUTH_DIR, openSession } from "./auth.mjs";
 import { closedShadowRoots, embeddedNotes, frameLabel, inFrame, readFrames, visibleText } from "./frames.mjs";
 
@@ -839,7 +840,7 @@ async function agentAttempt({ page, url, test, apiKey, model, maxSteps, log }) {
   };
 }
 
-async function runOnce({ url, test, plan: planPath, headed, maxSteps = 40, yes, retries = 1, evidenceDir = "", layout: layoutMode = "report", login = "", authFile = "", authDir = DEFAULT_AUTH_DIR, env = process.env, log = console.log, onRun, loadBrowser = loadPlaywright }) {
+async function runOnce({ url, test, plan: planPath, headed, maxSteps = 40, yes, retries = 1, evidenceDir = "", layout: layoutMode = "report", renderCheck = true, login = "", authFile = "", authDir = DEFAULT_AUTH_DIR, env = process.env, log = console.log, onRun, loadBrowser = loadPlaywright }) {
   if (!url || !test) {
     log(`
 ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No account.
@@ -931,6 +932,21 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
             log(`${gate}\n`);
             for (const line of layoutNoteLines(lay)) log(C.dim(line));
             await report({ test, status: "failed", mode: "replay", durationMs: r.ms, url, reason: gate, layout: lay }, log, onRun);
+            await browser.close().catch(() => {});
+            return 1;
+          }
+          // FALSE-GREEN GUARD (lib/render.mjs), and this is the exact place it belongs: a replay
+          // decided PASS by finding its proof in DOM text, which a blank page, a page whose CSS
+          // 404'd and a page under a crash overlay all still contain. Verdict-affecting by
+          // contract — a would-be PASS only, never a failed/stale/errored — and off with
+          // --no-render-check.
+          const rend = await auditRender(page, { enabled: renderCheck });
+          const rgate = renderFailure(rend);
+          if (rgate) {
+            log(`\n${C.r("FAIL")} ${C.dim(`· replayed ${plan.steps.length} steps · render check`)}`);
+            log(`${rgate}\n`);
+            for (const line of renderNoteLines(rend.slice(1))) log(C.dim(line));
+            await report({ test, status: "failed", mode: "replay", durationMs: r.ms, url, reason: rgate, layout: lay }, log, onRun);
             await browser.close().catch(() => {});
             return 1;
           }
@@ -1059,6 +1075,26 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
         // Still recorded: the walk itself passed and carries a proof, so the next run can replay
         // it for free — and the replay path re-audits the same page, so strict fails it again
         // without an agent run until the layout is actually fixed.
+        await record(a, false);
+        await browser.close().catch(() => {});
+        return 1;
+      }
+      // FALSE-GREEN GUARD (lib/render.mjs). The agent said it passed by reading the page; this
+      // asks whether the page was PAINTED. A would-be PASS only — a failed run is never revisited
+      // here — and off with --no-render-check.
+      const rend = await auditRender(page, { enabled: renderCheck });
+      const rgate = renderFailure(rend);
+      if (rgate) {
+        log(`\n${C.r("FAIL")} ${C.dim(`· ${a.steps.length} steps · ${(ms / 1000).toFixed(1)}s · render check`)}`);
+        log(`${rgate}\n`);
+        for (const line of renderNoteLines(rend.slice(1))) log(C.dim(line));
+        // The screenshot is the whole argument here: a reason that says "nothing rendered" is
+        // worth far less than the picture of the empty page it is describing.
+        const ev = await capture(page);
+        if (ev) log(C.dim(`evidence: ${ev.png} and ${ev.txt}`));
+        await report({ test, status: "failed", mode: "agent", durationMs: ms, url, reason: rgate, layout: lay }, log, onRun);
+        // Recorded, for the same reason the layout gate records: the walk itself passed and carries
+        // a proof, so the replay path re-checks the render for free until the page is fixed.
         await record(a, false);
         await browser.close().catch(() => {});
         return 1;

@@ -62,6 +62,11 @@ ${C.bold("smolanalytics")} — end-to-end tests without test code
   ${C.dim("--retries <n>")}         re-run a failing test from a clean page; pass-on-retry is flaky, not passed (default 1; 0 disables)
   ${C.dim("--evidence-dir <dir>")}  where a failure's screenshot + page text land (default .smolanalytics/evidence)
   ${C.dim("--layout <mode>")}       layout sanity on the final page: report (default, notes only) | strict (findings fail a PASS) | off
+  ${C.dim("--no-render-check")}     turn off the render guard: a PASS over a blank, unstyled or crashed page fails by default
+  ${C.dim("--login \"<sentence>\"")}  sign in once in plain English; every run after it reuses the saved session
+  ${C.dim("--auth-file <path>")}    instead of --login: a Playwright storage state you already generate
+  ${C.dim("--auth-dir <dir>")}      where the saved session is kept (default: .smolanalytics/auth)
+  ${C.dim("SMOLANALYTICS_LOGIN_EMAIL / SMOLANALYTICS_LOGIN_PASSWORD fill {{email}} and {{password}}.")}
 
   ${C.dim("--suite <dir>")}         a folder of .md files, one sentence per test
   ${C.dim("--comment")}             post the verdicts on the pull request (GitHub Actions)
@@ -177,6 +182,15 @@ async function main() {
           retries,
           evidenceDir: flag("evidence-dir") || "",
           layout,
+          // THE FALSE-GREEN GUARD (lib/render.mjs) is on unless it is explicitly switched off: a
+          // guard nobody enabled is a guard nobody has, and a blank page passing green is the one
+          // failure mode that loses a customer who already trusts us.
+          renderCheck: !hasFlag("no-render-check"),
+          // Authenticated flows (lib/auth.mjs). One login sentence for the whole suite: the first
+          // test signs in, the rest reuse the saved session.
+          login: flag("login") || "",
+          authFile: flag("auth-file") || "",
+          authDir: flag("auth-dir") || undefined,
         });
         return;
       }
@@ -192,6 +206,10 @@ async function main() {
         retries,
         evidenceDir: flag("evidence-dir") || "",
         layout,
+        renderCheck: !hasFlag("no-render-check"),
+        login: flag("login") || "",
+        authFile: flag("auth-file") || "",
+        authDir: flag("auth-dir") || undefined,
       });
     } catch (err) {
       console.error(`\n${C.red("the run could not complete")} ${err?.message || err}`);
