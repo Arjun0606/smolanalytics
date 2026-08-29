@@ -240,6 +240,10 @@ pipeline that gates on `1` alone never reddens a build because our side had an o
 | `--email-domain <dom>` | the domain in `{{email}}` (default `example.com`) |
 | `--retries <n>` | re-run a failing test from a clean page; pass-on-retry is flaky, not passed (default 1; 0 disables) |
 | `--evidence-dir <dir>` | where a failure's screenshot and page text land (default `.smolanalytics/evidence`) |
+| `--login "<sentence>"` | sign in once in plain English; every test after it reuses the saved session |
+| `--auth-file <path>` | instead of `--login`: a Playwright storage state you already generate |
+| `--auth-dir <dir>` | where the saved session is kept (default `.smolanalytics/auth`, gitignored for you) |
+| `--no-render-check` | switch off the guard that fails a pass over a blank, unstyled or crashed page |
 | `--layout=off` \| `=strict` | layout sanity notes (covered controls, zero-size targets, overflow). Report-only by default; `strict` lets a finding fail the run |
 | `--wait-preview <sec>` | in GitHub Actions with no `--url`, how long to wait for this pull request's own preview deployment (default 240) |
 
@@ -271,6 +275,51 @@ files are never overwritten; a second run says what it skipped.
 | `--out <dir>` | where the tests land (default `tests/`) |
 | `--max <n>` | how many to propose (default 6) |
 | `--yes` | don't ask before writing |
+
+### Tests behind a login
+
+Most tests worth writing are behind a sign-in, so the login is recorded and reused the same way
+everything else here is:
+
+```sh
+export SMOLANALYTICS_LOGIN_EMAIL=qa@yourcompany.com
+export SMOLANALYTICS_LOGIN_PASSWORD=...
+npx smolanalytics test --suite tests/ --url "$URL" \
+  --login "sign in as {{email}} with {{password}}"
+```
+
+The agent signs in **once** for the whole suite and every test after that starts already signed in —
+measured at fifty tests, one login. If the session expires mid-run it signs in again, once, and
+carries on.
+
+The credential is read from the environment and never written down: the recording stores
+`{{password}}`, not the password, and resolves it at the moment of the keystroke. The saved session
+lands in `.smolanalytics/auth/`, which gets a `.gitignore` of its own the first time it is written,
+because that file holds a live session cookie.
+
+If a sign-in does not work, that is reported as **errored** — our side — and never as a failed test.
+A wrong password says nothing about whether your product works, and a red X on a working login is
+worse than no test at all.
+
+Already generating a storage state? `--auth-file path/to/state.json` uses it and skips all of this.
+
+### The page that passes while looking broken
+
+A test's proof is text on the page. That means a build whose CSS 404'd, that rendered blank, or that
+is showing a crash overlay with the text still in the DOM would otherwise **pass** — a green tick on
+a page nobody could use.
+
+So a passing run also checks that the page actually rendered, and fails when it did not:
+
+```
+The steps all worked and the page still says what it should — but a full-viewport error
+surface is covering the page: <div#o> opens with "Unhandled Runtime Error"
+```
+
+It only fires on catastrophe — a blank viewport, stylesheets that failed to load, a framework error
+surface. A canvas game with no text, an image-only gallery, a dark theme, a cookie banner over the
+whole viewport and an app that paints half a second late are all left alone. `--no-render-check`
+turns it off.
 
 ### What this never asks you for
 
