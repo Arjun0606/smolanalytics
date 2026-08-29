@@ -22,6 +22,8 @@ import { deskCmd } from "../lib/desk.mjs";
 import { testCmd } from "../lib/test.mjs";
 import { suiteCmd, DEFAULT_PLANS_DIR } from "../lib/suite.mjs";
 import { parseLayoutMode } from "../lib/layout.mjs";
+import { parseEngine } from "../lib/engines.mjs";
+import { parseWorkers } from "../lib/pool.mjs";
 import { autoPreviewUrl } from "../lib/preview.mjs";
 import { suggestCmd } from "../lib/suggest.mjs";
 
@@ -55,11 +57,15 @@ ${C.bold("smolanalytics")} — end-to-end tests without test code
   ${C.dim("--wait-preview <sec>")}  Actions + no --url: wait for this PR's own preview deployment (default 240)
   ${C.dim("--test \"<text>\"")}       what should work, in plain English
   ${C.dim("--plan <file>")}         replay the recording; wake the agent only if it stopped fitting
+  ${C.dim("--browser <name>")}      chromium (default), firefox or webkit — the same test in a different engine
   ${C.dim("--headed")}              watch it happen
   ${C.dim("--yes")}                 don't ask before a production-looking URL (CI is never asked)
   ${C.dim("--teardown <url>")}      POST this run's identity there afterwards, to delete what it made
+  ${C.dim("--seed <url>")}          POST it there BEFORE the test; the flat JSON it returns becomes placeholders the sentence can use
+  ${C.dim("SMOLANALYTICS_SEED_SECRET / SMOLANALYTICS_TEARDOWN_SECRET arrive as the Authorization header.")}
   ${C.dim("--email-domain <dom>")}  the domain in {{email}} (default: example.com)
   ${C.dim("--retries <n>")}         re-run a failing test from a clean page; pass-on-retry is flaky, not passed (default 1; 0 disables)
+  ${C.dim("--workers <n>")}         with --suite: run this many tests at once (default: measured from cores, memory and whether a key is set; 1 is one at a time)
   ${C.dim("--evidence-dir <dir>")}  where a failure's screenshot + page text land (default .smolanalytics/evidence)
   ${C.dim("--layout <mode>")}       layout sanity on the final page: report (default, notes only) | strict (findings fail a PASS) | off
   ${C.dim("--no-render-check")}     turn off the render guard: a PASS over a blank, unstyled or crashed page fails by default
@@ -149,6 +155,26 @@ async function main() {
       process.exitCode = 2;
       return;
     }
+    // CROSS-BROWSER (lib/engines.mjs). The same refusal shape once more: `--browser webkti` quietly
+    // meaning chromium would report a green suite to the one person who explicitly asked to be told
+    // about WebKit, which is the only reason they typed the flag.
+    const browserRaw = flag("browser") ?? (hasFlag("browser") ? "" : undefined);
+    const { engine, problem: engineProblem } = parseEngine(browserRaw);
+    if (engineProblem) {
+      console.error(C.red(engineProblem));
+      process.exitCode = 2;
+      return;
+    }
+    // PARALLEL SUITE EXECUTION (lib/pool.mjs). Same refusal shape again: a bare `--workers` or a
+    // `--workers eight` is an error, never a silent default, because the person who typed it was
+    // asking for a specific amount of machine.
+    const workersRaw = flag("workers") ?? (hasFlag("workers") ? "" : undefined);
+    const { workers, problem: workersProblem } = parseWorkers(workersRaw, { hasKey: Boolean(process.env.ANTHROPIC_API_KEY) });
+    if (workersProblem) {
+      console.error(C.red(workersProblem));
+      process.exitCode = 2;
+      return;
+    }
     // NO --url INSIDE ACTIONS ON A PULL REQUEST: the preview host already told GitHub the URL, so
     // ask the deployments API instead of asking the person (lib/preview.mjs says how and why).
     // Anywhere else — a laptop, a push build — autoPreviewUrl skips and the missing --url keeps
@@ -177,15 +203,18 @@ async function main() {
           headed: hasFlag("headed"),
           yes: hasFlag("yes"),
           teardown: flag("teardown") || "",
+          seed: flag("seed") || "",
           emailDomain: flag("email-domain") || "",
           maxSteps: Number(flag("max-steps")) || 40,
           retries,
+          workers,
           evidenceDir: flag("evidence-dir") || "",
           layout,
           // THE FALSE-GREEN GUARD (lib/render.mjs) is on unless it is explicitly switched off: a
           // guard nobody enabled is a guard nobody has, and a blank page passing green is the one
           // failure mode that loses a customer who already trusts us.
           renderCheck: !hasFlag("no-render-check"),
+          engine,
           // Authenticated flows (lib/auth.mjs). One login sentence for the whole suite: the first
           // test signs in, the rest reuse the saved session.
           login: flag("login") || "",
@@ -201,12 +230,14 @@ async function main() {
         headed: hasFlag("headed"),
         yes: hasFlag("yes"),
         teardown: flag("teardown") || "",
+        seed: flag("seed") || "",
         emailDomain: flag("email-domain") || "",
         maxSteps: Number(flag("max-steps")) || 40,
         retries,
         evidenceDir: flag("evidence-dir") || "",
         layout,
         renderCheck: !hasFlag("no-render-check"),
+        engine,
         login: flag("login") || "",
         authFile: flag("auth-file") || "",
         authDir: flag("auth-dir") || undefined,

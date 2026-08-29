@@ -36,6 +36,10 @@ import { auditLayout, layoutFailure, layoutNoteLines, stepTargets } from "./layo
 import { auditRender, renderFailure, renderNoteLines } from "./render.mjs";
 import { DEFAULT_AUTH_DIR, openSession } from "./auth.mjs";
 import { closedShadowRoots, embeddedNotes, frameLabel, inFrame, readFrames, visibleText } from "./frames.mjs";
+import { DEFAULT_ENGINE, ENGINE_LABEL, engineNote, launchEngine, recordedEngine, withEngine, withNote } from "./engines.mjs";
+import { UPLOAD_TOOL, performUpload, uploadLabel, uploadNotes, uploadTargets } from "./upload.mjs";
+import { seedRun } from "./seed.mjs";
+import { maskUrl, resolveUrl } from "./seedguard.mjs";
 
 const C = {
   b: (s) => `\x1b[1m${s}\x1b[0m`,
@@ -114,6 +118,10 @@ export async function perceive(page) {
   // the measurement. Never allowed to throw: perception is how the agent sees.
   const f = await readFrames(page, flatten, { startRef: elements.length }).catch(() => null);
   const closed = await closedShadowRoots(page).catch(() => []);
+  // FILE UPLOADS (lib/upload.mjs). A file input's role IS `button`, so the list above cannot tell
+  // one apart from a Save button — and clicking it is a silent no-op. [] on every page without
+  // one, which is almost all of them. Never allowed to throw: perception is how the agent sees.
+  const uploads = await uploadTargets(page).catch(() => []);
   return {
     url: page.url(),
     title,
@@ -121,6 +129,7 @@ export async function perceive(page) {
     truncated: truncated + (f ? f.truncated : 0),
     frames: f ? f.frames : [],
     closed,
+    uploads,
     text: String(text).replace(/\n{3,}/g, "\n\n").trim().slice(0, 4000),
   };
 }
@@ -146,6 +155,8 @@ export function render(s) {
     // Empty on a page with no frames and no closed shadow roots, which is most of them — so this
     // adds not one character to the ordinary case.
     ...embeddedNotes({ frames: s.frames, closed: s.closed }),
+    // Same contract as embeddedNotes: empty on a page with no file inputs.
+    ...uploadNotes(s.uploads),
     "PAGE TEXT:",
     s.text || "(empty)",
   ].join("\n");
@@ -164,6 +175,8 @@ const TOOLS = [
     input_schema: { type: "object", properties: { ref: { type: "string" }, why: { type: "string" } }, required: ["ref", "why"], additionalProperties: false } },
   { name: "fill", description: "Type text into a textbox, searchbox or combobox. Replaces what is there.",
     input_schema: { type: "object", properties: { ref: { type: "string" }, text: { type: "string" }, why: { type: "string" } }, required: ["ref", "text", "why"], additionalProperties: false } },
+  // Attaching a file, with no file on anybody's disk (lib/upload.mjs).
+  UPLOAD_TOOL,
   { name: "press", description: "Press a key, e.g. Enter. Use when a form submits on Enter.",
     input_schema: { type: "object", properties: { key: { type: "string" }, why: { type: "string" } }, required: ["key", "why"], additionalProperties: false } },
   { name: "goto", description: "Navigate to a URL. Prefer clicking; use this only when the test says to open a page.",
@@ -235,6 +248,16 @@ async function act(page, snap, a) {
       if (!l) return { ok: false, detail: `no element ${a.ref} on the page you were shown` };
       if (a.kind === "click") await l.click({ timeout: 10_000 });
       else await l.fill(a.text, { timeout: 10_000 });
+    } else if (a.kind === "upload") {
+      const l = locate(page, snap, a.ref);
+      if (!l) return { ok: false, detail: `no element ${a.ref} on the page you were shown` };
+      // The file is fabricated from the control's own `accept` and the note names it — in the
+      // terminal AND in what the agent is told next, because "which file did it attach" is the
+      // first question anybody asks about an upload that was rejected.
+      const up = await performUpload(page, l);
+      if (!up.ok) return up;
+      await page.waitForLoadState("networkidle", { timeout: 3000 }).catch(() => {});
+      return { ok: true, note: up.note };
     } else if (a.kind === "press") await page.keyboard.press(a.key);
     else if (a.kind === "goto") await page.goto(a.url, { waitUntil: "domcontentloaded", timeout: 30_000 });
     else if (a.kind === "scroll") await page.mouse.wheel(0, a.direction === "down" ? 700 : -700);
@@ -252,6 +275,7 @@ function toAction(call) {
   switch (call.name) {
     case "click": return { kind: "click", ref: String(i.ref), why: String(i.why) };
     case "fill": return { kind: "fill", ref: String(i.ref), text: String(i.text), why: String(i.why) };
+    case "upload": return { kind: "upload", ref: String(i.ref), why: String(i.why) };
     case "press": return { kind: "press", key: String(i.key), why: String(i.why) };
     case "goto": return { kind: "goto", url: String(i.url), why: String(i.why) };
     case "scroll": return { kind: "scroll", direction: i.direction === "up" ? "up" : "down", why: String(i.why) };
@@ -269,7 +293,13 @@ function describe(step, secrets = []) {
   const label =
     a.kind === "click" ? `click ${step.target ? `${step.target.role} "${step.target.name}"${inF}` : a.ref}`
     : a.kind === "fill" ? `fill ${step.target ? `"${step.target.name}"${inF}` : a.ref} = ${JSON.stringify(maskSecrets(a.text, secrets))}`
-    : a.kind === "goto" ? `goto ${a.url}`
+    // WHICH FILE WAS MADE, on the step line itself. An upload whose fixture nobody can name is an
+    // upload nobody can debug when the app rejects it.
+    : a.kind === "upload" ? `upload to ${step.target ? `"${step.target.name}"${inF}` : a.ref}${step.note ? ` — ${step.note}` : ""}`
+    // MASKED, like the fill above it. A sentence that says "open order {{orderId}}" makes the
+    // agent navigate rather than type, and this line is the terminal, the step label, the row
+    // posted to a project and the pull request comment. lib/seedguard.mjs.
+    : a.kind === "goto" ? `goto ${maskUrl(a.url, secrets)}`
     : a.kind === "press" ? `press ${a.key}`
     : `scroll ${a.direction}`;
   return `  ${mark} ${String(step.n).padStart(2)} ${label}${step.ok ? C.dim(` ${step.ms}ms`) : C.r(` — ${step.detail}`)}`;
@@ -285,8 +315,17 @@ export function compile(startUrl, steps, proof = "", secrets = []) {
     const a = s.action;
     if (a.kind === "click" && s.target) out.push({ kind: "click", ...s.target });
     else if (a.kind === "fill" && s.target) out.push({ kind: "fill", ...s.target, text: maskSecrets(a.text, secrets) });
+    // The control, and NOT the file: the fixture is rebuilt at replay time from the accept
+    // attribute the page has then. Baking a path in would break on the next machine, and baking
+    // the bytes in would put a blob in somebody's repository and freeze the wrong file type the
+    // day the form starts asking for a PDF.
+    else if (a.kind === "upload" && s.target) out.push({ kind: "upload", ...s.target });
     else if (a.kind === "press") out.push({ kind: "press", key: a.key });
-    else if (a.kind === "goto") out.push({ kind: "goto", url: a.url });
+    // The URL is masked for the same reason the fill text and the proof are: a seeded fixture id
+    // lives in a URL more naturally than anywhere else, and this file is cached by CI and
+    // committed. replay() resolves it again, so a recording made against order A still navigates
+    // to order B on the next run instead of being stale forever. lib/seedguard.mjs.
+    else if (a.kind === "goto") out.push({ kind: "goto", url: maskUrl(a.url, secrets) });
   }
   // null, never an empty plan: a plan with no steps would "pass" instantly by exercising nothing,
   // which is the most dangerous artefact this code could produce.
@@ -298,7 +337,11 @@ export function compile(startUrl, steps, proof = "", secrets = []) {
   // a broken checkout is worse than having no test, and it is the exact corner this speed
   // advantage was cutting.
   if (!out.length || !String(proof).trim()) return null;
-  return { startUrl, steps: out, proof: String(proof).trim() };
+  // The proof is masked too. A seeded fixture's own id is very often the thing the agent quotes as
+  // proof — "Order A-1042 refunded" — and an unmasked proof would put the value in the recording
+  // the CI template caches and users are told to commit. replay() resolves it again before it looks
+  // for it on the page, so a recording made under one seeded id still replays green under the next.
+  return { startUrl, steps: out, proof: maskSecrets(String(proof).trim(), secrets) };
 }
 
 /**
@@ -408,6 +451,7 @@ export function rebase(plan, url) {
 const STEP_NEEDS = {
   click: ["role", "name"],
   fill: ["role", "name", "text"],
+  upload: ["role", "name"],
   press: ["key"],
   goto: ["url"],
 };
@@ -445,11 +489,17 @@ export function readPlan(text) {
 
 export async function replay(page, plan, secrets = []) {
   const started = Date.now();
+  // What the replay wants said out loud. Today: which file each upload fabricated, because a
+  // replayed upload attaches a file nobody named and the reader has to be able to see which.
+  const notes = [];
   await page.goto(plan.startUrl, { waitUntil: "domcontentloaded" });
   for (let i = 0; i < plan.steps.length; i++) {
     const s = plan.steps[i];
     try {
-      if (s.kind === "goto") await page.goto(s.url, { waitUntil: "domcontentloaded", timeout: 30_000 });
+      // resolveUrl, for the reason the fill below uses unmaskSecrets: a URL recorded as
+      // /order?t={{ordertoken}} has to become THIS run's seeded value before it is navigated to.
+      // With no secrets it is the identity function and the navigation is byte-for-byte what it was.
+      if (s.kind === "goto") await page.goto(resolveUrl(s.url, secrets), { waitUntil: "domcontentloaded", timeout: 30_000 });
       // inFrame() with no frame IS page.getByRole — see lib/frames.mjs. A recording made inside an
       // embedded checkout replays into that same frame, with no model call, like any other step.
       else if (s.kind === "click") await inFrame(page, s.frame).getByRole(s.role, { name: s.name, exact: true }).click({ timeout: 10_000 });
@@ -457,13 +507,23 @@ export async function replay(page, plan, secrets = []) {
       // the moment of the fill, so the credential exists in memory for this keystroke and in no
       // file we ever wrote.
       else if (s.kind === "fill") await inFrame(page, s.frame).getByRole(s.role, { name: s.name, exact: true }).fill(unmaskSecrets(s.text, secrets), { timeout: 10_000 });
+      // ZERO MODEL CALLS, like every other step. The fixture is a pure function of the control's
+      // `accept`, re-read here off the live page, so the identical bytes are rebuilt every run —
+      // and a form that has since changed from image/* to application/pdf gets a PDF, which a
+      // stored fixture never could. An upload that cannot be performed throws into the catch
+      // below and is STALE, never a bug: the control changed, and only the agent can say how.
+      else if (s.kind === "upload") {
+        const up = await performUpload(page, inFrame(page, s.frame).getByRole(s.role, { name: s.name, exact: true }));
+        if (!up.ok) throw new Error(up.detail);
+        notes.push(up.note);
+      }
       else if (s.kind === "press") await page.keyboard.press(s.key);
       // readPlan rejects these before we get here; this is for anyone calling replay() directly.
       // Falling through in silence would count a step nobody performed as a step that worked.
       else throw new Error(`step ${i + 1} is a ${JSON.stringify(s.kind)}, which this version cannot replay`);
       await page.waitForLoadState("networkidle", { timeout: 3000 }).catch(() => {});
     } catch (e) {
-      return { status: "stale", at: i, step: s, detail: String(e && e.message ? e.message : e).split("\n")[0], ms: Date.now() - started };
+      return { status: "stale", at: i, step: s, detail: String(e && e.message ? e.message : e).split("\n")[0], ms: Date.now() - started, notes };
     }
   }
   // THE STEPS WORKED. That is not the same as the test passing.
@@ -473,7 +533,7 @@ export async function replay(page, plan, secrets = []) {
   // this, and treating a missing proof as "fine" would silently restore the bug: unproven, so the
   // agent re-runs.
   if (!plan.proof) {
-    return { status: "unproven", detail: "this recording predates outcome checking, so replaying it proves only that the steps still work", ms: Date.now() - started };
+    return { status: "unproven", detail: "this recording predates outcome checking, so replaying it proves only that the steps still work", ms: Date.now() - started, notes };
   }
   // visibleText, not document.body.innerText: measured, a confirmation rendered inside an iframe
   // or an open shadow root is absent from innerText entirely. Now that the agent can SEE into a
@@ -482,14 +542,18 @@ export async function replay(page, plan, secrets = []) {
   // the rebase() cost explosion, rebuilt. The main document's text still comes first and uncapped,
   // so this is strictly additive: every proof that matched before matches still.
   const text = await visibleText(page).catch(() => "");
-  if (!String(text).includes(plan.proof)) {
+  // unmaskSecrets, for the same reason the fill above uses it: a proof recorded as "Order
+  // {{orderid}} refunded" has to become THIS run's seeded id before it is looked for, or every
+  // replay of a seeded test reports outcome-changed and wakes the agent at full price forever.
+  // With no secrets this is the identity function and the comparison is byte-for-byte what it was.
+  if (!String(text).includes(unmaskSecrets(plan.proof, secrets))) {
     // The flow still runs and the outcome changed. That is EITHER a regression or a reword, and a
     // replay cannot tell them apart any more than it can tell a rename from a removal — so it says
     // what it saw and lets the agent judge. Reporting it as a bug outright would page someone over
     // a copy change; reporting it as a pass is the bug this whole change exists to kill.
-    return { status: "outcome-changed", proof: plan.proof, ms: Date.now() - started };
+    return { status: "outcome-changed", proof: plan.proof, ms: Date.now() - started, notes };
   }
-  return { status: "passed", steps: plan.steps.length, ms: Date.now() - started };
+  return { status: "passed", steps: plan.steps.length, ms: Date.now() - started, notes };
 }
 
 /**
@@ -595,14 +659,18 @@ export function wireRun(run) {
  * Never called outside a try: evidence is a bonus on top of a verdict, not part of one. The agent
  * already saw the failure, and a full disk here must not turn a real FAIL into our own error.
  */
-export async function captureEvidence(page, dir) {
+export async function captureEvidence(page, dir, secrets = []) {
   const out = { png: path.join(dir, "failure.png"), txt: path.join(dir, "failure.txt") };
   mkdirSync(dir, { recursive: true });
   await page.screenshot({ path: out.png, fullPage: true });
   // The screenshot shows an embedded checkout; document.body.innerText does not contain one word
   // of it. Whoever opens this file after a failure inside a payment frame needs the frame's text.
   const text = await visibleText(page).catch(() => "");
-  writeFileSync(out.txt, `URL: ${page.url()}\n\n${String(text).trim()}\n`);
+  // Masked, URL included: a seeded token routinely lives in the path (/orders/A-1042) or in a query
+  // string, and this file is uploaded as a CI artifact. The PNG beside it is NOT masked and cannot
+  // be — it is a picture of the customer's own page, showing the customer's own data, and pretending
+  // otherwise would be a guarantee we do not deliver.
+  writeFileSync(out.txt, maskSecrets(`URL: ${page.url()}\n\n${String(text).trim()}\n`, secrets));
   return out;
 }
 
@@ -675,7 +743,13 @@ function browserCacheDir() {
   return process.env.SMOLANALYTICS_CACHE || path.join(homedir(), ".cache", "smolanalytics");
 }
 
-export async function loadPlaywright(log, yes) {
+/**
+ * @param engine which browser to make sure is on disk when WE are the ones installing. On the
+ * paths where Playwright is already resolvable this function never downloads a browser at all, so
+ * a resolvable Playwright with no WebKit still reaches launchEngine — which is where the "install
+ * it with" sentence lives. Both places name the ENGINE, never a bare `playwright install`.
+ */
+export async function loadPlaywright(log, yes, engine = DEFAULT_ENGINE) {
   try {
     return { pw: await import("playwright") };
   } catch {
@@ -693,7 +767,7 @@ export async function loadPlaywright(log, yes) {
 
   const home = browserCacheDir();
   log("");
-  log(C.b("This command drives a real browser, which needs Playwright (~50MB) and Chromium."));
+  log(C.b(`This command drives a real browser, which needs Playwright (~50MB) and ${ENGINE_LABEL[engine] || engine}.`));
   log(C.dim("Every other command here has zero dependencies, so it is fetched only now, only once."));
   log(C.dim(`It goes in ${home}. Nothing is written to your project.`));
   if (!yes && process.stdin.isTTY) {
@@ -713,18 +787,19 @@ export async function loadPlaywright(log, yes) {
   }
   const r = spawnSync("npm", ["install", "--silent", "--prefix", home, "playwright"], { stdio: "inherit" });
   if (r.status !== 0) {
-    log(C.r(`could not install Playwright into ${home}. Install it yourself with: npm i playwright && npx playwright install chromium`));
-    return { pw: null, problem: `Playwright could not be installed into ${home}. Install it with: npm i playwright && npx playwright install chromium` };
+    log(C.r(`could not install Playwright into ${home}. Install it yourself with: npm i playwright && npx playwright install ${engine}`));
+    return { pw: null, problem: `Playwright could not be installed into ${home}. Install it with: npm i playwright && npx playwright install ${engine}` };
   }
   // Run the copy we just installed, not `npx playwright`, which would download the CLI a second
   // time and can pick a different version than the library we are about to import.
   const bin = path.join(home, "node_modules", ".bin", process.platform === "win32" ? "playwright.cmd" : "playwright");
   const install = existsSync(bin)
-    ? spawnSync(bin, ["install", "chromium"], { stdio: "inherit" })
-    : spawnSync("npx", ["playwright", "install", "chromium"], { stdio: "inherit" });
+    ? spawnSync(bin, ["install", engine], { stdio: "inherit" })
+    : spawnSync("npx", ["playwright", "install", engine], { stdio: "inherit" });
   if (install.status !== 0) {
-    log(C.r("Playwright installed but Chromium did not. Run: npx playwright install chromium"));
-    return { pw: null, problem: "Playwright installed but Chromium did not. Run: npx playwright install chromium" };
+    const label = ENGINE_LABEL[engine] || engine;
+    log(C.r(`Playwright installed but ${label} did not. Run: npx playwright install ${engine}`));
+    return { pw: null, problem: `Playwright installed but ${label} did not. Run: npx playwright install ${engine}` };
   }
   const entry = resolveFrom(home, "playwright");
   try {
@@ -780,11 +855,15 @@ async function report(run, log, onRun) {
  *   { kind: "error", banner, why, steps, ms }           the runner did not — prose instead of a
  *                                                       tool call, or the step budget ran out
  */
-async function agentAttempt({ page, url, test, apiKey, model, maxSteps, log }) {
+async function agentAttempt({ page, url, test, apiKey, model, maxSteps, log, secrets = [] }) {
   const started = Date.now();
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
   let snap = await perceive(page);
-  const messages = [{ role: "user", content: `THE TEST:\n${test}\n\nStarting page:\n\n${render(snap)}` }];
+  // The sentence is carried around MASKED — "open order {{orderid}}" — and resolved here, at the
+  // one moment the model actually needs the value. Everything else that touches the sentence (the
+  // run summary, the row posted to a project, the evidence directory's name) writes the placeholder
+  // instead. With no secrets this is the identity function and the prompt is unchanged. lib/seed.mjs.
+  const messages = [{ role: "user", content: `THE TEST:\n${unmaskSecrets(test, secrets)}\n\nStarting page:\n\n${render(snap)}` }];
   const steps = [];
 
   for (let n = 1; n <= maxSteps; n++) {
@@ -808,6 +887,11 @@ async function agentAttempt({ page, url, test, apiKey, model, maxSteps, log }) {
     const results = [];
     for (const call of calls) {
       const a = toAction(call);
+      // The model quotes what it read, and what it read may be a seeded token. Masked once, here,
+      // so every downstream use carries the placeholder: the step label, the reported step, the
+      // verdict reason, the run summary, the pull request comment. `a.text` is deliberately NOT
+      // masked — that one is the keystroke, and it has to be the real value.
+      if (a.why) a.why = maskSecrets(a.why, secrets);
       if (a.kind === "finish") {
         return { kind: "finish", passed: a.passed, why: a.why, proof: a.proof, steps, ms: Date.now() - started };
       }
@@ -818,14 +902,21 @@ async function agentAttempt({ page, url, test, apiKey, model, maxSteps, log }) {
       // what this wrote before frames existed. compile() spreads target straight into the step.
       const target = el ? { role: el.role, name: el.name, ...(el.frame && el.frame.length ? { frame: el.frame } : {}) } : undefined;
       const out = await act(page, snap, a);
-      const step = { n, action: a, target, ok: out.ok, detail: out.detail, ms: Date.now() - t0 };
-      step.label = describe(step).trim().replace(/^[^ ]+ +\d+ /, "");
+      // `note` carries what an action decided on the agent's behalf — today, which file an upload
+      // fabricated. Without it the agent is told "done" and has to guess what it attached, which
+      // is exactly the guess that turns the app's correct "PNGs only" into a bug report.
+      // `out.detail` is an error string from the browser, and a failed navigation quotes the URL
+      // it could not reach — which is where a seeded value lives. Masked on the STEP, which is what
+      // is printed, labelled and reported; the model below is still handed the raw one, because
+      // that is its eyes.
+      const step = { n, action: a, target, ok: out.ok, detail: maskSecrets(out.detail, secrets), note: out.note, ms: Date.now() - t0 };
+      step.label = describe(step, secrets).trim().replace(/^[^ ]+ +\d+ /, "");
       steps.push(step);
-      log(describe(step));
+      log(describe(step, secrets));
       if (a.why) log(`     ${C.dim(a.why)}`);
 
       snap = await perceive(page);
-      results.push({ type: "tool_result", tool_use_id: call.id, is_error: !out.ok, content: `${out.ok ? "done" : `FAILED: ${out.detail}`}\n\n${render(snap)}` });
+      results.push({ type: "tool_result", tool_use_id: call.id, is_error: !out.ok, content: `${out.ok ? (out.note ? `done — ${out.note}` : "done") : `FAILED: ${out.detail}`}\n\n${render(snap)}` });
     }
     messages.push({ role: "user", content: results });
   }
@@ -840,7 +931,12 @@ async function agentAttempt({ page, url, test, apiKey, model, maxSteps, log }) {
   };
 }
 
-async function runOnce({ url, test, plan: planPath, headed, maxSteps = 40, yes, retries = 1, evidenceDir = "", layout: layoutMode = "report", renderCheck = true, login = "", authFile = "", authDir = DEFAULT_AUTH_DIR, env = process.env, log = console.log, onRun, loadBrowser = loadPlaywright }) {
+// `secrets` is the masking pairs for this run: {value, token} for anything that must be written
+// down as a placeholder rather than as itself. Today --seed fills it (lib/seed.mjs); it is an array
+// on purpose, so a credential source can be added to it without another parameter. [] — the default,
+// and what every run without --seed passes — makes maskSecrets and unmaskSecrets identity functions,
+// so nothing on this path changes by a single byte for anybody who has not asked for it.
+async function runOnce({ url, test, plan: planPath, headed, maxSteps = 40, yes, retries = 1, evidenceDir = "", layout: layoutMode = "report", renderCheck = true, login = "", authFile = "", authDir = DEFAULT_AUTH_DIR, secrets = [], engine = DEFAULT_ENGINE, env = process.env, log = console.log, onRun, loadBrowser = loadPlaywright }) {
   if (!url || !test) {
     log(`
 ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No account.
@@ -848,8 +944,10 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
   --url <url>      where the test starts (staging, a deploy preview, anything reachable)
   --test "<text>"  what should work, in plain English
   --plan <file>    replay this recording first; only wake the agent if it no longer fits
+  --browser <name> chromium (default), firefox or webkit — the same test in a different engine
   --headed         watch it happen
   --yes            install the browser, and don't ask about a production-looking URL
+  --seed <url>     POST this run's identity there BEFORE it, and use the JSON it returns as placeholders
   --teardown <url> POST this run's identity there afterwards, so you can delete what it made
   --email-domain <dom>  the domain in {{email}} (default example.com, which cannot receive mail)
   --retries <n>    re-run a failing test from a clean page (default 1; 0 disables)
@@ -860,7 +958,7 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
     return 1;
   }
 
-  const { pw, problem } = await loadBrowser(log, yes);
+  const { pw, problem } = await loadBrowser(log, yes, engine);
   if (!pw) {
     // REPORTED, not just logged. A suite with no verdict for this test falls back to guessing why
     // (see noVerdictReason), and on a first CI run it guesses "ANTHROPIC_API_KEY is not set" —
@@ -881,7 +979,11 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
     // runner — "Host system is missing dependencies to run browsers" — and thrown from out here it
     // went past this function's whole errored/exit-2 contract to the CLI's last-resort catch, which
     // exits 1. That is the code reserved for the customer's app being broken.
-    browser = await pw.chromium.launch({ headless: !headed });
+    // launchEngine, not pw[engine].launch: an engine Playwright ships but nobody downloaded fails
+    // with a twelve-line Unicode box and a stack trace that reads like our crash, and the one
+    // thing the reader needs from it — which install command fixes this — is the one thing it
+    // does not say. See lib/engines.mjs.
+    browser = await launchEngine(pw, engine, { headless: !headed });
     // AUTHENTICATED FLOWS (lib/auth.mjs). With neither --login nor --auth-file, session.newPage()
     // IS browser.newPage() with the same viewport, and nothing else on this path runs at all.
     // With one of them, every page this run opens — the first and every retry — is a clean context
@@ -919,9 +1021,22 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
         log(C.dim("  Running the agent instead, which records over it."));
       } else {
         const plan = rebase(recorded, url);
+        // THE ENGINE IS PART OF WHAT THIS WAS RECORDED AGAINST (lib/engines.mjs). "" whenever the
+        // recording names this same engine, or names none, which is every ordinary run. When it
+        // does differ the replay still runs — refusing would turn a fifty-test suite on three
+        // engines into 150 agent runs — but nothing about it is allowed to be silent: the note
+        // goes on the terminal AND into the reason posted to the project, on the pass and on the
+        // stale alike. The verdict itself is untouched.
+        const engineChange = recordedEngine(recorded);
         log(C.dim(`replaying ${plan.steps.length} recorded steps (no model)…`));
-        const r = await replay(page, plan);
+        const r = await replay(page, plan, secrets);
+        // Which file each replayed upload fabricated. Empty on a recording with no upload step.
+        for (const note of r.notes || []) log(C.dim(`  ${note}`));
         if (r.status === "passed") {
+          // Computed here, not at each verdict: every way out of this block — the layout gate, the
+          // render gate, the pass — is a verdict about a recording made on another engine, and one
+          // of them staying silent is the exact "silently pass, silently fail" this forbids.
+          const crossed = engineNote(engineChange, engine, "passed");
           // Layout sanity runs at verdict time on the page the replay ended on, scoped to the
           // steps it walked. Report-only unless --layout=strict — see lib/layout.mjs for why a
           // finding gating by default is the fastest way to lose this feature its trust.
@@ -930,8 +1045,9 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
           if (gate) {
             log(`\n${C.r("FAIL")} ${C.dim(`· replayed ${plan.steps.length} steps · --layout=strict`)}`);
             log(`${gate}\n`);
+            if (crossed) log(C.y(crossed));
             for (const line of layoutNoteLines(lay)) log(C.dim(line));
-            await report({ test, status: "failed", mode: "replay", durationMs: r.ms, url, reason: gate, layout: lay }, log, onRun);
+            await report({ test, status: "failed", mode: "replay", durationMs: r.ms, url, reason: withNote(gate, crossed), layout: lay }, log, onRun);
             await browser.close().catch(() => {});
             return 1;
           }
@@ -945,14 +1061,16 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
           if (rgate) {
             log(`\n${C.r("FAIL")} ${C.dim(`· replayed ${plan.steps.length} steps · render check`)}`);
             log(`${rgate}\n`);
+            if (crossed) log(C.y(crossed));
             for (const line of renderNoteLines(rend.slice(1))) log(C.dim(line));
-            await report({ test, status: "failed", mode: "replay", durationMs: r.ms, url, reason: rgate, layout: lay }, log, onRun);
+            await report({ test, status: "failed", mode: "replay", durationMs: r.ms, url, reason: withNote(rgate, crossed), layout: lay }, log, onRun);
             await browser.close().catch(() => {});
             return 1;
           }
           log(`\n${C.g("PASS")}${C.dim(` — replayed ${r.steps} steps in ${(r.ms / 1000).toFixed(1)}s, no model calls.`)}`);
+          if (crossed) log(C.y(crossed));
           for (const line of layoutNoteLines(lay)) log(C.dim(line));
-          await report({ test, status: "passed", mode: "replay", durationMs: r.ms, url, reason: "Replayed the recorded run; every step still worked.", layout: lay }, log, onRun);
+          await report({ test, status: "passed", mode: "replay", durationMs: r.ms, url, reason: withNote("Replayed the recorded run; every step still worked.", crossed), layout: lay }, log, onRun);
           // Every close below a decided verdict carries .catch: close() can throw (seen once,
           // intermittently, under load), and unhandled it falls into the catch-all — which would
           // report errored/2 on top of a verdict that was already printed and posted.
@@ -962,7 +1080,7 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
         // Everything below is "the recording no longer settles it" — the steps broke, the outcome
         // changed, or there was no proof to check. All three hand over to the agent rather than
         // guessing, and none of them is reported as a bug on its own.
-        const note = stalenessNote(r);
+        const note = withNote(stalenessNote(r), engineNote(engineChange, engine, "stale"));
         log(`\n${C.y(note)}\n`);
         await report({ test, status: "stale", mode: "replay", durationMs: r.ms, url, reason: note }, log, onRun);
       }
@@ -985,7 +1103,7 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
     );
     const capture = async (pg) => {
       try {
-        return await captureEvidence(pg, evidencePath);
+        return await captureEvidence(pg, evidencePath, secrets);
       } catch (e) {
         log(C.dim(`could not capture evidence: ${e && e.message ? e.message : e}. The verdict above is unaffected.`));
         return null;
@@ -993,7 +1111,10 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
     };
     const record = async (att, viaRetry) => {
       if (!planPath) return;
-      const p = compile(url, att.steps, att.proof);
+      // withEngine, so the next replay can say which engine this walk was discovered on. It only
+      // ever ADDS a field — compile()'s refusal to write a proofless or empty recording is
+      // untouched, and null stays null.
+      const p = withEngine(compile(url, att.steps, att.proof, secrets), engine);
       if (p) {
         // THE PROOF IS CHECKED AGAINST THE PAGE BEFORE IT IS BELIEVED.
         //
@@ -1024,7 +1145,7 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
         // so the recording was DROPPED on every green run. The test then cost a full agent run
         // forever while printing a pass, which is the replay saving quietly never arriving.
         const onPage = await visibleText(page).catch(() => null);
-        if (typeof onPage === "string" && !onPage.includes(p.proof)) {
+        if (typeof onPage === "string" && !onPage.includes(unmaskSecrets(p.proof, secrets))) {
           log(C.dim(`not recorded: the run passed, but the proof ${JSON.stringify(p.proof)} is not text on the page — a replay would report it as changed on every run. The next run uses the agent again.`));
           return;
         }
@@ -1046,7 +1167,7 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
       }
     };
 
-    let a = await agentAttempt({ page, url, test, apiKey, model, maxSteps, log });
+    let a = await agentAttempt({ page, url, test, apiKey, model, maxSteps, log, secrets });
     if (a.kind === "error") {
       // The RUNNER misbehaved — the model answered prose, or the step budget ran out. Nothing was
       // observed, so it errors and exits 2, and it is NOT retried: paying for a second run of a
@@ -1144,7 +1265,7 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
         // session.newPage(), so the clean page the retry promises is still a SIGNED-IN clean page:
         // a new context seeded from the saved session, carrying nothing from the run that failed.
         page = await session.newPage();
-        next = await agentAttempt({ page, url, test, apiKey, model, maxSteps, log });
+        next = await agentAttempt({ page, url, test, apiKey, model, maxSteps, log, secrets });
       } catch (e) {
         next = { kind: "error", banner: "retry", why: String(e && e.message ? e.message : e) };
       }
@@ -1224,7 +1345,7 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
  * of them. The one that got forgotten would be the one that created the order.
  */
 export async function testCmd(opts = {}) {
-  const { url, test, yes, teardown = "", emailDomain = "", runId = "", log = console.log, env = process.env, onRun, ask } = opts;
+  const { url, test, yes, teardown = "", seed = "", emailDomain = "", runId = "", log = console.log, env = process.env, onRun, ask } = opts;
   // The usage text, and the exit code that goes with it, stay exactly where they were.
   if (!url || !test) return runOnce(opts);
 
@@ -1237,7 +1358,11 @@ export async function testCmd(opts = {}) {
     runId: runId || env.SMOLANALYTICS_RUN_ID,
   });
   const sub = substitute(test, identity);
-  for (const bad of sub.unknown) {
+  // With --seed, a token this runner does not know may be one the seed endpoint is about to return,
+  // so naming it here would warn about {{orderId}} on every single seeded run. The naming still
+  // happens — seedRun does it, once the response is in and it knows which tokens nobody filled, and
+  // there it is a setup failure rather than a note. lib/seed.mjs says why.
+  for (const bad of (seed ? [] : sub.unknown)) {
     // Named and left in place. Silently dropping it would hand the model an empty field to invent
     // a value for, and an invented value is a row nobody can find afterwards.
     log(C.y(`${bad} is not a placeholder this runner knows, so it stays in the sentence as written.`));
@@ -1262,9 +1387,34 @@ export async function testCmd(opts = {}) {
 
   let status = "errored";
   try {
+    // --seed, BEFORE the browser opens and INSIDE this try, so a seed that half-built a fixture and
+    // then failed is still cleaned up by the teardown hook in the finally below. After the
+    // production question, never before it: declining must leave "nothing was opened and nothing was
+    // tested" true, and a POST that fabricated an order first would make it a lie.
+    const seeded = seed ? await seedRun({ endpoint: seed, identity, test: sub.text, url, env, log }) : null;
+    if (seeded && seeded.problem) {
+      // ERRORED AND 2, NEVER FAILED AND 1. We could not build the world the sentence describes, so
+      // nothing was observed about the application. Reporting a failure here would put a bug report
+      // about their refund flow on a pull request because our setup step could not reach their box.
+      log(`\n${C.y("ERROR")} ${C.dim("· seed")}`);
+      log(`${seeded.problem}\n`);
+      status = "errored";
+      try {
+        // Told to the suite so the row is named, not POSTed to a project: no run happened, and the
+        // decline path above sets the same precedent for the same reason.
+        onRun?.({ test: sub.text, status: "errored", mode: "agent", durationMs: seeded.ms || 0, url, reason: seeded.problem });
+      } catch {
+        /* a caller's bookkeeping must not change an exit code */
+      }
+      return 2;
+    }
     return await runOnce({
       ...opts,
-      test: sub.text,
+      // The seeded sentence carries {{orderid}}, not the value, and `secrets` is what resolves it
+      // at the model prompt and at a keystroke — the credential pattern, applied to a fixture id
+      // that may just as well be a session token. Both are [] / unchanged without --seed.
+      test: seeded ? seeded.text : sub.text,
+      secrets: seeded ? seeded.secrets : [],
       onRun: (r) => {
         // Recorded BEFORE the caller's handler runs, so a handler that throws cannot cost the
         // teardown its status.

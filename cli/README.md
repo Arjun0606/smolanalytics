@@ -87,6 +87,14 @@ sentence and the next run checks the new sentence.
 
 This package ships `templates/example-test.md`, a working checkout suite to start from.
 
+A suite runs several tests at once, each in its own browser context inside one shared browser, and
+still prints one test at a time: each test's output is held and written as a block when that test
+finishes. The order of the summary, the pull request comment and the exit code is the suite's own
+order either way. How many run at once is measured from the machine — cores, memory, and whether
+`ANTHROPIC_API_KEY` is set, since a first run is that many agents talking to the model at once.
+`--workers 1` runs them one at a time, exactly as before. Fifty recorded tests on an 8-core laptop:
+39.2s at `--workers 1`, 5.4s at the default.
+
 ### The data a test creates
 
 The agent really uses the app. A sentence about signing up creates an account; one about checking
@@ -131,6 +139,64 @@ Set `SMOLANALYTICS_TEARDOWN_SECRET` where the tests run and it arrives as that `
 header — an environment variable, not a flag, so it never lands in shell history or the command
 line CI prints at the top of every log. A teardown that fails is reported and changes nothing:
 the verdict and the exit code were decided before it fired.
+
+**`--seed <url>` builds what the run needs, before it runs.** Labelling and deleting cover the data
+a test makes on its way through. Most of what is worth testing needs data that is already there —
+"a logged-in user with three past orders can request a refund" — and no sentence can conjure it. So
+the identity is POSTed to an endpoint you write, your app fabricates whatever the test needs, and
+the flat JSON object it answers with becomes placeholders the sentence can use:
+
+```sh
+npx smolanalytics test --url https://staging.app.com \
+  --seed https://staging.app.com/api/test-seed \
+  --test "open order {{orderId}} and request a refund"
+```
+
+```js
+// app/api/test-seed/route.js — build the world this sentence describes.
+export async function POST(req) {
+  if (req.headers.get("authorization") !== `Bearer ${process.env.SEED_SECRET}`) {
+    return new Response("no", { status: 401 });
+  }
+  const run = await req.json(); // { runId, email, username, name, password, test, url, placeholders, at }
+  const user = await db.user.create({ data: { email: run.email, name: run.name } });
+  const order = await db.order.create({ data: { userId: user.id, total: 4200 } });
+  return Response.json({ orderId: order.id }); // -> {{orderId}} in the sentence
+}
+```
+
+The response is a **flat object of string values** — numbers and booleans are fine, nothing nested —
+and every key becomes a `{{placeholder}}`, matched without regard to case. A key that collides with
+the run identity (`email`, `password`, `name`, `username`, `runid`) is refused by name, so
+`{{email}}` never stops meaning the account `--teardown` deletes. `placeholders` in the request body
+lists the seed tokens *this* sentence asks for, so one handler can serve a whole suite and build only
+what each test needs. `SMOLANALYTICS_SEED_SECRET` arrives as the `Authorization` header, the same way
+and for the same reason as the teardown one.
+
+**A seed that fails is `errored`, never `failed`.** If the endpoint is down, slow (there is a hard
+10-second cap), or answers something that is not a flat JSON object, the run stops and says which
+endpoint and what it returned. It exits 2 — the runner's code — because the world the sentence
+describes was never built, and a red X reading "your refund flow is broken" would be a bug report
+about a bug nobody saw. A sentence that names a token the endpoint did not return is the same thing
+and gets the same treatment. `--teardown` still fires, because a seed can fail halfway.
+
+**Seeded values are treated as credentials.** An order id and a session token arrive through the
+same door, so the value goes into the recording, the step labels, the pull request comment, the run
+summary and the evidence text as `{{orderId}}`, and is resolved back only when the model is prompted
+and when a key is pressed. The recording stays replayable — a recording made against one seeded
+order replays green against the next one, because the placeholder resolves to whatever *this* run
+was given. The failure screenshot is not masked and cannot be: it is a picture of your own page.
+
+A URL counts, in both spellings. A sentence like `open order {{orderToken}}` makes the agent
+navigate rather than type, so the recorded step, the terminal line and the browser's own error text
+carry `?t={{orderToken}}` — and because a browser percent-encodes a value on its way into a URL, the
+encoded form (`sk%2Blive%2F...`, which is every base64 token) is masked too, as
+`{{orderToken__urlencoded}}`. Both resolve back at replay, so a recording whose navigation names a
+seeded order still opens the *next* run's order instead of going stale at agent price. A value your
+application itself rewrites — hashed, re-signed — is a different string, and no masking can find it.
+
+Without `--seed`, none of this runs: no request, no placeholders, and byte-for-byte the same
+recording.
 
 ### On every pull request
 
@@ -211,6 +277,65 @@ GitHub App and no install on your other repositories. `continue-on-error` is the
 new tool that puts a red X on somebody's pull request in week one gets uninstalled before it has
 earned the right to block a merge. Take it out when the suite has been right often enough.
 
+### In a second browser
+
+The reason to drive a real browser rather than a fake DOM is that real browsers disagree, so the
+same sentence runs in any of the three Playwright ships:
+
+```sh
+npx smolanalytics test --suite tests/ --url https://yourapp.com --browser webkit
+```
+
+`chromium` is the default and is unchanged. `firefox` and `webkit` each need a one-off download —
+if one is missing the run stops with the exact command that fixes it (`npx playwright install
+webkit`) and exits `2`, the runner's code, because nothing was learned about your app.
+
+**A recording remembers which engine it was made on.** Replaying a Chromium recording on WebKit
+still replays — re-recording every test per engine would cost a full agent run per test per engine
+— but it never does so quietly: the run says so, and so does the verdict it posts.
+
+```
+PASS — replayed 3 steps in 1.2s, no model calls.
+This recording was made on Chromium and was replayed on WebKit. The steps and the proof were
+checked against WebKit this time, so a WebKit-only break in this flow would have shown up here.
+```
+
+If the recording stops fitting on the other engine, that is `stale` as usual, with the engine
+change named as a candidate cause — which is exactly the WebKit-only bug a second engine is for.
+
+### Uploading a file
+
+A sentence like *"upload a receipt and confirm it appears in the list"* works with no file on
+anybody's disk and no fixtures directory in your repository. The agent attaches to a file input, to
+a styled control with a hidden input behind it, or to a button that opens a picker, and the file is
+**generated to match what the control accepts**:
+
+| the input says | it gets |
+|---|---|
+| `accept="image/*"` or `.png` | a real 16x16 PNG |
+| `.jpg` | a real 16x16 JPEG |
+| `.pdf` | a real one-page PDF |
+| `text/csv`, `.json`, `.txt` | a small file of that type |
+| no `accept` at all | a short text file |
+
+The run says which file it made, so a rejection is debuggable:
+
+```
+  ✓  1 upload to "Receipt image" — attached smolanalytics-test.png (a 16x16 PNG, because the
+       control accepts "image/*")
+```
+
+An upload records and replays like any other step, with **no model call**. The recording holds the
+control, never a path and never the bytes: the file is rebuilt from the page's own `accept` at
+replay time, so it is identical on every machine and it follows the form if the form changes what
+it takes. If your app rejects the generated file, that is a `fail` carrying the app's own message —
+never an `errored`, which would claim the runner broke.
+
+A control your app has **disabled** is refused rather than uploaded to: the browser automation can
+put a file into a disabled input, but no user of your app can, so a green step there would be a
+green step for something that cannot happen. A drag-and-drop zone with no file input behind it says
+so too, instead of reporting an upload that never occurred.
+
 ### The results, kept apart
 
 | | |
@@ -234,11 +359,14 @@ pipeline that gates on `1` alone never reddens a build because our side had an o
 | `--plan <file>` | replay this recording first, and record to it on a pass |
 | `--plans <dir>` | where a suite keeps its recordings (default `.smolanalytics/recordings`) |
 | `--comment` | post the verdicts on the pull request (GitHub Actions) |
+| `--browser <name>` | `chromium` (default), `firefox` or `webkit` — the same test in a different engine |
 | `--headed` | watch it happen |
 | `--yes` | install the browser, and don't ask before a production-looking URL |
 | `--teardown <url>` | POST the run's identity there afterwards, so you can delete what it made |
+| `--seed <url>` | POST it there BEFORE the test; the flat JSON it returns becomes placeholders the sentence can use |
 | `--email-domain <dom>` | the domain in `{{email}}` (default `example.com`) |
 | `--retries <n>` | re-run a failing test from a clean page; pass-on-retry is flaky, not passed (default 1; 0 disables) |
+| `--workers <n>` | with `--suite`, how many tests run at once (default: measured from cores, memory and whether a key is set; `1` is one at a time) |
 | `--evidence-dir <dir>` | where a failure's screenshot and page text land (default `.smolanalytics/evidence`) |
 | `--login "<sentence>"` | sign in once in plain English; every test after it reuses the saved session |
 | `--auth-file <path>` | instead of `--login`: a Playwright storage state you already generate |

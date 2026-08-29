@@ -27,10 +27,12 @@
 
 import { readdirSync, readFileSync, statSync, mkdirSync, existsSync } from "node:fs";
 import path from "node:path";
-import { testCmd } from "./test.mjs";
+import { testCmd, loadPlaywright } from "./test.mjs";
+import { openPool } from "./pool.mjs";
 import { suspectsForFailure } from "./suspect.mjs";
 import { layoutCommentLines } from "./layout.mjs";
 import { DEFAULT_AUTH_DIR } from "./auth.mjs";
+import { DEFAULT_ENGINE } from "./engines.mjs";
 
 const C = {
   b: (s) => `\x1b[1m${s}\x1b[0m`,
@@ -358,6 +360,9 @@ export async function runSuite({
   // The false-green guard (lib/render.mjs), on by default and passed straight through: --no-render-check
   // is a suite-wide switch or it is useless, since a suite is where nobody reads the terminal.
   renderCheck = true,
+  // CROSS-BROWSER (lib/engines.mjs). One engine for the whole suite: --browser webkit means every
+  // test runs on WebKit, including the recordings made on Chromium, each of which says so.
+  engine = DEFAULT_ENGINE,
   // AUTHENTICATED FLOWS (lib/auth.mjs). Passed through untouched, and that is the whole point:
   // every test in the suite is handed the same login sentence and the same auth directory, so the
   // FIRST test signs in and writes the saved session and the other forty-nine reuse the file.
@@ -365,6 +370,10 @@ export async function runSuite({
   authFile = "",
   authDir = DEFAULT_AUTH_DIR,
   teardown = "",
+  // --seed (lib/seed.mjs), passed through untouched. Per TEST, not per suite: every test already
+  // gets its own identity, so every test gets its own fixture, and one test cannot leave state
+  // behind that quietly makes the next one pass.
+  seed = "",
   emailDomain = "",
   log = console.log,
   env = process.env,
@@ -373,6 +382,10 @@ export async function runSuite({
   hasPlan = (p) => existsSync(p),
   hasKey = Boolean(process.env.ANTHROPIC_API_KEY),
   findSuspects = suspectsForFailure,
+  // PARALLEL SUITE EXECUTION (lib/pool.mjs). 1 is the serial loop this function has always been —
+  // same order, same log, a Chromium per test, not one line of pool.mjs on the path.
+  workers = 1,
+  loadBrowser = loadPlaywright,
 }) {
   // Create the directory BEFORE the first test. testCmd writes the recording only after a test
   // passes, so a missing directory turns a green run into "errored" at the last instruction — the
@@ -383,9 +396,13 @@ export async function runSuite({
     log(C.r(`could not create ${plansDir}: ${e && e.message}`));
   }
 
-  const results = [];
-  for (const [i, t] of tests.entries()) {
-    log(`\n${C.b(t.name)}  ${C.dim(t.file)}`);
+  // The concurrency, the buffered per-test transcript, the one shared browser and the login gate
+  // all live in lib/pool.mjs. What is below is the same body it always was, run N at a time: `tlog`
+  // holds this test's lines until it finishes so eight workers cannot braid one transcript, and the
+  // results come back in the SUITE's order, never in the order they finished.
+  const pool = openPool({ workers, login, authDir, env, log, loadPlaywright: loadBrowser });
+  const results = await pool.map(tests, async (t, i, tlog) => {
+    tlog(`\n${C.b(t.name)}  ${C.dim(t.file)}`);
     const started = Date.now();
     // Checked BEFORE the run, because a passing agent run writes one and we would then report that
     // a recording existed all along.
@@ -404,6 +421,7 @@ export async function runSuite({
         evidenceDir,
         layout,
         renderCheck,
+        engine,
         login,
         authFile,
         authDir,
@@ -414,14 +432,18 @@ export async function runSuite({
         // names could collide again inside the 40 characters an email local part gets.
         runId: env.SMOLANALYTICS_RUN_ID ? `${env.SMOLANALYTICS_RUN_ID}-${i + 1}` : "",
         teardown,
+        seed,
         emailDomain,
-        log,
+        log: tlog,
+        // One Chromium for the whole suite, a context per worker. undefined when --workers 1, and
+        // lib/test.mjs's own default then applies.
+        loadBrowser: pool.loadBrowser,
         onRun: (r) => runs.push(r),
       });
     } catch (e) {
       // One test throwing must not abandon the rest of the suite: the reviewer needs the whole
       // picture, and a crash in test 2 of 9 hiding seven verdicts is worse than the crash.
-      log(C.r(`  the runner threw: ${e && e.message ? e.message : e}`));
+      tlog(C.r(`  the runner threw: ${e && e.message ? e.message : e}`));
       runs.push({ status: "errored", mode: "agent", reason: `The runner threw: ${e && e.message ? e.message : e}. This is the test runner, not your application.` });
     }
 
@@ -432,7 +454,7 @@ export async function runSuite({
     if (status === "stale" && !hasKey) {
       reason += " ANTHROPIC_API_KEY is not set, so the agent could not re-check it.";
     }
-    results.push({
+    return {
       ...t,
       status,
       mode: last?.mode || "",
@@ -449,8 +471,9 @@ export async function runSuite({
       // suspect.mjs refuses to rank a diff it cannot connect — and nothing about it may touch the
       // status or the exit code.
       suspects: status === "failed" ? findSuspects({ runs, reason, planPath: t.planPath, url, env }) : [],
-    });
-  }
+    };
+  });
+  await pool.close();
   return results;
 }
 
@@ -745,11 +768,16 @@ export async function suiteCmd({
   evidenceDir = "",
   layout = "report",
   renderCheck = true,
+  engine = DEFAULT_ENGINE,
   login = "",
   authFile = "",
   authDir = DEFAULT_AUTH_DIR,
   teardown = "",
+  seed = "",
   emailDomain = "",
+  // PARALLEL SUITE EXECUTION (lib/pool.mjs). Default 1 here so a caller that has not opted in gets
+  // the serial behaviour; bin/smolanalytics.mjs computes the measured default and passes it.
+  workers = 1,
   log = console.log,
   env = process.env,
   discoverImpl = discover,
@@ -797,7 +825,10 @@ export async function suiteCmd({
     return 2;
   }
 
-  log(`\n${tests.length} test${tests.length === 1 ? "" : "s"} against ${C.b(url)}`);
+  // Said BEFORE the first verdict, because the transcript below is about to arrive in blocks
+  // rather than in order, and a reader who was not told why would read that as a bug.
+  const lanes = Math.max(1, Math.min(Math.floor(workers) || 1, tests.length));
+  log(`\n${tests.length} test${tests.length === 1 ? "" : "s"} against ${C.b(url)}${lanes > 1 ? C.dim(` · ${lanes} at a time`) : ""}`);
   if (!env.ANTHROPIC_API_KEY) {
     // Said once, up front, not per test: without a key the only tests that can run are the ones
     // with a recording that still fits, and the reader should know that before reading verdicts.
@@ -807,7 +838,8 @@ export async function suiteCmd({
   // The directory to create is the one recordings actually land in — never a .json path, which
   // would be created as a directory and then collide with the file testCmd wants to write.
   const plansDir = /\.json$/i.test(plans) ? path.dirname(plans) : plans;
-  const results = await runSuiteImpl({ tests, url, plansDir, headed, yes, maxSteps, retries, evidenceDir, layout, renderCheck, login, authFile, authDir, teardown, emailDomain, log, env, hasKey: Boolean(env.ANTHROPIC_API_KEY) });
+  const wallStarted = Date.now();
+  const results = await runSuiteImpl({ tests, url, plansDir, headed, yes, maxSteps, retries, evidenceDir, layout, renderCheck, engine, login, authFile, authDir, teardown, seed, emailDomain, workers: lanes, log, env, hasKey: Boolean(env.ANTHROPIC_API_KEY) });
   const s = summarize(results);
 
   const parts = [`${s.total} test${s.total === 1 ? "" : "s"}`, `${s.passed} passed`];
@@ -815,7 +847,14 @@ export async function suiteCmd({
   if (s.flaky) parts.push(C.y(`${s.flaky} flaky`));
   if (s.stale) parts.push(C.y(`${s.stale} stale`));
   if (s.errored) parts.push(C.y(`${s.errored} could not run`));
-  log(`\n${parts.join(" · ")} ${C.dim(`· ${secs(s.ms)}`)}`);
+  // summarize().ms is the sum of every test's own duration, and it stays that in the comment and
+  // everywhere else — identical to a serial run, which is the point. But printing only that after a
+  // parallel run tells the reader 39.6s about a run their stopwatch says took 7s, so when lanes are
+  // in play the wall clock is named first and the old number keeps its meaning explicitly.
+  const wall = Date.now() - wallStarted;
+  log(lanes > 1
+    ? `\n${parts.join(" · ")} ${C.dim(`· ${secs(wall)} · ${secs(s.ms)} of test time across ${lanes} workers`)}`
+    : `\n${parts.join(" · ")} ${C.dim(`· ${secs(s.ms)}`)}`);
   if (s.replayed) log(C.dim(`${s.replayed} replayed from a recording, with no model calls.`));
   for (const r of results.filter((r) => r.status === "failed")) {
     log(`  ${C.r("fail")} ${r.name} ${C.dim(`· ${r.file}`)}`);
