@@ -368,6 +368,7 @@ pipeline that gates on `1` alone never reddens a build because our side had an o
 | `--retries <n>` | re-run a failing test from a clean page; pass-on-retry is flaky, not passed (default 1; 0 disables) |
 | `--workers <n>` | with `--suite`, how many tests run at once (default: measured from cores, memory and whether a key is set; `1` is one at a time) |
 | `--evidence-dir <dir>` | where a failure's screenshot and page text land (default `.smolanalytics/evidence`) |
+| `--max-calls <n>` | stop a test after this many model calls; reports why and exits 2 (0 = no ceiling) |
 | `--login "<sentence>"` | sign in once in plain English; every test after it reuses the saved session |
 | `--auth-file <path>` | instead of `--login`: a Playwright storage state you already generate |
 | `--auth-dir <dir>` | where the saved session is kept (default `.smolanalytics/auth`, gitignored for you) |
@@ -403,6 +404,30 @@ files are never overwritten; a second run says what it skipped.
 | `--out <dir>` | where the tests land (default `tests/`) |
 | `--max <n>` | how many to propose (default 6) |
 | `--yes` | don't ask before writing |
+
+### What a run costs, and how to cap it
+
+Every agent run prints what it spent, under the verdict:
+
+```
+4 model calls · 21,430 in / 1,205 out
+```
+
+The token counts come from the model API itself, so they are exact rather than estimated. A replay
+prints `no model calls`, which is the whole economic argument in three words.
+
+Money is shown only if you supply the price, because a figure invented here would sit beside real
+measurements and be read as one of them:
+
+```sh
+export SMOLANALYTICS_PRICE_IN=15     # dollars per million input tokens, from your model's pricing
+export SMOLANALYTICS_PRICE_OUT=75    # dollars per million output tokens
+```
+
+`--max-calls <n>` is the ceiling. It is a limit on model calls rather than on dollars deliberately:
+a dollar cap is only as accurate as a price table, while a call cap is exact and needs no pricing.
+Hitting it stops cleanly, says so, and exits **2** — a budget you set is our decision to enforce,
+never a verdict about your application.
 
 ### Tests behind a login
 

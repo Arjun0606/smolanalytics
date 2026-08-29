@@ -24,6 +24,7 @@ import { suiteCmd, DEFAULT_PLANS_DIR } from "../lib/suite.mjs";
 import { parseLayoutMode } from "../lib/layout.mjs";
 import { parseEngine } from "../lib/engines.mjs";
 import { parseWorkers } from "../lib/pool.mjs";
+import { parseMaxCalls } from "../lib/cost.mjs";
 import { autoPreviewUrl } from "../lib/preview.mjs";
 import { suggestCmd } from "../lib/suggest.mjs";
 
@@ -176,6 +177,13 @@ async function main() {
       process.exitCode = 2;
       return;
     }
+    // The spend ceiling, refused the same way for the same reason.
+    const { value: maxCalls, problem: callsProblem } = parseMaxCalls(flag("max-calls"));
+    if (callsProblem) {
+      console.error(C.red(callsProblem));
+      process.exitCode = 2;
+      return;
+    }
     // NO --url INSIDE ACTIONS ON A PULL REQUEST: the preview host already told GitHub the URL, so
     // ask the deployments API instead of asking the person (lib/preview.mjs says how and why).
     // Anywhere else — a laptop, a push build — autoPreviewUrl skips and the missing --url keeps
@@ -215,6 +223,7 @@ async function main() {
           // guard nobody enabled is a guard nobody has, and a blank page passing green is the one
           // failure mode that loses a customer who already trusts us.
           renderCheck: !hasFlag("no-render-check"),
+          maxCalls,
           engine,
           // Authenticated flows (lib/auth.mjs). One login sentence for the whole suite: the first
           // test signs in, the rest reuse the saved session.
@@ -242,6 +251,7 @@ async function main() {
         evidenceDir: flag("evidence-dir") || "",
         layout,
         renderCheck: !hasFlag("no-render-check"),
+          maxCalls,
         engine,
         login: flag("login") || "",
         authFile: flag("auth-file") || "",

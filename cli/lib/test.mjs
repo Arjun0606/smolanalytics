@@ -32,6 +32,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { confirmProduction, newIdentity, postTeardown, substitute, maskSecrets, unmaskSecrets, PLACEHOLDER_LIST } from "./safety.mjs";
+import { newLedger, record as recordUsage, costLine, overBudget, priceFrom, priceHint } from "./cost.mjs";
 import { auditLayout, layoutFailure, layoutNoteLines, stepTargets } from "./layout.mjs";
 import { auditRender, renderFailure, renderNoteLines } from "./render.mjs";
 import { DEFAULT_AUTH_DIR, openSession } from "./auth.mjs";
@@ -863,7 +864,7 @@ async function report(run, log, onRun) {
  *   { kind: "error", banner, why, steps, ms }           the runner did not — prose instead of a
  *                                                       tool call, or the step budget ran out
  */
-async function agentAttempt({ page, url, test, apiKey, model, maxSteps, log, secrets = [] }) {
+async function agentAttempt({ page, url, test, apiKey, model, maxSteps, log, secrets = [], ledger = newLedger(), maxCalls = 0 }) {
   const started = Date.now();
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
   let snap = await perceive(page);
@@ -875,7 +876,14 @@ async function agentAttempt({ page, url, test, apiKey, model, maxSteps, log, sec
   const steps = [];
 
   for (let n = 1; n <= maxSteps; n++) {
+    // BEFORE the call, never after: a ceiling that reports what was already spent is not a ceiling.
+    // Stopping here is OUR decision, so it raises to the caller as a runner problem (exit 2) and is
+    // never a verdict about the application — the same fence every other budget in this file sits on.
+    const capped = overBudget(ledger, maxCalls);
+    if (capped) throw new Error(capped);
     const res = await think(messages, apiKey, model);
+    // Free and exact: the API already counted these, and we were discarding them.
+    recordUsage(ledger, res);
     // A refusal is not a test failure and must never be reported as one: that would tell somebody
     // their checkout is broken because a safety classifier declined.
     if (res.stop_reason === "refusal") throw new Error("the model declined to continue; this is not a verdict about the app under test");
@@ -944,7 +952,10 @@ async function agentAttempt({ page, url, test, apiKey, model, maxSteps, log, sec
 // on purpose, so a credential source can be added to it without another parameter. [] — the default,
 // and what every run without --seed passes — makes maskSecrets and unmaskSecrets identity functions,
 // so nothing on this path changes by a single byte for anybody who has not asked for it.
-async function runOnce({ url, test, plan: planPath, headed, maxSteps = 40, yes, retries = 1, evidenceDir = "", layout: layoutMode = "report", renderCheck = true, login = "", authFile = "", authDir = DEFAULT_AUTH_DIR, secrets = [], engine = DEFAULT_ENGINE, env = process.env, log = console.log, onRun, loadBrowser = loadPlaywright, share = false }) {
+async function runOnce({ url, test, plan: planPath, headed, maxSteps = 40, yes, retries = 1, evidenceDir = "", layout: layoutMode = "report", renderCheck = true, login = "", authFile = "", authDir = DEFAULT_AUTH_DIR, secrets = [], engine = DEFAULT_ENGINE, env = process.env, log = console.log, onRun, loadBrowser = loadPlaywright, share = false, maxCalls = 0 }) {
+  // One ledger per test, so the line printed under a verdict is that test's own spend and a suite
+  // can total them without any test knowing it is in one.
+  const ledger = newLedger();
   // --share (lib/share.mjs). `share` collects the extra facts a share page renders and nothing
   // else: the proof text, the steps of a run that PASSED (which nothing else here keeps), and where
   // the failure screenshot landed. It is attached to the run object under one key, `share`, which
@@ -1011,7 +1022,7 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
     // seeded from a saved session, verified against the login recording's own landing evidence.
     session = await openSession({
       browser, url, login, authFile, authDir, apiKey, maxSteps, env, log, perceive,
-      performLogin: (o) => agentAttempt({ url, apiKey, model, ...o }),
+      performLogin: (o) => agentAttempt({ url, apiKey, model, ledger, maxCalls, ...o }),
     });
     if (session.problem) {
       // `errored` and exit 2, never `failed`/1: a session we could not establish says nothing
@@ -1188,7 +1199,7 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
       }
     };
 
-    let a = await agentAttempt({ page, url, test, apiKey, model, maxSteps, log, secrets });
+    let a = await agentAttempt({ page, url, test, apiKey, model, maxSteps, log, secrets, ledger, maxCalls });
     if (a.kind === "error") {
       // The RUNNER misbehaved — the model answered prose, or the step budget ran out. Nothing was
       // observed, so it errors and exits 2, and it is NOT retried: paying for a second run of a
@@ -1290,7 +1301,7 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
         // session.newPage(), so the clean page the retry promises is still a SIGNED-IN clean page:
         // a new context seeded from the saved session, carrying nothing from the run that failed.
         page = await session.newPage();
-        next = await agentAttempt({ page, url, test, apiKey, model, maxSteps, log, secrets });
+        next = await agentAttempt({ page, url, test, apiKey, model, maxSteps, log, secrets, ledger, maxCalls });
       } catch (e) {
         next = { kind: "error", banner: "retry", why: String(e && e.message ? e.message : e) };
       }
@@ -1324,6 +1335,14 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
       log(`${settled.reason}\n`);
     }
     for (const line of layoutNoteLines(lay)) log(C.dim(line));
+    // WHAT THIS RUN COST, under the verdict, where the person deciding whether they can afford to
+    // put this on every pull request is actually looking. Tokens are exact — the API counted them.
+    // Money appears only if a price was supplied, because a figure we invented would be read as a
+    // measurement. A replay says "no model calls", which is the entire economic argument in three
+    // words.
+    log(C.dim(costLine(ledger, priceFrom(env))));
+    const hint = priceHint(ledger, priceFrom(env));
+    if (hint) log(C.dim(hint));
     if (evidence) log(C.dim(`evidence: ${evidence.png} and ${evidence.txt}`));
     appendStepSummary(env, { test, status: settled.status, reason: settled.reason, evidence });
     // Not when the retry broke: every attempt was already posted as its own row before its retry
