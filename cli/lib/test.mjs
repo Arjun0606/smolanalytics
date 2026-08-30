@@ -898,9 +898,27 @@ export async function loadPlaywright(log, yes, engine = DEFAULT_ENGINE) {
  * integer, and a suite that had to guess "stale" from log text would eventually print "failed" for
  * a renamed button. Never throws, never affects the exit code.
  */
-async function report(run, log, onRun) {
+/**
+ * What this run cost, for the wire.
+ *
+ * Absent rather than zero when nothing was measured: a run whose counts are missing must not be
+ * recorded as free, because free and unmeasured are indistinguishable on a chart and one of them is
+ * a lie. A ledger that exists and counted nothing IS zero — that is a replay, and it is the whole
+ * economic argument, so it is reported.
+ */
+function costOf(ledger) {
+  if (!ledger || typeof ledger.calls !== "number") return {};
+  return {
+    modelCalls: ledger.calls,
+    inputTokens: (ledger.input || 0) + (ledger.cacheRead || 0) + (ledger.cacheWrite || 0),
+    outputTokens: ledger.output || 0,
+  };
+}
+
+async function report(run, log, onRun, ledger = null) {
+  const priced = { ...run, ...costOf(ledger) };
   try {
-    onRun?.(run);
+    onRun?.(priced);
   } catch {
     /* a caller's bookkeeping must not change a verdict */
   }
@@ -913,7 +931,7 @@ async function report(run, log, onRun) {
       method: "POST",
       headers: { authorization: `Bearer ${writeKey}`, "content-type": "application/json" },
       // wireRun, not run: `flaky` exists only on this side of the wire. See wireRun for why.
-      body: JSON.stringify(wireRun(run)),
+      body: JSON.stringify(wireRun(priced)),
     });
     log(res.ok ? C.dim("  recorded to your project.") : C.dim(`  not recorded (${res.status}) — the verdict above still stands.`));
   } catch (e) {
@@ -1207,7 +1225,7 @@ async function runOnce({ url, test, plan: planPath, headed, maxSteps = 40, yes, 
       log(`\n${C.y(earlyKeyIssue)}`);
       log(C.dim("  Replaying a recording (--plan) needs no key at all."));
     }
-    await report({ test, status: "errored", mode: "agent", durationMs: 0, url, reason: earlyKeyIssue, ...shareRec({ proof: "", steps: [], evidence: null }) }, log, onRun);
+    await report({ test, status: "errored", mode: "agent", durationMs: 0, url, reason: earlyKeyIssue, ...shareRec({ proof: "", steps: [], evidence: null }) }, log, onRun, ledger);
     return 2;
   }
   const { pw, problem } = await loadBrowser(log, yes, engine);
@@ -1215,7 +1233,7 @@ async function runOnce({ url, test, plan: planPath, headed, maxSteps = 40, yes, 
     // REPORTED, not just logged. A suite with no verdict for this test falls back to guessing why
     // (see noVerdictReason), and on a first CI run it guesses "ANTHROPIC_API_KEY is not set" —
     // sending someone to add a secret they already have, over a browser that never downloaded.
-    await report({ test, status: "errored", mode: "agent", durationMs: 0, url, reason: `${problem || "The browser could not be started."} This is the test runner, not your application.`, ...shareRec({ proof: "", steps: [], evidence: null }) }, log, onRun);
+    await report({ test, status: "errored", mode: "agent", durationMs: 0, url, reason: `${problem || "The browser could not be started."} This is the test runner, not your application.`, ...shareRec({ proof: "", steps: [], evidence: null }) }, log, onRun, ledger);
     return 2;
   }
 
@@ -1255,7 +1273,7 @@ async function runOnce({ url, test, plan: planPath, headed, maxSteps = 40, yes, 
       // whatsoever about whether the application under test works.
       log(`\n${C.y("ERROR")} ${C.dim("· sign-in")}`);
       log(`${session.problem}\n`);
-      await report({ test, status: "errored", mode: "agent", durationMs: Date.now() - started, url, reason: session.problem, ...shareRec({ proof: "", steps: [], evidence: null }) }, log, onRun);
+      await report({ test, status: "errored", mode: "agent", durationMs: Date.now() - started, url, reason: session.problem, ...shareRec({ proof: "", steps: [], evidence: null }) }, log, onRun, ledger);
       await browser.close().catch(() => {});
       return 2;
     }
@@ -1305,7 +1323,7 @@ async function runOnce({ url, test, plan: planPath, headed, maxSteps = 40, yes, 
             log(`${gate}\n`);
             if (crossed) log(C.y(crossed));
             for (const line of layoutNoteLines(lay)) log(C.dim(line));
-            await report({ test, status: "failed", mode: "replay", durationMs: r.ms, url, reason: withNote(gate, crossed), layout: lay, ...shareRec({ proof: plan.proof, steps: replaySteps(plan.steps), evidence: null }) }, log, onRun);
+            await report({ test, status: "failed", mode: "replay", durationMs: r.ms, url, reason: withNote(gate, crossed), layout: lay, ...shareRec({ proof: plan.proof, steps: replaySteps(plan.steps), evidence: null }) }, log, onRun, ledger);
             await browser.close().catch(() => {});
             return 1;
           }
@@ -1321,14 +1339,14 @@ async function runOnce({ url, test, plan: planPath, headed, maxSteps = 40, yes, 
             log(`${rgate}\n`);
             if (crossed) log(C.y(crossed));
             for (const line of renderNoteLines(rend.slice(1))) log(C.dim(line));
-            await report({ test, status: "failed", mode: "replay", durationMs: r.ms, url, reason: withNote(rgate, crossed), layout: lay, ...shareRec({ proof: plan.proof, steps: replaySteps(plan.steps), evidence: null }) }, log, onRun);
+            await report({ test, status: "failed", mode: "replay", durationMs: r.ms, url, reason: withNote(rgate, crossed), layout: lay, ...shareRec({ proof: plan.proof, steps: replaySteps(plan.steps), evidence: null }) }, log, onRun, ledger);
             await browser.close().catch(() => {});
             return 1;
           }
           log(`\n${C.g("PASS")}${C.dim(` — replayed ${count(r.steps, "step")} in ${(r.ms / 1000).toFixed(1)}s, no model calls.`)}`);
           if (crossed) log(C.y(crossed));
           for (const line of layoutNoteLines(lay)) log(C.dim(line));
-          await report({ test, status: "passed", mode: "replay", durationMs: r.ms, url, reason: withNote("Replayed the recorded run; every step still worked.", crossed), layout: lay, ...shareRec({ proof: plan.proof, steps: replaySteps(plan.steps), evidence: null }) }, log, onRun);
+          await report({ test, status: "passed", mode: "replay", durationMs: r.ms, url, reason: withNote("Replayed the recorded run; every step still worked.", crossed), layout: lay, ...shareRec({ proof: plan.proof, steps: replaySteps(plan.steps), evidence: null }) }, log, onRun, ledger);
           // Every close below a decided verdict carries .catch: close() can throw (seen once,
           // intermittently, under load), and unhandled it falls into the catch-all — which would
           // report errored/2 on top of a verdict that was already printed and posted.
@@ -1340,7 +1358,7 @@ async function runOnce({ url, test, plan: planPath, headed, maxSteps = 40, yes, 
         // guessing, and none of them is reported as a bug on its own.
         const note = withNote(stalenessNote(r), engineNote(engineChange, engine, "stale"));
         log(`\n${C.y(note)}\n`);
-        await report({ test, status: "stale", mode: "replay", durationMs: r.ms, url, reason: note, ...shareRec({ proof: plan.proof, steps: replaySteps(plan.steps, { failedAt: typeof r.at === "number" ? r.at : -1, detail: r.detail || "" }), evidence: null }) }, log, onRun);
+        await report({ test, status: "stale", mode: "replay", durationMs: r.ms, url, reason: note, ...shareRec({ proof: plan.proof, steps: replaySteps(plan.steps, { failedAt: typeof r.at === "number" ? r.at : -1, detail: r.detail || "" }), evidence: null }) }, log, onRun, ledger);
       }
     }
 
@@ -1467,7 +1485,7 @@ async function runOnce({ url, test, plan: planPath, headed, maxSteps = 40, yes, 
       const ms = Date.now() - started;
       log(`\n${C.y("ERROR")} ${C.dim(`· ${a.banner}`)}`);
       log(`${a.why}\n`);
-      await report({ test, status: "errored", mode: "agent", durationMs: ms, url, reason: a.why, ...shareRec({ proof: "", steps: agentSteps(a.steps), evidence: null }) }, log, onRun);
+      await report({ test, status: "errored", mode: "agent", durationMs: ms, url, reason: a.why, ...shareRec({ proof: "", steps: agentSteps(a.steps), evidence: null }) }, log, onRun, ledger);
       await browser.close().catch(() => {});
       return 2;
     }
@@ -1484,7 +1502,7 @@ async function runOnce({ url, test, plan: planPath, headed, maxSteps = 40, yes, 
         for (const line of layoutNoteLines(lay)) log(C.dim(line));
         const ev = await capture(page);
         if (ev) log(C.dim(`evidence: ${ev.png} and ${ev.txt}`));
-        await report({ test, status: "failed", mode: "agent", durationMs: ms, url, reason: gate, layout: lay, ...shareRec({ proof: a.proof, steps: agentSteps(a.steps), evidence: ev }) }, log, onRun);
+        await report({ test, status: "failed", mode: "agent", durationMs: ms, url, reason: gate, layout: lay, ...shareRec({ proof: a.proof, steps: agentSteps(a.steps), evidence: ev }) }, log, onRun, ledger);
         // Still recorded: the walk itself passed and carries a proof, so the next run can replay
         // it for free — and the replay path re-audits the same page, so strict fails it again
         // without an agent run until the layout is actually fixed.
@@ -1505,7 +1523,7 @@ async function runOnce({ url, test, plan: planPath, headed, maxSteps = 40, yes, 
         // worth far less than the picture of the empty page it is describing.
         const ev = await capture(page);
         if (ev) log(C.dim(`evidence: ${ev.png} and ${ev.txt}`));
-        await report({ test, status: "failed", mode: "agent", durationMs: ms, url, reason: rgate, layout: lay, ...shareRec({ proof: a.proof, steps: agentSteps(a.steps), evidence: ev }) }, log, onRun);
+        await report({ test, status: "failed", mode: "agent", durationMs: ms, url, reason: rgate, layout: lay, ...shareRec({ proof: a.proof, steps: agentSteps(a.steps), evidence: ev }) }, log, onRun, ledger);
         // Recorded, for the same reason the layout gate records: the walk itself passed and carries
         // a proof, so the replay path re-checks the render for free until the page is fixed.
         await record(a, false);
@@ -1515,7 +1533,7 @@ async function runOnce({ url, test, plan: planPath, headed, maxSteps = 40, yes, 
       log(`\n${C.g("PASS")} ${C.dim(`· ${count(a.steps.length, "step")} · ${(ms / 1000).toFixed(1)}s`)}`);
       log(`${a.why}\n`);
       for (const line of layoutNoteLines(lay)) log(C.dim(line));
-      await report({ test, status: "passed", mode: "agent", durationMs: ms, url, reason: a.why, layout: lay, ...shareRec({ proof: a.proof, steps: agentSteps(a.steps), evidence: null }) }, log, onRun);
+      await report({ test, status: "passed", mode: "agent", durationMs: ms, url, reason: a.why, layout: lay, ...shareRec({ proof: a.proof, steps: agentSteps(a.steps), evidence: null }) }, log, onRun, ledger);
       await record(a, false);
       await browser.close().catch(() => {});
       return 0;
@@ -1545,7 +1563,7 @@ async function runOnce({ url, test, plan: planPath, headed, maxSteps = 40, yes, 
         // the moment this attempt broke, because a retry that then breaks (retryBroke) makes THIS
         // the last word, and a share with no picture of the failure is the picture nobody has.
         ...shareRec({ proof: "", steps: agentSteps(prev.steps), evidence }),
-      }, log, onRun);
+      }, log, onRun, ledger);
       // Said out loud because it is somebody's bill: a retry is a full second agent run.
       log(C.y(`retrying from a clean page (retry ${attempts.length} of ${retries}) — another full agent run, roughly doubling this test's cost. --retries 0 disables it.`));
       await page.close().catch(() => {});
@@ -1628,7 +1646,7 @@ async function runOnce({ url, test, plan: planPath, headed, maxSteps = 40, yes, 
           steps: attempts.flatMap((att, i) => agentSteps(att.steps, { run: attempts.length > 1 ? i + 1 : 0 })),
           evidence,
         }),
-      }, log, onRun);
+      }, log, onRun, ledger);
     }
     // The retry that passed is a genuine passing run with a proof, so it records like one. If the
     // app is intermittently broken, the replay's proof check catches it as outcome-changed and
@@ -1647,7 +1665,7 @@ async function runOnce({ url, test, plan: planPath, headed, maxSteps = 40, yes, 
     const said = why.known ? why.what : `The run could not complete: ${why.what}`;
     log(`\n${C.r(what)}`);
     if (why.fix) log(C.dim(`  ${why.fix}`));
-    await report({ test, status: "errored", mode: "agent", durationMs: Date.now() - started, url, reason: `${said}${why.fix ? ` ${why.fix}` : ""} This is the test runner, not your application.`, ...shareRec({ proof: "", steps: [], evidence: null }) }, log, onRun);
+    await report({ test, status: "errored", mode: "agent", durationMs: Date.now() - started, url, reason: `${said}${why.fix ? ` ${why.fix}` : ""} This is the test runner, not your application.`, ...shareRec({ proof: "", steps: [], evidence: null }) }, log, onRun, ledger);
     // Exit 2, not 1: the test did not fail, the runner did. A CI gate must tell those apart, or an
     // outage on our side reads to a customer as their app being broken.
     return 2;

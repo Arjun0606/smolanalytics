@@ -1,6 +1,6 @@
 {
   "name": "smolanalytics",
-  "version": "0.17.0",
+  "version": "0.17.1",
   "description": "End-to-end tests without test code. One sentence, a real browser, a verdict \u2014 no account, no GitHub app, nothing written to your repo. Plus: audit what your app does that nothing measures, and keep your tracking correct in PostHog, Mixpanel, GA4 or Segment.",
   "type": "module",
   "bin": {
