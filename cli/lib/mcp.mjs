@@ -31,6 +31,7 @@
 
 import { runSuite, discover, DEFAULT_PLANS_DIR } from "./suite.mjs";
 import { shipReport } from "./ship.mjs";
+import { clusterNote } from "./cluster.mjs";
 import { newLedger, costLine, priceFrom } from "./cost.mjs";
 
 export const PROTOCOL = "2024-11-05";
@@ -141,8 +142,18 @@ export async function runTests(args = {}, { runner = runSuite, find = discover, 
 
   const report = shipReport(results, { suite, url });
   const cost = costLine(ledger, priceFrom(env));
+  // WHY THE AGENT GETS THIS TOO. An agent reading twelve failures will try to fix twelve things,
+  // and the first eleven fixes are wasted work on one change. Same rule as everywhere else: silent
+  // unless they genuinely group, and wrapped because a bad recording must not cost a verdict.
+  let causes = "";
+  try {
+    causes = clusterNote(results);
+  } catch {
+    causes = "";
+  }
   return text([
     results.map(line).join("\n"),
+    ...(causes ? ["", causes] : []),
     "",
     report.lines.join("\n"),
     "",

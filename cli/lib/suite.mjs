@@ -39,6 +39,7 @@ import { prNumber, publishShare, ciContext } from "./share.mjs";
 // asks it which tests to run and prints what it says. Without --since not one line of it is on the
 // path and the whole folder runs exactly as it always has.
 import { shipText } from "./ship.mjs";
+import { aloneNote, cluster, clusterHead, clusterNote, grouped } from "./cluster.mjs";
 import { notify, notifyLine, parseWhen } from "./notify.mjs";
 import { fileIssues, issueLine } from "./issue.mjs";
 import { selectSuite, selectionHeadline, selectionCommentLines, selectionCommentDetail, selectionTerminalLines, selectionTailLines, selectionShareLines } from "./select.mjs";
@@ -690,6 +691,30 @@ export function commentBody(results, { url = "", suite = "tests", runUrl = "", p
     );
   }
 
+  // AND THE SAME RULE APPLIED TO THEIR BUGS, NOT JUST OUR OUTAGES (lib/cluster.mjs).
+  //
+  // Twelve failures on one pull request are very rarely twelve bugs. The reviewer's first job is to
+  // notice that eleven of them blamed the same changed file and one did not — and that is arithmetic
+  // over the suspects and recordings already on this page, so they should not have to do it by hand.
+  // Silent unless the failures genuinely group; a header that only restates the list below it is a
+  // header people learn to scroll past, and they take the one failure that mattered with them.
+  const groups = cluster(rows);
+  const causeHead = clusterHead(groups);
+  if (causeHead) {
+    out.push("", `**${causeHead}**`, "");
+    for (const g of grouped(groups)) {
+      // The same two rules the suspect lines below use, chosen by what the cause IS: a suspect
+      // cause is a path out of their diff and goes through code(), which fences around a backtick
+      // the path itself contains; a control label and a route are strings off their page.
+      out.push(`> ${g.signal === "suspect" ? code(g.cause) : quote(g.cause)} — ${quote(g.why)}`);
+    }
+    // And which failures the cause above does NOT explain, by name. Without it a reviewer reads
+    // "1 stands alone" and then scans every blockquote to find out which — the half of the job
+    // this feature exists to remove. Their test names, so quote().
+    const apart = aloneNote(groups);
+    if (apart) out.push(">", `> ${quote(apart)}`);
+  }
+
   // ONE OUTAGE IS REPORTED ONCE. Forty tests that could not run because the runner had no key, or
   // no browser, or no network, is ONE thing that went wrong on our side — and forty identical
   // blockquotes is a wall a reviewer scrolls past, taking the failures with it. Errored rows are
@@ -1179,6 +1204,10 @@ export async function suiteCmd({
   // Said again under the counts: the counts are what a reader who scrolled to the end sees, and
   // they are counts of what RAN.
   for (const line of selectionTailLines(selection)) log(line);
+  // ABOVE THE FAILURES, FOR THE SAME REASON THE COMMENT PUTS IT THERE (lib/cluster.mjs): when
+  // twelve tests are red, the first thing worth knowing is that eleven of them are one change.
+  // Silent unless they genuinely group.
+  for (const line of clusterNote(results).split("\n").filter(Boolean)) log(C.y(line));
   for (const r of results.filter((r) => r.status === "failed")) {
     log(`  ${C.r("fail")} ${r.name} ${C.dim(`· ${r.file}`)}`);
     // The same two suspect lines the comment gets, under the same failure. Dim, because they are a

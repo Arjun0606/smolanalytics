@@ -150,3 +150,83 @@ test("both targets can be configured, and one failing does not stop the other", 
   assert.equal(out.sent, true, "one working target is a send");
   assert.deepEqual(out.results.map((x) => x.ok), [false, true]);
 });
+
+/* ── the cause travels with the alert (lib/cluster.mjs) ──────────────────────────────────────── */
+
+const ELEVEN_AND_ONE = [
+  ...Array.from({ length: 11 }, (_, i) => ({
+    name: `flow ${i}`,
+    status: "failed",
+    reason: "it broke",
+    suspects: [{ file: "src/api/client.ts", evidence: "this PR removed it" }],
+  })),
+  { name: "search", status: "failed", reason: "it broke", suspects: [{ file: "src/SearchBox.tsx", evidence: "this PR removed it" }] },
+];
+
+test("an alert about twelve failures says that eleven of them are one change", async () => {
+  // Otherwise the notification only announces the work: somebody opens the pull request and does
+  // the grouping by hand, which is the job this is supposed to have already done.
+  let posted = null;
+  await notify(ELEVEN_AND_ONE, {
+    env: { [SLACK_VAR]: HOOK },
+    fetchImpl: async (_u, init) => { posted = JSON.parse(init.body); return { ok: true, status: 200 }; },
+  });
+  const text = posted.blocks.map((b) => (b.text ? b.text.text : "")).join("\n");
+  assert.match(text, /11 of these failures group into 1 likely cause/);
+  assert.match(text, /src\/api\/client\.ts/);
+  assert.match(text, /search shared nothing with the rest/, "and which one it does not explain");
+});
+
+test("the generic webhook carries the causes as data, not just prose", async () => {
+  // A receiver should be able to page the team that owns the file, once, instead of eleven times.
+  let posted = null;
+  await notify(ELEVEN_AND_ONE, {
+    env: { [WEBHOOK_VAR]: "https://example.test/hook" },
+    fetchImpl: async (_u, init) => { posted = JSON.parse(init.body); return { ok: true, status: 200 }; },
+  });
+  assert.equal(posted.causes.length, 1);
+  assert.equal(posted.causes[0].cause, "src/api/client.ts");
+  assert.equal(posted.causes[0].signal, "suspect");
+  assert.equal(posted.causes[0].tests.length, 11);
+  assert.ok(!posted.causes[0].tests.includes("search"), "the odd one out must not be filed under the group");
+});
+
+test("failures that do not group add nothing to the message", async () => {
+  const unrelated = [
+    { name: "a", status: "failed", reason: "it broke", suspects: [{ file: "src/one.ts", evidence: "e" }] },
+    { name: "b", status: "failed", reason: "it broke", suspects: [{ file: "src/two.ts", evidence: "e" }] },
+  ];
+  let slack = null;
+  let hook = null;
+  await notify(unrelated, {
+    env: { [SLACK_VAR]: HOOK, [WEBHOOK_VAR]: "https://example.test/hook" },
+    fetchImpl: async (u, init) => {
+      if (String(u).includes("slack")) slack = JSON.parse(init.body);
+      else hook = JSON.parse(init.body);
+      return { ok: true, status: 200 };
+    },
+  });
+  assert.deepEqual(hook.causes, []);
+  const text = slack.blocks.map((b) => (b.text ? b.text.text : "")).join("\n");
+  assert.ok(!/group into/.test(text), "a header that restates the list is noise in a channel");
+});
+
+test("a recording that cannot be read costs the causes, never the alert", async () => {
+  // The verdict was decided before this function was called. Clustering is decoration on top of it,
+  // and decoration that can swallow a 2am notification is worse than no decoration.
+  let posted = null;
+  let asked = 0;
+  // planPath on every row, so the unreadable recording is genuinely reached rather than skipped.
+  const withPlans = ELEVEN_AND_ONE.map((r, i) => ({ ...r, planPath: `p${i}.json` }));
+  const out = await notify(withPlans, {
+    env: { [SLACK_VAR]: HOOK },
+    readPlan: () => { asked++; throw new Error("EACCES"); },
+    fetchImpl: async (_u, init) => { posted = JSON.parse(init.body); return { ok: true, status: 200 }; },
+  });
+  assert.ok(asked > 0, "the test did not actually exercise the unreadable recording");
+  assert.equal(out.sent, true);
+  assert.match(posted.text, /ship/i, "the verdict still went out");
+  // The suspect signal needs no recording, so the strongest grouping survives a dead disk.
+  const text = posted.blocks.map((b) => (b.text ? b.text.text : "")).join("\n");
+  assert.match(text, /src\/api\/client\.ts/, "blame-based grouping does not depend on the recordings");
+});
