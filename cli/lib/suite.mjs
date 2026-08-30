@@ -34,6 +34,10 @@ import { layoutCommentLines } from "./layout.mjs";
 import { DEFAULT_AUTH_DIR } from "./auth.mjs";
 import { DEFAULT_ENGINE } from "./engines.mjs";
 import { prNumber, publishShare } from "./share.mjs";
+// DIFF-AWARE TEST SELECTION (lib/select.mjs). Everything about --since lives there: this file only
+// asks it which tests to run and prints what it says. Without --since not one line of it is on the
+// path and the whole folder runs exactly as it always has.
+import { selectSuite, selectionHeadline, selectionCommentLines, selectionCommentDetail, selectionTerminalLines, selectionTailLines, selectionShareLines } from "./select.mjs";
 
 const C = {
   b: (s) => `\x1b[1m${s}\x1b[0m`,
@@ -545,7 +549,7 @@ const LABEL = { passed: "pass", failed: "**fail**", stale: "stale", errored: "er
  */
 export const markerFor = (suite) => `<!-- smolanalytics-run:${slug(suite)} -->`;
 
-export function commentBody(results, { url = "", suite = "tests", runUrl = "", problems = [] } = {}) {
+export function commentBody(results, { url = "", suite = "tests", runUrl = "", problems = [], selection = null } = {}) {
   const s = summarize(results);
   const head = [`${s.passed} passed`];
   // "flaky", never folded into passed: a headline that counts a retry as a pass is the lie the
@@ -554,6 +558,11 @@ export function commentBody(results, { url = "", suite = "tests", runUrl = "", p
   if (s.failed) head.unshift(`${s.failed} failed`);
   if (s.errored) head.push(`${s.errored} could not run`);
   if (s.stale) head.push(`${s.stale} stale`);
+  // --since (lib/select.mjs). NOT a status — a skipped test reached no verdict and is in none of
+  // the counts above — but it belongs in the headline for the same reason "not read" does below:
+  // "12 passed" over a fifty-test folder is a suite lying about its own coverage.
+  const skipHead = selectionHeadline(selection);
+  if (skipHead) head.push(skipHead);
   // A folder we could not open produces no row, so without this the comment reads "3 passed" about
   // a suite that is four files long. On CI this comment IS the report — the terminal output nobody
   // opens is not a second chance to mention it.
@@ -577,6 +586,9 @@ export function commentBody(results, { url = "", suite = "tests", runUrl = "", p
     markerFor(suite),
     secs(s.ms) ? `**${head.join(" · ")}** in ${secs(s.ms)}` : `**${head.join(" · ")}**`,
     "",
+    // Directly under the headline, never at the bottom: what did NOT run is the first thing that
+    // changes how the numbers above it should be read.
+    ...selectionCommentLines(selection),
     url ? `Against ${code(url)}${runUrl ? ` · [run log](${runUrl})` : ""}` : "",
     "",
     "| | test | how | time |",
@@ -622,6 +634,10 @@ export function commentBody(results, { url = "", suite = "tests", runUrl = "", p
 
   // One small-type line per test with layout findings, at the very bottom: advisory by contract
   // (lib/layout.mjs), so it renders after every verdict and is the first casualty below.
+  // Who did not run, by name, under the verdicts rather than above them: the one-line claim is
+  // already under the headline, and a roster there would push a reviewer's bug report off screen.
+  // Above the layout notes, because a test that never ran outranks an advisory about a button.
+  out.push(...selectionCommentDetail(selection));
   out.push(...layoutCommentLines(results));
 
   const body = out.filter((l) => l !== null).join("\n").replace(/\n{3,}/g, "\n\n") + "\n";
@@ -629,14 +645,14 @@ export function commentBody(results, { url = "", suite = "tests", runUrl = "", p
   // Layout notes are dropped before anything else, whole: they are advisory, and a bug report's
   // tail must never be trimmed while an advisory note above it survives.
   if (results.some((r) => Array.isArray(r.layout) && r.layout.length)) {
-    return commentBody(results.map((r) => (Array.isArray(r.layout) && r.layout.length ? { ...r, layout: [] } : r)), { url, suite, runUrl, problems });
+    return commentBody(results.map((r) => (Array.isArray(r.layout) && r.layout.length ? { ...r, layout: [] } : r)), { url, suite, runUrl, problems, selection });
   }
   // Suspects are the next thing dropped when the comment must shrink: they are a hint about a
   // failure, and the failure's own reason is the deliverable they must never crowd out. Rebuilt
   // without them rather than sliced, so the cut below only ever falls on a body that is already
   // hint-free — a mid-body slice was how a reason lost its tail while a guess above it survived.
   if (results.some((r) => Array.isArray(r.suspects) && r.suspects.length)) {
-    return commentBody(results.map((r) => (Array.isArray(r.suspects) && r.suspects.length ? { ...r, suspects: [] } : r)), { url, suite, runUrl, problems });
+    return commentBody(results.map((r) => (Array.isArray(r.suspects) && r.suspects.length ? { ...r, suspects: [] } : r)), { url, suite, runUrl, problems, selection });
   }
   // Cut on a line boundary so the trim never lands inside a table row or a blockquote, and say so:
   // a report that is silently missing its tail is worse than one that admits it.
@@ -765,6 +781,9 @@ export async function suiteCmd({
   test,
   plans = DEFAULT_PLANS_DIR,
   comment = false,
+  // --since <ref> (lib/select.mjs). "" is the default and the default is the whole folder.
+  since = "",
+  cwd = process.cwd(),
   headed = false,
   yes = false,
   maxSteps = 40,
@@ -833,10 +852,19 @@ export async function suiteCmd({
     return 2;
   }
 
+  // DIFF-AWARE SELECTION, between discovery and the first browser. Everything it decides is in
+  // lib/select.mjs, including every reason to decide nothing: without --since, or on any doubt at
+  // all, `selection.selected` is the array that went in and this is a no-op.
+  const selection = selectSuite({ tests, since, cwd });
+  tests = selection.selected;
+
   // Said BEFORE the first verdict, because the transcript below is about to arrive in blocks
   // rather than in order, and a reader who was not told why would read that as a bug.
   const lanes = Math.max(1, Math.min(Math.floor(workers) || 1, tests.length));
   log(`\n${tests.length} test${tests.length === 1 ? "" : "s"} against ${C.b(url)}${lanes > 1 ? C.dim(` · ${lanes} at a time`) : ""}`);
+  // What did not run, and why, before anything else is printed. A suite that quietly checked twelve
+  // of fifty and then said "12 passed" is the failure this whole feature has to not become.
+  for (const line of selectionTerminalLines(selection)) log(line);
   if (!env.ANTHROPIC_API_KEY) {
     // Said once, up front, not per test: without a key the only tests that can run are the ones
     // with a recording that still fits, and the reader should know that before reading verdicts.
@@ -864,6 +892,9 @@ export async function suiteCmd({
     ? `\n${parts.join(" · ")} ${C.dim(`· ${secs(wall)} · ${secs(s.ms)} of test time across ${lanes} workers`)}`
     : `\n${parts.join(" · ")} ${C.dim(`· ${secs(s.ms)}`)}`);
   if (s.replayed) log(C.dim(`${s.replayed} replayed from a recording, with no model calls.`));
+  // Said again under the counts: the counts are what a reader who scrolled to the end sees, and
+  // they are counts of what RAN.
+  for (const line of selectionTailLines(selection)) log(line);
   for (const r of results.filter((r) => r.status === "failed")) {
     log(`  ${C.r("fail")} ${r.name} ${C.dim(`· ${r.file}`)}`);
     // The same two suspect lines the comment gets, under the same failure. Dim, because they are a
@@ -886,7 +917,7 @@ export async function suiteCmd({
       ? `${(env.GITHUB_SERVER_URL || "https://github.com").replace(/\/+$/, "")}/${env.GITHUB_REPOSITORY}/actions/runs/${env.GITHUB_RUN_ID}`
       : "";
     const key = suite || "test";
-    const posted = await postCommentImpl({ body: commentBody(results, { url, suite: key, runUrl, problems }), marker: markerFor(key), env });
+    const posted = await postCommentImpl({ body: commentBody(results, { url, suite: key, runUrl, problems, selection }), marker: markerFor(key), env });
     log(posted.posted ? C.dim(`  ${posted.updated ? "updated" : "posted"} the pull request comment.`) : C.dim(`  no comment posted: ${posted.reason}`));
   }
 
@@ -908,6 +939,10 @@ export async function suiteCmd({
   // than two. The cost, stated: a reader who wants only test 7 gets a page with twenty on it, and
   // deep-linking to one test inside the page is the receiving half's job, not another POST.
   if (share) {
+    // A share page carries only what ran, because a row with no verdict on it would read as one.
+    // The person about to send the link is told so here — the page cannot say it for itself, and a
+    // link that looks like a whole suite but is twelve of fifty is the same lie in a nicer font.
+    for (const line of selectionShareLines(selection, results.length)) log(line);
     // Wrapped HERE as well as inside publishShare, because this is where `finalCode` lives and the
     // guarantee is about THIS variable. publishShareImpl is injectable, so the only guard that
     // cannot be swapped out from under the exit code is the one on this side of the call.

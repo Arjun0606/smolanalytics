@@ -95,6 +95,21 @@ order either way. How many run at once is measured from the machine — cores, m
 `--workers 1` runs them one at a time, exactly as before. Fifty recorded tests on an 8-core laptop:
 39.2s at `--workers 1`, 5.4s at the default.
 
+`--since main` runs only the tests the change could have broken. Each test's recording says which
+controls it clicks, what text it fills, which paths it visits and the text it proves itself with;
+`--since` intersects that with `git diff`, and a test whose recording touches nothing in the diff
+does not run. It is off unless you ask for it, and being wrong in the two directions is not the
+same thing, so it is deliberately biased: a test with no recording always runs, a recording it
+cannot read always runs, and if git is missing, the ref does not exist, the clone is too shallow to
+find a merge base or the diff cannot be read, the whole folder runs and the run says why. What was
+skipped is named every time — in the terminal and in the pull request comment — because a run that
+quietly checked twelve of fifty tests and printed "12 passed" is a suite lying about itself.
+Skipped is not passed: those tests are in no count, in no row and in no exit code.
+
+The trade, stated plainly: the match is textual, so a change that shares no text with a test can
+still break it — a refactor of the price helper does not contain the word "checkout". Run without
+`--since` when you want the whole folder checked.
+
 ### The data a test creates
 
 The agent really uses the app. A sentence about signing up creates an account; one about checking
@@ -358,6 +373,7 @@ pipeline that gates on `1` alone never reddens a build because our side had an o
 | `--suite <dir>` | a folder of `.md` files instead |
 | `--plan <file>` | replay this recording first, and record to it on a pass |
 | `--plans <dir>` | where a suite keeps its recordings (default `.smolanalytics/recordings`) |
+| `--since <ref>` | with `--suite`, run only the tests this change could have broken — and say what was skipped, in the terminal and in the comment |
 | `--comment` | post the verdicts on the pull request (GitHub Actions) |
 | `--browser <name>` | `chromium` (default), `firefox` or `webkit` — the same test in a different engine |
 | `--headed` | watch it happen |

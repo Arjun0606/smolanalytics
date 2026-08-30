@@ -952,10 +952,12 @@ async function agentAttempt({ page, url, test, apiKey, model, maxSteps, log, sec
 // on purpose, so a credential source can be added to it without another parameter. [] — the default,
 // and what every run without --seed passes — makes maskSecrets and unmaskSecrets identity functions,
 // so nothing on this path changes by a single byte for anybody who has not asked for it.
-async function runOnce({ url, test, plan: planPath, headed, maxSteps = 40, yes, retries = 1, evidenceDir = "", layout: layoutMode = "report", renderCheck = true, login = "", authFile = "", authDir = DEFAULT_AUTH_DIR, secrets = [], engine = DEFAULT_ENGINE, env = process.env, log = console.log, onRun, loadBrowser = loadPlaywright, share = false, maxCalls = 0 }) {
+async function runOnce({ url, test, plan: planPath, headed, maxSteps = 40, yes, retries = 1, evidenceDir = "", layout: layoutMode = "report", renderCheck = true, login = "", authFile = "", authDir = DEFAULT_AUTH_DIR, secrets = [], engine = DEFAULT_ENGINE, env = process.env, log = console.log, onRun, loadBrowser = loadPlaywright, share = false, maxCalls = 0,
   // One ledger per test, so the line printed under a verdict is that test's own spend and a suite
-  // can total them without any test knowing it is in one.
-  const ledger = newLedger();
+  // can total them without any test knowing it is in one. A caller may pass its OWN — lib/watch.mjs
+  // does, because a watch session's ceiling and running total span every run, and the usage is
+  // otherwise thrown away the moment this function returns. Default: exactly what it always was.
+  ledger = newLedger() }) {
   // --share (lib/share.mjs). `share` collects the extra facts a share page renders and nothing
   // else: the proof text, the steps of a run that PASSED (which nothing else here keeps), and where
   // the failure screenshot landed. It is attached to the run object under one key, `share`, which

@@ -25,6 +25,7 @@ import { parseLayoutMode } from "../lib/layout.mjs";
 import { parseEngine } from "../lib/engines.mjs";
 import { parseWorkers } from "../lib/pool.mjs";
 import { parseMaxCalls } from "../lib/cost.mjs";
+import { parseSince } from "../lib/select.mjs";
 import { autoPreviewUrl } from "../lib/preview.mjs";
 import { suggestCmd } from "../lib/suggest.mjs";
 
@@ -76,10 +77,12 @@ ${C.bold("smolanalytics")} — end-to-end tests without test code
   ${C.dim("SMOLANALYTICS_LOGIN_EMAIL / SMOLANALYTICS_LOGIN_PASSWORD fill {{email}} and {{password}}.")}
 
   ${C.dim("--suite <dir>")}         a folder of .md files, one sentence per test
+  ${C.dim("--since <ref>")}         with --suite: run only the tests this change could have broken, and say what was skipped. Anything we cannot rule out still runs.
   ${C.dim("--comment")}             post the verdicts on the pull request (GitHub Actions)
   ${C.dim("--share")}               publish this run to a link anyone can open, and print it. Off unless you ask; one link per run, never per test.
   ${C.dim("--plans <dir>")}         where recordings are kept (default: ${DEFAULT_PLANS_DIR})
   ${C.dim("No account. No GitHub app. Nothing written to your repo.")}
+
 
   ${C.bold("npx smolanalytics suggest")}     the tests worth writing, read off your running app
   ${C.dim("--url  <url>")}          a browser walks a few pages and proposes the flows it can SEE
@@ -177,6 +180,22 @@ async function main() {
       process.exitCode = 2;
       return;
     }
+    // DIFF-AWARE SELECTION (lib/select.mjs). Refused the same way, and for the sharpest version of
+    // the same reason: a bare `--since` silently meaning "no selection" bills the person for the
+    // whole folder they were explicitly trying not to run.
+    const { since, problem: sinceProblem } = parseSince(flag("since") ?? (hasFlag("since") ? "" : undefined));
+    if (sinceProblem) {
+      console.error(C.red(sinceProblem));
+      process.exitCode = 2;
+      return;
+    }
+    // Refused rather than ignored. --since chooses among the tests in a FOLDER; on the single-test
+    // path there is nothing to choose, and accepting it there would silently do nothing at all.
+    if (since && !suite) {
+      console.error(`${C.red("--since needs --suite.")} It chooses which of a folder's tests to run; a single --test has nothing to choose between.`);
+      process.exitCode = 2;
+      return;
+    }
     // The spend ceiling, refused the same way for the same reason.
     const { value: maxCalls, problem: callsProblem } = parseMaxCalls(flag("max-calls"));
     if (callsProblem) {
@@ -209,6 +228,8 @@ async function main() {
           test: flag("test"),
           plans: flag("plans") || flag("plan-dir") || (suite ? undefined : flag("plan")) || DEFAULT_PLANS_DIR,
           comment,
+          // "" unless it was typed. Nothing about the run changes without it.
+          since,
           headed: hasFlag("headed"),
           yes: hasFlag("yes"),
           teardown: flag("teardown") || "",
@@ -265,6 +286,15 @@ async function main() {
     }
     return;
   }
+  // `watch` IS NOT SHIPPED YET, DELIBERATELY.
+  //
+  // lib/watch.mjs exists and its command works by hand, but its own test file wedges the suite: a
+  // promise inside the session's stop() never settles, so node --test hangs past any timeout and
+  // the whole file resists being killed. That is not a test problem — it means Ctrl-C does not
+  // reliably release a real session either, which on a feature that runs unattended on somebody's
+  // laptop and spends their model budget is the one bug that must not ship. The command is wired
+  // back the moment that lifecycle is fixed and its adversarial pass has actually run.
+
   if (cmd === "suggest") {
     // A bare `--max` is refused rather than defaulted, the same shape as --retries and --layout
     // above: flag() cannot tell `--max` with no value from no --max at all, and silently handing
@@ -423,6 +453,7 @@ ${snippetHtml(host, key)}
 main().catch((err) => {
   console.error(`\n${C.red("failed")} ${err?.message || err}\n`);
   // `test` is the one command whose exit code is a published contract (see templates/github-action
-  // .yml): 1 says the application is broken. Our own crash is never that.
+  // .yml): 1 says the application is broken. Our own crash is never that. `watch` runs the same
+  // runner and prints the same five statuses, so it keeps the same promise about 1.
   process.exitCode = process.argv[2] === "test" ? 2 : 1;
 });
