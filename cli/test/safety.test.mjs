@@ -393,7 +393,10 @@ describe("wired into `smolanalytics test`", () => {
     const lines = [];
     const code = await testCmd({
       url: "https://myapp.com", test: "a new customer can sign up as {{email}}",
-      env: { CI: "1" }, log: (...a) => lines.push(a.join(" ")), loadBrowser: noBrowser,
+      // A KEY, because the question is only asked when a run could actually follow it. With no key
+      // and no recording the runner stops first and says so, and warning about production data for
+      // a run that cannot happen is noise ahead of the sentence that matters.
+      env: { CI: "1", ANTHROPIC_API_KEY: "sk-ant-test" }, log: (...a) => lines.push(a.join(" ")), loadBrowser: noBrowser,
     });
     const out = plain(lines.join("\n"));
     assert.match(out, /has no staging, preview or localhost marker/);
@@ -412,7 +415,7 @@ describe("wired into `smolanalytics test`", () => {
   test("saying no runs nothing, and is never a bug report", async () => {
     const runs = [];
     const code = await asPerson(() => testCmd({
-      url: "https://myapp.com", test: "check out with a card", env: {}, log: () => {},
+      url: "https://myapp.com", test: "check out with a card", env: { ANTHROPIC_API_KEY: "sk-ant-test" }, log: () => {},
       onRun: (r) => runs.push(r), ask: async () => "n",
       loadBrowser: () => assert.fail("the browser must not start after a no"),
     }));

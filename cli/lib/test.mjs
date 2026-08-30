@@ -1407,6 +1407,7 @@ export async function testCmd(opts = {}) {
   // The usage text, and the exit code that goes with it, stay exactly where they were.
   if (!url || !test) return runOnce(opts);
 
+
   const identity = newIdentity({
     domain: emailDomain || env.SMOLANALYTICS_TEST_EMAIL_DOMAIN,
     // The explicit option wins over the environment: SMOLANALYTICS_RUN_ID pins ONE id for a
@@ -1428,7 +1429,22 @@ export async function testCmd(opts = {}) {
   }
   if (sub.used.length) log(C.dim(`this run is ${identity.email} (${sub.used.map((k) => `{{${k}}}`).join(" ")})`));
 
-  const decision = await confirmProduction({ url, identity, yes, teardown, log, env, ask });
+  // DO NOT WARN ABOUT PRODUCTION FOR A RUN THAT CANNOT HAPPEN.
+  //
+  // Measured by running the homepage's own command as a stranger: with no key, the first thing
+  // printed was a twelve-line warning about creating real accounts and possibly a real charge,
+  // then a generated identity, and only at the very bottom the one line that mattered — you need
+  // an API key, and nothing ran. The warning is right and worth having; it is simply noise ahead
+  // of a run that stops two frames later, and it buries the actionable sentence.
+  //
+  // The key is not checked here as a gate, because a REPLAY needs no key at all (--plan, and a
+  // suite whose recordings still fit) — refusing those would break the cheapest path in the
+  // product. This only decides whether the QUESTION is worth asking now: with no key and no
+  // recording named, runOnce is about to stop and say so, so we let it.
+  const willAskTheModel = Boolean(env.ANTHROPIC_API_KEY ?? process.env.ANTHROPIC_API_KEY) || Boolean(opts.plan) || Boolean(opts.plans);
+  const decision = willAskTheModel
+    ? await confirmProduction({ url, identity, yes, teardown, log, env, ask })
+    : { proceed: true };
   if (!decision.proceed) {
     const why = `Stopped at the question about ${url}: nothing was opened and nothing was tested. Re-run with --yes to skip the question.`;
     log(`\n${C.y("nothing ran")} ${C.dim(why)}\n`);
