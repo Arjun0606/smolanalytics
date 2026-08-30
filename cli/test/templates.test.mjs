@@ -22,6 +22,11 @@ const workflow = readFileSync(workflowPath, "utf8");
 const exampleTest = readFileSync(path.join(templates, "example-test.md"), "utf8");
 const readme = readFileSync(path.join(dir, "..", "README.md"), "utf8");
 
+// The workflow's comments, as the reader reads them: `#` gone and the wrapping undone, so a
+// sentence that spans three commented lines is one sentence to match against. Asserting on the raw
+// file would mean every reflow silently retires the assertion.
+const prose = workflow.split(/\r?\n/).map((l) => l.replace(/^\s*#\s?/, "")).join(" ").replace(/\s+/g, " ");
+
 /** Drop a trailing `# comment`, without touching a `#` inside a quoted string. */
 function stripComment(line) {
   let quote = null;
@@ -184,6 +189,37 @@ describe("the workflow does what the README promises", () => {
     assert.match(String(restore.with["restore-keys"]), /smolanalytics-recordings-/, "without restore-keys the cache never hits");
   });
 
+  // THE COMMENTS ARE THE DOCUMENTATION. A stranger copies this file once and never opens it again,
+  // so a sentence in it that is not true is worse than a missing one: it is the answer they will
+  // trust while they debug the wrong thing.
+  //
+  // MEASURED against how Actions actually scopes a cache — to the branch that wrote it, readable
+  // only from that branch and the default branch. This workflow triggers on `pull_request` and
+  // nothing else, so no run ever writes a cache on the default branch and pull request #2 cannot
+  // see what #1 recorded. The file used to promise the opposite in as many words: "a pull request
+  // falls back to the cache from the default branch." Every new pull request starts cold, the
+  // comment says so on every run, and the reader had been told in advance that meant these steps
+  // were broken.
+  test("it does not promise a cache fallback its own triggers make impossible", () => {
+    const triggers = typeof wf.on === "string" ? [wf.on] : Object.keys(wf.on ?? wf.true ?? {});
+    // The guard is conditional on the shape that causes it, so adding a default-branch trigger
+    // later legitimately retires this rather than leaving a stale rule to be worked around.
+    if (triggers.some((t) => t === "push" || t === "schedule" || t === "workflow_dispatch")) return;
+    assert.ok(!/falls back to the cache from the default branch/i.test(prose),
+      "the template promises a default-branch cache that nothing in it ever writes");
+    assert.match(prose, /first run of every new pull request is a full agent run/i,
+      "the reader is never told that a new pull request starts cold, so the first comment reads as a broken cache");
+  });
+
+  test("the comment does not send the reader to debug a cache that is working", () => {
+    // The same file tells the reader that a comment which keeps saying nothing replayed means the
+    // cache steps are not doing their job. Two things make that false with a perfect cache: a
+    // brand-new pull request, and a test that passes by only reading a page — it performs no step,
+    // so compile() records nothing for it and it wakes the agent on every run, forever.
+    assert.match(prose, /only reading a page/i,
+      "a test that can never be recorded is not named, so its cost reads as a caching fault");
+  });
+
   test("the recordings are saved even when a test fails", () => {
     // The all-in-one actions/cache saves in a post step declared `post-if: success()`. With
     // continue-on-error deleted — which this file tells the reader to do — a run with one failing
@@ -230,10 +266,40 @@ describe("the workflow does what the README promises", () => {
   });
 
   test("the three ways to get a URL all feed the same step id", () => {
-    // (b) and (c) ship commented out. They are still checked, because a customer deleting (a) and
-    // uncommenting one of them must not have to fix an id to make the run step work.
+    // All three ship commented out. They are still checked, because a customer uncommenting one of
+    // them must not have to fix an id to make the run step work.
     const offered = workflow.match(/^\s*#?\s*id: preview$/gm) || [];
     assert.equal(offered.length, 3, "three preview options, one id");
+  });
+
+  test("the shipped default asks nobody where their preview is", () => {
+    // WALKED: with no --url inside Actions on a pull request, the CLI asks the deployments API for
+    // this pull request's own preview, and it worked end to end against a real deployments API.
+    // Shipping a preview step ON meant the one required decision in the whole install was one we
+    // could make ourselves — pick your host, wire its action, keep the id agreeing.
+    assert.ok(!steps.some((s) => s?.id === "preview"),
+      "a preview step is enabled by default, so the install asks for a decision the CLI can make itself");
+    // And uncommenting one must stay a ONE-line edit: the env line and the flag both stay put,
+    // because `steps.preview.outputs.url` resolves to the empty string when no such step ran and an
+    // empty --url is read as no --url. Verified by running it.
+    assert.match(String(runStep.env.URL), /steps\.preview\.outputs\.url/,
+      "the URL plumbing was removed, so turning a preview step back on is now two edits, not one");
+    assert.match(runStep.run, /--url "\$URL"/);
+  });
+
+  test("nothing third-party runs inside a job that can write to pull requests", () => {
+    // This job holds `pull-requests: write`. Every action it runs by default is one of GitHub's
+    // own; the host-specific wait action is offered, commented, with that trade-off written beside
+    // it. A default that hands a random action write access is a default nobody audited.
+    const foreign = steps.map((s) => String(s?.uses || "")).filter((u) => u && !u.startsWith("actions/"));
+    assert.deepEqual(foreign, [], `third-party action(s) enabled by default: ${foreign.join(", ")}`);
+  });
+
+  test("it points at a starting set of tests the reader can actually produce", () => {
+    // `see example-test.md` is a path inside an npm package a reader copying one YAML file off the
+    // web has not checked out. `suggest` is a command they can run right now.
+    assert.match(workflow, /smolanalytics suggest/,
+      "the front-door file names no way to get from an empty repository to a tests/ folder");
   });
 });
 

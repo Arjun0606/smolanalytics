@@ -586,7 +586,11 @@ describe("the comment never overstates what happened", () => {
     // `replayed, no model calls` beside `stale` reads as "ran fine, cost nothing". The recording
     // stopped fitting; nothing was verified.
     const b = commentBody([{ name: "An empty cart says so", file: "t/cart.md", status: "stale", mode: "replay", ms: 1200, reason: "The recorded run no longer fits this app." }], {});
-    const row = b.split("\n").find((l) => l.includes("An empty cart says so"));
+    // The TABLE row, named as such. A stale test also gets a detail block carrying its reason, and
+    // that block now sits above the table — so "the first line with this test's name in it" stopped
+    // meaning "this test's row" the day the report moved above the roster.
+    const row = b.split("\n").find((l) => l.startsWith("|") && l.includes("An empty cart says so"));
+    assert.ok(row, `no table row for the test:\n${b}`);
     assert.ok(!/no model calls/.test(row), row);
     assert.ok(!/fail/i.test(row), row);
     assert.match(row, /stopped fitting/);

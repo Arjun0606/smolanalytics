@@ -118,6 +118,16 @@ export function detectVendor(root, files, io = fs) {
       bestN = hits[v.id];
     }
   }
+  // EVERY VENDOR THAT IS ACTUALLY HERE, not only the one that won.
+  //
+  // MEASURED on a repo carrying posthog-js, mixpanel-browser and @segment/analytics-next, with a
+  // posthog.capture() and a mixpanel.track() both live: the report said "This repo uses PostHog."
+  // flatly. PostHog and Mixpanel scored an identical 11 and the tie was broken by the order of the
+  // VENDORS array — so a Mixpanel shop is told, as a statement of fact about code we just read,
+  // that they use something else. That is the one sentence in this report a reader can check
+  // against their own repo in a second, and getting it wrong is how the other findings stop being
+  // believed. `others` lets the sentence say what was seen instead of asserting a coin flip.
+  best.others = VENDORS.filter((v) => v !== best && (hits[v.id] || 0) > 0).map((v) => v.name);
   return best;
 }
 
@@ -210,7 +220,7 @@ export function render(r, log = console.log, all = false) {
   if (r.actions.length === 0) {
     log("");
     log("No recognisable user-facing actions found here.");
-    log(C.dim(`Scanned ${r.files} files. This looks for invoked actions: payments, auth, invites,`));
+    log(C.dim(`Scanned ${r.files} file${r.files === 1 ? "" : "s"}. This looks for invoked actions: payments, auth, invites,`));
     log(C.dim("uploads, shares, form submits and mutating API routes. If this is an app repo, try"));
     log(C.dim("running it from the directory that holds your app code."));
     return 0;
@@ -218,6 +228,13 @@ export function render(r, log = console.log, all = false) {
 
   const named = r.actions.filter((a) => !GENERIC.has(a.kind) && !a.covered);
   const generic = r.actions.filter((a) => GENERIC.has(a.kind) && !a.covered);
+  // NAMED-AND-COVERED IS NOT THE SAME THING AS NO NAMED ACTIONS, AND SAYING SO COST THE REPORT ITS
+  // CREDIBILITY. Measured in a repo with a Stripe call, a signup and no analytics of any kind:
+  // both were shaped so that no pattern matched them, `named` came back empty, and the headline
+  // was "Every named user action here already has tracking near it." — flatly untrue, printed
+  // first, in bold, to somebody whose app is measured by nothing. The next block then offered to
+  // write "these track() calls", pointing at an empty list.
+  const namedTotal = r.actions.filter((a) => !GENERIC.has(a.kind)).length;
 
   log("");
   // LEAD WITH THE SIGNAL, NOT THE TOTAL.
@@ -230,9 +247,14 @@ export function render(r, log = console.log, all = false) {
     log(C.b(`${named.length} thing${named.length === 1 ? "" : "s"} your product does that nothing is measuring.`));
     log(C.dim("An action nobody instrumented looks identical to one nobody performed."));
     log("");
-  } else {
+  } else if (namedTotal) {
     log(C.b("Every named user action here already has tracking near it."));
-    log(C.dim(`Checked signups, logins, payments, invites, uploads and shares across ${r.files} files.`));
+    log(C.dim(`Checked signups, logins, payments, invites, uploads and shares across ${r.files} file${r.files === 1 ? "" : "s"}.`));
+    log("");
+  } else {
+    log(C.b("No signup, login, payment, invite, upload or share found here."));
+    log(C.dim(`Scanned ${r.files} file${r.files === 1 ? "" : "s"}. That is a claim about what this reads — invoked actions, not`));
+    log(C.dim("mentions — so if your app code lives somewhere else, run this from there."));
     log("");
   }
 
@@ -269,11 +291,25 @@ export function render(r, log = console.log, all = false) {
   // The offer is not "install our analytics", it is "we keep your instrumentation correct in the
   // tool you already pay for". Someone with PostHog who reads a generic "write these track() calls"
   // assumes we mean ours, and the honest answer to that is a migration nobody wants.
+  // NOTHING FOUND MEANS NOTHING TO OFFER. With no named action anywhere, "write these track()
+  // calls" points at an empty list and `example` fell back to "signup" — so a repo with no signup
+  // in it was shown posthog.capture("signup") as the work we would do. The actionable sentence in
+  // that case is the one already printed above; a pitch under it is padding.
+  if (!namedTotal) {
+    return 0;
+  }
   const v = r.vendor || OURS;
-  const example = named.length ? named[0].suggest : "signup";
+  const example = named.length ? named[0].suggest : "";
   log(C.b("Next:"));
-  if (v.id !== "smolanalytics") {
-    log(`  This repo uses ${C.b(v.name)}. Your coding agent can write these as ${C.b(v.write(example))}`);
+  if (!named.length) {
+    log(`  Nothing to write today. Your coding agent can keep it that way as the app grows:`);
+  } else if (v.id !== "smolanalytics") {
+    // With more than one in the repo, name them all and say which one the snippet is written in.
+    // "This repo uses PostHog and Mixpanel" is checkable; "This repo uses PostHog" was a guess
+    // wearing a fact's clothes. detectVendor says how the tie used to be broken.
+    const all = [v.name, ...(v.others || []).filter(Boolean)];
+    const named = all.length > 1 ? `${all.slice(0, -1).join(", ")} and ${all[all.length - 1]}` : all[0];
+    log(`  This repo uses ${C.b(named)}. Your coding agent can write these as ${C.b(v.write(example))}`);
     log(`  calls — into ${v.name}, not beside it. Connect it once:`);
   } else {
     log("  Your coding agent can write these track() calls for you. Connect it once:");

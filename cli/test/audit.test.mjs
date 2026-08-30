@@ -334,3 +334,114 @@ test("a stale recording is never worded as a bug", () => {
   assert.match(note, /not yet a bug/);
   assert.ok(!/\bfail/i.test(note), `a staleness note must not read as a failure: ${note}`);
 });
+
+// THE AUDIT MAY NEVER CLAIM COVERAGE IT DID NOT OBSERVE.
+//
+// Measured in a repo with a payment call, a signup form and no analytics of any kind — both
+// actions written in a shape no pattern matches, so the named list came back empty. The headline,
+// in bold, first line on the screen:
+//
+//   Every named user action here already has tracking near it.
+//   Checked signups, logins, payments, invites, uploads and shares across 2 files.
+//
+// Not one thing in that repo was measured by anything. `named` is the UNCOVERED named actions, and
+// empty means either "all of them are covered" or "there were none" — two opposite facts collapsed
+// into the reassuring one. The block under it then offered to write "these track() calls", pointing
+// at an empty list, and with a vendor detected it named an event the repo has no code for.
+const audited = (files) => {
+  const names = Object.keys(files);
+  const io = {
+    readdirSync: () => names.map((name) => ({ name, isDirectory: () => false })),
+    readFileSync: (p) => {
+      const hit = names.find((n) => String(p).endsWith(n));
+      if (!hit) throw new Error(`ENOENT ${p}`);
+      return files[hit];
+    },
+    existsSync: () => true,
+  };
+  const lines = [];
+  render(auditRepo("/fake", io), (l) => lines.push(l));
+  return lines.join("\n");
+};
+
+test("no named actions is never reported as everything being covered", () => {
+  // A <form> and a POST route: real shapes, both GENERIC, so there is no named action anywhere.
+  const out = audited({
+    "signup.tsx": `export default function S() {\n  return <form onSubmit={go}><button>Create account</button></form>;\n}\n`,
+    "route.ts": `export async function POST(req) {\n  return Response.json({ ok: true });\n}\n`,
+  });
+  assert.ok(
+    !/already has tracking/.test(out),
+    `claimed coverage over a repo where nothing named was found at all:\n${out}`,
+  );
+  assert.match(out, /No signup, login, payment, invite, upload or share found/, out);
+  assert.match(out, /run this from there/, "the reader is one wrong directory away, and must be told");
+});
+
+test("and offers nothing to write, because there is nothing to write", () => {
+  const out = audited({ "route.ts": `export async function POST(req) {\n  return Response.json({});\n}\n` });
+  assert.ok(!/these track\(\) calls/.test(out), `offered to write calls for an empty list:\n${out}`);
+  assert.ok(!/capture\("signup"/.test(out), `invented an event the repo has no code for:\n${out}`);
+  assert.ok(!/Next:/.test(out), `a pitch under "nothing found" is padding:\n${out}`);
+});
+
+test("named actions that ARE all covered still get the sentence that says so", () => {
+  // The other half of the fork, and the reason it cannot simply be deleted: this claim is TRUE
+  // here, and someone with working tracking must not be told their product is unmeasured.
+  const out = audited({
+    "auth.ts": `import posthog from "posthog-js";\nexport async function go(auth) {\n  const r = await auth.signIn({ email });\n  posthog.capture("login", {});\n  return r;\n}\n`,
+  });
+  assert.match(out, /Every named user action here already has tracking near it/, out);
+  assert.ok(!/thing your product does that nothing is measuring/.test(out), out);
+});
+
+test("an uncovered named action still leads with the count and the vendor's own call", () => {
+  // The guard against fixing the above by making every branch say "nothing found".
+  const out = audited({
+    "pay.ts": `export async function pay(stripe) {\n  return stripe.checkout.sessions.create({ mode: "payment" });\n}\n`,
+  });
+  assert.match(out, /1 thing your product does that nothing is measuring/, out);
+  assert.match(out, /Next:/, out);
+  assert.match(out, /smolanalytics connect/, out);
+});
+
+// WALKED 2026-08-30, on a repo carrying posthog-js, mixpanel-browser and @segment/analytics-next
+// with a live posthog.capture() and a live mixpanel.track():
+//
+//   This repo uses PostHog. Your coding agent can write these as posthog.capture("signup", { … })
+//
+// PostHog and Mixpanel had scored an identical 11, and the tie went to PostHog because it is first
+// in the VENDORS array. So the one sentence in the whole report a reader can check against their
+// own repo in a second was a coin flip stated as a fact, and a Mixpanel shop reads it as evidence
+// that we did not understand their codebase.
+test("every analytics SDK in the repo is named, not whichever one won the array order", () => {
+  const io = repoIo(`{"dependencies":{"posthog-js":"1.0.0","mixpanel-browser":"2.0.0","@segment/analytics-next":"1.0"}}`, {
+    "checkout.tsx": `posthog.capture("checkout_completed");`,
+    "team.tsx": `mixpanel.track("invite_sent");`,
+    // Uncovered, and in its own file, or there is nothing for the offer to be about.
+    "invite.tsx": `const r = await inviteUser({ email });`,
+  });
+  const r = auditRepo("/fake", io);
+  const out = [];
+  render(r, (l) => out.push(l));
+  const text = out.join("\n").replace(/\x1b\[\d+m/g, "");
+  // The requirement is that no vendor actually present is left out. Naming only the winner is the
+  // bug; naming a vendor that is NOT in the repo would be the same bug facing the other way.
+  for (const name of ["PostHog", "Mixpanel", "Segment"]) {
+    assert.match(text, new RegExp(`This repo uses[^.]*${name}`), `${name} is in this repo and the offer does not say so:\n${text}`);
+  }
+  assert.ok(!/Amplitude|Google Analytics/.test(text), `named a vendor the repo does not have:\n${text}`);
+  // The snippet still has to be written in exactly one of them, or it is not pasteable.
+  assert.match(text, /posthog\.capture\("invite_sent"/, `the example is not in a real SDK:\n${text}`);
+  assert.match(text, /into PostHog, not beside it/, text);
+});
+
+test("one vendor is still named on its own, with no list punctuation", () => {
+  const r = auditRepo("/fake", repoIo(`{"dependencies":{"mixpanel-browser":"2.0.0"}}`, {
+    "invite.tsx": `const res = await inviteUser({ email });`,
+  }));
+  const out = [];
+  render(r, (l) => out.push(l));
+  const text = out.join("\n").replace(/\x1b\[\d+m/g, "");
+  assert.match(text, /This repo uses Mixpanel\./, `a single vendor grew a list around it:\n${text}`);
+});

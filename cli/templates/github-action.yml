@@ -1,9 +1,16 @@
 # smolanalytics — end-to-end tests without test code, on every pull request.
 #
-# Copy this file to .github/workflows/e2e.yml, then:
-#   1. add ANTHROPIC_API_KEY to this repository's secrets (Settings → Secrets and variables → Actions)
-#   2. put your tests in tests/, one sentence each — see example-test.md
-#   3. keep ONE of the three "the preview URL" steps below and delete the other two
+# Copy this file to .github/workflows/e2e.yml, then do these two things and nothing else:
+#   1. add ANTHROPIC_API_KEY to this repository's secrets (Settings → Secrets and variables → Actions).
+#      Without it every test comes back "could not run" and the pull request comment says so.
+#   2. put your tests in tests/ — one markdown heading is one test, one sentence under it is the
+#      whole test. `npx smolanalytics suggest --url <your app>` walks the app and writes a starting
+#      set for you; templates/example-test.md in this package is a worked one to copy from.
+#
+# THERE IS NO STEP 3. You do not have to tell this workflow where your preview is: with no --url,
+# inside Actions on a pull request, the CLI asks the GitHub deployments API — with the token this
+# job already has — which preview belongs to THIS pull request. Vercel, Netlify and Cloudflare Pages
+# all announce theirs that way. If yours does not, uncomment one of the three options below.
 #
 # That is the whole install. No GitHub App on your repositories, no agent pushing a Dockerfile into
 # your code, no environment built before you are allowed to see anything. This runs on your own
@@ -57,27 +64,32 @@ jobs:
           node-version: 22
 
       # ----------------------------------------------------------------------------------------
-      # THE PREVIEW URL — keep (a), (b) or (c). Delete the other two.
-      # All three set the same output, so the run step below does not change.
+      # THE PREVIEW URL — ALL THREE OF THESE ARE OFF, AND FOR MOST REPOSITORIES THAT IS CORRECT.
       #
-      # OR DELETE ALL THREE — --url is optional here. If your host announces its previews as
-      # GitHub deployments (Vercel, Netlify and Cloudflare Pages all do), delete this whole
-      # section, the `URL:` env line below, and the `--url "$URL"` part of the run line. With no
-      # --url, the CLI asks the deployments API — with the same GITHUB_TOKEN this job already has —
-      # for this pull request's own deployment, waiting up to 4 minutes (--wait-preview <sec>
-      # changes that) and printing a line per poll so the log never looks hung. If no ready
-      # deployment appears it stops with exit 2 and says what it looked for; it never guesses a
-      # URL and never falls back to your production domain.
+      # Leave them commented and the CLI finds the preview itself: `URL` below resolves to the empty
+      # string when no step is called `preview`, an empty --url is the same as no --url, and inside
+      # Actions on a pull request the CLI then asks the GitHub deployments API — with the same
+      # GITHUB_TOKEN this job already has — which deployment belongs to THIS pull request. It waits
+      # up to 4 minutes (--wait-preview <sec> changes that) and prints a line per poll, so the log
+      # never looks hung. If no ready deployment turns up it stops with exit 2, says what it looked
+      # for, and comments that on the pull request. It never guesses a URL and never falls back to
+      # your production domain: a verdict against the wrong deployment is worse than no verdict.
+      #
+      # Uncomment ONE of these only if that lookup found nothing — a host that does not create
+      # GitHub deployments, or an app you have to build here. Each sets the same `preview` step
+      # output, so the run step below never changes either way.
       # ----------------------------------------------------------------------------------------
 
-      # (a) VERCEL. Vercel builds the preview itself; this waits for that deployment to be ready
-      #     and reads its URL. Netlify and Render have equivalent actions.
-      - name: the preview URL
-        id: preview
-        uses: patrickedqvist/wait-for-vercel-preview@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          max_timeout: 600
+      # (a) A HOST WITH ITS OWN WAIT ACTION. Vercel builds the preview itself; this waits for that
+      #     deployment to be ready and reads its URL. Netlify and Render have equivalent actions.
+      #     A third-party action inside a job holding `pull-requests: write` is worth a moment's
+      #     thought, which is the other reason this is not the default.
+      # - name: the preview URL
+      #   id: preview
+      #   uses: patrickedqvist/wait-for-vercel-preview@v1
+      #   with:
+      #     token: ${{ secrets.GITHUB_TOKEN }}
+      #     max_timeout: 600
 
       # (b) A URL YOU ALREADY HAVE — staging, or a preview at a predictable address.
       # - name: the preview URL
@@ -104,8 +116,25 @@ jobs:
       # every pull request is a fresh agent run: slower, and paid for per run, forever. With it, the
       # agent only wakes when a recording stops fitting the app.
       #
-      # The key is per-commit so each run saves a fresh entry; restore-keys takes the newest earlier
-      # one, and a pull request falls back to the cache from the default branch.
+      # The key is per-commit so each run saves a fresh entry, and restore-keys takes the newest
+      # earlier one.
+      #
+      # HOW FAR THE CACHE REACHES, WHICH IS NOT AS FAR AS YOU WOULD LIKE. Actions scopes a cache to
+      # the branch that wrote it, and a run may read only its own branch's caches and the default
+      # branch's. This workflow runs on `pull_request` and nothing else, so nothing ever writes a
+      # cache on the default branch: pull request #2 cannot see what #1 recorded. THE FIRST RUN OF
+      # EVERY NEW PULL REQUEST IS A FULL AGENT RUN. Every push after it on that same pull request
+      # replays. That is the cost, it is bounded, and it is worth expecting rather than debugging.
+      #
+      # If you would rather pay it once for the repository: commit .smolanalytics/recordings. They
+      # are small JSON, they are meant to be read in review, and a recording that arrives with the
+      # code it describes starts every branch warm. Then delete both cache steps.
+      #
+      # You can watch this working: the pull request comment says how many tests replayed and how
+      # many woke the agent, on every run. Within one pull request that number should fall after
+      # the first push. Two reasons it legitimately will not, before you suspect these steps: a
+      # brand-new pull request starts cold, as above, and a test that passes by only reading a page
+      # performs no step, so there is nothing to record and it wakes the agent every time.
       # ----------------------------------------------------------------------------------------
       - name: restore the recordings
         uses: actions/cache/restore@v4
@@ -128,6 +157,11 @@ jobs:
         env:
           # Referenced as "$URL" below rather than interpolated into the script, because a value
           # that came from another action must never be pasted into a shell command.
+          #
+          # EMPTY BY DEFAULT, AND THAT IS THE ZERO-CONFIG PATH, NOT A BUG: with no step called
+          # `preview` this resolves to "", `--url ""` is read as no --url at all, and the CLI goes
+          # and asks the deployments API. Leave the line here either way — uncommenting one of the
+          # preview options above is then the only edit you have to make.
           URL: ${{ steps.preview.outputs.url }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           # Provided automatically by Actions. This is the whole of the GitHub access this needs.

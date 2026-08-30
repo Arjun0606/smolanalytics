@@ -18,10 +18,12 @@
 import { test, describe, after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { mkdtempSync, existsSync, readFileSync } from "node:fs";
+import { mkdtempSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { testCmd } from "../lib/test.mjs";
+import { runnerProblem, testCmd } from "../lib/test.mjs";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 // A failing verdict now captures evidence, and the default directory is relative to the CWD —
 // which under `npm test` is this repository. Evidence from a test OF the runner does not belong
@@ -216,5 +218,168 @@ describe("a recording is only written when its proof is really on the page", () 
     assert.equal(r.code, 0);
     assert.equal(existsSync(plan), true, "the guard must not cost us the recordings that were always fine");
     assert.equal(JSON.parse(readFileSync(plan, "utf8")).proof, "Your cart");
+  });
+});
+
+
+// ---- what the reader is told when the run could not happen ---------------------------------------
+//
+// THE REQUIREMENT: the sentence the reader sees first must name the cause, the sentence after it
+// must name the fix, and neither may be a Call log or a JSON error body.
+//
+// Measured before this existed, by running the real binary against a port with nothing on it:
+//
+//   the run could not complete: page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:4999/pricing
+//   Call log:
+//     - navigating to "http://127.0.0.1:4999/pricing", waiting until "domcontentloaded"
+//
+// and with a key that had been revoked:
+//
+//   the run could not complete: the model call failed (401). {"type":"error","error":{"type":
+//   "authentication_error","message":"API key is invalid."},"request_id":null}
+//
+// Both are the first minute going badly, and neither says "your app is not running" or "your key
+// was rejected". None of this touches a status or an exit code: every case below is still errored.
+
+describe("why the run stopped, in a sentence somebody can act on", () => {
+  const refused = new Error(
+    'page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:4999/pricing\nCall log:\n  - navigating to "http://127.0.0.1:4999/pricing", waiting until "domcontentloaded"\n',
+  );
+
+  test("nothing listening: the cause names the address, the fix names the flag", () => {
+    const r = runnerProblem(refused);
+    assert.match(r.what, /Nothing is listening at http:\/\/127\.0\.0\.1:4999\.?$/);
+    assert.match(r.fix, /--url/, "the fix must name what to change");
+    assert.ok(!/ERR_CONNECTION_REFUSED/.test(`${r.what} ${r.fix}`), "a Chromium error code is not a sentence");
+  });
+
+  test("the Call log never survives, whatever the cause", () => {
+    for (const e of [refused, new Error('boom\nCall log:\n  - navigating to "http://x.test/"')]) {
+      const r = runnerProblem(e);
+      assert.ok(!/Call log/.test(`${r.what} ${r.fix}`), `the Call log was printed:\n${r.what}\n${r.fix}`);
+      assert.ok(!/navigating to/.test(`${r.what} ${r.fix}`));
+    }
+  });
+
+  test("a rejected key says the key was rejected, and no JSON body reaches the reader", () => {
+    const r = runnerProblem(new Error('the model call failed (401). {"type":"error","error":{"type":"authentication_error","message":"API key is invalid."},"request_id":null}'));
+    assert.match(r.what, /ANTHROPIC_API_KEY/, "the reader has to know WHICH key");
+    assert.match(r.what, /401/);
+    assert.ok(!/\{|\}/.test(`${r.what} ${r.fix}`), `a JSON blob reached the reader:\n${r.what} ${r.fix}`);
+    assert.match(r.fix, /console\.anthropic\.com/, "the fix must say where to go");
+  });
+
+  test("each model status gets its own answer, and 429 and 5xx are never blamed on the app", () => {
+    assert.match(runnerProblem(new Error("the model call failed (429). x")).what, /rate-limited/i);
+    assert.match(runnerProblem(new Error("the model call failed (503). x")).what, /503/);
+    assert.match(runnerProblem(new Error("the model call failed (503). x")).fix, /their side/i);
+    assert.match(runnerProblem(new Error("the model call failed (403). x")).what, /ANTHROPIC_API_KEY/);
+  });
+
+  test("a name that does not resolve, a bad certificate and a hang each say which one it is", () => {
+    const dns = runnerProblem(new Error("page.goto: net::ERR_NAME_NOT_RESOLVED at https://nope.invalid/x"));
+    assert.match(dns.what, /nope\.invalid.*does not resolve/);
+    const tls = runnerProblem(new Error("page.goto: net::ERR_CERT_AUTHORITY_INVALID at https://local.test/x"));
+    assert.match(tls.what, /certificate/);
+    assert.match(tls.fix, /http:\/\//, "the usual cause is https on a local server");
+    const slow = runnerProblem(new Error('page.goto: Timeout 30000ms exceeded.\nCall log:\n  - navigating to "http://127.0.0.1:4322/pricing", waiting until "domcontentloaded"\n'));
+    assert.match(slow.what, /did not finish loading within 30s/);
+    assert.match(slow.what, /127\.0\.0\.1:4322/, "the reader must be told WHICH page hung");
+  });
+
+  test("anything unrecognised is passed through, never swallowed or renamed", () => {
+    const r = runnerProblem(new Error("ENOSPC: no space left on device, write"));
+    assert.equal(r.known, false, "an error with nothing better to say must not pretend it was recognised");
+    assert.equal(r.what, "ENOSPC: no space left on device, write");
+    assert.equal(r.fix, "");
+  });
+
+  test("known is what lets an unrecognised error keep the sentence it always had", () => {
+    // The callers wrap `known: false` in their own "the run could not complete" / "the survey could
+    // not complete", so nothing this function has never seen reads differently than it did before
+    // this function existed. Only a cause we can actually name gets its own opening line.
+    assert.equal(runnerProblem(new Error("page.goto: net::ERR_CONNECTION_REFUSED at http://x.test/")).known, true);
+    assert.equal(runnerProblem(new Error("the model call failed (401). {}")).known, true);
+    assert.equal(runnerProblem(new Error("something nobody has seen")).known, false);
+  });
+
+  test("a port the browser refuses outright says so, rather than blaming the app", () => {
+    const r = runnerProblem(new Error("page.goto: net::ERR_UNSAFE_PORT at http://127.0.0.1:1/x"));
+    assert.match(r.what, /refuses to open port 1\b/);
+    assert.match(r.fix, /another one/);
+  });
+
+  test("the real binary prints it that way round, and it is still errored and still exit 2", async () => {
+    // A port nothing is on: bound, read, released. Real process, real Chromium, real replay path —
+    // the only way to prove the translation is on the path the customer takes. Not a hardcoded low
+    // port: Chromium blocks those outright with a different error, which is its own case above.
+    const probe = createServer(() => {});
+    await new Promise((r) => probe.listen(0, "127.0.0.1", r));
+    const port = probe.address().port;
+    probe.closeAllConnections();
+    await new Promise((r) => probe.close(() => r()));
+
+    const dir = mkdtempSync(path.join(tmpdir(), "smolanalytics-why-"));
+    const planPath = path.join(dir, "p.json");
+    const at = `http://127.0.0.1:${port}/x`;
+    writeFileSync(planPath, JSON.stringify({ startUrl: at, steps: [{ kind: "goto", url: at }], proof: "anything" }));
+    const bin = fileURLToPath(new URL("../bin/smolanalytics.mjs", import.meta.url));
+    const r = spawnSync(process.execPath, [bin, "test", "--url", `http://127.0.0.1:${port}`, "--test", "it works", "--plan", planPath, "--yes"], { encoding: "utf8", timeout: 120_000 });
+    const out = `${r.stdout}${r.stderr}`.replace(/\x1b\[[0-9;]*m/g, "");
+    assert.equal(r.status, 2, `the runner failing is exit 2, never 1:\n${out}`);
+    assert.match(out, new RegExp(`Nothing is listening at http://127\\.0\\.0\\.1:${port}\\.`), out);
+    assert.ok(!/Call log/.test(out), `the Call log reached the terminal:\n${out}`);
+    assert.ok(!/ERR_CONNECTION_REFUSED/.test(out), `the Chromium error code reached the terminal:\n${out}`);
+  });
+});
+
+// A PASS THAT RECORDS NOTHING, AND SAID NOTHING ABOUT IT.
+//
+// compile() returns null for a run with no replayable step, exactly as it does for one with no
+// proof — but only the proofless case ever said so. The other branch is an ordinary, correct test:
+// "the pricing page shows a monthly price", started on the pricing page, reads the page, finishes.
+// Nothing to replay, and nothing to record.
+//
+// MEASURED, walking a CI run of three tests: two printed "recorded 1 steps … the next run needs no
+// model", this one printed NOTHING, and every run afterwards reported "1 of 3 woke the agent". The
+// two causes the summary offered — no recording yet, recording stopped fitting — are both false
+// here and both imply the number will settle. It never does. The shipped workflow then tells that
+// reader to suspect their Actions cache, which is working perfectly.
+//
+// Silence at the exact moment the sibling tests spoke, on the one fact that explains the bill.
+describe("a pass that could not be recorded says so, whichever reason it was", () => {
+  const finishAtOnce = (proof) => () => ok({
+    stop_reason: "tool_use",
+    content: [{ type: "tool_use", id: "t1", name: "finish", input: { passed: true, why: "The cart is there.", proof } }],
+  });
+
+  test("a read-only pass names its own cost instead of leaving the reader to the cache", noBrowser, async () => {
+    const plan = path.join(mkdtempSync(path.join(tmpdir(), "smolanalytics-plan-")), "cart.json");
+    const r = await run(finishAtOnce("Your cart"), { plan, retries: 0 });
+
+    assert.equal(r.code, 0, "the agent observed a pass; nothing here may move the verdict");
+    assert.equal(r.runs.at(-1).status, "passed");
+    assert.equal(existsSync(plan), false, "a plan with no steps would pass by exercising nothing — it must still not be written");
+
+    // THE REQUIREMENT: the run must say a recording was not made. Silence is the defect.
+    assert.match(r.out, /not recorded/,
+      `a pass that recorded nothing said nothing, so the next run's cost has no explanation anywhere:\n${r.out}`);
+    // And it must say the thing the summary line cannot: this one does not settle.
+    assert.match(r.out, /every run/,
+      "without this the reader expects the number to fall, and goes looking for a broken cache when it does not");
+    // It must NOT be reported as the OTHER no-recording case. The proof was fine; blaming it sends
+    // someone to reword a sentence that is already correct.
+    assert.ok(!/named no proof/.test(r.out),
+      `a read-only pass was reported as a proofless one:\n${r.out}`);
+  });
+
+  test("the proofless case is still reported as the proofless case", noBrowser, async () => {
+    // The two branches must stay told apart: this one IS fixable by rewording the test, and the
+    // read-only one is not. One message for both would make the actionable half unactionable.
+    const plan = path.join(mkdtempSync(path.join(tmpdir(), "smolanalytics-plan-")), "cart.json");
+    const r = await run(finishAtOnce(""), { plan, retries: 0 });
+    assert.equal(r.code, 0);
+    assert.equal(existsSync(plan), false);
+    assert.match(r.out, /named no proof/, `the proofless case lost its own diagnosis:\n${r.out}`);
   });
 });

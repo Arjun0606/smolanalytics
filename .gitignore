@@ -26,3 +26,7 @@ MATRIX.md
 DEPTH_SPEC.md
 FEATURE_BUILD_PLAN.md
 .tmp
+
+# Test-run output: recordings and evidence written by the CLI when the suite runs
+# against itself. Never source.
+cli/.smolanalytics/

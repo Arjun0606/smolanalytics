@@ -258,8 +258,12 @@ describe("the walk: what it reads, and what it refuses to touch", () => {
     // and nothing honest to propose — and it is OUR problem to report (2), never the app's (1).
     const r = await suggest({ tests: REAL, out, at: "http://127.0.0.1:1/" });
     assert.equal(r.code, 2, r.out);
-    assert.match(r.out, /could not complete/i);
-    assert.match(r.out, /this runner, not your application/i, `a survey that cannot start must not read as a bug report:\n${r.out}`);
+    // The PROPERTY, not the wording: the run stopped, and it is said in the runner's own voice.
+    // Chromium blocks port 1 outright, and naming that beats "the survey could not complete:
+    // page.goto: net::ERR_UNSAFE_PORT at http://127.0.0.1:1/" — which is what this used to print.
+    assert.match(r.out, /refuses to open port 1|could not complete/i, r.out);
+    assert.match(r.out, /not your application/i, `a survey that cannot start must not read as a bug report:\n${r.out}`);
+    assert.ok(!/Call log/.test(r.out), `Playwright's Call log reached the reader:\n${r.out}`);
     assert.deepEqual(filesIn(out), [], "a run that learned nothing wrote a file");
   });
 });
