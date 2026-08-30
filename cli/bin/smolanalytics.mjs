@@ -19,15 +19,16 @@ import { connectCmd } from "../lib/connect.mjs";
 import { planCheckCmd } from "../lib/plan.mjs";
 import { auditCmd } from "../lib/audit.mjs";
 import { deskCmd } from "../lib/desk.mjs";
-import { testCmd } from "../lib/test.mjs";
-import { suiteCmd, DEFAULT_PLANS_DIR } from "../lib/suite.mjs";
+import { runnerProblem, testCmd, testUsage } from "../lib/test.mjs";
+import { suiteCmd, DEFAULT_PLANS_DIR, announceCannotStart } from "../lib/suite.mjs";
 import { parseLayoutMode } from "../lib/layout.mjs";
 import { parseEngine } from "../lib/engines.mjs";
 import { parseWorkers } from "../lib/pool.mjs";
 import { parseMaxCalls } from "../lib/cost.mjs";
 import { parseSince } from "../lib/select.mjs";
 import { autoPreviewUrl } from "../lib/preview.mjs";
-import { suggestCmd } from "../lib/suggest.mjs";
+import { suggestCmd, suggestUsage } from "../lib/suggest.mjs";
+import { normalizeUrl } from "../lib/safety.mjs";
 
 const C = {
   dim: (s) => `\x1b[2m${s}\x1b[0m`,
@@ -49,6 +50,81 @@ function flag(name) {
   return eq ? eq.slice(name.length + 3) : undefined;
 }
 const hasFlag = (name) => process.argv.includes(`--${name}`);
+
+// A FLAG NOBODY DEFINED IS A FLAG THAT DID NOTHING, AND SAID NOTHING.
+//
+// Every flag VALUE below is refused rather than defaulted — --retries, --layout, --browser,
+// --workers, --since, --max-calls all do it, each with the same reason written out beside it:
+// quietly handing back the default gives the person who typed the flag something other than what
+// they asked for. Flag NAMES had no such guard at all. Measured, by typing them:
+//
+//   --tset "the pricing page works"  printed `test`'s usage block with no mention of --tset, so the
+//                                    reader has to diff the help against their own command to find
+//                                    the one character that is wrong.
+//   --urls https://staging.myapp.com the same, and --url then looked missing.
+//   --reties 3                       ran with one retry, silently.
+//   --headles                        ran headless, silently — which is the one thing the person
+//                                    typing it was trying to stop.
+//
+// Scanning every `--` token is exactly the shape flag() already assumes: it refuses to read a
+// value that begins with `--`, so nothing that used to be consumed as a value is caught here by
+// surprise. Positional arguments (`audit ./app`, `connect cursor`, `plan check`) are not scanned.
+const FLAGS = {
+  test: ["url", "wait-preview", "test", "plan", "plans", "plan-dir", "browser", "headed", "yes",
+    "teardown", "seed", "email-domain", "retries", "workers", "evidence-dir", "layout",
+    "no-render-check", "login", "auth-file", "auth-dir", "suite", "since", "comment", "share",
+    "max-steps", "max-calls", "help"],
+  suggest: ["url", "out", "max", "yes", "help"],
+  audit: ["dir", "json", "all", "help"],
+  desk: ["url", "host", "key", "project", "help"],
+  init: ["key", "host", "yes", "print", "help"],
+  connect: ["url", "host", "key", "help"],
+  plan: ["url", "host", "key", "project", "window", "help"],
+};
+
+// The commands this binary dispatches. `plan` covers `plan check`; `help` is handled above.
+const COMMANDS = ["test", "suggest", "audit", "desk", "init", "connect", "plan"];
+
+/** Edit distance, capped at 3 — far enough to catch a typo, near enough not to invent a guess. */
+function distance(a, b) {
+  const prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let diag = prev[0];
+    prev[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const next = Math.min(prev[j] + 1, prev[j - 1] + 1, diag + (a[i - 1] === b[j - 1] ? 0 : 1));
+      diag = prev[j];
+      prev[j] = next;
+    }
+  }
+  return prev[b.length];
+}
+
+/** The first `--` token this command does not read, as a sentence naming the fix. "" when all are known. */
+function unknownFlag(cmd) {
+  const known = FLAGS[cmd];
+  if (!known) return "";
+  for (const raw of process.argv.slice(3)) {
+    if (raw === "--" || !raw.startsWith("--")) continue;
+    const name = raw.slice(2).split("=")[0];
+    if (!name || known.includes(name)) continue;
+    // A suggestion is only offered when it is nearly certain. "--foo" is nobody's typo of anything
+    // here, and a confidently wrong "did you mean" is worse than no guess at all.
+    let near = "";
+    let best = 3;
+    for (const k of known) {
+      const d = distance(name, k);
+      if (d < best && d < Math.max(name.length, k.length)) {
+        best = d;
+        near = k;
+      }
+    }
+    return near
+      ? `unknown option --${name}. Did you mean ${C.bold(`--${near}`)}?`
+      : `unknown option --${name} for \`smolanalytics ${cmd}\`. Run \`npx smolanalytics --help\` for the flags it takes.`;
+  }
+  return "";
+}
 
 function help() {
   console.log(`
@@ -92,6 +168,12 @@ ${C.bold("smolanalytics")} — end-to-end tests without test code
   ${C.bold("npx smolanalytics audit")}       what your app does that nothing is measuring
   ${C.dim("[dir]")}                 repo to scan (default: here). No account, no network.
 
+  ${C.bold("npx smolanalytics mcp")}         the testing half inside your editor (stdio MCP)
+  ${C.dim("run_tests")}             run the suite and read every verdict
+  ${C.dim("can_i_ship")}            the verdict plus what was NOT checked
+  ${C.dim("list_tests")}            what this project already covers
+  ${C.dim("Local only: it never comments, shares, or records to a project.")}
+
   ${C.bold("npx smolanalytics desk")}        what it found, in your terminal\n  ${C.dim("--key <api key>")}       or SMOLANALYTICS_KEY\n\n  ${C.bold("npx smolanalytics init")}        wire the tracker into this app
 
   ${C.dim("--key   <write key>")}   public ingest key (or SMOLANALYTICS_WRITE_KEY)
@@ -114,9 +196,51 @@ Docs: https://smolanalytics.com/docs · 14-day trial at Pro limits, no card
 `);
 }
 
+/**
+ * ASKING WHAT A COMMAND DOES MUST NEVER BE ANSWERED BY DOING IT.
+ *
+ * `--help` was listed in FLAGS for every command, so it passed the typo check as a known flag and
+ * was then read by nobody. Help arrived only as the side effect of failing a required-argument
+ * check, and where a command had no required argument it did not arrive at all. MEASURED, by
+ * typing each one:
+ *
+ *   npx smolanalytics audit --help    walked the repo and printed a full audit report, 11 findings
+ *   npx smolanalytics init --help     detected Next.js, named the file it would edit, then asked
+ *                                     for a write key
+ *   npx smolanalytics connect --help  "connect needs your MCP token"
+ *   npx smolanalytics desk --help     "desk needs a read key"
+ *   npx smolanalytics plan check --help  "plan check needs a key"
+ *   npx smolanalytics test --help     the right text, exit 1 — the code that means their app broke
+ *   npx smolanalytics suggest --help  the right text, exit 2 — the code that means we broke
+ *
+ * Exit 0 on all of them, because a question that was answered is not a failure, and because these
+ * two exit codes are a published contract that a `--help` has no business speaking in.
+ *
+ * `test` and `suggest` print their own blocks; the rest fall to the top-level help, which already
+ * documents every command with its flags. Writing five more usage blocks would be five more places
+ * for the flag list to drift out of date, and the reader is one screen from the answer either way.
+ */
+function helpFor(cmd) {
+  if (cmd === "test") return console.log(testUsage());
+  if (cmd === "suggest") return console.log(suggestUsage());
+  return help();
+}
+
 async function main() {
   const cmd = process.argv[2];
   if (!cmd || cmd === "help" || cmd === "--help" || cmd === "-h") return help();
+  // Before the typo check, and long before any command opens a file or a browser: -h is not in
+  // FLAGS and would otherwise be reported as an unknown option on every subcommand.
+  if (process.argv.slice(3).some((a) => a === "--help" || a === "-h")) return helpFor(cmd);
+  // Before anything is parsed, opened or printed: a typo must not be discovered by its silence.
+  const typo = unknownFlag(cmd);
+  if (typo) {
+    console.error(`\n${C.red(typo)}\n`);
+    // 2 on `test`, whose exit code is a published contract: 1 means the customer's app is broken,
+    // and a typo in our own flag is never that. main()'s catch-all applies the same rule.
+    process.exitCode = cmd === "test" ? 2 : 1;
+    return;
+  }
   if (cmd === "connect") {
     const bare = process.argv.slice(3).find((a, i, all) => !a.startsWith("--") && !(i > 0 && all[i - 1].startsWith("--") && !all[i - 1].includes("=")));
     process.exitCode = connectCmd({
@@ -213,11 +337,27 @@ async function main() {
       const preview = await autoPreviewUrl({ waitRaw: flag("wait-preview") });
       if (preview.problem) {
         console.error(`\n${C.red("no preview URL")} ${preview.problem}\n`);
+        // AND ON THE PULL REQUEST, not only in the job log. A preview that never became ready is
+        // the one outage where nothing this tool does is visible where it is meant to be visible:
+        // the run stops here, before suiteCmd and before any comment, and the shipped workflow's
+        // continue-on-error paints the check green. Green, silent, and untested is the answer a
+        // reviewer is least equipped to catch (lib/suite.mjs::cannotStartBody).
+        await announceCannotStart({ problem: preview.problem, suite: suite || "test", comment, log: console.error });
         process.exitCode = 2;
         return;
       }
       if (preview.url) url = preview.url;
     }
+    // A MISSING SCHEME IS REPAIRED HERE OR IT IS A FALSE GREEN LATER (lib/safety.mjs says how one
+    // gets produced). Ahead of the try, so a URL nothing can open never reaches a browser, a
+    // recording or the production question, and exit 2 — our side, nothing was learned.
+    const fixed = normalizeUrl(url);
+    if (fixed.problem) {
+      console.error(`\n${C.red(fixed.problem)}\n`);
+      process.exitCode = 2;
+      return;
+    }
+    url = fixed.url;
     try {
       // --suite and --comment are the CI shape: many tests, one comment, a status per test. Without
       // either of them this stays the sixty-second command it already was, with the same output.
@@ -280,8 +420,11 @@ async function main() {
         share: hasFlag("share"),
       });
     } catch (err) {
-      console.error(`\n${C.red("the run could not complete")} ${err?.message || err}`);
-      console.error(`  This is the test runner, not your application. Nothing was learned about this change.\n`);
+      // Named first, fix second, no Call log — lib/test.mjs's runnerProblem says why.
+      const why = runnerProblem(err);
+      console.error(`\n${C.red(why.known ? why.what : `the run could not complete: ${why.what}`)}`);
+      if (why.fix) console.error(C.dim(`  ${why.fix}`));
+      console.error(C.dim(`  This is the test runner, not your application. Nothing was learned about this change.\n`));
       process.exitCode = 2;
     }
     return;
@@ -300,14 +443,30 @@ async function main() {
     // above: flag() cannot tell `--max` with no value from no --max at all, and silently handing
     // back the default 6 gives the person who typed a cap a different one than they asked for.
     // suggestCmd owns the refusal so the library and the CLI cannot drift apart on what is valid.
+    // The same repair as `test`, for the same reason: suggest drives a real browser too, and
+    // `--url myapp.com` used to reach Playwright as a URL it could not parse.
+    const surveyed = normalizeUrl(flag("url"));
+    if (surveyed.problem) {
+      console.error(`\n${C.red(surveyed.problem)}\n`);
+      process.exitCode = 2;
+      return;
+    }
     process.exitCode = await suggestCmd({
-      url: flag("url"),
+      url: surveyed.url,
       out: flag("out") || "tests",
       max: flag("max") ?? (hasFlag("max") ? "" : undefined),
       yes: hasFlag("yes"),
     });
     return;
   }
+  if (cmd === "mcp") {
+    // stdio, and the process stays alive until the editor closes the pipe. Nothing is printed here
+    // — the first byte on stdout must be JSON-RPC or the client reports a broken server.
+    const { serve } = await import("../lib/mcp.mjs");
+    process.exitCode = await serve();
+    return;
+  }
+
   if (cmd === "desk") {
     process.exitCode = await deskCmd({
       url: flag("url") || flag("host") || process.env.SMOLANALYTICS_HOST || "",
@@ -332,8 +491,29 @@ async function main() {
     return;
   }
   if (cmd !== "init") {
-    console.error(`unknown command ${C.bold(cmd)}\n`);
-    help();
+    // A MISTYPED COMMAND GETS THE SAME SENTENCE A MISTYPED FLAG GETS.
+    //
+    // MEASURED: `npx smolanalytics tset --url … --test "…"` printed `unknown command tset` and then
+    // the full sixty-four-line help, leaving the reader to diff it against what they typed to find
+    // the two transposed characters — while `npx smolanalytics test --tset "…"`, one keystroke
+    // away, answered `Did you mean --test?` in a single line. Same typo, same distance(), two
+    // different first minutes. The help dump is dropped where a guess is confident: it is sixty-
+    // four lines that bury the one line naming the fix.
+    let near = "";
+    let best = 3;
+    for (const k of COMMANDS) {
+      const d = distance(cmd, k);
+      if (d < best && d < Math.max(cmd.length, k.length)) {
+        best = d;
+        near = k;
+      }
+    }
+    if (near) {
+      console.error(`\n${C.red(`unknown command ${C.bold(cmd)}. Did you mean ${C.bold(near)}?`)}\n`);
+    } else {
+      console.error(`unknown command ${C.bold(cmd)}\n`);
+      help();
+    }
     process.exitCode = 1;
     return;
   }
