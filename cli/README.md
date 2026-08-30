@@ -454,6 +454,44 @@ a dollar cap is only as accurate as a price table, while a call cap is exact and
 Hitting it stops cleanly, says so, and exits **2** — a budget you set is our decision to enforce,
 never a verdict about your application.
 
+### Where a failure goes
+
+The bug report is already written — the page, the control, what was expected, what happened, and
+the changed file most likely responsible with the evidence linking it to the test. Copying that
+into a tracker by hand is transcription, so it does not have to be done by hand.
+
+```sh
+# Slack, or any webhook
+export SMOLANALYTICS_SLACK_WEBHOOK=https://hooks.slack.com/services/...
+export SMOLANALYTICS_WEBHOOK=https://your-endpoint.example.com/smolanalytics
+
+# Linear
+export SMOLANALYTICS_LINEAR_API_KEY=lin_api_...
+export SMOLANALYTICS_LINEAR_TEAM_ID=...
+
+# Jira Cloud
+export SMOLANALYTICS_JIRA_URL=https://you.atlassian.net
+export SMOLANALYTICS_JIRA_EMAIL=you@company.com
+export SMOLANALYTICS_JIRA_API_TOKEN=...
+export SMOLANALYTICS_JIRA_PROJECT=ENG
+```
+
+All of it is from the environment and never a flag, because a flag lands in shell history and in
+the command line CI prints at the top of every log.
+
+**Slack gets the ship verdict, not a count.** And it stays quiet on a clean run — a channel that
+posts on every green push is a channel that gets muted, and then the one message that mattered
+arrives where nobody is reading. It does speak when nothing failed but recordings went stale,
+because that run verified almost nothing and looks fine.
+
+**A tracker gets failures only.** Never `stale` (our recording aged, not your bug), never `flaky`
+(nobody can act on it yet), never `errored` (our runner, not your app). One issue per test however
+many times it fails: each carries a `smolanalytics:<test>` tag in its body, and the next failure
+comments on the open issue instead of opening another.
+
+Nothing here can change a verdict or an exit code. Every delivery failure is reported in one line
+and the verdict above it still stands.
+
 ### Tests behind a login
 
 Most tests worth writing are behind a sign-in, so the login is recorded and reused the same way

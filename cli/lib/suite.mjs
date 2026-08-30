@@ -40,6 +40,7 @@ import { prNumber, publishShare, ciContext } from "./share.mjs";
 // path and the whole folder runs exactly as it always has.
 import { shipText } from "./ship.mjs";
 import { notify, notifyLine, parseWhen } from "./notify.mjs";
+import { fileIssues, issueLine } from "./issue.mjs";
 import { selectSuite, selectionHeadline, selectionCommentLines, selectionCommentDetail, selectionTerminalLines, selectionTailLines, selectionShareLines } from "./select.mjs";
 
 const C = {
@@ -1037,6 +1038,9 @@ export async function suiteCmd({
   // this does after the verdict can move the exit code, and that is only proved by a notifier
   // that actually fails.
   notifyImpl = notify,
+  // Injectable for the same reason: the guarantee is that nothing after the verdict moves the
+  // exit code, and only a tracker that really fails can prove it.
+  fileIssuesImpl = fileIssues,
   notifyWhen = "problems",
   // --share (lib/share.mjs). ONE link for the whole suite — see the call at the bottom of this
   // function for why that is the right unit.
@@ -1207,6 +1211,20 @@ export async function suiteCmd({
   log("");
   for (const line of shipText(results, { selection, suite: suite || "tests", url }).split("\n")) {
     log(line.startsWith("  ") ? C.dim(line) : line);
+  }
+
+  // FILE THE BUG, which is already written. Only real failures, one issue per test however many
+  // times it fails, and never for stale/flaky/errored — those are our artefact aging, a thing
+  // nobody can act on yet, and our own runner breaking. Filing any of them against somebody's
+  // product is a lie about whose fault it is. See lib/issue.mjs.
+  try {
+    const filed = await fileIssuesImpl(results, {
+      url, commit: ciContext({ env, cwd }).shortCommit, runUrl: runUrlFor(env), suite: suite || "tests",
+    }, { env });
+    const line = issueLine(filed);
+    if (line) log(C.dim(line));
+  } catch {
+    /* a tracker that can break a build is a tracker people disconnect; this cannot */
   }
 
   // TELL SOMEBODY. Last, after the verdict is decided and printed, so a Slack outage cannot reach
