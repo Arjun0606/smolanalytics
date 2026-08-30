@@ -27,16 +27,18 @@
 
 import { readdirSync, readFileSync, statSync, mkdirSync, existsSync } from "node:fs";
 import path from "node:path";
-import { testCmd, loadPlaywright } from "./test.mjs";
+import { testCmd, loadPlaywright, keyFix } from "./test.mjs";
+import { keyProblem } from "./safety.mjs";
 import { openPool } from "./pool.mjs";
 import { suspectsForFailure } from "./suspect.mjs";
 import { layoutCommentLines } from "./layout.mjs";
 import { DEFAULT_AUTH_DIR } from "./auth.mjs";
 import { DEFAULT_ENGINE } from "./engines.mjs";
-import { prNumber, publishShare } from "./share.mjs";
+import { prNumber, publishShare, ciContext } from "./share.mjs";
 // DIFF-AWARE TEST SELECTION (lib/select.mjs). Everything about --since lives there: this file only
 // asks it which tests to run and prints what it says. Without --since not one line of it is on the
 // path and the whole folder runs exactly as it always has.
+import { shipText } from "./ship.mjs";
 import { selectSuite, selectionHeadline, selectionCommentLines, selectionCommentDetail, selectionTerminalLines, selectionTailLines, selectionShareLines } from "./select.mjs";
 
 const C = {
@@ -320,7 +322,7 @@ export function discover(target, plansDir = DEFAULT_PLANS_DIR, io = nodeIo) {
       tests.push({ ...t, id, planPath: path.join(plansDir, `${id}.json`) });
     }
   }
-  return { tests, missing: "", errors, notes };
+  return { tests, missing: "", errors, notes, files };
 }
 
 // ---- running them -----------------------------------------------------------------------------
@@ -444,6 +446,8 @@ export async function runSuite({
         seed,
         emailDomain,
         log: tlog,
+        // The header above already printed the export line once. See runOnce.
+        inSuite: true,
         // One Chromium for the whole suite, a context per worker. undefined when --workers 1, and
         // lib/test.mjs's own default then applies.
         loadBrowser: pool.loadBrowser,
@@ -524,6 +528,56 @@ export function exitCode(results) {
   return 0;
 }
 
+/**
+ * How many tests woke the agent — the paid half of the run.
+ *
+ * TWO EXCLUSIONS, AND BOTH ARE THE SAME RULE: only count what actually happened.
+ *
+ * Not "everything that did not replay", because a stale row replayed and an errored row may never
+ * have opened a browser. And not every row whose mode says "agent" either: a test that errored
+ * carries mode "agent" when the browser refused to launch or the very first model call was
+ * rejected, and neither of those is a slow, paid run — the sentence this feeds says a run was slow
+ * because N tests woke the agent, and naming a test that cost nothing overstates it.
+ */
+export const agentRuns = (results) => results.filter((r) => r.mode === "agent" && r.status !== "errored").length;
+
+/**
+ * WHY THIS RUN WAS SLOW, SAID ON THE RUN THAT WAS SLOW.
+ *
+ * MEASURED by walking a first CI run: three tests, no recordings restored, three rows reading
+ * "agent" — and not one word anywhere about what that meant or what it bought. The only note that
+ * existed was `N of M ran from a recording`, which by construction cannot appear until something
+ * has ALREADY replayed. The run that most needs explaining was the only run guaranteed to get no
+ * explanation, and on a forty-test suite it reads as alarmingly slow and expensive for no reason.
+ *
+ * WHAT IT REFUSES TO CLAIM. Not "the next run is free": a failing agent run records nothing, and
+ * neither does a pass that needed no steps, so the tests that will replay tomorrow are not the set
+ * this function can name. And when nothing replayed it does NOT assert the cache is broken — a
+ * first-ever run looks identical from here — it names every possibility and lets the reader tell
+ * them apart.
+ *
+ * THE THIRD CAUSE, WHICH USED TO BE MISSING FROM BOTH SENTENCES. A test that passes by only
+ * reading a page performs no step, so compile() records nothing for it — the doc comment above has
+ * always known this, and the sentence the reader actually gets did not say it. MEASURED, walking a
+ * CI run: one such test among three, and every run afterwards said "1 of 3 woke the agent" beside
+ * two causes that both imply it will settle. The template tells that reader their cache is the
+ * suspect. It is not, and the number never moves. A cause that never settles has to be named, or
+ * the reader is sent to debug something that is working.
+ */
+export function economicsNote(s, agent, tick = "") {
+  if (!agent) return "";
+  const what = `${agent} of ${s.total} woke the agent — the slow, paid half of a run. A recording it writes replays with no model calls at all.`;
+  return s.replayed
+    ? `${what} The agent wakes for a test with no recording yet, one whose recording stopped fitting the app, or one that passes by only reading a page — that last kind performs no step, so there is nothing to record and it never gets cheaper.`
+    : `${what} Nothing replayed this time: this is the first run, or the recordings in ${tick}.smolanalytics/recordings${tick} are not being kept between runs (the workflow template caches them with actions/cache restore + save), or nothing here performs a step to record — a test that passes by only reading a page records nothing.`;
+}
+
+/** The Actions run this came from, or "" anywhere else. Shared so two surfaces cannot link differently. */
+export function runUrlFor(env = process.env) {
+  if (!env.GITHUB_RUN_ID || !env.GITHUB_REPOSITORY) return "";
+  return `${(env.GITHUB_SERVER_URL || "https://github.com").replace(/\/+$/, "")}/${env.GITHUB_REPOSITORY}/actions/runs/${env.GITHUB_RUN_ID}`;
+}
+
 // One NaN in a report makes a reader distrust the verdict printed next to it, so a duration we do
 // not have renders as nothing at all.
 const secs = (ms) => {
@@ -549,7 +603,13 @@ const LABEL = { passed: "pass", failed: "**fail**", stale: "stale", errored: "er
  */
 export const markerFor = (suite) => `<!-- smolanalytics-run:${slug(suite)} -->`;
 
-export function commentBody(results, { url = "", suite = "tests", runUrl = "", problems = [], selection = null } = {}) {
+/**
+ * @param {object} opts
+ * @param {boolean} [opts.hasKey] whether ANTHROPIC_API_KEY was set for this run. Passed as a fact
+ *   rather than inferred by matching our own reason strings, because a reason is prose that gets
+ *   reworded and a condition that reads prose stops firing silently when it does.
+ */
+export function commentBody(results, { url = "", suite = "tests", runUrl = "", problems = [], selection = null, hasKey = true, commit = "", evidenceDir = "" } = {}) {
   const s = summarize(results);
   const head = [`${s.passed} passed`];
   // "flaky", never folded into passed: a headline that counts a retry as a pass is the lie the
@@ -589,19 +649,91 @@ export function commentBody(results, { url = "", suite = "tests", runUrl = "", p
     // Directly under the headline, never at the bottom: what did NOT run is the first thing that
     // changes how the numbers above it should be read.
     ...selectionCommentLines(selection),
-    url ? `Against ${code(url)}${runUrl ? ` · [run log](${runUrl})` : ""}` : "",
-    "",
-    "| | test | how | time |",
-    "| --- | --- | --- | --- |",
-    ...rows.map((r) => `| ${LABEL[r.status] || r.status} | ${escapeCell(r.name)} | ${how(r)} | ${secs(r.ms)} |`),
+    // WHICH COMMIT THIS IS ABOUT. One comment is edited in place for the life of a pull request,
+    // so on a healthy repository it always describes the newest push — and there is exactly one way
+    // it does not: a run cancelled or timed out before it posted leaves the PREVIOUS commit's
+    // verdicts sitting there, current-looking, with nothing on them to say otherwise. The template
+    // ships `cancel-in-progress: true` and a 30-minute timeout, so both are ordinary. Seven
+    // characters a reader can compare against their own branch is the whole fix.
+    url ? `Against ${code(url)}${commit ? ` at ${code(commit)}` : ""}${runUrl ? ` · [run log](${runUrl})` : ""}` : "",
   ];
 
-  // The failure text is the actual deliverable. It goes below the table in full, because the table
-  // cell truncates it and the person reading has not been watching the browser. Flaky is included:
-  // its reason names what failed and what then passed, which is the whole case for distrusting it.
+  // THE BUG REPORT COMES BEFORE THE ROSTER, AND THAT ORDER IS THE WHOLE POINT OF THE COMMENT.
+  //
+  // MEASURED, on a real 42-test run posted to a real comment endpoint: two failures, forty passes.
+  // The table sorts failures to the top, so their NAMES were visible — but the reasons, which are
+  // the only part a reviewer can act on, sat forty rows of "pass · replayed, no model calls" below
+  // them. Forty rows carrying no information stood between a reviewer and the report they came for.
+  //
+  // It also decides which end survives GitHub's 65,536-character ceiling. The cut at the bottom of
+  // this function falls on the tail; with the table last, a suite too big to fit loses roster rows,
+  // and with the table first it lost the reasons — the deliverable — on exactly the run where the
+  // most had gone wrong.
+  //
+  // Flaky is included: its reason names what failed and what then passed, which is the whole case
+  // for distrusting it.
+  //
+  // THE CAUSE THAT EXPLAINS EVERY ROW GOES ABOVE THE ROWS. A missing key is not one test's problem,
+  // it is the reason none of them ran, and the fix for it is the only line on the page anybody can
+  // act on. MEASURED before this block existed: three identical "ANTHROPIC_API_KEY is not set"
+  // reasons, and no mention anywhere — comment or log — of where a key goes on GitHub.
+  if (!hasKey && s.errored) {
+    out.push(
+      "",
+      "**No ANTHROPIC_API_KEY reached this job**, so the agent could not run.",
+      "",
+      `> ${keyFix({ GITHUB_ACTIONS: "true" })}`,
+      ">",
+      "> A test whose recording still fits the app replays with no key at all — these are the ones that had no recording, or whose recording stopped fitting.",
+    );
+  }
+
+  // ONE OUTAGE IS REPORTED ONCE. Forty tests that could not run because the runner had no key, or
+  // no browser, or no network, is ONE thing that went wrong on our side — and forty identical
+  // blockquotes is a wall a reviewer scrolls past, taking the failures with it. Errored rows are
+  // therefore grouped by their exact reason; the table below still names every one of them.
+  //
+  // Errored ONLY. A failure is a claim about one test's behaviour and keeps its own block even when
+  // two tests broke the same way, because the suspects and the file under it are that test's.
+  const outages = new Map();
+  for (const r of rows) {
+    if (r.status !== "errored") continue;
+    const reason = r.reason || "no detail was recorded";
+    if (!outages.has(reason)) outages.set(reason, []);
+    outages.get(reason).push(r);
+  }
+  const reported = new Set();
+
+  // EVERY BLOCK SAYS WHICH STATUS IT IS, IN THE SAME WORD THE TABLE USES.
+  //
+  // MEASURED, reading a rendered comment for 40 passes, 2 failures, 1 flaky, 1 errored and 1 stale:
+  // five bold names over five blockquotes, rendered identically, and nothing above the table to
+  // tell them apart. Two were bug reports. One was a warning, one was our own runner breaking, and
+  // one — stale — is explicitly not a failure at all. A reviewer scanning that stack reads five
+  // broken things. The prose does disambiguate, but only in the last clause of a long sentence
+  // ("That is not yet a bug", "This is the test runner, not your application"), which is the
+  // ordering defect this whole file exists to avoid, reproduced inside it.
+  //
+  // The words are LABEL's, not new ones — derived from it rather than retyped, so a rewording of
+  // the table cannot leave these two surfaces calling one status two things. The reader meets the
+  // same vocabulary here and in the table two screens down, and learns it once. It was already
+  // inconsistent — two errored tests sharing a reason got "**2 tests could not run**" and a single
+  // one got a bare bold name.
+  const blockHead = (r) => `**${String(LABEL[r.status] || r.status).replace(/\*/g, "")} · ${escapeCell(r.name)}** — ${code(r.file)}`;
+
   for (const r of rows) {
     if (r.status !== "failed" && r.status !== "errored" && r.status !== "stale" && r.status !== "flaky") continue;
-    out.push("", `**${escapeCell(r.name)}** — ${code(r.file)}`, "", `> ${quote(r.reason || "no detail was recorded")}`);
+    const reason = r.reason || "no detail was recorded";
+    if (r.status === "errored") {
+      if (reported.has(reason)) continue;
+      reported.add(reason);
+      const hit = outages.get(reason);
+      out.push("", hit.length > 1
+        ? `**${hit.length} tests could not run**, every one of them for this reason — they are named in the table below.`
+        : blockHead(r), "", `> ${quote(reason)}`);
+      continue;
+    }
+    out.push("", blockHead(r), "", `> ${quote(reason)}`);
     // At most two suspects, under the failure they belong to. Each line already carries its named
     // evidence (suspect.mjs emits nothing without one); the file goes through code() because it is
     // a path from the customer's diff, and the evidence through quote() because it quotes strings
@@ -617,12 +749,48 @@ export function commentBody(results, { url = "", suite = "tests", runUrl = "", p
     }
   }
 
+  // WHERE THE SCREENSHOT IS, SAID ON THE ONE SURFACE THE REVIEWER READS.
+  //
+  // A failed or flaky test writes a full-page screenshot and the page's visible text at the moment
+  // it broke, and the shipped workflow goes to real trouble to upload that directory — its own
+  // step, `if: always()`, with a comment explaining that a screenshot on a recycled runner is not
+  // evidence. MEASURED, reading the comment posted by a real failing run: it mentions none of it.
+  // The picture is uploaded and, for anybody who is not also reading the workflow file, unreachable.
+  //
+  // Directly under the failures, not in the footnote: the footnote sits below the roster, which on
+  // a forty-test suite is forty rows away from the report this belongs to.
+  //
+  // WHAT IT REFUSES TO CLAIM. Not "the screenshot is in this run's artifacts" — whether anything
+  // uploads it is a fact about the customer's workflow, which we cannot see from in here. It states
+  // what this runner did, names the directory it did it in, and names what the template does with
+  // that directory. Every clause is true of a workflow that dropped the upload step; the reader
+  // whose artifacts list is empty then knows exactly which step is missing.
+  if (s.failed || s.flaky) {
+    // "Each failing RUN", not "each failure": a flaky test's first run failed and captured a page
+    // too, and the block above it is headed `flaky`, not `fail`.
+    out.push("", `<sub>Each failing run above wrote a full-page screenshot and the page's text, at the moment it broke, to ${code(evidenceDir || ".smolanalytics/evidence")}. The workflow template uploads that directory as the ${code("smolanalytics-evidence")} artifact${runUrl ? `, downloadable from the [run](${runUrl})` : ""}.</sub>`);
+  }
+
   for (const p of problems) {
     out.push("", "**Part of the suite was not read.** This is the test runner, not your application.", "", `> ${quote(p)}`);
   }
 
+  // THE ROSTER, under the report it is context for.
+  out.push(
+    "",
+    "| | test | how | time |",
+    "| --- | --- | --- | --- |",
+    ...rows.map((r) => `| ${LABEL[r.status] || r.status} | ${escapeCell(r.name)} | ${how(r)} | ${secs(r.ms)} |`),
+  );
+
   const notes = [];
   if (s.replayed) notes.push(`${s.replayed} of ${s.total} ran from a recording, with no model calls.`);
+  // WHY THIS RUN WAS SLOW AND WHAT IT BOUGHT. Without this, a first run is N rows saying "agent",
+  // a large number of seconds, and no explanation anywhere the reader will see — measured by
+  // running one: the note under the table only ever appeared once something had ALREADY replayed,
+  // so the one run that needs explaining was the one run that got none.
+  const paid = economicsNote(s, agentRuns(results), "`");
+  if (paid) notes.push(paid);
   if (s.flaky) {
     notes.push("Flaky is not a pass and not a bug report: the test failed, was retried from a clean page, and then passed, so the test is unreliable rather than the app being known-broken. It does not fail the build — but a test that keeps doing this is hiding an intermittent bug.");
   }
@@ -645,14 +813,14 @@ export function commentBody(results, { url = "", suite = "tests", runUrl = "", p
   // Layout notes are dropped before anything else, whole: they are advisory, and a bug report's
   // tail must never be trimmed while an advisory note above it survives.
   if (results.some((r) => Array.isArray(r.layout) && r.layout.length)) {
-    return commentBody(results.map((r) => (Array.isArray(r.layout) && r.layout.length ? { ...r, layout: [] } : r)), { url, suite, runUrl, problems, selection });
+    return commentBody(results.map((r) => (Array.isArray(r.layout) && r.layout.length ? { ...r, layout: [] } : r)), { url, suite, runUrl, problems, selection, hasKey, commit, evidenceDir });
   }
   // Suspects are the next thing dropped when the comment must shrink: they are a hint about a
   // failure, and the failure's own reason is the deliverable they must never crowd out. Rebuilt
   // without them rather than sliced, so the cut below only ever falls on a body that is already
   // hint-free — a mid-body slice was how a reason lost its tail while a guess above it survived.
   if (results.some((r) => Array.isArray(r.suspects) && r.suspects.length)) {
-    return commentBody(results.map((r) => (Array.isArray(r.suspects) && r.suspects.length ? { ...r, suspects: [] } : r)), { url, suite, runUrl, problems, selection });
+    return commentBody(results.map((r) => (Array.isArray(r.suspects) && r.suspects.length ? { ...r, suspects: [] } : r)), { url, suite, runUrl, problems, selection, hasKey, commit, evidenceDir });
   }
   // Cut on a line boundary so the trim never lands inside a table row or a blockquote, and say so:
   // a report that is silently missing its tail is worse than one that admits it.
@@ -702,6 +870,64 @@ const quote = (s) => {
 // with an ordinary agent verdict each came to 140,053 characters.
 const BODY_LIMIT = 65_000;
 const REASON_LIMIT = 4_000;
+
+/**
+ * A RUN THAT NEVER STARTED HAS TO SAY SO WHERE THE VERDICTS GO.
+ *
+ * MEASURED, walking the shipped workflow the way a stranger installs it — copy it in first, write
+ * the tests second — and pushing:
+ *
+ *   no such file or directory: tests/
+ *     --suite points at a folder of .md files, one sentence per test.
+ *
+ * Exit 2, correctly. But that sentence exists only in the job log, and the template ships
+ * `continue-on-error: true` for its first weeks, so the check on the pull request is GREEN and
+ * carries no comment at all. Same silence for a preview that never became ready, and for a --url
+ * nobody passed. Green and silent is the worst of the three answers this tool can give, and it is
+ * the one a brand new install gets.
+ *
+ * THE MARKER IS THE ORDINARY ONE, deliberately: the next healthy run EDITS this away instead of
+ * leaving a stale scare above its verdicts. And nothing here decides anything — the caller has
+ * already fixed the exit code at 2, and postComment cannot change it.
+ */
+export function cannotStartBody(problem, { suite = "tests", runUrl = "" } = {}) {
+  return [
+    markerFor(suite),
+    "**The end-to-end run could not start.** No test ran, so nothing below this line is known about this change.",
+    "",
+    `> ${quote(problem)}`,
+    "",
+    `<sub>This is the test runner, not your application.${runUrl ? ` The whole log is in the [run](${runUrl}).` : ""}</sub>`,
+  ].join("\n") + "\n";
+}
+
+/**
+ * Post that, when --comment was asked for. Never throws and never returns an exit code: the caller
+ * decided the exit code before calling, and a tool that changes a build's colour because it could
+ * not write a comment is reporting our problem as the customer's.
+ */
+export async function announceCannotStart({ problem, suite = "tests", comment = false, env = process.env, log = console.log, postCommentImpl = postComment }) {
+  if (!comment) return { posted: false, reason: "--comment was not asked for" };
+  const key = suite || "tests";
+  try {
+    const posted = await postCommentImpl({
+      body: cannotStartBody(problem, { suite: key, runUrl: runUrlFor(env) }),
+      marker: markerFor(key),
+      env,
+    });
+    log(posted.posted
+      ? C.dim(`  ${posted.updated ? "updated" : "posted"} the pull request comment: the run could not start.`)
+      : C.dim(`  no comment posted: ${posted.reason}`));
+    return posted;
+  } catch (e) {
+    // The caller is on its way out with exit 2 and the problem already printed. An exception thrown
+    // from here would escape into bin's last-resort catch, which exits... 2 as well, but only by
+    // luck of where it is called from. Swallowed on purpose: this is a courtesy on top of an
+    // already-reported outage, and it may never become a second one.
+    log(C.dim(`  no comment posted: ${e && e.message ? e.message : e}`));
+    return { posted: false, reason: String(e && e.message ? e.message : e) };
+  }
+}
 
 /**
  * Which pull request we are on. Actions states this three different ways depending on the event.
@@ -811,10 +1037,20 @@ export async function suiteCmd({
   share = false,
   publishShareImpl = publishShare,
 }) {
+  // Every `return 2` below is a run that never started, and each one says so on the pull request as
+  // well as in the log (cannotStartBody says why). The sentence posted is the same one printed here:
+  // a reader comparing the two must never find two accounts of one outage.
+  // `suite || "test"` and not "tests": that expression is what the verdict comment's marker is built
+  // from below, and a marker that differs by one character is a scare this tool can never edit away.
+  const stop = async (problem) => {
+    await announceCannotStart({ problem, suite: suite || "test", comment, env, log, postCommentImpl });
+    return 2;
+  };
+
   if (!url) {
     log(`\n${C.y("--url is missing.")} --suite says which tests to run, --url says where to run them.`);
     log(C.dim(`  npx smolanalytics test --suite tests/ --url https://your-preview.vercel.app`));
-    return 2;
+    return stop("--url is missing: --suite says which tests to run, --url says where to run them. Inside GitHub Actions on a pull request, leaving --url off entirely makes the runner ask the deployments API for this pull request's own preview.");
   }
 
   let tests = [];
@@ -824,9 +1060,16 @@ export async function suiteCmd({
   if (suite) {
     const found = discoverImpl(suite, plans);
     if (found.missing) {
+      // NOT "see templates/example-test.md": that is a path inside an npm package the reader has
+      // not checked out, and pointing somebody at a file they cannot open is the same as pointing
+      // them nowhere. `suggest` is the command that writes the folder for them.
       log(`\n${C.y(`no such file or directory: ${found.missing}`)}`);
-      log(C.dim("  --suite points at a folder of .md files, one sentence per test. See templates/example-test.md."));
-      return 2;
+      log(C.dim("  --suite points at a folder of .md files, one heading and one sentence per test."));
+      log(C.dim("  npx smolanalytics suggest --url <your app>   walks the app and writes a starting set into tests/"));
+      // The command is named WITHOUT backticks and with the real URL in it. A code span is not
+      // decoded by GitHub, so an escaped angle bracket inside one renders as the literal characters
+      // &lt; — measured, on a posted comment, from a first draft of this very sentence.
+      return stop(`There is no ${found.missing} in this repository, so there were no tests to run. A test is a markdown heading and one sentence under it. To get a starting set, run: npx smolanalytics suggest --url ${url}`);
     }
     for (const n of found.notes || []) log(C.y(`\n${n}`));
     for (const e of found.errors || []) log(C.y(`\n${e}`));
@@ -835,12 +1078,27 @@ export async function suiteCmd({
     if (problems.length && !tests.length) {
       // Zero tests and a folder we could not open is the one case that must not print "no tests
       // found", which reads like the folder is empty when it is only shut.
-      return 2;
+      return stop(`Nothing in ${suite} could be read, so no test ran: ${problems.join(" ")}`);
     }
     if (!tests.length) {
+      // "An empty folder is not a passing suite" is only true of an EMPTY FOLDER, and it was
+      // printed for a folder holding a file we read and got nothing out of — measured on a .md
+      // that was frontmatter and no body. The reader is then looking at a file they can see,
+      // being told the folder is empty. So name the files, and say what was wrong with them.
+      const read = (found.files || []).map((f) => path.relative(process.cwd(), f));
       log(`\n${C.y(`no tests found in ${suite}`)}`);
-      log(C.dim("  A test is a markdown heading and one sentence under it. An empty folder is not a passing suite."));
-      return 2;
+      if (read.length) {
+        log(C.dim(`  Read ${read.length} file${read.length === 1 ? "" : "s"} — ${read.slice(0, 5).join(", ")}${read.length > 5 ? `, and ${read.length - 5} more` : ""} — and none held a test.`));
+        log(C.dim("  A test is a markdown heading and one sentence under it. Frontmatter alone is not one."));
+      } else {
+        log(C.dim("  A test is a markdown heading and one sentence under it. An empty folder is not a passing suite."));
+      }
+      log(C.dim("  npx smolanalytics suggest --url <your app>   walks the app and writes a starting set into tests/"));
+      return stop(
+        read.length
+          ? `${suite} holds ${read.length} file${read.length === 1 ? "" : "s"} and no test: ${read.slice(0, 5).join(", ")}. A test is a markdown heading and one sentence under it; frontmatter alone is not one. To get a starting set, run: npx smolanalytics suggest --url ${url}`
+          : `${suite} holds no tests, and an empty folder is not a passing suite. A test is a markdown heading and one sentence under it. To get a starting set, run: npx smolanalytics suggest --url ${url}`,
+      );
     }
   } else if (test) {
     // `--plan checkout.json --comment` is a reasonable thing to type. Joining a filename as if it
@@ -849,7 +1107,7 @@ export async function suiteCmd({
     tests = [{ file: "(--test)", name: test.slice(0, 80), test, id: slug(test), planPath }];
   } else {
     log(`\n${C.y("nothing to run.")} Pass --suite tests/ or --test "one sentence".`);
-    return 2;
+    return stop("Nothing to run: the runner was given neither --suite tests/ nor --test \"one sentence\".");
   }
 
   // DIFF-AWARE SELECTION, between discovery and the first browser. Everything it decides is in
@@ -865,10 +1123,22 @@ export async function suiteCmd({
   // What did not run, and why, before anything else is printed. A suite that quietly checked twelve
   // of fifty and then said "12 passed" is the failure this whole feature has to not become.
   for (const line of selectionTerminalLines(selection)) log(line);
-  if (!env.ANTHROPIC_API_KEY) {
+  // ONE SENTENCE FOR THE WHOLE SUITE, WHICHEVER WAY THE KEY IS WRONG.
+  //
+  // The missing-key case already said this once rather than fifty times (test/first-minute.test.mjs
+  // measured the fifty). A key that is SET and cannot be sent — `sk-ant-…`, a trailing newline —
+  // arrives at the same place and must be treated the same way: named here, then a short line per
+  // test, never the whole diagnosis repeated per row.
+  const suiteKeyIssue = keyProblem(env.ANTHROPIC_API_KEY);
+  if (suiteKeyIssue) {
+    log(C.y(suiteKeyIssue));
+    log(C.dim("  Recordings that still fit will replay; anything else cannot be checked."));
+  } else if (!env.ANTHROPIC_API_KEY) {
     // Said once, up front, not per test: without a key the only tests that can run are the ones
     // with a recording that still fits, and the reader should know that before reading verdicts.
     log(C.y("ANTHROPIC_API_KEY is not set. Recordings that still fit will replay; anything else cannot be checked."));
+    // And where it goes, in the place the reader is standing. lib/test.mjs::keyFix.
+    log(C.dim(`  ${keyFix(env)}`));
   }
 
   // The directory to create is the one recordings actually land in — never a .json path, which
@@ -892,6 +1162,10 @@ export async function suiteCmd({
     ? `\n${parts.join(" · ")} ${C.dim(`· ${secs(wall)} · ${secs(s.ms)} of test time across ${lanes} workers`)}`
     : `\n${parts.join(" · ")} ${C.dim(`· ${secs(s.ms)}`)}`);
   if (s.replayed) log(C.dim(`${s.replayed} replayed from a recording, with no model calls.`));
+  // The same sentence the comment carries, from the same function: a reader who checks the log
+  // against the comment must not find two accounts of what this run cost.
+  const paidNote = economicsNote(s, agentRuns(results));
+  if (paidNote) log(C.dim(paidNote));
   // Said again under the counts: the counts are what a reader who scrolled to the end sees, and
   // they are counts of what RAN.
   for (const line of selectionTailLines(selection)) log(line);
@@ -912,12 +1186,32 @@ export async function suiteCmd({
   // twenty, and errored is the status whose reason is the one thing the reader can act on.
   for (const r of results.filter((r) => r.status === "errored")) log(`  ${C.y("error")} ${r.name} ${C.dim(`· ${r.reason}`)}`);
 
+  // THE SHIP VERDICT, LAST, because it is the only line most people read.
+  //
+  // Everything above answers "did the tests pass". The question a person actually asks is "can we
+  // ship", and the difference between them is every flow this run left unverified — the flaky one
+  // that proves nothing, the stale recording nobody re-derived, the test --since skipped, the run
+  // that errored on our side. Those facts were all here already and none of them were being
+  // composed into an answer.
+  //
+  // No vendor in this field prints this, because printing it honestly means listing what you did
+  // not check, and that is a bad look for anyone whose price depends on seeming comprehensive.
+  // It is not a bad look for us: `stale`, `flaky`, `errored` and --since's skip line already exist
+  // precisely so this product never claims more than it verified. See lib/ship.mjs.
+  log("");
+  for (const line of shipText(results, { selection, suite: suite || "tests", url }).split("\n")) {
+    log(line.startsWith("  ") ? C.dim(line) : line);
+  }
+
   if (comment) {
-    const runUrl = env.GITHUB_RUN_ID && env.GITHUB_REPOSITORY
-      ? `${(env.GITHUB_SERVER_URL || "https://github.com").replace(/\/+$/, "")}/${env.GITHUB_REPOSITORY}/actions/runs/${env.GITHUB_RUN_ID}`
-      : "";
+    const runUrl = runUrlFor(env);
     const key = suite || "test";
-    const posted = await postCommentImpl({ body: commentBody(results, { url, suite: key, runUrl, problems, selection }), marker: markerFor(key), env });
+    // Inside the `if`, because ciContext falls back to `git rev-parse` and a run nobody asked to
+    // comment on should not shell out. It reads the pull request's HEAD sha, never GITHUB_SHA — on
+    // a pull_request event that is the merge commit Actions invented, which exists in nobody's
+    // history and would be seven characters a reader could not find anywhere.
+    const commit = ciContext({ env, cwd }).shortCommit;
+    const posted = await postCommentImpl({ body: commentBody(results, { url, suite: key, runUrl, problems, selection, hasKey: Boolean(env.ANTHROPIC_API_KEY), commit, evidenceDir }), marker: markerFor(key), env });
     log(posted.posted ? C.dim(`  ${posted.updated ? "updated" : "posted"} the pull request comment.`) : C.dim(`  no comment posted: ${posted.reason}`));
   }
 

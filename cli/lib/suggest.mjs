@@ -24,9 +24,9 @@
 
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { perceive, render, loadPlaywright } from "./test.mjs";
+import { perceive, render, loadPlaywright, runnerProblem } from "./test.mjs";
 import { slug } from "./suite.mjs";
-import { PLACEHOLDER_LIST } from "./safety.mjs";
+import { keyProblem, PLACEHOLDER_LIST } from "./safety.mjs";
 
 const C = {
   b: (s) => `\x1b[1m${s}\x1b[0m`,
@@ -546,10 +546,9 @@ export function fileBody({ title, sentence, criticality }) {
 
 // ---- the command ------------------------------------------------------------------------------
 
-export async function suggestCmd(opts = {}) {
-  const { url, out = "tests", max: maxRaw, yes = false, log = console.log, env = process.env, loadBrowser = loadPlaywright } = opts;
-  if (!url) {
-    log(`
+/** `suggest`'s usage, exported for the same reason as testUsage: `--help` reads it too. */
+export function suggestUsage() {
+  return `
 ${C.b("npx smolanalytics suggest")} — walk the running app, propose the tests worth writing. No account.
 
   --url <url>   where the app runs (staging, a deploy preview, localhost)
@@ -559,7 +558,13 @@ ${C.b("npx smolanalytics suggest")} — walk the running app, propose the tests 
 
   ${C.dim("npx smolanalytics suggest --url http://localhost:3000")}
   ${C.dim("Each file is a test `npx smolanalytics test --suite tests/` runs as-is. Delete the ones you disagree with.")}
-`);
+`;
+}
+
+export async function suggestCmd(opts = {}) {
+  const { url, out = "tests", max: maxRaw, yes = false, log = console.log, env = process.env, loadBrowser = loadPlaywright } = opts;
+  if (!url) {
+    log(suggestUsage());
     return 2;
   }
   // Refused out loud, exactly like --retries in the bin: Number("six") is NaN, and any coercion
@@ -578,9 +583,17 @@ ${C.b("npx smolanalytics suggest")} — walk the running app, propose the tests 
   // needs no key at all. suggest has no keyless mode, and fetching 50MB of Chromium and THEN
   // failing on a missing env var is the wrong order to disappoint somebody in.
   const apiKey = env.ANTHROPIC_API_KEY;
+  // A key that cannot be sent, said here rather than 50MB of Chromium and one page-walk later.
+  // suggest has no keyless path, so unlike testCmd this is a refusal and not a downgrade.
+  const keyIssue = keyProblem(apiKey);
+  if (apiKey && keyIssue) {
+    log(`\n${C.y(keyIssue)}`);
+    return 2;
+  }
   if (!apiKey) {
     log(`\n${C.y("The agent needs a Claude API key.")}`);
     log(C.dim("  export ANTHROPIC_API_KEY=sk-ant-…    then run this again"));
+    log(C.dim("  A key comes from console.anthropic.com — the calls are billed to you, and never resold through us."));
     log(C.dim("  suggest reads your app with the model to decide which flows matter, so there is no keyless mode."));
     return 2;
   }
@@ -665,8 +678,12 @@ ${C.b("npx smolanalytics suggest")} — walk the running app, propose the tests 
     if (written) log(C.dim(`  run them: npx smolanalytics test --suite ${out} --url ${url}`));
     return 0;
   } catch (e) {
-    log(C.y(`\nthe survey could not complete: ${e && e.message ? e.message : e}`));
-    log(C.dim("  This is this runner, not your application. Nothing was written."));
+    // The cause first and the fix second, never Playwright's Call log or a JSON error body — see
+    // runnerProblem in lib/test.mjs for the two measured cases this exists for.
+    const why = runnerProblem(e);
+    log(C.y(`\n${why.known ? why.what : `the survey could not complete: ${why.what}`}`));
+    if (why.fix) log(C.dim(`  ${why.fix}`));
+    log(C.dim("  This is the survey, not your application. Nothing was written."));
     return 2;
   } finally {
     await browser?.close().catch(() => {});

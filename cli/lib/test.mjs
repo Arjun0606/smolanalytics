@@ -31,7 +31,7 @@ import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { confirmProduction, newIdentity, postTeardown, substitute, maskSecrets, unmaskSecrets, PLACEHOLDER_LIST } from "./safety.mjs";
+import { confirmProduction, keyProblem, newIdentity, postTeardown, substitute, maskSecrets, unmaskSecrets, PLACEHOLDER_LIST } from "./safety.mjs";
 import { newLedger, record as recordUsage, costLine, overBudget, priceFrom, priceHint } from "./cost.mjs";
 import { auditLayout, layoutFailure, layoutNoteLines, stepTargets } from "./layout.mjs";
 import { auditRender, renderFailure, renderNoteLines } from "./render.mjs";
@@ -307,6 +307,41 @@ function describe(step, secrets = []) {
   return `  ${mark} ${String(step.n).padStart(2)} ${label}${step.ok ? C.dim(` ${step.ms}ms`) : C.r(` — ${step.detail}`)}`;
 }
 
+/**
+ * WHERE THE KEY GOES, ADDRESSED TO THE READER WE CAN ACTUALLY IDENTIFY.
+ *
+ * "export ANTHROPIC_API_KEY=… then run this again" is the right sentence at a keyboard and the
+ * wrong one in the place this product mostly runs. MEASURED, walking the shipped workflow as a
+ * stranger who skipped step 1 of its own instructions: every test in the suite came back with that
+ * line, inside a GitHub Actions job where nothing can be exported, where "run this again" re-runs a
+ * job that fails identically, and where the two things that would actually fix it — the secrets
+ * page, and the `env:` line on the step — were named nowhere at all. An unactionable error repeated
+ * once per test is how the first minute of CI goes badly.
+ *
+ * Both sentences live here rather than at their call sites so the terminal and the pull request
+ * comment cannot drift into saying different things about the same missing key.
+ */
+export function keyFix(env = process.env) {
+  return env.GITHUB_ACTIONS === "true"
+    ? "Add ANTHROPIC_API_KEY under Settings → Secrets and variables → Actions, then pass it to this step: env: ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}"
+    : "export ANTHROPIC_API_KEY=sk-ant-…    then run this again";
+}
+
+/**
+ * WHERE TO GET ONE, which the fix above assumes you already know.
+ *
+ * Measured by installing the published package and running the homepage's own command as somebody
+ * who had never seen this before: the output said to export a key and did not say where a key comes
+ * from. Anyone who has used the Anthropic API fills that gap in a second; somebody who has not is
+ * stopped by it, and that is exactly the person the first run has to carry.
+ *
+ * Empty inside Actions. There the reader is wiring a secret they already hold, and a link to a
+ * signup page in a CI log is noise in the one place nobody can act on it.
+ */
+export function keyWhere(env = process.env) {
+  return env.GITHUB_ACTIONS === "true" ? "" : "A key comes from console.anthropic.com — the calls are billed to you, and never resold through us.";
+}
+
 // ---- replay: the second run costs nothing -----------------------------------------------------
 
 /** Keep only what succeeded and can be replayed. The agent's dead ends are not part of the test. */
@@ -489,12 +524,49 @@ export function readPlan(text) {
   return { plan: raw, problem: "" };
 }
 
-export async function replay(page, plan, secrets = []) {
+/**
+ * SAY WHAT WE ARE WAITING FOR, WHILE WE ARE WAITING FOR IT.
+ *
+ * MEASURED, replaying a recording against a server that accepts the connection and never answers:
+ *
+ *     replaying 1 recorded step (no model)…
+ *     <thirty seconds of nothing at all>
+ *     http://127.0.0.1:4478/ did not finish loading within 30s.
+ *
+ * The last two lines are good. The gap is not: thirty silent seconds after a line ending in an
+ * ellipsis is indistinguishable from a hung runner, and the reader who Ctrl-Cs at ten seconds —
+ * which is most of them, on a tool whose whole promise is that it is fast — never sees the sentence
+ * that would have told them their own server is the thing that stopped.
+ *
+ * Nothing is printed on a page that loads, which is every ordinary run: the timer is cancelled long
+ * before it fires. This adds a line only to the runs that were already going badly, and it names
+ * the deadline so the wait has a visible end.
+ */
+export function sayIfSlow(log, line, afterMs = 4000) {
+  if (typeof log !== "function") return () => {};
+  const t = setTimeout(() => log(C.dim(line)), afterMs);
+  // unref, so a pending timer can never be the reason a process stays alive one tick longer than
+  // the run it belonged to.
+  if (t.unref) t.unref();
+  return () => clearTimeout(t);
+}
+
+export async function replay(page, plan, secrets = [], log = null) {
   const started = Date.now();
   // What the replay wants said out loud. Today: which file each upload fabricated, because a
   // replayed upload attaches a file nobody named and the reader has to be able to see which.
   const notes = [];
-  await page.goto(plan.startUrl, { waitUntil: "domcontentloaded" });
+  {
+    // The recording's own first navigation, which is where a replay against a dead or wedged
+    // deployment spends its whole budget. 30_000 is stated rather than left to Playwright's
+    // default so the number in the message and the number enforced are the same number.
+    const stop = sayIfSlow(log, `  still waiting for ${plan.startUrl} to load — up to 30s, then this stops and says so.`);
+    try {
+      await page.goto(plan.startUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    } finally {
+      stop();
+    }
+  }
   for (let i = 0; i < plan.steps.length; i++) {
     const s = plan.steps[i];
     try {
@@ -866,7 +938,15 @@ async function report(run, log, onRun) {
  */
 async function agentAttempt({ page, url, test, apiKey, model, maxSteps, log, secrets = [], ledger = newLedger(), maxCalls = 0 }) {
   const started = Date.now();
-  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
+  {
+    // The agent path's first navigation, silent for the same 30s and for the same reason.
+    const stop = sayIfSlow(log, `  still waiting for ${url} to load — up to 30s, then this stops and says so.`);
+    try {
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    } finally {
+      stop();
+    }
+  }
   let snap = await perceive(page);
   // The sentence is carried around MASKED — "open order {{orderid}}" — and resolved here, at the
   // one moment the model actually needs the value. Everything else that touches the sentence (the
@@ -952,7 +1032,134 @@ async function agentAttempt({ page, url, test, apiKey, model, maxSteps, log, sec
 // on purpose, so a credential source can be added to it without another parameter. [] — the default,
 // and what every run without --seed passes — makes maskSecrets and unmaskSecrets identity functions,
 // so nothing on this path changes by a single byte for anybody who has not asked for it.
+/**
+ * WHY THE RUN STOPPED, IN A SENTENCE SOMEBODY CAN ACT ON.
+ *
+ * Everything that throws out of a run arrives as Playwright's prose or an HTTP status, and the
+ * three most common of them are the FIRST MINUTE going badly rather than anything about the app.
+ * Measured, verbatim, by running the real binary:
+ *
+ *   the run could not complete: page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:4999/pricing
+ *   Call log:
+ *     - navigating to "http://127.0.0.1:4999/pricing", waiting until "domcontentloaded"
+ *
+ * Nothing is listening on that port — a dev server that is not running, or a port typed wrong —
+ * and neither of those words appears anywhere in the output. The Call log then repeats the URL a
+ * third time and adds nothing the first line did not already say. The bad-key run was the same
+ * shape one layer up: `the model call failed (401). {"type":"error","error":{"type":
+ * "authentication_error","message":"API key is invalid."},"request_id":null}` — the actionable
+ * word is inside a JSON blob at the end.
+ *
+ * So: name the cause first, name the fix second, and print no Call log. Prose ONLY. Nothing here
+ * touches a verdict or an exit code; every one of these is still errored, still exit 2.
+ *
+ * `known` is false when nothing matched, and then `what` is the message exactly as it arrived. The
+ * caller wraps that in its own "the run could not complete" / "the survey could not complete", so
+ * an error this function has never seen reads today exactly as it read before this existed. Only
+ * the cases with something better to say lose the prefix.
+ */
+/**
+ * "replayed 1 steps". A one-step recording is the commonest replay there is — one goto and a proof
+ * check — so the fastest, most-printed line in the product read as unfinished. Cosmetic, and the
+ * fast path is where cosmetic is the whole impression.
+ */
+export const count = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+export function runnerProblem(err) {
+  const raw = String(err && err.message ? err.message : err);
+  // The Call log is dropped whatever the case: it is the widest thing on screen at the moment the
+  // reader is looking for one sentence, and it only ever restates the line above it.
+  const first = raw.split(/\n\s*Call log:/)[0].trim();
+  const where = /\bat (https?:\/\/[^\s]+)/.exec(raw)?.[1] || /navigating to "([^"]+)"/.exec(raw)?.[1] || "";
+  const origin = (() => {
+    try {
+      return new URL(where).origin;
+    } catch {
+      return where;
+    }
+  })();
+  const model = /the model call failed \((\d{3})\)/.exec(raw);
+  if (model) {
+    const code = Number(model[1]);
+    if (code === 401 || code === 403) {
+      return { known: true, what: `Claude rejected ANTHROPIC_API_KEY (${code}).`, fix: "Check the key at console.anthropic.com/settings/keys, then run this again." };
+    }
+    if (code === 429) return { known: true, what: "Claude rate-limited this run (429).", fix: "Run it again in a minute, or lower --workers." };
+    if (code >= 500) return { known: true, what: `Claude returned ${code}.`, fix: "That is an outage on their side, not your app. Run it again." };
+    return { known: true, what: `Claude refused the request (${code}).`, fix: first.replace(/^the model call failed \(\d+\)\.\s*/, "").slice(0, 200) };
+  }
+  if (/ERR_UNSAFE_PORT/.test(raw)) {
+    const port = (() => {
+      try {
+        return new URL(where).port;
+      } catch {
+        return "";
+      }
+    })();
+    return { known: true, what: `The browser refuses to open port ${port || "that"}.`, fix: "Chromium blocks a fixed list of ports outright. Serve the app on another one." };
+  }
+  if (/ERR_CONNECTION_REFUSED/.test(raw)) {
+    return { known: true, what: `Nothing is listening at ${origin || "that address"}.`, fix: "Start the app, or fix the port in --url." };
+  }
+  if (/ERR_NAME_NOT_RESOLVED/.test(raw)) {
+    return { known: true, what: `${origin || "That host"} does not resolve.`, fix: "Check the hostname in --url." };
+  }
+  if (/ERR_CERT_|ERR_SSL_/.test(raw)) {
+    return { known: true, what: `${origin || "That host"} served a certificate the browser will not accept.`, fix: "Use http:// for a local server, or trust the certificate first." };
+  }
+  if (/ERR_CONNECTION_TIMED_OUT|ERR_CONNECTION_RESET|ERR_EMPTY_RESPONSE|ERR_ADDRESS_UNREACHABLE/.test(raw)) {
+    return { known: true, what: `${origin || "That address"} accepted no connection.`, fix: "Check the app is up and reachable from this machine." };
+  }
+  const slow = /Timeout (\d+)ms exceeded/.exec(raw);
+  if (slow && /page\.goto|navigating to/.test(raw)) {
+    return { known: true, what: `${where || "The page"} did not finish loading within ${Math.round(Number(slow[1]) / 1000)}s.`, fix: "The server took the connection and never answered. Check it is serving that path." };
+  }
+  return { known: false, what: first, fix: "" };
+}
+
+/**
+ * `test`'s own usage, in one place because two readers now print it.
+ *
+ * MEASURED by asking the binary for help, which is the first thing a stranger does:
+ *
+ *   npx smolanalytics test --help     printed this block and exited 1
+ *   npx smolanalytics suggest --help  printed its block and exited 2
+ *   npx smolanalytics audit --help    scanned the repo and printed a full audit report
+ *   npx smolanalytics init --help     detected the framework and asked for a write key
+ *   npx smolanalytics connect --help  "connect needs your MCP token"
+ *   npx smolanalytics desk --help     "desk needs a read key"
+ *
+ * `--help` was in the FLAGS allowlist for every one of those commands, so it was declared known
+ * and then read by nobody: help arrived only as a side effect of failing a required-argument
+ * check, which is why three commands answered a question about themselves by doing work on the
+ * reader's repo instead. bin/smolanalytics.mjs now reads it before dispatch, and this is what it
+ * prints for `test`.
+ */
+export function testUsage() {
+  return `
+${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No account.
+
+  --url <url>      where the test starts (staging, a deploy preview, anything reachable)
+  --test "<text>"  what should work, in plain English
+  --plan <file>    replay this recording first; only wake the agent if it no longer fits
+  --browser <name> chromium (default), firefox or webkit — the same test in a different engine
+  --headed         watch it happen
+  --yes            install the browser, and don't ask about a production-looking URL
+  --seed <url>     POST this run's identity there BEFORE it, and use the JSON it returns as placeholders
+  --teardown <url> POST this run's identity there afterwards, so you can delete what it made
+  --email-domain <dom>  the domain in {{email}} (default example.com, which cannot receive mail)
+  --retries <n>    re-run a failing test from a clean page (default 1; 0 disables)
+  --evidence-dir <dir>  where a failure's screenshot and page text go (default .smolanalytics/evidence)
+
+  ${C.dim('npx smolanalytics test --url https://yourapp.com --test "the pricing page shows a monthly price"')}
+`;
+}
+
 async function runOnce({ url, test, plan: planPath, headed, maxSteps = 40, yes, retries = 1, evidenceDir = "", layout: layoutMode = "report", renderCheck = true, login = "", authFile = "", authDir = DEFAULT_AUTH_DIR, secrets = [], engine = DEFAULT_ENGINE, env = process.env, log = console.log, onRun, loadBrowser = loadPlaywright, share = false, maxCalls = 0,
+  // True when runSuite is driving. The only thing it changes is how much is said about a missing
+  // key: the suite says it once in its own header, and repeating the export line under every test
+  // turned a fifty-test run into fifty copies of the same three sentences.
+  inSuite = false,
   // One ledger per test, so the line printed under a verdict is that test's own spend and a suite
   // can total them without any test knowing it is in one. A caller may pass its OWN — lib/watch.mjs
   // does, because a watch session's ceiling and running total span every run, and the usage is
@@ -972,26 +1179,37 @@ async function runOnce({ url, test, plan: planPath, headed, maxSteps = 40, yes, 
   // bundle (only the bytes they point at do), and rewriting one would make the file unreadable.
   const shareRec = (rec) => (share ? { share: { ...scrubDeep({ proof: rec.proof || "", steps: rec.steps || [] }, { secrets, env }), evidence: rec.evidence || null } } : {});
   if (!url || !test) {
-    log(`
-${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No account.
-
-  --url <url>      where the test starts (staging, a deploy preview, anything reachable)
-  --test "<text>"  what should work, in plain English
-  --plan <file>    replay this recording first; only wake the agent if it no longer fits
-  --browser <name> chromium (default), firefox or webkit — the same test in a different engine
-  --headed         watch it happen
-  --yes            install the browser, and don't ask about a production-looking URL
-  --seed <url>     POST this run's identity there BEFORE it, and use the JSON it returns as placeholders
-  --teardown <url> POST this run's identity there afterwards, so you can delete what it made
-  --email-domain <dom>  the domain in {{email}} (default example.com, which cannot receive mail)
-  --retries <n>    re-run a failing test from a clean page (default 1; 0 disables)
-  --evidence-dir <dir>  where a failure's screenshot and page text go (default .smolanalytics/evidence)
-
-  ${C.dim('npx smolanalytics test --url https://yourapp.com --test "the pricing page shows a monthly price"')}
-`);
-    return 1;
+    log(testUsage());
+    // 2, NEVER 1. Measured by running the binary with a flag missing: `npx smolanalytics test
+    // --url https://staging.myapp.com` (no --test) printed this block and exited 1 — the code the
+    // shipped workflow publishes as "a test failed, the application is broken". Nothing was
+    // opened and nothing was observed; the runner could not start. `suggest` already refuses this
+    // way and test/suggest.test.mjs pins it as "exits 2, never 1"; this is the same rule on the
+    // command that actually runs in CI, where a 1 puts a bug report about their app on a pull
+    // request whose only defect is a missing flag in the workflow file.
+    return 2;
   }
 
+  // BEFORE THE BROWSER, WHEN THERE IS NO RECORDING TO FALL BACK ON.
+  //
+  // lib/suggest.mjs already writes the rule down: "fetching 50MB of Chromium and THEN failing on a
+  // missing env var is the wrong order to disappoint somebody in." It applies here too, and this is
+  // the case where it can be honoured: with no --plan there is nothing to replay, so a key that
+  // cannot be sent means nothing will happen no matter what the browser does. On a first run — the
+  // one where Playwright is not installed yet — the old order downloaded Chromium and then said the
+  // key was wrong. WITH a recording the browser is loaded first exactly as before, because the
+  // replay needs it and needs no key.
+  const earlyKeyIssue = keyProblem(process.env.ANTHROPIC_API_KEY);
+  if (earlyKeyIssue && !planPath) {
+    if (inSuite) {
+      log(C.dim("  no recording that still fits, and ANTHROPIC_API_KEY cannot be used — see above."));
+    } else {
+      log(`\n${C.y(earlyKeyIssue)}`);
+      log(C.dim("  Replaying a recording (--plan) needs no key at all."));
+    }
+    await report({ test, status: "errored", mode: "agent", durationMs: 0, url, reason: earlyKeyIssue, ...shareRec({ proof: "", steps: [], evidence: null }) }, log, onRun);
+    return 2;
+  }
   const { pw, problem } = await loadBrowser(log, yes, engine);
   if (!pw) {
     // REPORTED, not just logged. A suite with no verdict for this test falls back to guessing why
@@ -1001,7 +1219,13 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
     return 2;
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  // A KEY THAT CANNOT BE SENT IS NOT A KEY (lib/safety.mjs::keyProblem says what that means and
+  // what it measured). Nulled rather than refused, so the only thing that changes for a run with
+  // --plan is nothing at all: the recording still replays, and this is only reached if it did not
+  // fit. What the reader gets instead of a ByteString error out of undici, or a 401 about a key
+  // that was never the problem, is the sentence naming the character.
+  const keyIssue = keyProblem(process.env.ANTHROPIC_API_KEY);
+  const apiKey = keyIssue ? "" : process.env.ANTHROPIC_API_KEY;
   const model = process.env.SMOLANALYTICS_MODEL || "claude-opus-5";
 
   const started = Date.now();
@@ -1062,8 +1286,8 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
         // goes on the terminal AND into the reason posted to the project, on the pass and on the
         // stale alike. The verdict itself is untouched.
         const engineChange = recordedEngine(recorded);
-        log(C.dim(`replaying ${plan.steps.length} recorded steps (no model)…`));
-        const r = await replay(page, plan, secrets);
+        log(C.dim(`replaying ${count(plan.steps.length, "recorded step")} (no model)…`));
+        const r = await replay(page, plan, secrets, log);
         // Which file each replayed upload fabricated. Empty on a recording with no upload step.
         for (const note of r.notes || []) log(C.dim(`  ${note}`));
         if (r.status === "passed") {
@@ -1077,7 +1301,7 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
           const lay = await auditLayout(page, { mode: layoutMode, targets: stepTargets(plan.steps) });
           const gate = layoutFailure(lay, layoutMode);
           if (gate) {
-            log(`\n${C.r("FAIL")} ${C.dim(`· replayed ${plan.steps.length} steps · --layout=strict`)}`);
+            log(`\n${C.r("FAIL")} ${C.dim(`· replayed ${count(plan.steps.length, "step")} · --layout=strict`)}`);
             log(`${gate}\n`);
             if (crossed) log(C.y(crossed));
             for (const line of layoutNoteLines(lay)) log(C.dim(line));
@@ -1093,7 +1317,7 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
           const rend = await auditRender(page, { enabled: renderCheck });
           const rgate = renderFailure(rend);
           if (rgate) {
-            log(`\n${C.r("FAIL")} ${C.dim(`· replayed ${plan.steps.length} steps · render check`)}`);
+            log(`\n${C.r("FAIL")} ${C.dim(`· replayed ${count(plan.steps.length, "step")} · render check`)}`);
             log(`${rgate}\n`);
             if (crossed) log(C.y(crossed));
             for (const line of renderNoteLines(rend.slice(1))) log(C.dim(line));
@@ -1101,7 +1325,7 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
             await browser.close().catch(() => {});
             return 1;
           }
-          log(`\n${C.g("PASS")}${C.dim(` — replayed ${r.steps} steps in ${(r.ms / 1000).toFixed(1)}s, no model calls.`)}`);
+          log(`\n${C.g("PASS")}${C.dim(` — replayed ${count(r.steps, "step")} in ${(r.ms / 1000).toFixed(1)}s, no model calls.`)}`);
           if (crossed) log(C.y(crossed));
           for (const line of layoutNoteLines(lay)) log(C.dim(line));
           await report({ test, status: "passed", mode: "replay", durationMs: r.ms, url, reason: withNote("Replayed the recorded run; every step still worked.", crossed), layout: lay, ...shareRec({ proof: plan.proof, steps: replaySteps(plan.steps), evidence: null }) }, log, onRun);
@@ -1121,9 +1345,27 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
     }
 
     if (!apiKey) {
-      log(`\n${C.y("The agent needs a Claude API key.")}`);
-      log(C.dim("  export ANTHROPIC_API_KEY=sk-ant-…    then run this again"));
-      log(C.dim("  Replaying a recording (--plan) needs no key at all."));
+      if (inSuite) {
+        // One line. The suite's header carries keyFix already, and its summary names this test.
+        // keyIssue is named here too: the suite header says "not set", and a reader who can see
+        // their own export would otherwise be told something they know to be false.
+        // The diagnosis is the suite header's job (lib/suite.mjs prints keyProblem once for the
+        // whole run). Per test, all this row owes the reader is which half stopped it.
+        log(C.dim(keyIssue ? "  no recording that still fits, and ANTHROPIC_API_KEY cannot be used — see above." : "  no recording that still fits, and no ANTHROPIC_API_KEY to run the agent with."));
+      } else if (keyIssue) {
+        // NOT "the agent needs a Claude API key" — they set one. Say which character is wrong and
+        // stop; keyFix's `export ANTHROPIC_API_KEY=sk-ant-…` is the line that CAUSED this in the
+        // measured case, and repeating it here would send the reader round the same loop.
+        log(`\n${C.y(keyIssue)}`);
+        if (!planPath) log(C.dim("  Replaying a recording (--plan) needs no key at all."));
+      } else {
+        log(`\n${C.y("The agent needs a Claude API key.")}`);
+        log(C.dim(`  ${keyFix(env)}`));
+        { const where = keyWhere(env); if (where) log(C.dim(`  ${where}`)); }
+        // Only where it is true. Printed to somebody who just typed --plan and watched the
+        // recording go stale, it reads as advice they had already taken.
+        if (!planPath) log(C.dim("  Replaying a recording (--plan) needs no key at all."));
+      }
       await browser.close().catch(() => {});
       return 2;
     }
@@ -1198,6 +1440,22 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
         // No proof, no recording. Replaying clicks without checking the outcome is how a
         // green check ends up over a broken checkout.
         log(C.dim("not recorded: the run passed but named no proof text, so a replay could not tell a working page from a broken one."));
+      } else {
+        // A PASS THAT RECORDS NOTHING, AND USED TO SAY NOTHING.
+        //
+        // compile() also returns null when no step survived — an assertion-only test ("the pricing
+        // page shows a monthly price", started on the pricing page) reads the page, finishes, and
+        // performs nothing a replay could repeat. That is a legitimate test and a legitimate pass.
+        //
+        // MEASURED, walking a CI run: three tests, two printed "recorded … — the next run needs no
+        // model", the third printed NOTHING, and every run after it reported "1 of 3 woke the
+        // agent" forever. Both of the causes the summary offers for that — "no recording yet" and
+        // "the recording stopped fitting" — are false here and both imply it will settle, so the
+        // reader's next move is to go and debug their Actions cache, which is working fine.
+        //
+        // Silence at the exact moment its two siblings spoke. Named here, where the fact is known:
+        // the number will not drop, and nothing is wrong.
+        log(C.dim("not recorded: nothing happened that a replay could repeat — the run passed by reading the page. This test wakes the agent on every run; a read-only test is the one kind that never gets cheaper."));
       }
     };
 
@@ -1221,7 +1479,7 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
       const lay = await auditLayout(page, { mode: layoutMode, targets: stepTargets(a.steps) });
       const gate = layoutFailure(lay, layoutMode);
       if (gate) {
-        log(`\n${C.r("FAIL")} ${C.dim(`· ${a.steps.length} steps · ${(ms / 1000).toFixed(1)}s · --layout=strict`)}`);
+        log(`\n${C.r("FAIL")} ${C.dim(`· ${count(a.steps.length, "step")} · ${(ms / 1000).toFixed(1)}s · --layout=strict`)}`);
         log(`${gate}\n`);
         for (const line of layoutNoteLines(lay)) log(C.dim(line));
         const ev = await capture(page);
@@ -1240,7 +1498,7 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
       const rend = await auditRender(page, { enabled: renderCheck });
       const rgate = renderFailure(rend);
       if (rgate) {
-        log(`\n${C.r("FAIL")} ${C.dim(`· ${a.steps.length} steps · ${(ms / 1000).toFixed(1)}s · render check`)}`);
+        log(`\n${C.r("FAIL")} ${C.dim(`· ${count(a.steps.length, "step")} · ${(ms / 1000).toFixed(1)}s · render check`)}`);
         log(`${rgate}\n`);
         for (const line of renderNoteLines(rend.slice(1))) log(C.dim(line));
         // The screenshot is the whole argument here: a reason that says "nothing rendered" is
@@ -1254,7 +1512,7 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
         await browser.close().catch(() => {});
         return 1;
       }
-      log(`\n${C.g("PASS")} ${C.dim(`· ${a.steps.length} steps · ${(ms / 1000).toFixed(1)}s`)}`);
+      log(`\n${C.g("PASS")} ${C.dim(`· ${count(a.steps.length, "step")} · ${(ms / 1000).toFixed(1)}s`)}`);
       log(`${a.why}\n`);
       for (const line of layoutNoteLines(lay)) log(C.dim(line));
       await report({ test, status: "passed", mode: "agent", durationMs: ms, url, reason: a.why, layout: lay, ...shareRec({ proof: a.proof, steps: agentSteps(a.steps), evidence: null }) }, log, onRun);
@@ -1275,7 +1533,7 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
 
     while (!attempts[attempts.length - 1].passed && attempts.length <= retries) {
       const prev = attempts[attempts.length - 1];
-      log(`\n${C.r("FAIL")} ${C.dim(`· run ${attempts.length} · ${prev.steps.length} steps · ${(prev.ms / 1000).toFixed(1)}s`)}`);
+      log(`\n${C.r("FAIL")} ${C.dim(`· run ${attempts.length} · ${count(prev.steps.length, "step")} · ${(prev.ms / 1000).toFixed(1)}s`)}`);
       log(prev.why);
       // The failing run goes up as its own row BEFORE the retry. Two runs are two real
       // observations, and the project's run history — where reliability is derived — needs both:
@@ -1333,7 +1591,7 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
       // here trains people to re-run until green — the exact swallowing `flaky` exists to prevent.
       log(C.dim("flaky is a warning, not a failure: exit 0. A test that keeps doing this is hiding an intermittent bug."));
     } else {
-      log(`\n${C.r("FAIL")} ${C.dim(`· ${attempts.length > 1 ? `observed ${attempts.length} times · ` : ""}${lastAttempt.steps.length} steps · ${(ms / 1000).toFixed(1)}s`)}`);
+      log(`\n${C.r("FAIL")} ${C.dim(`· ${attempts.length > 1 ? `observed ${attempts.length} times · ` : ""}${count(lastAttempt.steps.length, "step")} · ${(ms / 1000).toFixed(1)}s`)}`);
       log(`${settled.reason}\n`);
     }
     for (const line of layoutNoteLines(lay)) log(C.dim(line));
@@ -1381,8 +1639,15 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
   } catch (e) {
     // browser may be null: launch itself is what usually fails.
     await browser?.close().catch(() => {});
-    log(C.r(`\nthe run could not complete: ${e && e.message ? e.message : e}`));
-    await report({ test, status: "errored", mode: "agent", durationMs: Date.now() - started, url, reason: `The run could not complete: ${e && e.message}. This is the test runner, not your application.`, ...shareRec({ proof: "", steps: [], evidence: null }) }, log, onRun);
+    const why = runnerProblem(e);
+    // Unrecognised keeps the sentence it always had, in both its shapes: lower case in the
+    // terminal, where it follows a line, and capitalised in `reason`, which is posted on a pull
+    // request as a sentence of its own. Only a cause we can name earns its own opening line.
+    const what = why.known ? why.what : `the run could not complete: ${why.what}`;
+    const said = why.known ? why.what : `The run could not complete: ${why.what}`;
+    log(`\n${C.r(what)}`);
+    if (why.fix) log(C.dim(`  ${why.fix}`));
+    await report({ test, status: "errored", mode: "agent", durationMs: Date.now() - started, url, reason: `${said}${why.fix ? ` ${why.fix}` : ""} This is the test runner, not your application.`, ...shareRec({ proof: "", steps: [], evidence: null }) }, log, onRun);
     // Exit 2, not 1: the test did not fail, the runner did. A CI gate must tell those apart, or an
     // outage on our side reads to a customer as their app being broken.
     return 2;
@@ -1441,7 +1706,14 @@ export async function testCmd(opts = {}) {
   // suite whose recordings still fit) — refusing those would break the cheapest path in the
   // product. This only decides whether the QUESTION is worth asking now: with no key and no
   // recording named, runOnce is about to stop and say so, so we let it.
-  const willAskTheModel = Boolean(env.ANTHROPIC_API_KEY ?? process.env.ANTHROPIC_API_KEY) || Boolean(opts.plan) || Boolean(opts.plans);
+  // keyProblem, not just presence. The bug this whole block exists to prevent — a twelve-line
+  // warning about real accounts and a possible real charge, printed ahead of a run that stops two
+  // frames later — came back in a second shape the moment a key was SET and unusable: with
+  // ANTHROPIC_API_KEY=sk-ant-… (our own help text, pasted) the reader got the production preamble,
+  // a generated identity, and then a ByteString error. An unusable key cannot ask the model, so it
+  // does not buy the question.
+  const rawKey = env.ANTHROPIC_API_KEY ?? process.env.ANTHROPIC_API_KEY;
+  const willAskTheModel = (Boolean(rawKey) && !keyProblem(rawKey)) || Boolean(opts.plan) || Boolean(opts.plans);
   const decision = willAskTheModel
     ? await confirmProduction({ url, identity, yes, teardown, log, env, ask })
     : { proceed: true };

@@ -93,7 +93,9 @@ finishes. The order of the summary, the pull request comment and the exit code i
 order either way. How many run at once is measured from the machine — cores, memory, and whether
 `ANTHROPIC_API_KEY` is set, since a first run is that many agents talking to the model at once.
 `--workers 1` runs them one at a time, exactly as before. Fifty recorded tests on an 8-core laptop:
-39.2s at `--workers 1`, 5.4s at the default.
+about 39s at `--workers 1`, about 5s at the default — measured across several runs, which land
+between 4.6 and 5.4 seconds. The shape is the claim, not the decimal: a suite that took most of a
+minute takes a few seconds, and your machine will give you your own number.
 
 `--since main` runs only the tests the change could have broken. Each test's recording says which
 controls it clicks, what text it fills, which paths it visits and the text it proves itself with;
@@ -241,14 +243,14 @@ jobs:
         with:
           node-version: 22
 
-      - name: the preview URL
-        id: preview
-        uses: patrickedqvist/wait-for-vercel-preview@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          max_timeout: 600
+      # No step sets `preview`, so URL below is empty — and an empty --url inside Actions on a pull
+      # request makes the CLI ask the deployments API which preview belongs to this pull request.
+      # Add a step with `id: preview` only if your host does not create GitHub deployments.
 
-      # Without this every run is an agent run, and the replay never pays off.
+      # Without this every run is an agent run, and the replay never pays off. Actions scopes a
+      # cache to the branch that wrote it and this workflow only runs on pull requests, so the
+      # first run of each new pull request is still a full agent run; every push after it replays.
+      # Commit .smolanalytics/recordings instead if you would rather pay that once for the repo.
       - uses: actions/cache/restore@v4
         with:
           path: .smolanalytics/recordings
@@ -283,9 +285,16 @@ jobs:
           key: smolanalytics-recordings-${{ github.sha }}
 ```
 
-The same file ships in this package as `templates/github-action.yml`, with comments and with the
-other two ways to get a URL: pass one straight in for staging, or build and serve a static site in
-the job.
+**You do not configure the preview URL.** With no `--url`, inside Actions on a pull request, the CLI
+asks the GitHub deployments API — with the token the job already has — which deployment belongs to
+this pull request, and waits up to four minutes for it. Vercel, Netlify and Cloudflare Pages all
+announce their previews that way. If yours does not, add a step with `id: preview` that sets a
+`url` output and it is used instead. Nothing is ever guessed: no ready deployment means exit 2, a
+comment on the pull request saying so, and no verdict about your app.
+
+The same file ships in this package as `templates/github-action.yml`, with comments and with three
+ready-made preview steps to uncomment: a host's own wait action, a staging URL passed straight in,
+or build-and-serve for a static site.
 
 `GITHUB_TOKEN` is the one Actions gives every job for free, which is why the comment needs no
 GitHub App and no install on your other repositories. `continue-on-error` is there on purpose: a
