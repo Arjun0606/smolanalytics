@@ -39,6 +39,7 @@ import { prNumber, publishShare, ciContext } from "./share.mjs";
 // asks it which tests to run and prints what it says. Without --since not one line of it is on the
 // path and the whole folder runs exactly as it always has.
 import { shipText } from "./ship.mjs";
+import { notify, notifyLine, parseWhen } from "./notify.mjs";
 import { selectSuite, selectionHeadline, selectionCommentLines, selectionCommentDetail, selectionTerminalLines, selectionTailLines, selectionShareLines } from "./select.mjs";
 
 const C = {
@@ -1032,6 +1033,11 @@ export async function suiteCmd({
   discoverImpl = discover,
   runSuiteImpl = runSuite,
   postCommentImpl = postComment,
+  // Injectable for the same reason postCommentImpl is: the guarantee under test is that nothing
+  // this does after the verdict can move the exit code, and that is only proved by a notifier
+  // that actually fails.
+  notifyImpl = notify,
+  notifyWhen = "problems",
   // --share (lib/share.mjs). ONE link for the whole suite — see the call at the bottom of this
   // function for why that is the right unit.
   share = false,
@@ -1201,6 +1207,20 @@ export async function suiteCmd({
   log("");
   for (const line of shipText(results, { selection, suite: suite || "tests", url }).split("\n")) {
     log(line.startsWith("  ") ? C.dim(line) : line);
+  }
+
+  // TELL SOMEBODY. Last, after the verdict is decided and printed, so a Slack outage cannot reach
+  // the exit code — and only when there is something worth interrupting a person for. The message
+  // is the ship verdict itself, because "3 failed" is a notification people mute in a week.
+  try {
+    const told = await notifyImpl(results, {
+      selection, suite: suite || "tests", url, when: notifyWhen,
+      runUrl: runUrlFor(env), env,
+    });
+    const line = notifyLine(told);
+    if (line) log(C.dim(line));
+  } catch {
+    /* a notifier that can break a build is a notifier people delete; this cannot */
   }
 
   if (comment) {
