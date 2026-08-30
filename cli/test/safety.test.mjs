@@ -18,10 +18,15 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import {
   confirmProduction, forgetConfirmations, looksProduction, newIdentity, newRunId,
-  postTeardown, stagingMarker, substitute, PREFIX,
+  normalizeUrl, postTeardown, stagingMarker, substitute, PREFIX,
 } from "../lib/safety.mjs";
-import { testCmd } from "../lib/test.mjs";
+import { rebase, testCmd } from "../lib/test.mjs";
 import { runSuite } from "../lib/suite.mjs";
+import { spawn, spawnSync } from "node:child_process";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const plain = (s) => s.replace(/\x1b\[[0-9;]*m/g, "");
 
@@ -229,6 +234,53 @@ describe("the question before a production-looking URL", () => {
     } finally {
       process.stdin.isTTY = inTty;
     }
+  });
+
+  // A NOTICE IS NOT A QUESTION, AND MUST NOT BE SHAPED LIKE ONE.
+  //
+  // Measured outside a terminal, which is every CI job and every `| tee build.log`: eleven lines of
+  // question ending in "no terminal to ask, continuing." — so the reader spends the block believing
+  // an answer is wanted and learns at the bottom that it already went ahead. Same defect as the
+  // twelve-line warning that used to print ahead of "you need an API key": the line that settles it,
+  // last. Nothing about WHEN it warns or WHETHER it proceeds moves here — only the order.
+  test("with nobody to ask, the decision is on the first line and the question is not offered", async () => {
+    const lines = [];
+    const r = await confirmProduction({
+      url: "https://myapp.com", identity: id, env: { CI: "1" }, log: (s) => lines.push(s), memo: new Map(),
+    });
+    const out = plain(lines.join("\n"));
+    const first = out.split("\n").find((l) => l.trim());
+    assert.match(first, /Running it anyway/, `the reader learns the outcome last:\n${out}`);
+    assert.ok(!/skip this question/.test(out), `offered a way to skip a question nobody asked:\n${out}`);
+    assert.ok(!/continuing\./.test(out), `the outcome was printed twice:\n${out}`);
+    // The safety behaviour itself is exactly what it was.
+    assert.equal(r.proceed, true, "the notice never blocks");
+    assert.equal(r.warned, true, "a production URL is still warned about");
+    assert.equal(r.asked, false);
+    assert.match(out, /smoltest\+abc123@example\.com/, "the identity is what makes the rows findable, and must survive");
+    assert.match(out, /--teardown/);
+  });
+
+  test("with a person there, it is still a question, and --yes is still offered", async () => {
+    const inTty = process.stdin.isTTY;
+    const outTty = process.stdout.isTTY;
+    process.stdin.isTTY = true;
+    process.stdout.isTTY = true;
+    const lines = [];
+    try {
+      const r = await asPerson(() => confirmProduction({
+        url: "https://myapp.com", identity: id, env: {}, log: (s) => lines.push(s),
+        ask: async () => "n", memo: new Map(),
+      }));
+      assert.equal(r.asked, true, "a person at a terminal is asked");
+      assert.equal(r.proceed, false, "and declining still stops the run");
+    } finally {
+      process.stdin.isTTY = inTty;
+      process.stdout.isTTY = outTty;
+    }
+    const out = plain(lines.join("\n"));
+    assert.ok(!/Running it anyway/.test(out), `told somebody being asked that it had already gone ahead:\n${out}`);
+    assert.match(out, /--yes\s+skip this question/, out);
   });
 
   test("a piped stdout is not a terminal, even when stdin still is one", async () => {
@@ -590,3 +642,124 @@ test("the substituted identity is what the agent is actually told", noBrowser, a
   assert.ok(!instruction.includes("{{email}}"), "the placeholder reached the model unsubstituted");
   assert.ok(!instruction.includes("{{password}}"), "the placeholder reached the model unsubstituted");
 });
+
+// ---- a URL somebody typed -----------------------------------------------------------------------
+//
+// THE REQUIREMENT: a --url with no scheme must never produce a verdict about a host nobody named.
+//
+// It did. `--url myapp.com` throws out of new URL(), rebase() caught that and returned the
+// recording untouched, and the replay drove the browser to the host the recording was MADE on and
+// printed PASS, exit 0. `--url localhost:3000` is worse than a throw: it PARSES, as a URL whose
+// scheme is "localhost:" and whose origin is the string "null", so the run navigated to
+// "null/pricing" and died in a Playwright protocol error naming neither the flag nor the fix.
+//
+// The tests below are written against the requirement, not the repair: the first one fails if
+// normalizeUrl is deleted from the composition, and the last one fails if the process ever prints
+// a verdict for a host it could not reach.
+
+const bin = fileURLToPath(new URL("../bin/smolanalytics.mjs", import.meta.url));
+
+describe("a URL with no scheme", () => {
+  test("never lets a recording replay against the host it was recorded on", () => {
+    const plan = { startUrl: "https://recorded.example/pricing", steps: [{ kind: "goto", url: "https://recorded.example/pricing" }], proof: "$29" };
+    const { url, problem } = normalizeUrl("myapp.com");
+    assert.equal(problem, "", "a plain hostname is what people type; it is repairable, not an error");
+    const replayed = rebase(plan, url);
+    assert.ok(
+      !replayed.startUrl.startsWith("https://recorded.example"),
+      `the replay would have opened ${replayed.startUrl} — the host the recording was made on, not the one asked for`,
+    );
+    assert.equal(replayed.startUrl, "https://myapp.com/pricing");
+  });
+
+  test("a local address gets http, everything else https", () => {
+    assert.equal(normalizeUrl("localhost:3000").url, "http://localhost:3000/");
+    assert.equal(normalizeUrl("127.0.0.1:8080/app").url, "http://127.0.0.1:8080/app");
+    assert.equal(normalizeUrl("192.168.1.9:3000").url, "http://192.168.1.9:3000/");
+    assert.equal(normalizeUrl("staging.myapp.com/checkout").url, "https://staging.myapp.com/checkout");
+  });
+
+  test("the repaired URL is one stagingMarker can read, so localhost stops being asked about", () => {
+    // The production question used to fire on `--url localhost:3000`: new URL() gave an empty
+    // hostname, no marker matched, and the twelve-line warning ran about this machine.
+    assert.ok(looksProduction("localhost:3000"), "the raw string is unreadable — that is the bug being guarded");
+    assert.ok(!looksProduction(normalizeUrl("localhost:3000").url), "a repaired localhost URL must not be treated as production");
+  });
+
+  test("a URL already carrying http or https comes back byte for byte", () => {
+    for (const u of ["http://127.0.0.1:4321", "https://a.example/x?y=1#z", "http://user:pw@h.example/"]) {
+      assert.equal(normalizeUrl(u).url, u, "a working URL must not be rewritten");
+    }
+  });
+
+  test("what cannot be opened is refused by name, and the sentence says what to type", () => {
+    for (const bad of ["ftp://x.example", "file:///tmp/x.html", "http://", "https://"]) {
+      const r = normalizeUrl(bad);
+      assert.equal(r.url, "", `${bad} was accepted`);
+      assert.match(r.problem, /^--url /, `${bad}: the refusal must name the flag that is wrong`);
+      assert.match(r.problem, /http:\/\/|https:\/\//, `${bad}: the refusal must show what a good one looks like`);
+    }
+  });
+
+  test("no --url at all is not an error here — the preview lookup owns that", () => {
+    assert.deepEqual(normalizeUrl(""), { url: "", problem: "" });
+    assert.deepEqual(normalizeUrl(undefined), { url: "", problem: "" });
+  });
+
+  test("the CLI refuses a scheme no browser opens, exit 2, before anything is opened", () => {
+    const r = spawnSync(process.execPath, [bin, "test", "--url", "ftp://x.example", "--test", "it works"], { encoding: "utf8", timeout: 30_000 });
+    assert.equal(r.status, 2, "our refusal is exit 2 — 1 would blame the customer's app");
+    assert.match(plain(r.stderr), /--url "ftp:\/\/x\.example" is ftp:\/\//);
+    assert.ok(!/smoltest/.test(plain(r.stdout)), "nothing about the run should be printed ahead of the refusal");
+  });
+
+  test("the CLI never prints a verdict for a schemeless host it could not reach", async () => {
+    // THE MEASURED BUG, REPRODUCED. The recording points at a server that IS running and DOES
+    // serve the proof, so replaying it verbatim passes in half a second. --url names a different
+    // host that resolves nowhere (.invalid is reserved by RFC 2606, so this is hermetic and the
+    // browser really tries). Before normalizeUrl, new URL("nothing-here.invalid") threw, rebase()
+    // returned the recording untouched, and this exact command printed PASS and exit 0 — a green
+    // verdict about a host nobody could have reached.
+    const recorded = createServer((_q, res) => {
+      res.writeHead(200, { "content-type": "text/html" });
+      res.end("<!doctype html><title>Pricing</title><h1>Pro is $29 per month</h1>");
+    });
+    await new Promise((r) => recorded.listen(0, "127.0.0.1", r));
+    const at = `http://127.0.0.1:${recorded.address().port}/pricing`;
+    try {
+      const dir = mkdtempSync(path.join(tmpdir(), "smolanalytics-url-"));
+      const planPath = path.join(dir, "p.json");
+      writeFileSync(planPath, JSON.stringify({ startUrl: at, steps: [{ kind: "goto", url: at }], proof: "$29 per month" }));
+      // Sanity: the recording really does pass against the host it names, or this proves nothing.
+      const control = await spawned([bin, "test", "--url", `http://127.0.0.1:${recorded.address().port}`, "--test", "the pricing page works", "--plan", planPath, "--yes"]);
+      assert.match(plain(control.stdout), /PASS/, `the control run must pass, or the guard below is vacuous:\n${control.stdout}${control.stderr}`);
+
+      const r = await spawned([bin, "test", "--url", "nothing-here.invalid", "--test", "the pricing page works", "--plan", planPath, "--yes"]);
+      const out = plain(`${r.stdout}${r.stderr}`);
+      assert.ok(!/\bPASS\b/.test(out), `a host that does not exist reported PASS:\n${out}`);
+      assert.notEqual(r.status, 0, `exit 0 on a host that does not exist:\n${out}`);
+    } finally {
+      recorded.closeAllConnections();
+      await new Promise((r) => recorded.close(() => r()));
+    }
+  });
+});
+
+/**
+ * spawn, NEVER spawnSync, for anything driven against a server THIS process is holding open:
+ * spawnSync blocks the event loop, the fixture cannot answer HTTP, and the child sits in
+ * Playwright's 30s navigation timeout proving only that a blocked node process serves nothing.
+ */
+function spawned(argv, env = process.env) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, argv, { env });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (d) => (stdout += d));
+    child.stderr.on("data", (d) => (stderr += d));
+    child.on("error", reject);
+    child.on("close", (status) => resolve({ status, stdout, stderr }));
+  });
+}

@@ -160,6 +160,117 @@ const SAFE_WORDS = new Set([
 const PRIVATE_IP = /^(10\.|127\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/;
 
 /**
+ * WHAT SOMEBODY TYPES vs WHAT A BROWSER CAN OPEN.
+ *
+ * `--url localhost:3000` and `--url myapp.com` are what people actually type, and until this
+ * existed both of them were worse than an error. Measured, against a real Chromium:
+ *
+ *   --url myapp.com       new URL() THROWS, so rebase() gave up and returned the recording
+ *                         untouched — and the replay drove the browser to the host the recording
+ *                         was MADE on, checked the proof there, and printed PASS, exit 0. A green
+ *                         verdict on a URL nobody tested is the worst artefact this codebase can
+ *                         produce, and one missing "https://" was enough to get one.
+ *   --url localhost:3000  new URL() SUCCEEDS. The scheme is "localhost:", the hostname is "" and
+ *                         the origin is the string "null", so the run navigated to "null/pricing"
+ *                         and died in `Protocol error (Page.navigate): Cannot navigate to invalid
+ *                         URL` — which names neither the flag nor the fix. On the way there
+ *                         stagingMarker read that empty hostname, found no marker in it, and
+ *                         printed the twelve-line production warning about localhost.
+ *
+ * So the scheme is filled in here, once, before anything else reads the URL: http:// for a machine
+ * that is obviously this one, https:// for everything else, because nobody serves their laptop
+ * over TLS and everybody else does. Anything still unreadable, or a scheme no browser can open, is
+ * refused BY NAME — never carried forward to fail later as somebody else's error message.
+ *
+ * Returns { url, problem }. A URL that already carries http:// or https:// comes back byte for
+ * byte as it was typed: this repairs what is broken and touches nothing that works.
+ */
+export function normalizeUrl(raw) {
+  const s = String(raw ?? "").trim();
+  const shape = "It should look like https://staging.yourapp.com or http://localhost:3000.";
+  if (!s) return { url: "", problem: "" };
+  if (/^https?:\/\//i.test(s)) {
+    let u;
+    try {
+      u = new URL(s);
+    } catch {
+      return { url: "", problem: `--url ${JSON.stringify(s)} is not a URL a browser can open. ${shape}` };
+    }
+    return u.hostname ? { url: s, problem: "" } : { url: "", problem: `--url ${JSON.stringify(s)} has no host in it. ${shape}` };
+  }
+  // Tested for "://" and not for a colon, because "localhost:3000" HAS a colon and is exactly the
+  // input that has no scheme.
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) {
+    const scheme = s.slice(0, s.indexOf("://"));
+    return { url: "", problem: `--url ${JSON.stringify(s)} is ${scheme}://, which a browser cannot open. Use http:// or https://.` };
+  }
+  const host = s.replace(/^\/+/, "").split(/[/?#]/)[0].split(":")[0].toLowerCase();
+  const local = LOCAL_HOSTS.has(host) || PRIVATE_IP.test(host) || LOCAL_SUFFIXES.some((x) => host.endsWith(x));
+  let u;
+  try {
+    u = new URL(`${local ? "http" : "https"}://${s.replace(/^\/+/, "")}`);
+  } catch {
+    return { url: "", problem: `--url ${JSON.stringify(s)} is not a URL a browser can open. ${shape}` };
+  }
+  if (!u.hostname) return { url: "", problem: `--url ${JSON.stringify(s)} has no host in it. ${shape}` };
+  return { url: u.href, problem: "" };
+}
+
+/**
+ * WHY THIS ANTHROPIC_API_KEY CANNOT BE SENT, or "" when nothing here can tell.
+ *
+ * MEASURED by following our own instructions to the letter. With no key set, the binary prints:
+ *
+ *     export ANTHROPIC_API_KEY=sk-ant-…    then run this again
+ *
+ * Copy that line, run it, run the command again, and the answer was:
+ *
+ *     the run could not complete: Cannot convert argument to a ByteString because the character
+ *     at index 7 has a value of 8230 which is greater than 255.
+ *
+ * That is undici refusing to put U+2026 in a header, surfacing through a catch that had no name
+ * for it, after the production warning had already been printed and a browser had already been
+ * launched. Our own onboarding copy, pasted verbatim, produced a stack-shaped sentence about
+ * character encoding with no fix in it.
+ *
+ * The near neighbours are just as ordinary and were only slightly better served: a key carrying a
+ * trailing newline from `export ANTHROPIC_API_KEY=$(cat key.txt)` reached Anthropic and came back
+ * 401, sending the reader to rotate a key that was perfectly good, and an OpenAI key pasted into
+ * the wrong variable said the same thing.
+ *
+ * TWO CHECKS, BOTH FACTS, NEITHER A GUESS ABOUT LENGTH:
+ *
+ *   the character set — a header value is a ByteString. A key holding whitespace or anything
+ *   outside printable ASCII cannot be transmitted at all, whoever issued it. This is a property of
+ *   HTTP, not of Anthropic, so it cannot go stale.
+ *
+ *   the prefix — think() in lib/test.mjs and ask() in lib/suggest.mjs post to api.anthropic.com
+ *   with x-api-key and neither reads a base-URL override, so a credential that is not an Anthropic
+ *   key has no path to working here. `sk-ant-` is the documented prefix.
+ *
+ * Deliberately NOT checked: length, the segment after `sk-ant-`, or anything else that would let a
+ * future key format be refused by a rule we wrote today. A revoked or wrong-workspace key still
+ * has to go to Anthropic to find out, and still comes back as the 401 it always did.
+ */
+export function keyProblem(raw) {
+  const s = String(raw ?? "");
+  if (!s) return "";
+  if (s !== s.trim()) {
+    return "ANTHROPIC_API_KEY has whitespace around it, which cannot be sent as a header. Re-export it without the trailing newline or space — `export ANTHROPIC_API_KEY=$(cat key.txt)` is the usual way one gets there; `$(tr -d \"\\n\" < key.txt)` is not.";
+  }
+  // Printable ASCII only. Reported before the prefix, because `sk-ant-…` fails both and the
+  // ellipsis is the thing the reader can actually see in what they typed.
+  if (/[^\x21-\x7e]/.test(s)) {
+    const bad = s.match(/[^\x21-\x7e]/)[0];
+    return `ANTHROPIC_API_KEY contains ${JSON.stringify(bad)}, which cannot be sent as a header. If this came from copying \`sk-ant-…\` out of a help message, that trailing … is part of the example, not part of a key: paste the real one from console.anthropic.com/settings/keys.`;
+  }
+  if (!s.startsWith("sk-ant-")) {
+    return `ANTHROPIC_API_KEY does not start with sk-ant-, so it is not an Anthropic key${s.startsWith("sk-") ? " (a key from another provider begins sk- too, which is how they get swapped)" : ""}. Get one at console.anthropic.com/settings/keys.`;
+  }
+  return "";
+}
+
+/**
  * Why this URL is NOT production, or "" when nothing says so.
  *
  * The default is to warn. A false positive costs one keystroke; a false negative costs somebody a
@@ -197,10 +308,24 @@ export function looksProduction(url) {
  * threaten and it does not moralise: people test against production deliberately, and the tool's
  * job is to make sure nobody does it by accident.
  */
-export function productionNotice(url, identity, { teardown = "" } = {}) {
+export function productionNotice(url, identity, { teardown = "", asking = true } = {}) {
+  // THE OUTCOME GOES FIRST WHEN THERE IS NO QUESTION.
+  //
+  // Measured by running this outside a terminal, which is every CI job and every `| tee`: eleven
+  // lines of question, ending in "no terminal to ask, continuing." — so the reader spent the whole
+  // block believing they had to answer something, and learned at the bottom that they did not, and
+  // that it had already gone ahead. This is the same shape as the twelve-line warning that used to
+  // print ahead of "you need an API key": the sentence that settles it, last.
+  //
+  // Nothing about the behaviour moves. It still warns on exactly the same URLs, it still never
+  // blocks, and it still never asks where there is nobody to answer. What changes is that the
+  // decision is stated on line one, and the two lines that only make sense to somebody being asked
+  // — "skip this question", "continuing." — are not printed to somebody who is not.
   const lines = [
     "",
-    C.y(`${url} has no staging, preview or localhost marker in it.`),
+    C.y(asking
+      ? `${url} has no staging, preview or localhost marker in it.`
+      : `${url} has no staging, preview or localhost marker in it. Running it anyway.`),
     "This drives a real browser and really uses the app. A sentence about signing up creates an",
     "account; a sentence about checking out can create an order, and on a live payment key, a charge.",
     "",
@@ -212,7 +337,8 @@ export function productionNotice(url, identity, { teardown = "" } = {}) {
     "",
   ];
   if (!teardown) lines.push(C.dim("  --teardown <url>  POST this identity to your own endpoint afterwards, and delete what it made."));
-  lines.push(C.dim("  --yes             skip this question (CI is never asked)"));
+  // Only to somebody who is being asked. --yes skips a question, and there is no question here.
+  if (asking) lines.push(C.dim("  --yes             skip this question (CI is never asked)"));
   lines.push("");
   return lines.join("\n");
 }
@@ -290,12 +416,13 @@ export async function confirmProduction({
   }
   if (memo.has(origin)) return { proceed: memo.get(origin), warned: false, asked: false, memoized: true };
 
-  log(productionNotice(url, identity, { teardown }));
+  // Said, not asked, whenever --yes was given or there is nobody at a terminal. The point of the
+  // notice is that nobody learns about this from their orders table afterwards; blocking was never
+  // the point. productionNotice says why the decision is on its first line rather than its last.
+  const asking = !yes && interactive(env);
+  log(productionNotice(url, identity, { teardown, asking }));
 
-  if (yes || !interactive(env)) {
-    // Said, not asked. The point of the notice is that nobody learns about this from their orders
-    // table afterwards; blocking was never the point.
-    log(C.dim(yes ? "  --yes given, continuing." : "  no terminal to ask, continuing."));
+  if (!asking) {
     memo.set(origin, true);
     return { proceed: true, warned: true, asked: false };
   }
