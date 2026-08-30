@@ -392,7 +392,7 @@ function git(args, cwd) {
  * means no output; it must never mean a warning, a slower run, or a different verdict.
  */
 export function gitDiff({ env = process.env, cwd = process.cwd() } = {}) {
-  const key = `${cwd} ${env.GITHUB_BASE_REF || ""}`;
+  const key = `${cwd}\u0000${env.GITHUB_BASE_REF || ""}`;
   if (DIFF_CACHE.has(key)) return DIFF_CACHE.get(key);
   const result = computeDiff(env, cwd);
   DIFF_CACHE.set(key, result);
