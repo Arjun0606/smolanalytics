@@ -33,6 +33,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { confirmProduction, keyProblem, newIdentity, postTeardown, substitute, maskSecrets, unmaskSecrets, PLACEHOLDER_LIST } from "./safety.mjs";
 import { newLedger, record as recordUsage, costLine, overBudget, priceFrom, priceHint } from "./cost.mjs";
+import { flakeNote } from "./flake.mjs";
 import { auditLayout, layoutFailure, layoutNoteLines, stepTargets } from "./layout.mjs";
 import { auditRender, renderFailure, renderNoteLines } from "./render.mjs";
 import { DEFAULT_AUTH_DIR, openSession } from "./auth.mjs";
@@ -688,7 +689,12 @@ export function settle(attempts) {
       reason:
         `Passed only on retry, which is not a pass. Run 1 failed: ${last1(attempts[0].why)} ` +
         `Run ${attempts.length}, from a clean page, passed: ${last1(last.why)} ` +
-        `Nothing about the app changed in between, so this test is unreliable — if it keeps doing this, an intermittent bug is hiding behind it.`,
+        `Nothing about the app changed in between, so this test is unreliable — if it keeps doing this, an intermittent bug is hiding behind it. ` +
+        // WHICH of the two it is, when the runs say so. Both attempts are in hand — every step,
+        // every target, every step's duration — and the difference between "this test is
+        // unreliable" and "your app has a race" is often sitting right there. flakeNote answers
+        // from that material or says it cannot tell; it never guesses. lib/flake.mjs.
+        flakeNote(attempts[0], last),
     };
   }
   return {
