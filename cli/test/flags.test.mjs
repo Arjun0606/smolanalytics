@@ -123,3 +123,63 @@ describe("the guard's list cannot fall behind what we document", () => {
     }
   });
 });
+
+// ── A MISTYPED COMMAND IS NEVER "YOUR APPLICATION IS BROKEN" ────────────────────────────────────
+//
+// The exit code is the one part of this CLI that another program reads. 1 means a test failed —
+// the shipped GitHub workflow turns it into a bug report on a pull request. 2 means the runner
+// could not start. A typo in our own name or our own flag is always the second, and both paths
+// were returning the first.
+//
+// MEASURED against the real binary before the fix:
+//   smolanalytics frobnicate                          exited 1
+//   smolanalytics suggest --wat                       exited 1
+// Neither opened a browser or loaded a page, and both would have posted "a test failed" in CI.
+
+describe("a typo in our own CLI never reports the customer's app as broken", () => {
+  test("an unknown command exits 2, not 1", () => {
+    const r = cli("frobnicate");
+    assert.equal(r.status, 2, `1 means "a test failed and their app is broken"; nothing ran here`);
+    assert.match(plain(r.err), /unknown command/i);
+  });
+
+  test("a near-miss command still exits 2, even though it guesses well", () => {
+    const r = cli("tset");
+    assert.equal(r.status, 2);
+    assert.match(plain(r.err), /did you mean/i, "the guess is the good part and must survive the fix");
+  });
+
+  test("a mistyped COMMAND is 2 even though a mistyped FLAG on audit stays 1", () => {
+    // Deliberately different, and the difference is the point. `audit` is a local repo scan whose
+    // 1 nothing reads as a verdict, and a test above pins that. An unknown COMMAND is the
+    // dangerous one: the shipped workflow invokes us by name to run TESTS, so one wrong character
+    // there produces a run that opened nothing and still says "a test failed".
+    assert.equal(cli("audit", "--zzzz").status, 1, "the existing flag contract is unchanged");
+    assert.equal(cli("aduit").status, 2, "but a mistyped command never claims their app is broken");
+  });
+});
+
+// ── THE DID-YOU-MEAN LIST AND THE DISPATCHER MUST NOT DRIFT APART ───────────────────────────────
+//
+// `mcp` was implemented, documented in help, and missing from COMMANDS — so the one command an
+// editor integration tells people to type was the one command whose typo got no suggestion.
+
+describe("every command the binary dispatches can also be guessed at", () => {
+  const src = readFileSync(bin, "utf8");
+
+  test("COMMANDS lists every command main() actually handles", () => {
+    const dispatched = [...src.matchAll(/cmd === "([a-z-]+)"/g)].map((m) => m[1]);
+    const listed = JSON.parse((src.match(/const COMMANDS = (\[[^\]]*\])/) || [])[1].replace(/'/g, '"'));
+    // The words main() compares against that are commands rather than help aliases.
+    const skip = new Set(["help", "--help", "-h"]);
+    const missing = [...new Set(dispatched)].filter((c) => !skip.has(c) && !listed.includes(c));
+    assert.deepEqual(missing, [], `dispatched but unguessable, so a typo gets no suggestion: ${missing.join(", ")}`);
+  });
+
+  test("and a one-character typo of each of them is guessed", () => {
+    for (const [typo, meant] of [["mpc", "mcp"], ["tset", "test"], ["sugest", "suggest"], ["conect", "connect"]]) {
+      const r = cli(typo);
+      assert.match(plain(r.err), new RegExp(`did you mean.*${meant}`, "i"), `${typo} did not suggest ${meant}`);
+    }
+  });
+});

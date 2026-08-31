@@ -83,7 +83,13 @@ const FLAGS = {
 };
 
 // The commands this binary dispatches. `plan` covers `plan check`; `help` is handled above.
-const COMMANDS = ["test", "suggest", "audit", "desk", "init", "connect", "plan"];
+// EVERY COMMAND main() DISPATCHES, and `mcp` was missing from it. This list only feeds the
+// did-you-mean guess, so the omission was silent in the way that matters least and annoys most:
+// `mcp` is documented in help(), implemented at `cmd === "mcp"`, and is the command an editor
+// integration tells people to type — and `npx smolanalytics mpc` answered "unknown command mpc"
+// with no suggestion, while every other one-transposition typo gets one. Two lists that must
+// agree, which is the same shape as the flag guard's own warning directly above.
+const COMMANDS = ["test", "suggest", "audit", "desk", "init", "connect", "plan", "mcp"];
 
 /** Edit distance, capped at 3 — far enough to catch a typo, near enough not to invent a guess. */
 function distance(a, b) {
@@ -514,7 +520,13 @@ async function main() {
       console.error(`unknown command ${C.bold(cmd)}\n`);
       help();
     }
-    process.exitCode = 1;
+    // 2, for the same reason a mistyped FLAG is 2 and with a wider blast radius: an unknown
+    // command cannot be `test`, so this path always exited 1 — "a test failed, the application is
+    // broken" — for a run in which nothing was opened and no page was ever loaded. The shipped
+    // workflow invokes us by name, so one wrong character in a job somebody copied puts a bug
+    // report about their product on their own pull request. MEASURED against the real binary:
+    // `smolanalytics frobnicate` exited 1.
+    process.exitCode = 2;
     return;
   }
 
