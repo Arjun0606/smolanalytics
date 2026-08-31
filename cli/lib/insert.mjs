@@ -15,10 +15,25 @@ export function snippetHtml(host, writeKey, indent = "    ") {
   );
 }
 
+// NO `async` ON THE SDK TAG, and this is the whole correctness of the snippet.
+//
+// The tag below is immediately followed by an inline `smolanalytics.init(...)`. `async` frees the
+// browser to run that inline script BEFORE the SDK has loaded, and sdk.js is a plain IIFE that
+// assigns `window.smolanalytics` on its last line — there is no pre-load stub queueing calls. So
+// the init call runs against an undefined global, throws, and the tracker never starts, while
+// `init` prints "edited" and "the pageview should already be there".
+//
+// MEASURED, in Chromium, serving the exact two tags each snippet renders to with the real sdk.js:
+//   Next App Router snippet (async)   init ran: false
+//   plain HTML snippet (no async)     init ran: true
+//
+// snippetHtml above never had it. The Astro branch in this same file already carries the comment
+// "is:inline is required. Without it Astro bundles the script and the init call runs before the
+// SDK has defined smolanalytics" — the identical failure, already understood, one function away.
 export function snippetNextApp(host, writeKey, indent = "        ") {
   const i = indent;
   return (
-    `${i}<script src="${host}/sdk.js" async />\n` +
+    `${i}<script src="${host}/sdk.js" />\n` +
     `${i}<script\n` +
     `${i}  dangerouslySetInnerHTML={{\n` +
     `${i}    __html: 'smolanalytics.init("${writeKey}", { host: "${host}" });',\n` +

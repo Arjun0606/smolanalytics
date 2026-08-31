@@ -858,7 +858,19 @@ export async function postBundle({ bundle, env = process.env, fetchImpl = fetch,
     // a 404 to somebody the day the route moves.
     const url = json && typeof json.url === "string" && json.url ? json.url : id ? `${base}/s/${id}` : "";
     if (!url) return { ok: false, url: "", id: "", problem: `${endpoint} accepted the run but returned no link` };
-    return { ok: true, url, id, problem: "" };
+    // THE DELETE URL, WHICH WE WERE THROWING AWAY.
+    //
+    // The control plane mints a delete token and hands back `deleteUrl` (and a ready-made `delete`
+    // curl) on this very response — app/api/share/route.ts. This function read `id` and `url` and
+    // dropped the rest on the floor, so the token existed for the length of one HTTP response and
+    // then ceased to exist anywhere: nobody, including us, can mint it again.
+    //
+    // That made the published page's own footer false. It tells every reader "Whoever published it
+    // was given a delete token and can destroy this page and its screenshot at any time" — and the
+    // publisher was given nothing. A shared run can carry a full-page screenshot of the customer's
+    // application and that page's visible text, published to a public URL, permanently.
+    const deleteUrl = json && typeof json.deleteUrl === "string" ? json.deleteUrl : "";
+    return { ok: true, url, id, deleteUrl, problem: "" };
   } catch (e) {
     const why = e && e.name === "AbortError" ? `no answer within ${Math.round(timeoutMs / 1000)}s` : e && e.message ? e.message : String(e);
     return { ok: false, url: "", id: "", problem: `could not reach ${endpoint} (${why})` };
@@ -888,6 +900,19 @@ export function shareLines(result, { screenshot = false, pageText = false } = {}
       // credential this runner knows about, which is not the same promise as "masked".
       ...(screenshot ? ["the page above includes one screenshot of the failure — an image of your app, which cannot be masked the way the text is."] : []),
       ...(pageText ? ["it also includes the failing page's own visible text, with every credential this run knows about removed. Text your app renders that we have no way to recognise travels as written."] : []),
+      // PRINTED HERE OR IT IS GONE FOREVER. The token comes back once, on the response that
+      // created the page, and nobody can mint it again — the page says so itself. A publisher who
+      // does not see it in this scrollback has published a screenshot of their application to a
+      // public URL with no way to take it down, which is the one thing --share must never do
+      // quietly. Second line, not appended to the first, so the address above still double-clicks
+      // cleanly as a whole URL.
+      ...(result.deleteUrl
+        ? [
+            "",
+            "Keep this if you might want it gone — it is shown once and cannot be reissued:",
+            `curl -X DELETE ${result.deleteUrl}`,
+          ]
+        : []),
       "",
     ];
   }

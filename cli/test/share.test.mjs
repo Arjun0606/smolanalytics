@@ -1033,3 +1033,51 @@ describe("envSecrets finds every credential in reach, longest first", () => {
     assert.equal(scrub("everything is ok", { env: { SMOLANALYTICS_KEY: "ok" } }), "everything is ok");
   });
 });
+
+// ── THE DELETE TOKEN, WHICH THE PAGE PROMISES AND THE CLI WAS THROWING AWAY ─────────────────────
+//
+// app/s/[id]/page.tsx tells every reader: "Whoever published it was given a delete token and can
+// destroy this page and its screenshot at any time; nobody else, including us, can hand that token
+// back." The control plane does mint one and return `deleteUrl` on the create response. postBundle
+// read `id` and `url` and dropped the rest, so the token lived for the length of one HTTP response
+// and then existed nowhere — making the page's sentence false and the publication permanent.
+//
+// A shared run can carry a full-page screenshot of the customer's application. This is the one
+// thing --share must never do quietly.
+
+test("the delete url the control plane returns is kept, not dropped", async () => {
+  const res = await postBundle({
+    bundle: { steps: [] },
+    env: { SMOLANALYTICS_URL: "https://example.test" },
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        id: "abc123",
+        url: "https://example.test/s/abc123",
+        deleteUrl: "https://example.test/api/share/abc123?token=t0ken",
+        delete: "curl -X DELETE https://example.test/api/share/abc123?token=t0ken",
+      }),
+    }),
+  });
+  assert.equal(res.ok, true);
+  assert.equal(res.deleteUrl, "https://example.test/api/share/abc123?token=t0ken");
+});
+
+test("and it is printed, because it is shown once and cannot be reissued", () => {
+  const lines = shareLines({
+    ok: true,
+    url: "https://example.test/s/abc123",
+    deleteUrl: "https://example.test/api/share/abc123?token=t0ken",
+  }, { screenshot: true });
+  const all = lines.join("\n");
+  assert.match(all, /t0ken/, "a token nobody can see is a token nobody has");
+  assert.match(all, /cannot be reissued/i, "the reader must know this is their only chance to keep it");
+  // The link itself still sits alone on its line so a double-click selects the whole URL.
+  assert.ok(lines.includes("https://example.test/s/abc123"));
+});
+
+test("a control plane that returns no delete url prints no promise about one", () => {
+  const lines = shareLines({ ok: true, url: "https://example.test/s/abc123", deleteUrl: "" });
+  assert.ok(!lines.join("\n").toLowerCase().includes("delete"), "never claim a token we were not given");
+});

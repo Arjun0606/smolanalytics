@@ -119,7 +119,9 @@ export async function planCheckCmd({ url, key, project, windowHours, log = conso
     log("  npx smolanalytics plan check --key sa_org_... --project my-app     (cloud org token)");
     log("");
     log("In CI, put it in SMOLANALYTICS_KEY and it is picked up automatically.");
-    return 1;
+    // 2 for the same reason as the catch below: nothing was asked and nothing was measured, so
+    // this cannot be the claim "a planned event stopped firing".
+    return 2;
   }
   const args = {};
   if (windowHours > 0) args.window_hours = windowHours;
@@ -128,11 +130,29 @@ export async function planCheckCmd({ url, key, project, windowHours, log = conso
     const text = await callTool(endpointFor(url), key, "instrumentation_health", args, fetchImpl);
     return gate(text, log);
   } catch (err) {
-    // Both cases fail the build, but they are different problems and the message must not confuse
-    // them: a refusal means we reached the server and it told us what is wrong, while anything else
-    // means the pipe is broken. Reporting "could not reach your instance" for a refusal sends the
-    // reader to check DNS when the answer was in the response.
+    // The two are different problems and the message must not confuse them: a refusal means we
+    // reached the server and it told us what is wrong, while anything else means the pipe is
+    // broken. Reporting "could not reach your instance" for a refusal sends the reader to check
+    // DNS when the answer was in the response.
     log(err.refusal ? `plan check: ${err.message}` : `plan check could not reach your instance: ${err.message}`);
-    return 1;
+    // UNREACHABLE ONLY. A refusal stays 1: that branch also carries "no tracking plan declared
+    // yet", which IS a legitimate build failure and is pinned by a test above — the server
+    // answered, and the answer was that this gate cannot do its job. Separating a 401 from a
+    // missing plan needs the server to distinguish them first.
+    //
+    // 2, NOT 1, FOR AN UNREACHABLE INSTANCE, AND lib/desk.mjs ALREADY SAID SO: "an unreachable instance is our side of the
+    // fence, never a verdict about anybody's product." This returned 1 under a comment reading
+    // "Both cases fail the build" — true, and the wrong distinction. `plan check` exists to fail
+    // CI when a planned event stops firing, so its 1 is read as exactly that claim. A DNS blip, an
+    // expired key or an outage on OUR side was indistinguishable from the customer's tracking
+    // genuinely regressing, and reddened their pull request for it.
+    //
+    // MEASURED, same binary, same unreachable host:
+    //   plan check --key sa_bogus --url https://nope.invalid   exit 1
+    //   desk       --key sa_bogus --url https://nope.invalid   exit 2
+    //
+    // The real verdict still comes from gate() below, which is the only thing that has actually
+    // looked at the events.
+    return err.refusal ? 1 : 2;
   }
 }
