@@ -394,3 +394,4 @@ describe("a wait is explained while it is happening", () => {
     assert.ok(!/still waiting/.test(r.out), `an instant replay explained a wait it never had:\n${r.out}`);
   });
 });
+

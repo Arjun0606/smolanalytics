@@ -183,3 +183,34 @@ describe("every command the binary dispatches can also be guessed at", () => {
     }
   });
 });
+
+// ── THE ONE PREREQUISITE, NAMED WHERE SOMEBODY LOOKS FIRST ──────────────────────────────────────
+//
+// The no-args help documented SMOLANALYTICS_SEED_SECRET, SMOLANALYTICS_TEARDOWN_SECRET,
+// SMOLANALYTICS_LOGIN_EMAIL, SMOLANALYTICS_LOGIN_PASSWORD and SMOLANALYTICS_KEY — eight variable
+// mentions in all — and never once named ANTHROPIC_API_KEY, without which `test` and `suggest`
+// cannot do anything. MEASURED: 0 occurrences in the no-args help and 0 in `test --help`.
+//
+// A newcomer learned it only after composing a whole command and being rejected. The rejection
+// itself is good — it fires in about a second, does not download Chromium first, exits 2, and
+// names console.anthropic.com — but it is the second thing they should read about the key, not
+// the first.
+
+test("the help names the API key everything depends on, and where to get one", () => {
+  for (const argv of [[], ["test", "--help"]]) {
+    const r = cli(...argv);
+    const out = plain(r.out + r.err);
+    assert.match(out, /ANTHROPIC_API_KEY/, `\`smolanalytics ${argv.join(" ")}\` never mentions the one key it cannot run without`);
+    assert.match(out, /console\.anthropic\.com/, "naming the variable without saying where to get one is half an answer");
+  }
+});
+
+test("and says the keyless path exists, so --plan users are not turned away", () => {
+  // Replay needs no key and no model at all. Telling somebody a key is required, full stop, would
+  // send away the users on the cheapest and fastest path we have.
+  for (const argv of [[], ["test", "--help"]]) {
+    const r = cli(...argv);
+    const out = plain(r.out + r.err);
+    assert.match(out, /--plan/, "the no-key path must be mentioned beside the requirement");
+  }
+});

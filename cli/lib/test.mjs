@@ -1163,6 +1163,9 @@ export function testUsage() {
   return `
 ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No account.
 
+  ${C.dim("Needs ANTHROPIC_API_KEY (console.anthropic.com/settings/keys) — the agent is Claude and the")}
+  ${C.dim("calls are billed to you. With --plan it replays the recording instead, with no key at all.")}
+
   --url <url>      where the test starts (staging, a deploy preview, anything reachable)
   --test "<text>"  what should work, in plain English
   --plan <file>    replay this recording first; only wake the agent if it no longer fits

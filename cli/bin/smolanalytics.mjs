@@ -136,6 +136,10 @@ function help() {
   console.log(`
 ${C.bold("smolanalytics")} — end-to-end tests without test code
 
+  ${C.dim("ANTHROPIC_API_KEY is the one thing everything here needs: the agent is Claude, and the")}
+  ${C.dim("calls are billed to you. Get one at console.anthropic.com/settings/keys.")}
+  ${C.dim("Replaying a recording with --plan is the exception — that runs with no key and no model.")}
+
   ${C.bold("npx smolanalytics test")}        one sentence, a real browser, a verdict
   ${C.dim("--url  <url>")}          staging, a deploy preview, anything reachable
   ${C.dim("--wait-preview <sec>")}  Actions + no --url: wait for this PR's own preview deployment (default 240)
