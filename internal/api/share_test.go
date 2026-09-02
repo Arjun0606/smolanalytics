@@ -69,9 +69,11 @@ func TestShareLinkAccess(t *testing.T) {
 	if w2.Code != 200 || !strings.Contains(w2.Body.String(), "read-only") || !strings.Contains(w2.Body.String(), "news.ycombinator.com") {
 		t.Fatalf("share page should render traffic: %d", w2.Code)
 	}
-	// tokens never unlock anything else
-	if w3 := get("/"); w3.Code != http.StatusFound {
-		t.Fatalf("dashboard must still be login-gated, got %d", w3.Code)
+	// tokens never unlock anything else. /settings, not /: since the dashboard was deleted, GET /
+	// is the public "this is not a dashboard" page (root.go) and 200 is its correct answer. What a
+	// share token must never do is mint a session, and /settings is a surface a session still gates.
+	if w3 := get("/settings"); w3.Code != http.StatusFound {
+		t.Fatalf("settings must still be login-gated, got %d", w3.Code)
 	}
 	if w4 := get("/v1/export"); w4.Code != http.StatusUnauthorized {
 		t.Fatalf("api must still be gated, got %d", w4.Code)

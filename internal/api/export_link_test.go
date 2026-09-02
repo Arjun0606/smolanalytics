@@ -102,8 +102,11 @@ func TestExportLinkMintDownloadBurn(t *testing.T) {
 	if w4 := get("/v1/export"); w4.Code != http.StatusUnauthorized {
 		t.Fatalf("/v1/export must still require auth, got %d", w4.Code)
 	}
-	if w5 := get("/"); w5.Code != http.StatusFound {
-		t.Fatalf("dashboard must still be login-gated, got %d", w5.Code)
+	// /settings, not /: since the dashboard was deleted, GET / is the public "this is not a
+	// dashboard" page (root.go) and 200 is its correct answer. The invariant here is that a burned
+	// token minted no SESSION, and the surface that proves it is one a session still gates.
+	if w5 := get("/settings"); w5.Code != http.StatusFound {
+		t.Fatalf("settings must still be login-gated, got %d", w5.Code)
 	}
 }
 

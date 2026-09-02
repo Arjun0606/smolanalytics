@@ -82,6 +82,14 @@ func (s *Server) setSession(w http.ResponseWriter, r *http.Request) {
 func isPublic(r *http.Request) bool {
 	p := r.URL.Path
 	switch {
+	case p == "/" && r.Method == http.MethodGet:
+		// The root page exists for one reader: somebody with a bookmark to the dashboard this
+		// instance no longer has, who should be told where their product went (root.go). It was
+		// written in the same commit that deleted the dashboard and then never rendered for
+		// anyone, because this gate ran first and sent every visitor to /login. MEASURED on a
+		// freshly rolled v0.91.0 instance: GET / -> 302 /login, exactly as on v0.90.0. A page
+		// that redirects the people it was written for is dead code shipped as a feature.
+		return true
 	case p == "/login" || p == "/logout" || p == "/healthz" || p == "/version" || p == "/sdk.js":
 		return true
 	case p == "/install.md" || p == "/llms.txt" || p == "/docs": // agent-facing setup docs, public by design
