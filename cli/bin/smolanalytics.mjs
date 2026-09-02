@@ -18,6 +18,7 @@ import { applyStrategy, upsertEnv, snippetHtml, MANUAL_SNIPPETS } from "../lib/i
 import { connectCmd } from "../lib/connect.mjs";
 import { planCheckCmd } from "../lib/plan.mjs";
 import { auditCmd } from "../lib/audit.mjs";
+import { guardCmd } from "../lib/guard.mjs";
 import { deskCmd } from "../lib/desk.mjs";
 import { runnerProblem, testCmd, testUsage } from "../lib/test.mjs";
 import { suiteCmd, DEFAULT_PLANS_DIR, announceCannotStart } from "../lib/suite.mjs";
@@ -76,6 +77,7 @@ const FLAGS = {
     "max-steps", "max-calls", "help"],
   suggest: ["url", "out", "max", "yes", "help"],
   audit: ["dir", "json", "all", "help"],
+  guard: ["dir", "json", "help"],
   desk: ["url", "host", "key", "project", "help"],
   init: ["key", "host", "yes", "print", "help"],
   connect: ["url", "host", "key", "help"],
@@ -89,7 +91,7 @@ const FLAGS = {
 // integration tells people to type — and `npx smolanalytics mpc` answered "unknown command mpc"
 // with no suggestion, while every other one-transposition typo gets one. Two lists that must
 // agree, which is the same shape as the flag guard's own warning directly above.
-const COMMANDS = ["test", "suggest", "audit", "desk", "init", "connect", "plan", "mcp"];
+const COMMANDS = ["test", "suggest", "audit", "guard", "desk", "init", "connect", "plan", "mcp"];
 
 /** Edit distance, capped at 3 — far enough to catch a typo, near enough not to invent a guess. */
 function distance(a, b) {
@@ -174,6 +176,12 @@ ${C.bold("smolanalytics")} — end-to-end tests without test code
   ${C.dim("--url  <url>")}          a browser walks a few pages and proposes the flows it can SEE
   ${C.dim("--out  <dir>")}          where the .md files land (default tests/) — existing files are never overwritten
   ${C.dim("--max  <n>")}            at most this many proposals (default 6; a small app honestly yields fewer)
+
+  ${C.bold("npx smolanalytics guard")}       what this repo needs that nothing declares
+  ${C.dim("[dir]")}                 repo to read (default: here). No account, no key, no network.
+  ${C.dim("--json")}                machine-readable, for a CI step that wants to act on it
+  ${C.dim("An env var read with no fallback and named in no .env.example, README, Dockerfile,")}
+  ${C.dim("compose file or workflow: a deploy that starts and then fails on the line that reads it.")}
 
   ${C.bold("npx smolanalytics audit")}       what your app does that nothing is measuring
   ${C.dim("[dir]")}                 repo to scan (default: here). No account, no network.
@@ -260,6 +268,12 @@ async function main() {
     });
     return;
   }
+  if (cmd === "guard") {
+    const bare = process.argv[3] && !process.argv[3].startsWith("--") ? process.argv[3] : undefined;
+    process.exitCode = guardCmd({ dir: flag("dir") || bare || ".", json: hasFlag("json") });
+    return;
+  }
+
   if (cmd === "audit") {
     const bare = process.argv[3];
     process.exitCode = auditCmd({
