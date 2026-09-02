@@ -11,6 +11,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseSuite } from "../lib/suite.mjs";
@@ -368,4 +369,69 @@ describe("example-test.md", () => {
   test("no two tests share a name, because the name is the recording's filename", () => {
     assert.equal(new Set(tests.map((t) => t.name)).size, tests.length);
   });
+});
+
+// ── THE README MAY NOT SEND THE READER SOMEWHERE THEY CANNOT GO ─────────────────────────────────
+//
+// lib/suite.mjs writes the rule down where it was first learned: "NOT `templates/example-test.md`:
+// that is a path inside an npm package the reader has not checked out, and pointing somebody at a
+// file they cannot open is the same as pointing them nowhere."
+//
+// The README then did it twice. Both files really do ship, but grep over bin/ and lib/ finds no
+// code that reads, prints or copies either, so no command surfaces them — and on the documented
+// `npx smolanalytics` path they land in an unguessable ~/.npm/_npx/<hash>/ directory.
+describe("the README's pointers are ones a reader can follow", () => {
+  test("no package-relative path is offered as the way to get a file", () => {
+    const pointed = [...readme.matchAll(/`(templates\/[\w.-]+)`/g)].map((m) => m[1]);
+    assert.deepEqual(pointed, [], `the README names ${pointed.join(", ")} as somewhere to look`);
+  });
+
+  test("the example suite is in the README itself, not named and withheld", () => {
+    // Every heading of templates/example-test.md, so the two cannot drift into different suites.
+    const headings = [...exampleTest.matchAll(/^##\s+(.+)$/gm)].map((m) => m[1].trim());
+    assert.ok(headings.length >= 5, `only ${headings.length} headings in the example file`);
+    for (const h of headings) {
+      assert.ok(readme.includes(h), `the README's inlined suite is missing "${h}"`);
+    }
+  });
+
+  test("the workflow is linked by a URL, since 13KB of YAML does not belong in a flag table", () => {
+    assert.match(readme, /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/blob\/[\w.-]+\/cli\/templates\/github-action\.yml/,
+      "the longer workflow is mentioned with no way to open it");
+  });
+});
+
+// A paragraph printed twice is a paragraph nobody proofread, and this one ships to npmjs.com.
+test("no paragraph in the README is printed twice", () => {
+  const paras = readme
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter((p) => p.length > 80 && !p.startsWith("|") && !p.startsWith("```") && !p.startsWith("#"));
+  const seen = new Map();
+  for (const p of paras) seen.set(p, (seen.get(p) || 0) + 1);
+  const twice = [...seen].filter(([, n]) => n > 1).map(([p]) => p.slice(0, 70));
+  assert.deepEqual(twice, [], `duplicated: ${twice.join(" | ")}`);
+});
+
+// Every flag `test` takes is in the README's table except the ones nothing documented anywhere.
+// --share is the sharpest case: it is the only flag in this CLI that sends anything off the
+// machine, in a README whose selling point is "No account. No GitHub app. Nothing written to your
+// repo." A reader auditing that claim could not find the one flag that qualifies it.
+test("every flag the CLI's help lists under `test` is in the README's flag table", () => {
+  const help = spawnSync(process.execPath, [path.join(dir, "..", "bin", "smolanalytics.mjs"), "--help"], { encoding: "utf8" })
+    .stdout.replace(/\x1b\[[0-9;]*m/g, "");
+  const section = help.slice(help.indexOf("npx smolanalytics test"), help.indexOf("npx smolanalytics suggest"));
+  const flags = [...new Set([...section.matchAll(/(?:^|\s)(--[a-z][a-z-]*)/g)].map((m) => m[1]))];
+  assert.ok(flags.length > 15, `only ${flags.length} flags parsed out of the help`);
+  const missing = flags.filter((f) => !readme.includes(`\`${f}`));
+  assert.deepEqual(missing, [], "in the CLI and not in the README, so nobody reading the docs can find it");
+});
+
+test("and the README says what --share actually transmits", () => {
+  const row = readme.split("\n").find((l) => l.startsWith("| `--share`"));
+  assert.ok(row, "no --share row in the flag table");
+  assert.match(row, /off unless you ask/i, "a flag that publishes must say it is opt-in");
+  for (const thing of ["screenshot", "sentence", "commit"]) {
+    assert.ok(row.includes(thing), `the row never mentions the ${thing} it uploads`);
+  }
 });

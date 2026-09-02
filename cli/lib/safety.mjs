@@ -184,25 +184,36 @@ const PRIVATE_IP = /^(10\.|127\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.
  *
  * Returns { url, problem }. A URL that already carries http:// or https:// comes back byte for
  * byte as it was typed: this repairs what is broken and touches nothing that works.
+ *
+ * `flagName` is which flag the sentence should blame. --url is the default and its wording is
+ * unchanged; --seed and --teardown run through the same repair because they are the same mistake
+ * with a later and more expensive failure — a typo'd --teardown was not noticed until the test had
+ * finished and the fixture it was meant to delete was already made.
  */
-export function normalizeUrl(raw) {
+export function normalizeUrl(raw, flagName = "--url") {
   const s = String(raw ?? "").trim();
-  const shape = "It should look like https://staging.yourapp.com or http://localhost:3000.";
+  // A browser opens --url; we POST to --seed and --teardown. Saying "a browser can open" about an
+  // endpoint no browser ever visits sends the reader looking for the wrong kind of mistake.
+  const opens = flagName === "--url" ? "is not a URL a browser can open" : "is not a URL we can POST to";
+  const cannot = flagName === "--url" ? "which a browser cannot open" : "which we cannot POST to";
+  const shape = flagName === "--url"
+    ? "It should look like https://staging.yourapp.com or http://localhost:3000."
+    : `It should look like https://staging.yourapp.com/api/${flagName.slice(2)}.`;
   if (!s) return { url: "", problem: "" };
   if (/^https?:\/\//i.test(s)) {
     let u;
     try {
       u = new URL(s);
     } catch {
-      return { url: "", problem: `--url ${JSON.stringify(s)} is not a URL a browser can open. ${shape}` };
+      return { url: "", problem: `${flagName} ${JSON.stringify(s)} ${opens}. ${shape}` };
     }
-    return u.hostname ? { url: s, problem: "" } : { url: "", problem: `--url ${JSON.stringify(s)} has no host in it. ${shape}` };
+    return u.hostname ? { url: s, problem: "" } : { url: "", problem: `${flagName} ${JSON.stringify(s)} has no host in it. ${shape}` };
   }
   // Tested for "://" and not for a colon, because "localhost:3000" HAS a colon and is exactly the
   // input that has no scheme.
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) {
     const scheme = s.slice(0, s.indexOf("://"));
-    return { url: "", problem: `--url ${JSON.stringify(s)} is ${scheme}://, which a browser cannot open. Use http:// or https://.` };
+    return { url: "", problem: `${flagName} ${JSON.stringify(s)} is ${scheme}://, ${cannot}. Use http:// or https://.` };
   }
   const host = s.replace(/^\/+/, "").split(/[/?#]/)[0].split(":")[0].toLowerCase();
   const local = LOCAL_HOSTS.has(host) || PRIVATE_IP.test(host) || LOCAL_SUFFIXES.some((x) => host.endsWith(x));
@@ -210,9 +221,9 @@ export function normalizeUrl(raw) {
   try {
     u = new URL(`${local ? "http" : "https"}://${s.replace(/^\/+/, "")}`);
   } catch {
-    return { url: "", problem: `--url ${JSON.stringify(s)} is not a URL a browser can open. ${shape}` };
+    return { url: "", problem: `${flagName} ${JSON.stringify(s)} ${opens}. ${shape}` };
   }
-  if (!u.hostname) return { url: "", problem: `--url ${JSON.stringify(s)} has no host in it. ${shape}` };
+  if (!u.hostname) return { url: "", problem: `${flagName} ${JSON.stringify(s)} has no host in it. ${shape}` };
   return { url: u.href, problem: "" };
 }
 

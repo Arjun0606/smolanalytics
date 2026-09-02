@@ -33,9 +33,13 @@ import { runSuite, discover, DEFAULT_PLANS_DIR } from "./suite.mjs";
 import { shipReport } from "./ship.mjs";
 import { clusterNote } from "./cluster.mjs";
 import { newLedger, costLine, priceFrom } from "./cost.mjs";
+import { packageVersion } from "./version.mjs";
 
 export const PROTOCOL = "2024-11-05";
-export const SERVER = { name: "smolanalytics", version: "local" };
+// The version an editor shows beside the server's name. This was the hardcoded string "local",
+// which is the same answer on every machine that has ever run it — so "which version are you on?"
+// could not be answered from inside the editor, which is where this half of the product lives.
+export const SERVER = { name: "smolanalytics", version: packageVersion() };
 
 /**
  * The tools, and the descriptions matter more than usual: an agent picks by reading them, and a

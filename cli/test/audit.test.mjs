@@ -24,6 +24,64 @@ test("finds real auth call sites", () => {
   assert.ok(k.includes("logout"), "missed signOut()");
 });
 
+// A STOREFRONT IS THE CASE THIS COMMAND MOST NEEDS TO GET RIGHT, AND IT SAW NOTHING.
+//
+// Every payment pattern was a SERVER-side SDK call: stripe.checkout.sessions.create, charges.create,
+// paymentIntents.create. MEASURED on a three-button React fixture — an add-to-cart, a
+// stripe.redirectToCheckout() and a Paddle.Checkout.open() — the whole report was:
+//
+//   No recognisable user-facing actions found here.
+//
+// Payment is the finding this report ranks first, and the shop that most needs it got a blank page
+// in the thirty seconds the command has to be believed.
+test("client-side commerce is an action, because that is where a lot of shops take the money", () => {
+  const src = `
+    <button onClick={() => addToCart(item)}>Add to cart</button>
+    <button onClick={async () => { await stripe.redirectToCheckout({ sessionId }); }}>Buy</button>
+    <button onClick={() => Paddle.Checkout.open({ product: 123 })}>Subscribe</button>
+  `;
+  const k = kinds("app/Cart.jsx", src);
+  assert.ok(k.includes("add to cart"), "missed addToCart(");
+  assert.ok(k.includes("payment"), "missed a client-side checkout");
+  assert.equal(k.filter((x) => x === "payment").length, 2, "one of the two checkout calls was missed");
+});
+
+test("a payment outranks an add to cart, which outranks a signup", () => {
+  const found = scanFile("a.tsx", `
+    await signUp.email({ email });
+    addToCart(item);
+    await stripe.redirectToCheckout({ sessionId });
+  `);
+  const sorted = [...found].sort((a, b) => a.weight - b.weight).map((a) => a.kind);
+  assert.deepEqual(sorted, ["payment", "add to cart", "signup"]);
+});
+
+test("the same guards apply: a handler DECLARED is not a handler CALLED", () => {
+  // The whole file's rule. `<button onClick={handleAddToCart}>` has no paren and is not a call,
+  // and a declaration is where the action is written down rather than performed.
+  for (const line of [
+    "function handleCheckout() {",
+    "const handleCheckout = async () => {",
+    "export function addToCart(item) {",
+    'import { addToCart } from "./cart";',
+    "// call addToCart() when they click",
+    "<button onClick={handleAddToCart}>Add</button>",
+    "type CreateOrderArgs = { id: string };",
+  ]) {
+    assert.deepEqual(scanFile("x.tsx", line), [], `reported a non-action: ${line}`);
+  }
+});
+
+test("a client-side checkout with tracking beside it is covered, not a finding", () => {
+  const src = `
+    async function buy() {
+      await stripe.redirectToCheckout({ sessionId });
+      posthog.capture("checkout");
+    }
+  `;
+  assert.equal(scanFile("a.tsx", src).find((a) => a.kind === "payment").covered, true);
+});
+
 test("PROSE is not an action, even when it contains the word", () => {
   // Verbatim from app/install.md/route.ts, a route that SERVES documentation. The paren belongs to
   // "(14-day trial)", not to a call, and this shipped as a finding until it was caught by running
@@ -444,4 +502,34 @@ test("one vendor is still named on its own, with no list punctuation", () => {
   render(r, (l) => out.push(l));
   const text = out.join("\n").replace(/\x1b\[\d+m/g, "");
   assert.match(text, /This repo uses Mixpanel\./, `a single vendor grew a list around it:\n${text}`);
+});
+
+// THE UPGRADE IS THE REVENUE EVENT, and nothing matched it.
+//
+// This file's own ranking says "Payment first because an untracked checkout is revenue you cannot
+// attribute". On a SaaS the plan change is that same money, and audit had no pattern for it: a
+// fixture with upgradePlan(), startTrial() and changePlan() reported nothing at all.
+//
+// Compound forms only. A bare `subscribe(` is an event emitter far more often than a plan change,
+// and lib/audit.mjs's header records what a wildcard costs: 497 findings on one real repo, every
+// one of them noise.
+
+const suggests = (src) => scanFile("src/Billing.jsx", src).map((f) => f.suggest);
+
+test("a plan change is found, in the shapes people actually write", () => {
+  for (const src of [
+    "const go = () => upgradePlan(p);",
+    "await upgradeSubscription(orgId);",
+    "startTrial();",
+    "await changePlan('pro');",
+    "handleSubscribe(plan);",
+  ]) {
+    assert.ok(suggests(src).includes("plan_upgraded"), `missed the money event in: ${src}`);
+  }
+});
+
+test("and a bare subscribe() is left alone, because it is usually an event emitter", () => {
+  for (const src of ["emitter.subscribe(fn);", "store.subscribe(render);", "observable$.subscribe(next);"]) {
+    assert.ok(!suggests(src).includes("plan_upgraded"), `false positive on: ${src}`);
+  }
 });

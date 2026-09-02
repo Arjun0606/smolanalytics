@@ -101,3 +101,55 @@ test("a refusal from the server is reported as itself, not as a crash", async ()
   assert.match(r.text(), /cannot read this project/);
   assert.ok(!/could not reach/.test(r.text()), "a refusal is not a network failure and must not be described as one");
 });
+
+/* ── A STATUS IS PROOF WE REACHED IT ─────────────────────────────────────────────────────────── */
+//
+// MEASURED against the real endpoint, with the line ending made visible:
+//
+//   desk could not reach your instance: 405 from https://smolanalytics.com/mcp: $
+//
+// A 405 IS a response, so "could not reach your instance" sends the reader to check DNS for an
+// answer that was in the reply — the exact mistake lib/plan.mjs writes down four files away. The
+// dangling colon is the second half: the message appended a body that a 405 does not have.
+
+test("an HTTP status is reported as an answer, not as an unreachable host", async () => {
+  const r = recorder();
+  const code = await deskCmd({
+    url: "https://x.test", key: KEY, project: "", log: r.log,
+    fetchImpl: async () => ({ ok: false, status: 405, text: async () => "" }),
+  });
+  assert.equal(code, 2, "still ours, never a verdict about their app");
+  assert.ok(!/could not reach/.test(r.text()), `a host that answered was reported as unreachable:\n${r.text()}`);
+  assert.match(r.text(), /405/, "the status is the only actionable thing in the message");
+  assert.match(r.text(), /https:\/\/x\.test\/mcp/, "say which endpoint answered");
+});
+
+test("an empty body leaves no dangling colon", async () => {
+  const r = recorder();
+  await deskCmd({
+    url: "https://x.test", key: KEY, project: "", log: r.log,
+    fetchImpl: async () => ({ ok: false, status: 405, text: async () => "   " }),
+  });
+  for (const line of r.lines) {
+    assert.ok(!/:\s*$/.test(line), `a line ends in a colon with nothing after it: ${JSON.stringify(line)}`);
+  }
+});
+
+test("a body that IS there is still shown, because the server usually says what is wrong", async () => {
+  const r = recorder();
+  await deskCmd({
+    url: "https://x.test", key: KEY, project: "", log: r.log,
+    fetchImpl: async () => ({ ok: false, status: 401, text: async () => "that token has expired" }),
+  });
+  assert.match(r.text(), /that token has expired/);
+  assert.match(r.text(), /401/);
+});
+
+test("a genuinely unreachable host keeps the sentence that fits it", async () => {
+  const r = recorder();
+  await deskCmd({
+    url: "https://x.test", key: KEY, project: "", log: r.log,
+    fetchImpl: async () => { throw new Error("getaddrinfo ENOTFOUND x.test"); },
+  });
+  assert.match(r.text(), /could not reach your instance/, "a DNS failure IS unreachable and must still say so");
+});

@@ -85,7 +85,41 @@ Each test gets its own recording under `.smolanalytics/recordings`, named after 
 heading it came from. Rename a heading and that test is recorded again from scratch; edit the
 sentence and the next run checks the new sentence.
 
-This package ships `templates/example-test.md`, a working checkout suite to start from.
+A suite to start from. Five tests for a checkout flow, one heading each — save it as
+`tests/checkout.md`:
+
+````markdown
+# Checkout
+
+## A shopper can add an item to the cart
+
+From the storefront, open the first product, add it to the cart, and check that the cart shows one
+line for that product at the price the product page listed.
+
+## The cart survives a reload
+
+With one item in the cart, reload the page and check the cart still shows that item and the same
+total.
+
+## Checkout asks for payment before it confirms anything
+
+Go to the cart with one item, click through to checkout, and check that an order confirmation is
+never shown before card details have been entered.
+
+## An expired card is refused with a message that says so
+
+At checkout, pay with card number 4000 0000 0000 0069, any future-looking name, CVC 123, and check
+that the page stays on checkout and says the card is expired — not a generic "something went wrong".
+
+## An empty cart says it is empty
+
+Open the cart with nothing in it and check it says the cart is empty and offers a way back to the
+storefront, rather than showing a total of 0 with a checkout button.
+````
+
+Write what a careful person would check, and say what you expect to SEE: "checkout works" cannot
+fail usefully. Never put a real password or card number in one of these files — it is committed.
+Point the tests at a seeded account on staging and a provider test card.
 
 A suite runs several tests at once, each in its own browser context inside one shared browser, and
 still prints one test at a time: each test's output is held and written as a block when that test
@@ -292,9 +326,11 @@ announce their previews that way. If yours does not, add a step with `id: previe
 `url` output and it is used instead. Nothing is ever guessed: no ready deployment means exit 2, a
 comment on the pull request saying so, and no verdict about your app.
 
-The same file ships in this package as `templates/github-action.yml`, with comments and with three
-ready-made preview steps to uncomment: a host's own wait action, a staging URL passed straight in,
-or build-and-serve for a static site.
+A longer version of that file, with the comments left in and three ready-made preview steps to
+uncomment — a host's own wait action, a staging URL passed straight in, or build-and-serve for a
+static site — is at
+[github.com/Arjun0606/smolanalytics/blob/main/cli/templates/github-action.yml](https://github.com/Arjun0606/smolanalytics/blob/main/cli/templates/github-action.yml).
+The workflow above is the same thing with the comments taken out, and it runs as it stands.
 
 `GITHUB_TOKEN` is the one Actions gives every job for free, which is why the comment needs no
 GitHub App and no install on your other repositories. `continue-on-error` is there on purpose: a
@@ -384,6 +420,7 @@ pipeline that gates on `1` alone never reddens a build because our side had an o
 | `--plans <dir>` | where a suite keeps its recordings (default `.smolanalytics/recordings`) |
 | `--since <ref>` | with `--suite`, run only the tests this change could have broken — and say what was skipped, in the terminal and in the comment |
 | `--comment` | post the verdicts on the pull request (GitHub Actions) |
+| `--share` | publish this run to a link anyone can open, and print it. Off unless you ask for it, and the one flag here that sends anything off your machine: the URL tested, each test's sentence and verdict, the agent's steps, the files named as suspects for a failure, your commit, branch and pull request when the run is in CI, and for a failure the page's visible text and one screenshot. Secrets in the environment are scrubbed out of all of it first. One link per run, never one per test |
 | `--browser <name>` | `chromium` (default), `firefox` or `webkit` — the same test in a different engine |
 | `--headed` | watch it happen |
 | `--yes` | install the browser, and don't ask before a production-looking URL |
@@ -393,6 +430,7 @@ pipeline that gates on `1` alone never reddens a build because our side had an o
 | `--retries <n>` | re-run a failing test from a clean page; pass-on-retry is flaky, not passed (default 1; 0 disables) |
 | `--workers <n>` | with `--suite`, how many tests run at once (default: measured from cores, memory and whether a key is set; `1` is one at a time) |
 | `--evidence-dir <dir>` | where a failure's screenshot and page text land (default `.smolanalytics/evidence`) |
+| `--max-steps <n>` | stop a test after this many agent steps — one look at the page and one action (default 40) |
 | `--max-calls <n>` | stop a test after this many model calls; reports why and exits 2 (0 = no ceiling) |
 | `--login "<sentence>"` | sign in once in plain English; every test after it reuses the saved session |
 | `--auth-file <path>` | instead of `--login`: a Playwright storage state you already generate |
@@ -594,10 +632,6 @@ snippet instead of guessing.
 | `--key <key>` | public write key (or `SMOLANALYTICS_WRITE_KEY`) |
 | `--yes` | don't ask before editing |
 | `--print` | print the snippet, change nothing |
-
-The write key is **public** and ingest-only — it cannot read your data. Reads use a separate
-secret key that is never embedded in a page.
-
 
 The write key is **public** and ingest-only — it cannot read your data. Reads use a separate
 secret key that is never embedded in a page.

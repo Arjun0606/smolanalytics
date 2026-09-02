@@ -27,6 +27,7 @@ import path from "node:path";
 import { perceive, render, loadPlaywright, runnerProblem } from "./test.mjs";
 import { slug } from "./suite.mjs";
 import { keyProblem, PLACEHOLDER_LIST } from "./safety.mjs";
+import { wrapHelp } from "./help.mjs";
 
 const C = {
   b: (s) => `\x1b[1m${s}\x1b[0m`,
@@ -564,7 +565,7 @@ ${C.b("npx smolanalytics suggest")} — walk the running app, propose the tests 
 export async function suggestCmd(opts = {}) {
   const { url, out = "tests", max: maxRaw, yes = false, log = console.log, env = process.env, loadBrowser = loadPlaywright } = opts;
   if (!url) {
-    log(suggestUsage());
+    log(wrapHelp(suggestUsage(), process.stdout.columns));
     return 2;
   }
   // Refused out loud, exactly like --retries in the bin: Number("six") is NaN, and any coercion

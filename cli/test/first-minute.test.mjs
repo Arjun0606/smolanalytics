@@ -223,6 +223,72 @@ describe("asking what a command does is never answered by doing it", () => {
   });
 });
 
+// ── ASKING ABOUT ONE COMMAND MUST NOT ANSWER ABOUT NINE ─────────────────────────────────────────
+//
+// MEASURED, by md5-ing each `<cmd> --help` against the no-args help: audit, mcp, desk, init,
+// connect and plan were BYTE-IDENTICAL to the full help. Only `test` and `suggest` had a page of
+// their own. Two consequences, and the second is the sharper one:
+//
+//   the reader with the more specific question got the least specific answer, eighty lines of it;
+//   and `audit --help` never named --all or --json, even though FLAGS declares both — so the two
+//   flags audit actually takes were documented nowhere at all.
+//
+// The fix is not five hand-written usage blocks. HELP_BLOCKS holds one block per command, help()
+// prints all of them and helpFor() prints one, so a flag is still written down exactly once.
+
+describe("each command's --help is about that command", () => {
+  const full = () => run([bin, "--help"], noKey).then((r) => r.out);
+
+  for (const [cmd, mustSay] of [
+    ["audit", "npx smolanalytics audit"],
+    ["guard", "npx smolanalytics guard"],
+    ["mcp", "npx smolanalytics mcp"],
+    ["desk", "npx smolanalytics desk"],
+    ["init", "npx smolanalytics init"],
+    ["connect", "npx smolanalytics connect"],
+    ["plan", "npx smolanalytics plan check"],
+  ]) {
+    test(`${cmd} --help is its own block, not the whole help`, async () => {
+      const r = await run([bin, cmd, "--help"], noKey);
+      assert.equal(r.status, 0, `${r.out}${r.err}`);
+      assert.ok(r.out.includes(mustSay), `${cmd} --help does not name ${cmd}:\n${r.out}`);
+      assert.notEqual(r.out, await full(), `${cmd} --help is byte-identical to the global help`);
+      // The other commands' blocks are what made it eighty lines. One is enough to prove it.
+      const others = ["test", "suggest", "audit", "guard", "mcp", "desk", "init", "connect", "plan"]
+        .filter((c) => c !== cmd)
+        .filter((c) => r.out.includes(`npx smolanalytics ${c} `) || r.out.includes(`npx smolanalytics ${c}\n`));
+      assert.deepEqual(others, [], `${cmd} --help still carries other commands' blocks`);
+    });
+  }
+
+  test("audit --help names the flags audit takes", async () => {
+    // FLAGS declares audit: ["dir", "json", "all", "help"], and the block named none of them.
+    const r = await run([bin, "audit", "--help"], noKey);
+    assert.match(r.out, /--json/, "audit takes --json and its help never said so");
+    assert.match(r.out, /--all/, "audit takes --all and its help never said so");
+  });
+
+  test("test --help is not a strict subset of what the global help says about test", async () => {
+    // MEASURED: --suite, --since, --comment, --share, --plans, --workers, --layout,
+    // --no-render-check, --login, --auth-file, --auth-dir and --wait-preview were all in the
+    // global help and none of them were in `test --help`.
+    const global = await full();
+    const own = (await run([bin, "test", "--help"], noKey)).out;
+    const section = global.slice(global.indexOf("npx smolanalytics test"), global.indexOf("npx smolanalytics suggest"));
+    const flags = [...new Set([...section.matchAll(/(?:^|\s)(--[a-z][a-z-]*)/g)].map((m) => m[1]))];
+    assert.ok(flags.length > 15, `only ${flags.length} flags parsed out of the global test section`);
+    const missing = flags.filter((f) => !own.includes(f));
+    assert.deepEqual(missing, [], "documented in the summary and missing from the command's own page");
+  });
+
+  test("a command with no block of its own still gets the whole help rather than nothing", async () => {
+    // `version` dispatches before helpFor, so this is about the fallback path itself: helpFor must
+    // never answer with silence for a word it does not recognise.
+    const r = await run([bin, "--help"], noKey);
+    assert.match(r.out, /end-to-end tests without test code/);
+  });
+});
+
 describe("a run that never started never exits 1", () => {
   // 1 is published in templates/github-action as "a test failed" — the application under test is
   // broken. MEASURED: `npx smolanalytics test --url https://staging.myapp.com` with the --test flag

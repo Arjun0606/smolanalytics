@@ -43,6 +43,7 @@ import { UPLOAD_TOOL, performUpload, uploadLabel, uploadNotes, uploadTargets } f
 import { seedRun } from "./seed.mjs";
 import { maskUrl, resolveUrl } from "./seedguard.mjs";
 import { agentSteps, publishShare, replaySteps, scrubDeep } from "./share.mjs";
+import { wrapHelp } from "./help.mjs";
 
 const C = {
   b: (s) => `\x1b[1m${s}\x1b[0m`,
@@ -1176,23 +1177,41 @@ export function runnerProblem(err) {
  * prints for `test`.
  */
 export function testUsage() {
+  // One logical line per row, folded to the terminal by lib/help.mjs at the moment it is printed.
+  // The flag column is padded to a uniform width so the fold has a column to hang under; a row
+  // separated from its description by a single space has no column to find.
   return `
 ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No account.
 
-  ${C.dim("Needs ANTHROPIC_API_KEY (console.anthropic.com/settings/keys) — the agent is Claude and the")}
-  ${C.dim("calls are billed to you. With --plan it replays the recording instead, with no key at all.")}
+  ${C.dim("Needs ANTHROPIC_API_KEY (console.anthropic.com/settings/keys) — the agent is Claude and the calls are billed to you. With --plan it replays the recording instead, with no key at all.")}
 
-  --url <url>      where the test starts (staging, a deploy preview, anything reachable)
-  --test "<text>"  what should work, in plain English
-  --plan <file>    replay this recording first; only wake the agent if it no longer fits
-  --browser <name> chromium (default), firefox or webkit — the same test in a different engine
-  --headed         watch it happen
-  --yes            install the browser, and don't ask about a production-looking URL
-  --seed <url>     POST this run's identity there BEFORE it, and use the JSON it returns as placeholders
-  --teardown <url> POST this run's identity there afterwards, so you can delete what it made
+  --url <url>           where the test starts (staging, a deploy preview, anything reachable)
+  --test "<text>"       what should work, in plain English
+  --plan <file>         replay this recording; only wake the agent if it no longer fits
+  --browser <name>      chromium (default), firefox or webkit — the same test in a different engine
+  --headed              watch it happen
+  --yes                 install the browser, and don't ask about a production-looking URL
+  --seed <url>          POST this run's identity there BEFORE it, and use the JSON it returns as placeholders
+  --teardown <url>      POST this run's identity there afterwards, so you can delete what it made
   --email-domain <dom>  the domain in {{email}} (default example.com, which cannot receive mail)
-  --retries <n>    re-run a failing test from a clean page (default 1; 0 disables)
+  --retries <n>         re-run a failing test from a clean page (default 1; 0 disables)
+  --max-steps <n>       stop a test after this many agent steps: one look at the page and one action (default 40)
+  --max-calls <n>       stop a test after this many model calls; says why and exits 2 (0 = no ceiling)
   --evidence-dir <dir>  where a failure's screenshot and page text go (default .smolanalytics/evidence)
+  --layout <mode>       layout sanity on the final page: report (default, notes only), strict (a finding fails a PASS), off
+  --no-render-check     turn off the render guard, which fails a PASS over a blank, unstyled or crashed page
+  --login "<sentence>"  sign in once in plain English; every run after it reuses the saved session
+  --auth-file <path>    instead of --login: a Playwright storage state you already generate
+  --auth-dir <dir>      where the saved session is kept (default .smolanalytics/auth)
+
+  ${C.dim("a folder of tests, and CI:")}
+  --suite <dir>         a folder of .md files, one heading and one sentence per test
+  --since <ref>         with --suite: run only the tests this change could have broken, and say what was skipped
+  --plans <dir>         where recordings are kept (default .smolanalytics/recordings)
+  --workers <n>         with --suite: how many run at once (default: measured from the machine; 1 is one at a time)
+  --wait-preview <sec>  in Actions with no --url: how long to wait for this pull request's own preview (default 240)
+  --comment             post the verdicts on the pull request (GitHub Actions)
+  --share               publish this run to a link anyone can open, and print it. Off unless you ask.
 
   ${C.dim('npx smolanalytics test --url https://yourapp.com --test "the pricing page shows a monthly price"')}
 `;
@@ -1222,7 +1241,7 @@ async function runOnce({ url, test, plan: planPath, headed, maxSteps = 40, yes, 
   // bundle (only the bytes they point at do), and rewriting one would make the file unreadable.
   const shareRec = (rec) => (share ? { share: { ...scrubDeep({ proof: rec.proof || "", steps: rec.steps || [] }, { secrets, env }), evidence: rec.evidence || null } } : {});
   if (!url || !test) {
-    log(testUsage());
+    log(wrapHelp(testUsage(), process.stdout.columns));
     // 2, NEVER 1. Measured by running the binary with a flag missing: `npx smolanalytics test
     // --url https://staging.myapp.com` (no --test) printed this block and exited 1 — the code the
     // shipped workflow publishes as "a test failed, the application is broken". Nothing was

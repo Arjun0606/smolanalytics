@@ -36,6 +36,9 @@ import {
   suiteCmd,
 } from "../lib/suite.mjs";
 import { keyFix, keyWhere } from "../lib/test.mjs";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 /** Where the first row of the verdict table starts, in lines. -1 when there is no table. */
 const tableAt = (body) => body.split("\n").findIndex((l) => l.startsWith("| --- |"));
@@ -366,6 +369,65 @@ describe("which commit the comment is about", () => {
     });
     assert.match(sent, /aaaaaaa/, "the head commit is not in the comment");
     assert.ok(!/9999999/.test(sent), "the comment names the merge commit Actions invented, which nobody can look up");
+  });
+});
+
+// ── --comment OUTSIDE A GIT REPOSITORY ──────────────────────────────────────────────────────────
+//
+// ciContext RETURNS NULL ON PURPOSE — "nothing at all is null, not an object of empty strings"
+// (lib/share.mjs), so a receiving half never renders "commit:" with nothing after it. Two call
+// sites in lib/suite.mjs dereferenced it without a guard.
+//
+// MEASURED in a scratch directory that was not a repository and not CI: the verdict and the whole
+// summary printed, and then
+//
+//   the run could not complete: Cannot read properties of null (reading 'shortCommit')
+//   This is the test runner, not your application. Nothing was learned about this change.
+//
+// — the last sentence flatly false, since the results were on the screen above it. The same
+// command inside a repository with one commit printed the useful thing instead: "no comment
+// posted: GITHUB_TOKEN is not set."
+describe("--comment where there is no commit to name", () => {
+  const outside = mkdtempSync(path.join(tmpdir(), "smol-nogit-"));
+  const run = (over = {}) => suiteCmd({
+    suite: "tests", url: "https://p.test", comment: true, log: () => {},
+    cwd: outside,
+    env: { ANTHROPIC_API_KEY: "k" },
+    discoverImpl: () => ({ tests: [{ file: "tests/a.md", name: "a", test: "a", id: "a", planPath: ".rec/a.json" }], missing: "", errors: [], notes: [] }),
+    runSuiteImpl: async ({ tests }) => tests.map((t) => ({ ...t, status: "passed", mode: "replay", ms: 1 })),
+    postCommentImpl: async () => ({ posted: false, reason: "GITHUB_TOKEN is not set." }),
+    ...over,
+  });
+
+  test("the run finishes instead of crashing on a null it asked for", async () => {
+    const code = await run();
+    assert.equal(code, 0, "a passing suite outside a repository must still exit 0");
+  });
+
+  test("the comment is composed with no commit, rather than not composed at all", async () => {
+    let commit = "unset";
+    await run({ postCommentImpl: async ({ body }) => { commit = body; return { posted: false, reason: "GITHUB_TOKEN is not set." } } });
+    assert.notEqual(commit, "unset", "postComment was never reached");
+    assert.ok(!/undefined|null|NaN/.test(commit), `an empty commit leaked into the comment:\n${commit}`);
+  });
+
+  test("and the reader is told why no comment appeared, in a sentence about the token", async () => {
+    const said = [];
+    await run({ log: (l) => said.push(String(l)) });
+    const out = said.join("\n");
+    assert.match(out, /no comment posted/);
+    assert.match(out, /GITHUB_TOKEN/);
+    assert.ok(!/could not complete/.test(out), `the crash message is back:\n${out}`);
+    assert.ok(!/Nothing was learned/.test(out), "false: the verdict was printed directly above it");
+  });
+
+  test("issue filing takes the same null and does not swallow the run with it", async () => {
+    // The other unguarded deref. Its try/catch hid the crash, which is worse: the tracker silently
+    // stopped working outside CI and nothing said so.
+    let seen = null;
+    await run({ fileIssuesImpl: async (_r, ctx) => { seen = ctx; return []; } });
+    assert.notEqual(seen, null, "fileIssues was never reached — the deref threw before it");
+    assert.equal(seen.commit, "", "a missing commit is the empty string, not a crash and not undefined");
   });
 });
 

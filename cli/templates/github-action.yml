@@ -22,6 +22,17 @@ name: e2e
 on:
   pull_request:
 
+  # ON A SCHEDULE INSTEAD, FOR A SITE THAT HAS NO PULL REQUESTS.
+  #
+  # A WordPress, Webflow, Squarespace or Shopify site is edited in a dashboard, not in git, so
+  # `pull_request` never fires and nothing above ever runs. Uncomment this and the same suite runs
+  # against the live site every morning, reporting to the job log (and to your project, if the two
+  # SMOLANALYTICS_ variables below are set) rather than to a pull request.
+  #
+  # Set --url explicitly when you do: there is no preview deployment to discover.
+  # schedule:
+  #   - cron: "0 7 * * *"
+
 # THESE TWO, AND NOTHING ELSE.
 #   contents: read        actions/checkout reads tests/ out of this repository.
 #   pull-requests: write  the verdict is one comment on the pull request, edited in place on every

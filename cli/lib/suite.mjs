@@ -265,7 +265,7 @@ const nodeIo = {
 
 const why = (e) => (e && e.message ? e.message : String(e));
 
-function walk(dir, io, out = [], errors = []) {
+function walk(dir, io, out = [], errors = [], skipped = []) {
   let entries;
   try {
     entries = io.list(dir);
@@ -281,11 +281,29 @@ function walk(dir, io, out = [], errors = []) {
   for (const e of entries.sort((a, b) => a.name.localeCompare(b.name))) {
     if (e.name.startsWith(".") || e.name === "node_modules") continue;
     const p = path.join(dir, e.name);
-    if (e.dir) walk(p, io, out, errors);
+    if (e.dir) walk(p, io, out, errors, skipped);
+    else if (DOCS_NOT_TESTS.test(e.name)) skipped.push(p);
     else if (/\.md$/i.test(e.name)) out.push(p);
   }
   return out;
 }
+
+// DOCUMENTATION IN A TESTS FOLDER IS NOT A TEST, AND WAS RUN AS ONE.
+//
+// A file with no heading is deliberately one test — "someone whose whole test is a single sentence
+// should not have to learn a document structure" (parseSuite, above). A tests/README.md has no
+// heading either, so MEASURED with one in place the run listed them as peers:
+//
+//   A shopper can add an item to the cart    tests/checkout.md
+//   How this suite works                     tests/README.md
+//   2 tests · 0 passed · 2 could not run
+//
+// The prose of the README was handed to the agent and driven against the application. There is no
+// ignore mechanism to work around it with, and the empty-folder message promises the opposite
+// ("A test is a markdown heading and one sentence under it"). So these two names are skipped —
+// and ANNOUNCED, never dropped in silence: a file the person can see, quietly not run, is the same
+// class of bug in the other direction.
+const DOCS_NOT_TESTS = /^(readme|contributing)\.md$/i;
 
 /** Find every test under a directory (or in a single file), each with the recording it owns. */
 export function discover(target, plansDir = DEFAULT_PLANS_DIR, io = nodeIo) {
@@ -295,7 +313,9 @@ export function discover(target, plansDir = DEFAULT_PLANS_DIR, io = nodeIo) {
   const notes = [];
   if (!io.exists(target)) return { tests: [], missing: target, errors, notes };
   const isDir = io.isDir(target);
-  const files = isDir ? walk(target, io, [], errors) : [target];
+  const skipped = [];
+  const files = isDir ? walk(target, io, [], errors, skipped) : [target];
+  for (const f of skipped) notes.push(`skipped ${f}: documentation, not a test. A test is a heading and one sentence under it.`);
   // A recording is named after the test's path WITHIN the suite, never the path as typed. Otherwise
   // `--suite tests/` and `--suite /home/me/app/tests` name the same test's recording differently,
   // a developer's local runs and CI never share a cache, and every CI run is a fresh agent run —
@@ -1145,14 +1165,14 @@ export async function suiteCmd({
       log(`\n${C.y(`no tests found in ${suite}`)}`);
       if (read.length) {
         log(C.dim(`  Read ${read.length} file${read.length === 1 ? "" : "s"} — ${read.slice(0, 5).join(", ")}${read.length > 5 ? `, and ${read.length - 5} more` : ""} — and none held a test.`));
-        log(C.dim("  A test is a markdown heading and one sentence under it. Frontmatter alone is not one."));
+        log(C.dim("  A test is a markdown heading and one sentence under it, or a file that is nothing but the sentence. Frontmatter alone is not one."));
       } else {
         log(C.dim("  A test is a markdown heading and one sentence under it. An empty folder is not a passing suite."));
       }
       log(C.dim("  npx smolanalytics suggest --url <your app>   walks the app and writes a starting set into tests/"));
       return stop(
         read.length
-          ? `${suite} holds ${read.length} file${read.length === 1 ? "" : "s"} and no test: ${read.slice(0, 5).join(", ")}. A test is a markdown heading and one sentence under it; frontmatter alone is not one. To get a starting set, run: npx smolanalytics suggest --url ${url}`
+          ? `${suite} holds ${read.length} file${read.length === 1 ? "" : "s"} and no test: ${read.slice(0, 5).join(", ")}. A test is a markdown heading and one sentence under it, or a file that is nothing but the sentence; frontmatter alone is not one. To get a starting set, run: npx smolanalytics suggest --url ${url}`
           : `${suite} holds no tests, and an empty folder is not a passing suite. A test is a markdown heading and one sentence under it. To get a starting set, run: npx smolanalytics suggest --url ${url}`,
       );
     }
@@ -1269,7 +1289,9 @@ export async function suiteCmd({
   // product is a lie about whose fault it is. See lib/issue.mjs.
   try {
     const filed = await fileIssuesImpl(results, {
-      url, commit: ciContext({ env, cwd }).shortCommit, runUrl: runUrlFor(env), suite: suite || "tests",
+      // ?. — ciContext RETURNS NULL by design when there is no commit, repo, branch, PR or run
+      // URL to be had, which is every run outside a git repository and outside CI. See below.
+      url, commit: ciContext({ env, cwd })?.shortCommit || "", runUrl: runUrlFor(env), suite: suite || "tests",
     }, { env });
     const line = issueLine(filed);
     if (line) log(C.dim(line));
@@ -1298,7 +1320,15 @@ export async function suiteCmd({
     // comment on should not shell out. It reads the pull request's HEAD sha, never GITHUB_SHA — on
     // a pull_request event that is the merge commit Actions invented, which exists in nobody's
     // history and would be seven characters a reader could not find anywhere.
-    const commit = ciContext({ env, cwd }).shortCommit;
+    // ?. BECAUSE ciContext DELIBERATELY RETURNS NULL. It hands back null when it can find no
+    // commit, repo, branch, pull request or run URL — "nothing at all is null, not an object of
+    // empty strings" (lib/share.mjs). Outside a git repository that is exactly what happens, and
+    // MEASURED, in a scratch directory that was not a repo: `test --comment` printed the verdict
+    // and the whole summary, then "the run could not complete: Cannot read properties of null
+    // (reading 'shortCommit')" and "Nothing was learned about this change." — which was false, the
+    // results were on the screen above it. With the guard the run reaches postComment, which says
+    // the useful thing instead: no comment posted, GITHUB_TOKEN is not set.
+    const commit = ciContext({ env, cwd })?.shortCommit || "";
     const posted = await postCommentImpl({ body: commentBody(results, { url, suite: key, runUrl, problems, selection, hasKey: Boolean(env.ANTHROPIC_API_KEY), commit, evidenceDir }), marker: markerFor(key), env });
     log(posted.posted ? C.dim(`  ${posted.updated ? "updated" : "posted"} the pull request comment.`) : C.dim(`  no comment posted: ${posted.reason}`));
   }

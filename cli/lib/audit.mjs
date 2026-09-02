@@ -30,6 +30,24 @@ const EXTS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".svelte", "
 // of "form submit" is the noise that gets a tool muted.
 const PATTERNS = [
   { kind: "payment", suggest: "checkout", weight: 0, re: /(stripe\.\w+\.\w*create\s*\(|checkout\.sessions?\.create\s*\(|\bcreateCheckoutSession\s*\(|\bcreateSubscription\s*\(|\.subscriptions?\.create\s*\(|\bpaymentIntents?\.create\s*\(|\.charges?\.create\s*\()/i },
+  // CLIENT-SIDE COMMERCE, which is where a great many storefronts actually take the money. Every
+  // payment pattern above is a SERVER-side SDK call. MEASURED on a three-button React fixture — an
+  // add-to-cart, a `stripe.redirectToCheckout(...)` and a `Paddle.Checkout.open(...)` — the whole
+  // report was "No recognisable user-facing actions found here." That is the worst answer this
+  // command can give a shop, on the finding it ranks first, in the thirty seconds it gets to be
+  // believed. Invocations only, like everything else here: `<button onClick={handleCheckout}>`
+  // has no paren and is not matched, and a `function handleCheckout()` declaration is dropped by
+  // the guards below.
+  { kind: "payment", suggest: "checkout", weight: 0, re: /(\bredirectToCheckout\s*\(|\.confirm(Card)?Payment\s*\(|\bPaddle\.Checkout\.open\s*\(|\bLemonSqueezy\.Url\.Open\s*\(|\b(handle|start|begin|open|go[Tt]o)Checkout\s*\(|\b(place|create|submit)Order\s*\(|\b(handle|complete)Purchase\s*\()/i },
+  // Its own kind, and 0.5 so it ranks under a payment and over a signup without renumbering the
+  // eight patterns below it. A cart that fills and never converts is the question this event is
+  // the only way to answer.
+  // The upgrade IS the revenue event on a SaaS, which is the same argument this file already makes
+  // for checkout ("an untracked checkout is revenue you cannot attribute"). Compound forms only —
+  // a bare `subscribe(` is an event emitter far more often than it is a plan change, and the whole
+  // discipline of this file is that a wildcard costs more than a miss.
+  { kind: "plan change", suggest: "plan_upgraded", weight: 0.4, re: /(\b(handle|start|begin|do)?[Uu]pgradePlan\s*\(|\bhandleUpgrade\s*\(|\bupgradeSubscription\s*\(|\b(start|begin)Trial\s*\(|\bhandleSubscribe\s*\(|\bsubscribeToPlan\s*\(|\bchangePlan\s*\()/i },
+  { kind: "add to cart", suggest: "add_to_cart", weight: 0.5, re: /(\b(handle)?addToCart\s*\(|\baddItemToCart\s*\(|\baddLineItems?\s*\(|\bcart\.add(Item|Line)?\s*\()/i },
   { kind: "signup", suggest: "signup", weight: 1, re: /(\b(auth\.)?sign[_-]?up(\.\w+)?\(|\bsignUpWith\w*\s*\(|\bcreateUserWith\w*\s*\(|\bcreateUser\s*\(|\bregisterUser\s*\(|\bregisterAccount\s*\(|\.users\.create\s*\()/i },
   { kind: "login", suggest: "login", weight: 2, re: /(\b(auth\.)?sign[_-]?in(\.\w+)?\(|\bsignInWith\w*\(|\blog[_-]?in\(|\bauthenticate\()/i },
   { kind: "invite", suggest: "invite_sent", weight: 3, re: /(send[_-]?invite\w*\s*\(|\binviteUser\s*\(|\binviteMember\s*\(|createInvit\w*\s*\()/i },

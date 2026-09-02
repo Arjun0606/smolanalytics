@@ -30,6 +30,8 @@ import { parseSince } from "../lib/select.mjs";
 import { autoPreviewUrl } from "../lib/preview.mjs";
 import { suggestCmd, suggestUsage } from "../lib/suggest.mjs";
 import { normalizeUrl } from "../lib/safety.mjs";
+import { wrapHelp } from "../lib/help.mjs";
+import { packageVersion } from "../lib/version.mjs";
 
 const C = {
   dim: (s) => `\x1b[2m${s}\x1b[0m`,
@@ -91,7 +93,7 @@ const FLAGS = {
 // integration tells people to type — and `npx smolanalytics mpc` answered "unknown command mpc"
 // with no suggestion, while every other one-transposition typo gets one. Two lists that must
 // agree, which is the same shape as the flag guard's own warning directly above.
-const COMMANDS = ["test", "suggest", "audit", "guard", "desk", "init", "connect", "plan", "mcp"];
+const COMMANDS = ["test", "suggest", "audit", "guard", "desk", "init", "connect", "plan", "mcp", "version"];
 
 /** Edit distance, capped at 3 — far enough to catch a typo, near enough not to invent a guess. */
 function distance(a, b) {
@@ -110,7 +112,7 @@ function distance(a, b) {
 
 /** The first `--` token this command does not read, as a sentence naming the fix. "" when all are known. */
 function unknownFlag(cmd) {
-  const known = FLAGS[cmd];
+  const known = Object.hasOwn(FLAGS, cmd) ? FLAGS[cmd] : null;
   if (!known) return "";
   for (const raw of process.argv.slice(3)) {
     if (raw === "--" || !raw.startsWith("--")) continue;
@@ -134,14 +136,15 @@ function unknownFlag(cmd) {
   return "";
 }
 
-function help() {
-  console.log(`
-${C.bold("smolanalytics")} — end-to-end tests without test code
-
-  ${C.dim("ANTHROPIC_API_KEY is the one thing everything here needs: the agent is Claude, and the")}
-  ${C.dim("calls are billed to you. Get one at console.anthropic.com/settings/keys.")}
-  ${C.dim("Replaying a recording with --plan is the exception — that runs with no key and no model.")}
-
+// ONE COMMAND'S HELP IS A SLICE OF THE HELP, NEVER A SECOND COPY OF IT.
+//
+// MEASURED, by md5-ing each `<cmd> --help` against the no-args help: audit, mcp, desk, init,
+// connect and plan were byte-identical to the global eighty-line help. Only `test` and `suggest`
+// had a page of their own. The objection recorded here before was a real one — five hand-written
+// usage blocks are five more places for a flag list to rot — so the flags are still written once.
+// help() prints every block; helpFor() prints one of them.
+const HELP_BLOCKS = {
+  test: `
   ${C.bold("npx smolanalytics test")}        one sentence, a real browser, a verdict
   ${C.dim("--url  <url>")}          staging, a deploy preview, anything reachable
   ${C.dim("--wait-preview <sec>")}  Actions + no --url: wait for this PR's own preview deployment (default 240)
@@ -156,6 +159,8 @@ ${C.bold("smolanalytics")} — end-to-end tests without test code
   ${C.dim("--email-domain <dom>")}  the domain in {{email}} (default: example.com)
   ${C.dim("--retries <n>")}         re-run a failing test from a clean page; pass-on-retry is flaky, not passed (default 1; 0 disables)
   ${C.dim("--workers <n>")}         with --suite: run this many tests at once (default: measured from cores, memory and whether a key is set; 1 is one at a time)
+  ${C.dim("--max-steps <n>")}       stop a test after this many agent steps: one look at the page and one action (default 40)
+  ${C.dim("--max-calls <n>")}       stop a test after this many model calls; says why and exits 2 (0 = no ceiling)
   ${C.dim("--evidence-dir <dir>")}  where a failure's screenshot + page text land (default .smolanalytics/evidence)
   ${C.dim("--layout <mode>")}       layout sanity on the final page: report (default, notes only) | strict (findings fail a PASS) | off
   ${C.dim("--no-render-check")}     turn off the render guard: a PASS over a blank, unstyled or crashed page fails by default
@@ -170,47 +175,79 @@ ${C.bold("smolanalytics")} — end-to-end tests without test code
   ${C.dim("--share")}               publish this run to a link anyone can open, and print it. Off unless you ask; one link per run, never per test.
   ${C.dim("--plans <dir>")}         where recordings are kept (default: ${DEFAULT_PLANS_DIR})
   ${C.dim("No account. No GitHub app. Nothing written to your repo.")}
-
-
+`.trim(),
+  suggest: `
   ${C.bold("npx smolanalytics suggest")}     the tests worth writing, read off your running app
   ${C.dim("--url  <url>")}          a browser walks a few pages and proposes the flows it can SEE
   ${C.dim("--out  <dir>")}          where the .md files land (default tests/) — existing files are never overwritten
   ${C.dim("--max  <n>")}            at most this many proposals (default 6; a small app honestly yields fewer)
-
+`.trim(),
+  guard: `
   ${C.bold("npx smolanalytics guard")}       what this repo needs that nothing declares
   ${C.dim("[dir]")}                 repo to read (default: here). No account, no key, no network.
   ${C.dim("--json")}                machine-readable, for a CI step that wants to act on it
-  ${C.dim("An env var read with no fallback and named in no .env.example, README, Dockerfile,")}
-  ${C.dim("compose file or workflow: a deploy that starts and then fails on the line that reads it.")}
-
+  ${C.dim("An env var read with no fallback and named in no .env.example, README, Dockerfile, compose file or workflow: a deploy that starts and then fails on the line that reads it.")}
+`.trim(),
+  audit: `
   ${C.bold("npx smolanalytics audit")}       what your app does that nothing is measuring
   ${C.dim("[dir]")}                 repo to scan (default: here). No account, no network.
-
+  ${C.dim("--json")}                machine-readable, for a CI step that wants to act on it
+  ${C.dim("--all")}                 list the generic shapes too (form submits, mutating API routes)
+`.trim(),
+  mcp: `
   ${C.bold("npx smolanalytics mcp")}         the testing half inside your editor (stdio MCP)
   ${C.dim("run_tests")}             run the suite and read every verdict
   ${C.dim("can_i_ship")}            the verdict plus what was NOT checked
   ${C.dim("list_tests")}            what this project already covers
   ${C.dim("Local only: it never comments, shares, or records to a project.")}
-
-  ${C.bold("npx smolanalytics desk")}        what it found, in your terminal\n  ${C.dim("--key <api key>")}       or SMOLANALYTICS_KEY\n\n  ${C.bold("npx smolanalytics init")}        wire the tracker into this app
-
+`.trim(),
+  desk: `
+  ${C.bold("npx smolanalytics desk")}        what it found, in your terminal
+  ${C.dim("--key <api key>")}       or SMOLANALYTICS_KEY
+  ${C.dim("--url <instance>")}      or SMOLANALYTICS_HOST (default: the cloud org endpoint)
+  ${C.dim("--project <name>")}      cloud only: which project to read
+`.trim(),
+  init: `
+  ${C.bold("npx smolanalytics init")}        wire the tracker into this app
   ${C.dim("--key   <write key>")}   public ingest key (or SMOLANALYTICS_WRITE_KEY)
   ${C.dim("--host  <url>")}         your instance, e.g. https://you.fly.dev
   ${C.dim("--yes")}                 don't ask before editing
   ${C.dim("--print")}               print the snippet, change nothing
-
+`.trim(),
+  connect: `
   ${C.bold("npx smolanalytics connect")}     wire the MCP server into every assistant you have
   ${C.dim("[editor]")}              or just one: cursor, claude-code, vscode, windsurf, claude-desktop, cline
   ${C.dim("--key   <org token>")}   the API token from smolanalytics.com → Settings
   ${C.dim("--url   <endpoint>")}    one instance instead of the org (default: smolanalytics.com/api/mcp)
-
+`.trim(),
+  plan: `
   ${C.bold("npx smolanalytics plan check")}  fail CI when a planned event stops firing
   ${C.dim("--key   <api key>")}     or SMOLANALYTICS_KEY
   ${C.dim("--url   <instance>")}    or SMOLANALYTICS_HOST (default: the cloud org endpoint)
   ${C.dim("--project <name>")}      cloud only: which project to check
   ${C.dim("--window <hours>")}      only count events from the last N hours
+`.trim(),
+};
 
-Docs: https://smolanalytics.com/docs · 14-day trial at Pro limits, no card
+const HELP_KEY_NOTE = `  ${C.dim("ANTHROPIC_API_KEY is the one thing everything here needs: the agent is Claude, and the calls are billed to you. Get one at console.anthropic.com/settings/keys. Replaying a recording with --plan is the exception — that runs with no key and no model.")}`;
+const HELP_FOOT = `Docs: https://smolanalytics.com/docs · 14-day trial at Pro limits, no card`;
+
+// Folded to the terminal, not to the source file: 31 of these lines are over 80 columns and the
+// longest is 153, which an 80-column terminal breaks mid-word and un-indents (lib/help.mjs).
+function say(text) {
+  console.log(wrapHelp(text, process.stdout.columns));
+}
+
+function help() {
+  const all = Object.values(HELP_BLOCKS).map((b) => `  ${b}`).join("\n\n");
+  say(`
+${C.bold("smolanalytics")} ${packageVersion()} — end-to-end tests without test code
+
+${HELP_KEY_NOTE}
+
+${all}
+
+${HELP_FOOT}
 `);
 }
 
@@ -234,19 +271,34 @@ Docs: https://smolanalytics.com/docs · 14-day trial at Pro limits, no card
  * Exit 0 on all of them, because a question that was answered is not a failure, and because these
  * two exit codes are a published contract that a `--help` has no business speaking in.
  *
- * `test` and `suggest` print their own blocks; the rest fall to the top-level help, which already
- * documents every command with its flags. Writing five more usage blocks would be five more places
- * for the flag list to drift out of date, and the reader is one screen from the answer either way.
+ * `test` and `suggest` print their own blocks, which say more than the summary line the global
+ * help gives them. Every other command prints ITS OWN block out of HELP_BLOCKS — one screen about
+ * the command that was asked about, sliced from the same text the global help prints, so there is
+ * still exactly one place a flag is written down.
  */
 function helpFor(cmd) {
-  if (cmd === "test") return console.log(testUsage());
-  if (cmd === "suggest") return console.log(suggestUsage());
-  return help();
+  if (cmd === "test") return say(testUsage());
+  if (cmd === "suggest") return say(suggestUsage());
+  const block = Object.hasOwn(HELP_BLOCKS, cmd) ? HELP_BLOCKS[cmd] : "";
+  if (!block) return help();
+  // The key note rides along only where the command needs a key. `mcp` runs the same agent as
+  // `test`; audit, guard, init and connect read files, and desk and plan check use a key of their
+  // own that their own block already names.
+  say(`\n  ${block}\n${cmd === "mcp" ? `\n${HELP_KEY_NOTE}\n` : ""}\n${HELP_FOOT}\n`);
 }
 
 async function main() {
   const cmd = process.argv[2];
   if (!cmd || cmd === "help" || cmd === "--help" || cmd === "-h") return help();
+  // THE VERSION, WHICH THERE WAS NO WAY TO ASK FOR. MEASURED: `--version`, `-v`, `-V` and
+  // `version` each printed "unknown command <arg>" and then the whole help, exit 2 — so the first
+  // line of every bug report ("which version are you on?") had no answer, and the MCP server's
+  // serverInfo said "local" on every machine that ever ran it. Bare number, nothing else, exit 0:
+  // this is the one output here most likely to be read by a script rather than a person.
+  if (cmd === "--version" || cmd === "-v" || cmd === "-V" || cmd === "version") {
+    console.log(packageVersion());
+    return;
+  }
   // Before the typo check, and long before any command opens a file or a browser: -h is not in
   // FLAGS and would otherwise be reported as an unknown option on every subcommand.
   if (process.argv.slice(3).some((a) => a === "--help" || a === "-h")) return helpFor(cmd);
@@ -344,6 +396,33 @@ async function main() {
       process.exitCode = 2;
       return;
     }
+    // AND THE SAME REFUSAL THE OTHER WAY ROUND. `--test "one thing" --suite mdtests` printed
+    // "1 test against …", ran the folder, and never mentioned the sentence again: suiteCmd takes
+    // `test` only for the --comment-without-a-suite shape, so with a suite it is dead. Someone
+    // narrowing a suite run down to one sentence got the whole folder and no warning.
+    if (suite && flag("test")) {
+      console.error(`${C.red("--test and --suite ask for two different runs.")} --suite runs the .md files in a folder; --test runs the one sentence you typed. Drop one.`);
+      process.exitCode = 2;
+      return;
+    }
+    // THE ONE NUMERIC FLAG THAT SWALLOWED GARBAGE. Every flag above is refused by name when its
+    // value is not a number; --max-steps was `Number(flag("max-steps")) || 40` at both call sites,
+    // so `--max-steps abc` and `--max-steps 0` both silently ran with 40 — and 0, which reads as
+    // "no ceiling", is the value most likely to be typed by someone who wanted one. It is also the
+    // flag lib/test.mjs names in a runtime message ("raise --max-steps"), so a person meets it
+    // first at the moment it has already stopped their run.
+    const stepsRaw = flag("max-steps") ?? (hasFlag("max-steps") ? "" : undefined);
+    if (stepsRaw !== undefined && !/^\d+$/.test(stepsRaw.trim())) {
+      console.error(`${C.red("--max-steps needs a whole number of 1 or more")}, got ${JSON.stringify(stepsRaw)}. One step is one look at the page and one action; 40 is the default.`);
+      process.exitCode = 2;
+      return;
+    }
+    const maxSteps = stepsRaw === undefined ? 40 : Number(stepsRaw.trim());
+    if (maxSteps < 1) {
+      console.error(`${C.red("--max-steps must be 1 or more")}, got ${JSON.stringify(stepsRaw)}. There is no test a browser agent can finish in zero steps; leave it off for the default of 40.`);
+      process.exitCode = 2;
+      return;
+    }
     // The spend ceiling, refused the same way for the same reason.
     const { value: maxCalls, problem: callsProblem } = parseMaxCalls(flag("max-calls"));
     if (callsProblem) {
@@ -382,6 +461,22 @@ async function main() {
       return;
     }
     url = fixed.url;
+    // THE OTHER TWO URLs, CHECKED IN THE SAME PLACE AND FOR THE SAME REASON. MEASURED:
+    // `--teardown wat` was accepted at parse time and failed at the very end, after the whole test
+    // had run — "teardown failed: wat could not be reached: Failed to parse URL from wat", with
+    // the fixture left behind. `--seed wat` failed a second earlier, before the browser, only
+    // because seeding happens first: "seeding: POST wat" then ERROR. Both are a typo the shape of
+    // the argument gives away, so both are refused before anything is created.
+    const posted = { seed: flag("seed"), teardown: flag("teardown") };
+    for (const [name, raw] of Object.entries(posted)) {
+      const ok = normalizeUrl(raw, `--${name}`);
+      if (ok.problem) {
+        console.error(`\n${C.red(ok.problem)}\n`);
+        process.exitCode = 2;
+        return;
+      }
+      posted[name] = ok.url;
+    }
     try {
       // --suite and --comment are the CI shape: many tests, one comment, a status per test. Without
       // either of them this stays the sixty-second command it already was, with the same output.
@@ -396,10 +491,10 @@ async function main() {
           since,
           headed: hasFlag("headed"),
           yes: hasFlag("yes"),
-          teardown: flag("teardown") || "",
-          seed: flag("seed") || "",
+          teardown: posted.teardown,
+          seed: posted.seed,
           emailDomain: flag("email-domain") || "",
-          maxSteps: Number(flag("max-steps")) || 40,
+          maxSteps,
           retries,
           workers,
           evidenceDir: flag("evidence-dir") || "",
@@ -428,10 +523,10 @@ async function main() {
         plan: flag("plan"),
         headed: hasFlag("headed"),
         yes: hasFlag("yes"),
-        teardown: flag("teardown") || "",
-        seed: flag("seed") || "",
+        teardown: posted.teardown,
+        seed: posted.seed,
         emailDomain: flag("email-domain") || "",
-        maxSteps: Number(flag("max-steps")) || 40,
+        maxSteps,
         retries,
         evidenceDir: flag("evidence-dir") || "",
         layout,

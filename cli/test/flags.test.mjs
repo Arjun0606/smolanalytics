@@ -90,8 +90,10 @@ describe("the guard's list cannot fall behind what we document", () => {
     for (const m of line.matchAll(/(?:^|\s)(--[a-z][a-z-]*)/g)) (sections[cur] ||= new Set()).add(m[1]);
   }
 
-  // `audit` is not here: its help block documents a positional [dir] and no flags at all.
-  const documented = ["test", "suggest", "connect", "desk", "init", "plan"];
+  // `audit` and `guard` are here now that their blocks name --json and --all. They used to
+  // document a positional [dir] and no flags at all, which is the defect this list is meant to
+  // catch from the other side.
+  const documented = ["test", "suggest", "connect", "desk", "init", "plan", "audit", "guard"];
 
   test("the help really did list flags for the commands that take them", () => {
     // Without this, a help text that stopped printing flags would make every case below vacuous.
@@ -170,8 +172,10 @@ describe("every command the binary dispatches can also be guessed at", () => {
   test("COMMANDS lists every command main() actually handles", () => {
     const dispatched = [...src.matchAll(/cmd === "([a-z-]+)"/g)].map((m) => m[1]);
     const listed = JSON.parse((src.match(/const COMMANDS = (\[[^\]]*\])/) || [])[1].replace(/'/g, '"'));
-    // The words main() compares against that are commands rather than help aliases.
-    const skip = new Set(["help", "--help", "-h"]);
+    // The words main() compares against that are commands rather than aliases. `version` IS in
+    // COMMANDS — a typo of it gets a suggestion like any other — but its flag spellings are not
+    // commands to guess at, any more than --help is.
+    const skip = new Set(["help", "--help", "-h", "--version", "-v", "-V"]);
     const missing = [...new Set(dispatched)].filter((c) => !skip.has(c) && !listed.includes(c));
     assert.deepEqual(missing, [], `dispatched but unguessable, so a typo gets no suggestion: ${missing.join(", ")}`);
   });
@@ -212,5 +216,142 @@ test("and says the keyless path exists, so --plan users are not turned away", ()
     const r = cli(...argv);
     const out = plain(r.out + r.err);
     assert.match(out, /--plan/, "the no-key path must be mentioned beside the requirement");
+  }
+});
+
+// ── A FLAG'S VALUE IS REFUSED, OR IT IS SWALLOWED ───────────────────────────────────────────────
+//
+// The file's own header lists the flags whose values are refused rather than defaulted: --retries,
+// --layout, --browser, --workers, --since, --max-calls. --max-steps was conspicuously not among
+// them, and it was the one flag in the group with no guard at all. MEASURED, at the real binary:
+//
+//   --max-steps abc   accepted, and the run proceeded with the default 40
+//   --max-steps 0     accepted, and the run proceeded with the default 40
+//
+// 0 is the value most likely to be typed by somebody who means "no ceiling", and it silently gave
+// them the ceiling. lib/test.mjs tells a person to "raise --max-steps" when a run runs out of
+// them, so this is a flag people meet at the moment it has already stopped their work.
+
+describe("--max-steps is refused like every other number here", () => {
+  const runArgs = ["test", "--url", "https://x.example", "--test", "the pricing page works"];
+
+  test("a value that is not a number is refused by name", () => {
+    const r = cli(...runArgs, "--max-steps", "abc");
+    assert.equal(r.status, 2, "our refusal is 2 on `test`; 1 says the customer's app is broken");
+    assert.match(r.err, /--max-steps needs a whole number/);
+    assert.match(r.err, /"abc"/, "the value they typed has to be in the sentence");
+  });
+
+  test("zero is refused rather than silently becoming forty", () => {
+    const r = cli(...runArgs, "--max-steps", "0");
+    assert.equal(r.status, 2);
+    assert.match(r.err, /--max-steps must be 1 or more/);
+    assert.match(r.err, /40/, "say what leaving it off would have given them");
+  });
+
+  test("a bare --max-steps is refused too, the same as a bare --workers", () => {
+    const r = cli(...runArgs, "--max-steps");
+    assert.equal(r.status, 2);
+    assert.match(r.err, /--max-steps/);
+  });
+
+  test("a real number is still honoured, and gets no further than the missing key", () => {
+    const r = cli(...runArgs, "--max-steps", "80");
+    assert.ok(!/--max-steps/.test(r.err), `a valid value was refused:\n${r.err}`);
+  });
+
+  test("and it is documented in both places, or nobody can find it", () => {
+    assert.match(plain(cli("--help").out), /--max-steps <n>/, "missing from the top-level help");
+    assert.match(plain(cli("test", "--help").out), /--max-steps <n>/, "missing from `test --help`");
+    const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
+    assert.match(readme, /`--max-steps <n>`/, "missing from the README's flag table");
+  });
+});
+
+// ── A FLAG THAT IS READ BY NOBODY IS A FLAG THAT LIED ───────────────────────────────────────────
+//
+// MEASURED: `--url … --test "one thing" --suite mdtests` printed "1 test against …", ran the .md
+// files in mdtests, and never mentioned "one thing" again. suiteCmd takes `test` only for the
+// --comment-without-a-suite shape, so with a suite present the sentence is dead. Somebody trying
+// to narrow a suite run down to a single sentence got the whole folder and no warning at all.
+
+describe("--test and --suite are not both read", () => {
+  test("giving both is refused, not silently resolved in favour of one", () => {
+    const r = cli("test", "--url", "https://x.example", "--test", "one thing", "--suite", "tests");
+    assert.equal(r.status, 2);
+    assert.match(r.err, /--test and --suite/);
+    assert.ok(!/1 test against/.test(r.out), `it ran anyway:\n${r.out}`);
+  });
+
+  test("either alone is untouched", () => {
+    const one = cli("test", "--url", "https://x.example", "--test", "one thing");
+    assert.ok(!/--test and --suite/.test(one.err), one.err);
+    const many = cli("test", "--url", "https://x.example", "--suite", "no-such-folder-here");
+    assert.ok(!/--test and --suite/.test(many.err), many.err);
+  });
+
+  test("--since without --suite keeps its own refusal, which this must not have replaced", () => {
+    const r = cli("test", "--url", "https://x.example", "--test", "t", "--since", "HEAD~1");
+    assert.equal(r.status, 2);
+    assert.match(r.err, /--since needs --suite/);
+  });
+});
+
+// ── THE OTHER TWO URLs ARE URLs TOO ─────────────────────────────────────────────────────────────
+//
+// --url is repaired and refused before a browser ever opens (lib/safety.mjs). --seed and
+// --teardown were not looked at until the moment they were used. MEASURED: `--teardown wat` ran
+// the entire test and then said "teardown failed: wat could not be reached: Failed to parse URL
+// from wat", with the fixture it was meant to delete already created.
+
+describe("--seed and --teardown are checked before anything is created", () => {
+  for (const name of ["seed", "teardown"]) {
+    test(`--${name} that is not a URL is refused at parse time, by name`, () => {
+      const r = cli("test", "--url", "https://x.example", "--test", "t", `--${name}`, "not a url");
+      assert.equal(r.status, 2);
+      assert.match(plain(r.err), new RegExp(`--${name} "not a url"`), plain(r.err));
+      assert.ok(!/smoltest\+/.test(r.out + r.err), "an identity was generated for a run that cannot happen");
+    });
+
+    test(`--${name} with a scheme no HTTP client can use is refused too`, () => {
+      const r = cli("test", "--url", "https://x.example", "--test", "t", `--${name}`, "ftp://box/hook");
+      assert.equal(r.status, 2);
+      assert.match(plain(r.err), /ftp:\/\/,/);
+    });
+
+    test(`--${name} blames itself, never --url`, () => {
+      const r = plain(cli("test", "--url", "https://x.example", "--test", "t", `--${name}`, "not a url").err);
+      assert.ok(!/--url/.test(r), `the wrong flag was named, so the reader edits the wrong thing:\n${r}`);
+    });
+  }
+
+  test("a missing scheme is repaired rather than refused, exactly as --url is", () => {
+    // `--teardown staging.myapp.com/api/teardown` is what people type. Refusing it would be a
+    // worse answer than the bug: it is unambiguous, and --url has repaired it for a year.
+    const r = cli("test", "--url", "https://x.example", "--test", "t", "--teardown", "staging.myapp.com/api/teardown");
+    assert.ok(!/--teardown/.test(plain(r.err)), `a repairable endpoint was refused:\n${plain(r.err)}`);
+  });
+});
+
+// A WORD THAT IS ALSO A KEY ON Object.prototype IS NOT A COMMAND.
+//
+// FLAGS and HELP_BLOCKS are object literals, so `FLAGS["constructor"]` handed back Object's
+// constructor. MEASURED: `smolanalytics constructor --x` crashed with "known.includes is not a
+// function" and exited 1 — the code that means the customer's application is broken — and
+// `constructor --help` printed `function Object() { [native code] }` as its help.
+describe("a command name inherited from Object.prototype is still just a typo", () => {
+  for (const word of ["constructor", "toString", "hasOwnProperty", "__proto__"]) {
+    test(`${word} is reported as an unknown command, and never crashes`, () => {
+      const r = cli(word, "--x");
+      assert.ok(!/is not a function/.test(r.err), `crashed on a word: ${r.err}`);
+      assert.match(plain(r.err), /unknown command/);
+      assert.equal(r.status, 2, "a mistyped command never claims their app is broken");
+    });
+
+    test(`${word} --help answers with the help, not with a native function`, () => {
+      const r = cli(word, "--help");
+      assert.ok(!/native code/.test(r.out), `printed a function as help: ${r.out.slice(0, 120)}`);
+      assert.match(plain(r.out), /end-to-end tests without test code/);
+    });
   }
 });

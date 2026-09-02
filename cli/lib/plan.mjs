@@ -23,7 +23,22 @@ export async function callTool(endpoint, key, name, args = {}, fetchImpl = fetch
     body: JSON.stringify({ jsonrpc: "2.0", id: RPC_ID, method: "tools/call", params: { name, arguments: args } }),
   });
   const raw = await res.text();
-  if (!res.ok) throw new Error(`${res.status} from ${endpoint}: ${raw.slice(0, 200)}`);
+  if (!res.ok) {
+    // A STATUS IS PROOF WE REACHED IT, and this error said the opposite. MEASURED:
+    //
+    //   desk could not reach your instance: 405 from https://smolanalytics.com/mcp:
+    //
+    // — a host that plainly answered, reported as unreachable, with a dangling colon and nothing
+    // after it because a 405 has no body. `reached` is what desk.mjs and planCheckCmd below read
+    // to pick the sentence. It is deliberately NOT `refusal`: a refusal is the server telling us
+    // what is wrong with the QUESTION, which planCheckCmd fails the build on, and a 401 or a 405
+    // is our side of the fence and must stay exit 2.
+    const body = raw.trim().slice(0, 200);
+    throw Object.assign(new Error(`${res.status} from ${endpoint}${body ? `: ${body}` : ""}`), {
+      reached: true,
+      status: res.status,
+    });
+  }
   return parseToolText(raw);
 }
 
@@ -133,8 +148,10 @@ export async function planCheckCmd({ url, key, project, windowHours, log = conso
     // The two are different problems and the message must not confuse them: a refusal means we
     // reached the server and it told us what is wrong, while anything else means the pipe is
     // broken. Reporting "could not reach your instance" for a refusal sends the reader to check
-    // DNS when the answer was in the response.
-    log(err.refusal ? `plan check: ${err.message}` : `plan check could not reach your instance: ${err.message}`);
+    // DNS when the answer was in the response. An HTTP status (`reached`) is the same mistake —
+    // 405 IS a response — so it takes the same sentence, while keeping the unreachable exit code
+    // below, because a status we did not ask for is still not a verdict about their tracking.
+    log(err.refusal || err.reached ? `plan check: ${err.message}` : `plan check could not reach your instance: ${err.message}`);
     // UNREACHABLE ONLY. A refusal stays 1: that branch also carries "no tracking plan declared
     // yet", which IS a legitimate build failure and is pinned by a test above — the server
     // answered, and the answer was that this gate cannot do its job. Separating a 401 from a

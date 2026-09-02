@@ -121,7 +121,9 @@ export async function deskCmd({ url, key, project, log = console.log, fetchImpl 
     // layer or a future refactor can each put it back in a URL, and the place it lands is a CI log,
     // which is forever. So the failure path redacts rather than trusting the shape of somebody
     // else's error string.
-    const why = err && err.refusal ? `desk: ${err.message}` : `desk could not reach your instance: ${err && err.message}`;
+    // `reached` is an HTTP status: the host answered, so "could not reach your instance" would
+    // send the reader to check DNS for an answer that was in the response (lib/plan.mjs).
+    const why = err && (err.refusal || err.reached) ? `desk: ${err.message}` : `desk could not reach your instance: ${err && err.message}`;
     log(redact(why, [key]));
     // Same contract as above: an unreachable instance is our side of the fence, never a verdict
     // about anybody's product.

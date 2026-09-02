@@ -141,6 +141,57 @@ describe("discovery", () => {
   test("slugs are stable and filesystem-safe", () => {
     assert.equal(slug("A shopper can add an item — 50% off!"), "a-shopper-can-add-an-item-50-off");
   });
+
+  // A FILE WITH NO HEADING IS ONE TEST, AND A tests/README.md HAS NO HEADING.
+  //
+  // MEASURED with a README beside a real test, the run listed them as peers and drove the prose of
+  // the README against the application:
+  //
+  //   A shopper can add an item to the cart    tests/checkout.md
+  //   How this suite works                     tests/README.md
+  //   2 tests · 0 passed · 2 could not run
+  //
+  // There is no ignore mechanism to work around it with, and the empty-folder message promises the
+  // opposite: "A test is a markdown heading and one sentence under it."
+  test("a README in the tests folder is not a test", () => {
+    const { tests } = discover("tests", ".rec", io({
+      "tests/checkout.md": "## A shopper can add an item\nOpen the first product and add it to the cart.\n",
+      "tests/README.md": "How this suite works: each file is a test. Keep them short.\n",
+    }));
+    assert.deepEqual(tests.map((t) => t.file), ["tests/checkout.md"]);
+  });
+
+  test("and it is announced, because a file quietly not run is the same bug the other way round", () => {
+    const { notes } = discover("tests", ".rec", io({
+      "tests/checkout.md": "## Buy\nbuy it.\n",
+      "tests/README.md": "prose\n",
+    }));
+    assert.equal(notes.length, 1, notes.join(" "));
+    assert.match(notes[0], /tests[/\\]README\.md/);
+    assert.match(notes[0], /documentation, not a test/);
+  });
+
+  test("CONTRIBUTING too, and nothing else — a heading-less test file is still one test", () => {
+    const { tests } = discover("tests", ".rec", io({
+      "tests/CONTRIBUTING.md": "how to add a test\n",
+      "tests/readme.md": "lowercase counts too\n",
+      "tests/one-sentence.md": "the pricing page shows a monthly price.\n",
+    }));
+    assert.deepEqual(tests.map((t) => t.file), ["tests/one-sentence.md"]);
+    assert.equal(tests[0].test, "the pricing page shows a monthly price.");
+  });
+
+  test("a file NAMED like a doc that was pointed at directly is still run", () => {
+    // `--suite tests/README.md` names one file on purpose. Skipping it there would refuse the
+    // only thing the person asked for, and say the folder was empty about a file they typed.
+    const { tests } = discover("tests/README.md", ".rec", {
+      exists: () => true,
+      isDir: () => false,
+      list: () => [],
+      read: () => "the pricing page shows a monthly price.\n",
+    });
+    assert.equal(tests.length, 1);
+  });
 });
 
 describe("statuses, kept apart", () => {
@@ -624,4 +675,28 @@ describe("the comment never overstates what happened", () => {
     const b = commentBody([{ name: "x", file: "f.md", status: "passed", mode: "replay" }], {});
     assert.ok(!/NaN/.test(b), b);
   });
+});
+
+// WHAT THE MESSAGE SAYS A TEST IS, AND WHAT parseSuite ACCEPTS, HAVE TO BE THE SAME THING.
+//
+// "A test is a markdown heading and one sentence under it" was printed to somebody standing over a
+// file that did not count — while parseSuite deliberately reads a file with NO heading as one test
+// ("Someone whose whole test is a single sentence should not have to learn a document structure").
+// The reader was being told a rule the parser does not apply.
+test("the no-tests message describes the same rule the parser applies", async () => {
+  assert.equal(parseSuite("tests/a.md", "the pricing page shows a monthly price.\n").length, 1,
+    "a file with no heading is one test; if that ever changes, the copy below changes with it");
+
+  const said = [];
+  let announced = "";
+  await suiteCmd({
+    suite: "tests", url: "https://p.test", comment: true, log: (l) => said.push(String(l)), env: {},
+    discoverImpl: () => ({ tests: [], missing: "", errors: [], notes: [], files: ["tests/a.md"] }),
+    postCommentImpl: async ({ body }) => { announced = body; return { posted: true }; },
+  });
+  for (const text of [said.join("\n"), announced]) {
+    assert.match(text, /A test is a markdown heading and one sentence under it/);
+    assert.match(text, /a file that is nothing but the sentence/,
+      `the message states a rule stricter than the parser's:\n${text}`);
+  }
 });

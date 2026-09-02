@@ -140,3 +140,45 @@ describe("plan check separates our outage from their regression", () => {
     assert.equal(gate(healthy, () => {}), 0);
   });
 });
+
+// THE SAME MESSAGE FIX AS desk, AND DELIBERATELY NOT THE SAME EXIT CODE.
+//
+// `plan check` exists to fail CI when a planned event stops firing, so its 1 is read as exactly
+// that claim. A 401 or a 405 is our side of the fence — the server answered, and the answer was
+// about the request, not about their tracking — so the sentence says we reached it while the exit
+// code stays 2.
+describe("an HTTP status from the instance", () => {
+  const runIt = (status, body) => {
+    const lines = [];
+    return planCheckCmd({
+      url: "https://x.test", key: "sa_x", log: (l) => lines.push(String(l)),
+      fetchImpl: async () => ({ ok: false, status, text: async () => body }),
+    }).then((code) => ({ code, out: lines.join("\n") }));
+  };
+
+  test("is not described as an instance we could not reach", async () => {
+    const { code, out } = await runIt(405, "");
+    assert.ok(!/could not reach/.test(out), `a host that answered was called unreachable:\n${out}`);
+    assert.match(out, /405/);
+    assert.equal(code, 2, "a status we did not ask for is never the claim that their tracking regressed");
+  });
+
+  test("and leaves no dangling colon when the body is empty", async () => {
+    const { out } = await runIt(405, "");
+    assert.ok(!/:\s*$/.test(out), JSON.stringify(out));
+  });
+
+  test("a real refusal still fails the build, because the server answered about the plan", async () => {
+    const lines = [];
+    const code = await planCheckCmd({
+      url: "https://x.test", key: "sa_x", log: (l) => lines.push(String(l)),
+      fetchImpl: async () => ({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ jsonrpc: "2.0", id: 1, result: { isError: true, content: [{ type: "text", text: "no tracking plan declared yet" }] } }),
+      }),
+    });
+    assert.equal(code, 1, "a refusal is a legitimate build failure and must not have been swept into 2");
+    assert.match(lines.join("\n"), /no tracking plan declared yet/);
+  });
+});
