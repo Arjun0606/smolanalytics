@@ -30,7 +30,8 @@ import path from "node:path";
 import { testCmd, loadPlaywright, keyFix } from "./test.mjs";
 import { keyProblem } from "./safety.mjs";
 import { openPool } from "./pool.mjs";
-import { suspectsForFailure } from "./suspect.mjs";
+import { suspectsForFailure, gitDiff } from "./suspect.mjs";
+import { declaredNames, introducedConfig, introducedCommentLines } from "./guard.mjs";
 import { layoutCommentLines } from "./layout.mjs";
 import { DEFAULT_AUTH_DIR } from "./auth.mjs";
 import { DEFAULT_ENGINE } from "./engines.mjs";
@@ -612,7 +613,7 @@ export const markerFor = (suite) => `<!-- smolanalytics-run:${slug(suite)} -->`;
  *   rather than inferred by matching our own reason strings, because a reason is prose that gets
  *   reworded and a condition that reads prose stops firing silently when it does.
  */
-export function commentBody(results, { url = "", suite = "tests", runUrl = "", problems = [], selection = null, hasKey = true, commit = "", evidenceDir = "" } = {}) {
+export function commentBody(results, { url = "", suite = "tests", runUrl = "", problems = [], selection = null, hasKey = true, commit = "", evidenceDir = "", cwd = process.cwd(), env = process.env, getDiff = gitDiff, getDeclared = declaredNames } = {}) {
   const s = summarize(results);
   const head = [`${s.passed} passed`];
   // "flaky", never folded into passed: a headline that counts a retry as a pass is the lie the
@@ -774,6 +775,26 @@ export function commentBody(results, { url = "", suite = "tests", runUrl = "", p
         out.push(">", `> Suspect: ${code(s.file)} — ${quote(s.evidence)}`);
       }
     }
+  }
+
+  // WHAT THIS CHANGE STARTED NEEDING THAT NOTHING DECLARES (lib/guard.mjs).
+  //
+  // Not a test verdict — a break the tests cannot see, because it does not exist until the code
+  // runs somewhere that is not the author's machine. It sits with the failures rather than under
+  // the roster for that reason: on a green run it is the only finding on the page, and putting it
+  // below forty rows of "pass" would bury the one thing worth acting on.
+  //
+  // The DIFF, never the tree. A repository carrying twelve long-standing undeclared variables
+  // would otherwise print the same twelve on every pull request for the rest of its life, and a
+  // comment that says the same thing every time is one nobody reads by the second week.
+  //
+  // Every failure here is silence: no git, a shallow clone, no diff, an unreadable config — all of
+  // them mean no lines, exactly as suspect.mjs degrades. Nothing about it may touch a verdict.
+  try {
+    const introduced = introducedConfig(getDiff({ env, cwd }) || [], getDeclared(cwd));
+    out.push(...introducedCommentLines(introduced));
+  } catch {
+    /* a decoration that can redden a build is worse than no decoration */
   }
 
   // WHERE THE SCREENSHOT IS, SAID ON THE ONE SURFACE THE REVIEWER READS.

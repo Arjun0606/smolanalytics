@@ -308,3 +308,62 @@ export function guardCmd({ dir = ".", log = console.log, json = false } = {}) {
   for (const line of guardLines(missing, { root })) log(line);
   return 0;
 }
+
+/**
+ * WHAT THIS CHANGE NEWLY REQUIRES — the version that belongs on a pull request.
+ *
+ * missingConfig() reads the whole tree, which is right in a terminal and wrong in a comment: a repo
+ * carrying twelve pre-existing undeclared variables would print the same twelve on every pull
+ * request forever, and a comment that says the same thing every time is one people stop reading by
+ * the second week. lib/suite.mjs learned this already — its own note about stale recordings says a
+ * suite that cries wolf about copy changes is a suite nobody reads by month two.
+ *
+ * So this reads ONLY the lines this change added. A variable the repository has needed since March
+ * is not news; one this branch started needing, that nothing declares, is exactly news — it is a
+ * deploy that works on the author's machine and fails on the first one that does not have it.
+ *
+ * `diff` is lib/suspect.mjs's parseDiff() output. Null or empty means no diff was available, which
+ * is silence, never a guess.
+ */
+export function introducedConfig(diff, declared = new Set()) {
+  const out = [];
+  const seen = new Set();
+  for (const f of Array.isArray(diff) ? diff : []) {
+    if (!f || f.binary || !Array.isArray(f.added)) continue;
+    const rel = String(f.file || "");
+    if (!rel || !EXTS.has(path.extname(rel))) continue;
+    if (isTestPath(rel)) continue;
+    for (const line of f.added) {
+      if (typeof line !== "string" || line.length > 800) continue;
+      if (/^\s*(\/\/|#|\*|--)/.test(line)) continue;
+      for (const re of READS) {
+        re.lastIndex = 0;
+        for (const m of line.matchAll(re)) {
+          const name = m[1];
+          if (AMBIENT.has(name) || declared.has(name) || seen.has(name)) continue;
+          if (hasFallback(line, name)) continue;
+          seen.add(name);
+          out.push({ name, file: rel, tooling: isToolingPath(rel), line: line.trim().slice(0, 120) });
+        }
+      }
+    }
+  }
+  return out.sort((a, b) => (a.tooling === b.tooling ? a.name.localeCompare(b.name) : a.tooling ? 1 : -1));
+}
+
+/** The pull request lines, or none. Markdown, because that is where these land. */
+export function introducedCommentLines(found = []) {
+  if (!found.length) return [];
+  const n = found.length;
+  const out = [
+    "",
+    `**This change needs ${n} environment variable${n === 1 ? "" : "s"} nothing declares.**`,
+    "",
+    `> ${n === 1 ? "It is" : "They are"} read with no fallback, and named in no .env.example, README, Dockerfile, compose file or workflow in this repo. A deploy without ${n === 1 ? "it" : "them"} starts and then fails on the line that reads ${n === 1 ? "it" : "them"}.`,
+  ];
+  for (const f of found.slice(0, 8)) {
+    out.push(">", `> \`${f.name}\` — added in \`${f.file}\`${f.tooling ? " (tooling, may be deliberate)" : ""}`);
+  }
+  if (found.length > 8) out.push(">", `> …and ${found.length - 8} more.`);
+  return out;
+}

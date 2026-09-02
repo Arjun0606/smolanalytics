@@ -15,7 +15,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { missingConfig, requiredNames, declaredNames, hasFallback, guardLines, isTestPath } from "../lib/guard.mjs";
+import { missingConfig, requiredNames, declaredNames, hasFallback, guardLines, isTestPath, introducedConfig, introducedCommentLines } from "../lib/guard.mjs";
 
 /** A throwaway repo on disk: { "src/a.ts": "…", ".env.example": "…" }. */
 function repo(files) {
@@ -205,4 +205,58 @@ test("and with both, the application comes first and the tooling is clearly seco
   assert.ok(out.indexOf("APP_SECRET") < out.indexOf("DEPLOY_ONLY"), "the deploy-breaking one must be read first");
   assert.match(out, /2 more|1 more/);
   rmSync(root, { recursive: true, force: true });
+});
+
+/* ── on a pull request, only what THIS change introduced ─────────────────────────────────────── */
+
+describe("the pull request version reports the change, not the repository", () => {
+  const diff = (file, added) => [{ file, added, removed: [], binary: false }];
+
+  test("a variable this change starts needing, that nothing declares", () => {
+    const found = introducedConfig(diff("src/pay.ts", ["const k = process.env.NEW_SECRET;"]), new Set());
+    assert.equal(found.length, 1);
+    assert.equal(found[0].name, "NEW_SECRET");
+  });
+
+  test("a variable the repo already declared is not news", () => {
+    const found = introducedConfig(diff("src/pay.ts", ["const k = process.env.KNOWN;"]), new Set(["KNOWN"]));
+    assert.deepEqual(found, []);
+  });
+
+  test("a pre-existing requirement this change did not touch is never mentioned", () => {
+    // The whole reason this exists. missingConfig() would report OLD_SECRET on every pull request
+    // for the rest of the repository's life; the diff has no line adding it, so this does not.
+    const found = introducedConfig(diff("src/pay.ts", ["// unrelated edit", "const x = 1;"]), new Set());
+    assert.deepEqual(found, []);
+  });
+
+  test("a new read WITH a fallback is a choice, not a break", () => {
+    assert.deepEqual(introducedConfig(diff("src/a.ts", ['const k = process.env.OPT || "x";']), new Set()), []);
+  });
+
+  test("tests and comments in the diff are ignored, exactly as in the tree scan", () => {
+    assert.deepEqual(introducedConfig(diff("test/a.test.ts", ["const k = process.env.T;"]), new Set()), []);
+    assert.deepEqual(introducedConfig(diff("src/a.ts", ["// const k = process.env.C;"]), new Set()), []);
+  });
+
+  test("no diff at all is silence, never a guess", () => {
+    for (const d of [null, undefined, [], [{}], [{ file: "a.ts", binary: true, added: ["process.env.X"] }]]) {
+      assert.deepEqual(introducedConfig(d, new Set()), [], `threw or guessed on ${JSON.stringify(d)}`);
+    }
+  });
+
+  test("the comment says what it is and what happens, and is empty when there is nothing", () => {
+    assert.deepEqual(introducedCommentLines([]), []);
+    const out = introducedCommentLines([{ name: "STRIPE_KEY", file: "src/pay.ts", tooling: false }]).join("\n");
+    assert.match(out, /STRIPE_KEY/);
+    assert.match(out, /src\/pay\.ts/);
+    assert.match(out, /starts and then fails/, "the consequence, not just the fact");
+    assert.match(out, /no \.env\.example/, "say where we looked, or it reads as a guess");
+  });
+
+  test("a long list is capped and the remainder counted, never silently dropped", () => {
+    const many = Array.from({ length: 12 }, (_, i) => ({ name: `VAR_${i}`, file: "src/a.ts", tooling: false }));
+    const out = introducedCommentLines(many).join("\n");
+    assert.match(out, /…and 4 more/);
+  });
 });
