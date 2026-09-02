@@ -930,7 +930,23 @@ async function report(run, log, onRun, ledger = null) {
   }
   const projectId = process.env.SMOLANALYTICS_PROJECT;
   const writeKey = process.env.SMOLANALYTICS_WRITE_KEY;
-  if (!projectId || !writeKey) return;
+  // NEITHER SET IS THE NO-ACCOUNT PATH AND MUST STAY SILENT. Most runs of this CLI have no project
+  // at all — that is the whole "no account, nothing written to your repo" promise — and nagging
+  // them about a feature they did not ask for is how a tool starts feeling like an advert.
+  //
+  // ONE SET WITHOUT THE OTHER IS A MISCONFIGURATION, AND IT WAS ALSO SILENT. Measured by walking a
+  // real signup: the setup page hands you SMOLANALYTICS_PROJECT and SMOLANALYTICS_WRITE_KEY and
+  // says "with those two set, every run your suite posts lands on the project page" — and the CI
+  // template it points at has no slot for either of them. So somebody wires up half of it, the run
+  // passes, this function returns without a word, and the project page shows "no test runs yet"
+  // forever with nothing anywhere saying why. Somebody who set one of these wants the other.
+  if (!projectId && !writeKey) return;
+  if (!projectId || !writeKey) {
+    const missing = projectId ? "SMOLANALYTICS_WRITE_KEY" : "SMOLANALYTICS_PROJECT";
+    const has = projectId ? "SMOLANALYTICS_PROJECT" : "SMOLANALYTICS_WRITE_KEY";
+    log(C.dim(`  not recorded — ${has} is set but ${missing} is not, so this run went nowhere. Both are on your project's setup page.`));
+    return;
+  }
   const base = (process.env.SMOLANALYTICS_URL || "https://smolanalytics.com").replace(/\/$/, "");
   try {
     const res = await fetch(`${base}/api/projects/${encodeURIComponent(projectId)}/runs`, {

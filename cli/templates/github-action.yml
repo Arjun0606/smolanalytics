@@ -166,6 +166,20 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           # Provided automatically by Actions. This is the whole of the GitHub access this needs.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          #
+          # OPTIONAL — only if you have a project at smolanalytics.com and want every run's verdict
+          # to land on its page. Both come from that project's "setup & keys" screen, and BOTH are
+          # needed: with only one set the run still passes and nothing is posted.
+          #
+          # This file had no slot for either of them while the setup page said "with those two set,
+          # every run your suite posts lands on the project page" and pointed here for the full
+          # template. Somebody following both ended up with CI that tests and comments correctly and
+          # a project page reading "no test runs yet" forever, with nothing anywhere saying why.
+          #
+          # The variable is named WRITE_KEY because that is what the runner reads; the value is the
+          # project's run key (sar_…), which exists from the moment the project does.
+          # SMOLANALYTICS_PROJECT: prj_your_project_id
+          # SMOLANALYTICS_WRITE_KEY: ${{ secrets.SMOLANALYTICS_WRITE_KEY }}
         run: npx smolanalytics@latest test --suite tests/ --url "$URL" --comment
 
       # THE EVIDENCE. On a failed (or flaky) test the runner writes a full-page screenshot, the
