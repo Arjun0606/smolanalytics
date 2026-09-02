@@ -260,3 +260,39 @@ describe("the pull request version reports the change, not the repository", () =
     assert.match(out, /…and 4 more/);
   });
 });
+
+/* ── a code sample is not a read ─────────────────────────────────────────────────────────────── */
+
+describe("documentation shows code without requiring it", () => {
+  test("an escaped interpolation is a sample, because only a nested literal escapes", () => {
+    // app/docs/page.tsx line 830, verbatim in shape: a <Code> block teaching a customer what to
+    // write in THEIR app. Counted as a variable this repo needs, it was 5 of 17 findings — a 29%
+    // false-positive rate on the author's own repo, which is the number a check gets deleted at.
+    const root = repo({
+      "app/docs/page.tsx": '<Code label="route.ts">{`await fetch(\\`\\${process.env.THEIR_HOST}/v1/events\\`, {`}</Code>',
+    });
+    assert.deepEqual(names(root), []);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  test("a JSX block that opens a template literal is a sample until it closes", () => {
+    const root = repo({
+      "app/docs/page.tsx": [
+        "<Code label=\"Node\">{`",
+        "  env: process.env.SAMPLE_ONLY,",
+        "`}</Code>",
+        "const real = process.env.ACTUALLY_READ;",
+      ].join("\n"),
+    });
+    assert.deepEqual(names(root), ["ACTUALLY_READ"], "the sample was counted, or the real read was lost");
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  test("but a real read inside a template literal is still a read", () => {
+    // The over-correction to avoid: production code interpolates env vars constantly, so
+    // "inside any template literal" would have suppressed most genuine findings.
+    const root = repo({ "src/api.ts": "const url = `${process.env.REAL_HOST}/v1`;" });
+    assert.deepEqual(names(root), ["REAL_HOST"]);
+    rmSync(root, { recursive: true, force: true });
+  });
+});

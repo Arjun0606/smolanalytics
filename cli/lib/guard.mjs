@@ -202,11 +202,27 @@ export function requiredNames(root, { files = null, read = (p) => fs.readFileSyn
     }
     if (text.includes("\u0000")) continue;
     const lines = text.split("\n");
+    // A CODE SAMPLE IS NOT A READ, and this was 5 of 17 findings on the author's own repo — a 29%
+    // false-positive rate, which is the number at which a check gets deleted. app/docs/page.tsx
+    // shows customers what to write in THEIR app, and every one of those samples was being counted
+    // as a variable this repo requires.
+    //
+    // Two signals, both precise, and "inside any template literal" is deliberately NOT one of them:
+    // real code interpolates env vars into template literals constantly.
+    let inSample = false;
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
+      // A JSX block that opens a template literal — <Code>{`…`}</Code> — is a displayed sample
+      // until the literal closes. Tracked across lines because the reads are on the inner ones.
+      if (!inSample && /[>=]\{`/.test(line)) inSample = true;
+      else if (inSample && /`\}/.test(line)) { inSample = false; continue; }
+      if (inSample) continue;
       if (line.length > 800) continue;
       // A commented-out read is not a read.
       if (/^\s*(\/\/|#|\*|--)/.test(line)) continue;
+      // An ESCAPED interpolation only occurs inside a nested template literal, which only happens
+      // when the code is being shown rather than run: `\${process.env.X}` in a sample.
+      if (/\\\$\{\s*process\.env/.test(line)) continue;
       for (const re of READS) {
         re.lastIndex = 0;
         for (const m of line.matchAll(re)) {
