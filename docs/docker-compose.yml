@@ -1,0 +1,28 @@
+services:
+  smolanalytics:
+    image: ghcr.io/arjun0606/smolanalytics
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+
+    # ------------------------------------------------------------------
+    # OPTION A — inline env vars (default, active)
+    # required: SMOLANALYTICS_PASSWORD (serve refuses a public bind without it)
+    # required: SMOLANALYTICS_WRITE_KEY (event ingestion + MCP auth)
+    # ------------------------------------------------------------------
+    environment:
+      SMOLANALYTICS_PASSWORD: change-me
+      SMOLANALYTICS_WRITE_KEY: change-me
+
+    # ------------------------------------------------------------------
+    # OPTION B — .env file
+    # 1. Comment out the `environment:` block above.
+    # 2. Uncomment `env_file:` below.
+    # 3. Create a `.env` file next to this compose file:
+    #      SMOLANALYTICS_PASSWORD=change-me
+    #      SMOLANALYTICS_WRITE_KEY=change-me
+    # ------------------------------------------------------------------
+    # env_file:
+    #   - .env
