@@ -1,0 +1,36 @@
+# THE PUBLIC PROOF. Every night the runner tests two real sites it does not control and publishes
+# each run with --share. A solo project cannot buy a compliance badge; it can show forty days of
+# verdicts anyone can open. The suite deliberately reads and never acts: no bets, no wallets, no
+# signups — a proof that damages the site it is proving is not a proof.
+#
+# Needs one secret: ANTHROPIC_API_KEY. The first run is the agent; every run after replays the
+# recordings it commits back, so the nightly cost is a handful of model calls at most.
+name: proof
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+permissions:
+  contents: write   # the recordings are committed back so tomorrow replays instead of re-deriving
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: cabbge.com
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: npx smolanalytics@latest test --suite proof --url https://cabbge.com --plans proof/.recordings --share --yes
+        continue-on-error: true
+      - name: smolanalytics.com
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: npx smolanalytics@latest test --suite proof --url https://smolanalytics.com --plans proof/.recordings --share --yes
+        continue-on-error: true
+      - name: keep the recordings, so tomorrow replays
+        run: |
+          git config user.name "proof" && git config user.email "proof@smolanalytics.com"
+          git add proof/.recordings && git diff --cached --quiet || git commit -m "proof: recordings from tonight's run" && git push
