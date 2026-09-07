@@ -1,7 +1,37 @@
 {
   "name": "smolanalytics",
-  "version": "0.20.1",
-  "description": "End-to-end tests without test code. One sentence, a real browser, a verdict \u2014 no account, no GitHub app, nothing written to your repo. Plus: audit what your app does that nothing measures, and keep your tracking correct in PostHog, Mixpanel, GA4 or Segment.",
+  "version": "0.21.0",
+  "description": "End-to-end tests without test code. Write one sentence, an agent drives a real browser and returns a verdict, and a passing run is recorded so the next one calls no model. Runs on any URL with no account.",
+  "keywords": [
+    "e2e-testing",
+    "end-to-end-testing",
+    "testing",
+    "test-automation",
+    "playwright",
+    "qa",
+    "ai-testing",
+    "agentic-testing",
+    "browser-testing",
+    "regression-testing",
+    "no-code-testing",
+    "ci",
+    "github-actions",
+    "pull-request",
+    "mcp",
+    "cursor",
+    "claude",
+    "vibe-coding"
+  ],
+  "homepage": "https://smolanalytics.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Arjun0606/smolanalytics.git",
+    "directory": "cli"
+  },
+  "bugs": {
+    "url": "https://github.com/Arjun0606/smolanalytics/issues"
+  },
+  "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "bin": {
     "smolanalytics": "bin/smolanalytics.mjs"
@@ -16,24 +46,8 @@
   "scripts": {
     "test": "node --test --test-concurrency=3 test/*.test.mjs"
   },
-  "keywords": [
-    "analytics",
-    "product-analytics",
-    "web-analytics",
-    "mcp",
-    "ai",
-    "cursor",
-    "claude",
-    "privacy",
-    "cookieless",
-    "nextjs",
-    "sveltekit",
-    "vite"
-  ],
-  "homepage": "https://smolanalytics.com",
-  "author": "Arjun Varma",
-  "license": "SEE LICENSE IN LICENSE",
   "engines": {
     "node": ">=20"
-  }
+  },
+  "author": "Arjun Varma"
 }
