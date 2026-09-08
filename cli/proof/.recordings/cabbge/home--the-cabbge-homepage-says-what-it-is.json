@@ -1,0 +1,12 @@
+{
+  "startUrl": "https://cabbge.com",
+  "steps": [
+    {
+      "kind": "click",
+      "role": "link",
+      "name": "Predict"
+    }
+  ],
+  "proof": "BACK AN OUTCOME ON HYPERLIQUID",
+  "engine": "chromium"
+}

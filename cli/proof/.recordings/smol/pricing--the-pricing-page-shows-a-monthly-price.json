@@ -1,0 +1,12 @@
+{
+  "startUrl": "https://smolanalytics.com",
+  "steps": [
+    {
+      "kind": "click",
+      "role": "link",
+      "name": "pricing"
+    }
+  ],
+  "proof": "$19 /mo",
+  "engine": "chromium"
+}

@@ -1,0 +1,11 @@
+{
+  "startUrl": "https://smolanalytics.com",
+  "steps": [
+    {
+      "kind": "goto",
+      "url": "https://smolanalytics.com/docs"
+    }
+  ],
+  "proof": "npx smolanalytics test --url https://yourapp.com --test",
+  "engine": "chromium"
+}

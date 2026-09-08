@@ -16,6 +16,9 @@ jobs:
   proof:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: cli   # the runner and its proof suite live in cli/; GitHub only reads workflows at the root
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -23,12 +26,12 @@ jobs:
       - name: cabbge.com
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: npx smolanalytics@latest test --suite proof --url https://cabbge.com --plans proof/.recordings --share --yes
+        run: npx smolanalytics@latest test --suite proof/cabbge --url https://cabbge.com --plans proof/.recordings/cabbge --share --yes
         continue-on-error: true
       - name: smolanalytics.com
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: npx smolanalytics@latest test --suite proof --url https://smolanalytics.com --plans proof/.recordings --share --yes
+        run: npx smolanalytics@latest test --suite proof/smol --url https://smolanalytics.com --plans proof/.recordings/smol --share --yes
         continue-on-error: true
       - name: keep the recordings, so tomorrow replays
         run: |

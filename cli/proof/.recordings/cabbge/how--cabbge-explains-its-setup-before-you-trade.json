@@ -1,0 +1,11 @@
+{
+  "startUrl": "https://cabbge.com",
+  "steps": [
+    {
+      "kind": "goto",
+      "url": "https://cabbge.com/how-it-works"
+    }
+  ],
+  "proof": "Setup: two signatures, once",
+  "engine": "chromium"
+}

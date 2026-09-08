@@ -1,0 +1,12 @@
+{
+  "startUrl": "https://cabbge.com",
+  "steps": [
+    {
+      "kind": "click",
+      "role": "link",
+      "name": "Board"
+    }
+  ],
+  "proof": "Nobody has claimed a territory yet. First mover takes the board.",
+  "engine": "chromium"
+}
