@@ -32,6 +32,7 @@
     "url": "https://github.com/Arjun0606/smolanalytics/issues"
   },
   "license": "SEE LICENSE IN LICENSE",
+  "mcpName": "io.github.Arjun0606/smolanalytics",
   "type": "module",
   "bin": {
     "smolanalytics": "bin/smolanalytics.mjs"
