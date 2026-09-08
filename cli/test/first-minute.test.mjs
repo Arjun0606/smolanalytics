@@ -16,7 +16,7 @@ import { test, describe, after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -53,9 +53,16 @@ function run(argv, env = process.env, cwd = undefined) {
   });
 }
 
+// "At a keyboard", not "in Actions". keyFix prints `export ANTHROPIC_API_KEY=…` for a person at a
+// terminal and the Settings → Secrets sentence when GITHUB_ACTIONS is set — which it is on every
+// CI run of this very suite, where these tests then failed for ten days looking for a line the CLI
+// was right not to print. The assertions below are about the block being said ONCE; the
+// phrasing is the environment's business, so the child is told it is at a keyboard.
 const noKey = (() => {
   const e = { ...process.env };
   delete e.ANTHROPIC_API_KEY;
+  delete e.GITHUB_ACTIONS;
+  delete e.CI;
   return e;
 })();
 
@@ -77,6 +84,27 @@ describe("a missing key is said once, not once per test", () => {
     assert.equal((r.out.match(/no ANTHROPIC_API_KEY to run the agent with/g) || []).length, 4, r.out);
     assert.equal((r.out.match(/^\s+error /gm) || []).length, 4, `every test must still be named in the summary:\n${r.out}`);
     assert.equal(r.status, 2, "nothing ran, so this is ours: exit 2, never 1");
+  });
+
+  // THE FIRST RUN IN CI, EXACTLY AS IT HAPPENS: no key, no recordings, no browser on the machine.
+  // The right order to disappoint somebody in is "nothing can run" BEFORE "here is 300MB of
+  // Chrome". This test hands the runner an empty browser cache and checks the cache is still empty
+  // afterwards; a regression here downloads Chromium in CI, which is slow, loud, and correct as a
+  // failure signal. Runs against a port nothing listens on, so a browser is the only network it
+  // could possibly touch.
+  test("no key and no recordings does not fetch a browser first", async () => {
+    const dir = scratch();
+    const tests = path.join(dir, "tests");
+    mkdirSync(tests);
+    for (const n of ["one", "two"]) {
+      writeFileSync(path.join(tests, `${n}.md`), `# Test ${n}\n\nOpen the pricing page and check it shows a monthly price.\n`);
+    }
+    const cache = path.join(dir, "empty-cache");
+    const r = await run([bin, "test", "--suite", tests, "--url", "http://127.0.0.1:9", "--yes", "--workers", "1"], { ...noKey, SMOLANALYTICS_CACHE: cache });
+    assert.doesNotMatch(r.out + r.err, /Downloading|installing…|Chrome for Testing/, `a browser was fetched for a run that could not use one:\n${r.out}`);
+    assert.ok(!existsSync(cache) || readdirSync(cache).length === 0, "the empty browser cache must still be empty");
+    assert.equal((r.out.match(/^\s+error /gm) || []).length, 2, `both tests still say why they did not run:\n${r.out}`);
+    assert.equal(r.status, 2, "nothing ran, so this is ours: exit 2");
   });
 
   test("a single test still gets the whole block — it is the only place it is said", async () => {

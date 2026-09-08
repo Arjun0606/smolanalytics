@@ -475,6 +475,9 @@ export async function runSuite({
         // One Chromium for the whole suite, a context per worker. undefined when --workers 1, and
         // lib/test.mjs's own default then applies.
         loadBrowser: pool.loadBrowser,
+        // Decided here, before the pool wraps the loader, because the loader's identity is only
+        // knowable here: with --workers above 1 runOnce sees the pool's wrapper, not loadPlaywright.
+        mayInstall: loadBrowser === loadPlaywright,
         share,
         publish: false,
         onRun: (r) => runs.push(r),

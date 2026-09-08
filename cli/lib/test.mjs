@@ -30,7 +30,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { confirmProduction, keyProblem, newIdentity, postTeardown, substitute, maskSecrets, unmaskSecrets, PLACEHOLDER_LIST } from "./safety.mjs";
 import { newLedger, record as recordUsage, costLine, overBudget, priceFrom, priceHint } from "./cost.mjs";
 import { flakeNote } from "./flake.mjs";
@@ -819,6 +819,16 @@ function resolveFrom(dir, spec) {
   }
 }
 
+/**
+ * Would loadPlaywright have to download a browser? The same three places it resolves from, with
+ * nothing imported and nothing written: a probe, so a run that cannot use a browser can decide
+ * not to fetch one. Kept beside loadPlaywright so the two lists cannot drift apart.
+ */
+export function playwrightPresent() {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  return [here, process.cwd(), browserCacheDir()].some((d) => Boolean(resolveFrom(d, "playwright")));
+}
+
 async function importPlaywright(entry) {
   const m = await import(pathToFileURL(entry).href);
   // Playwright's entry point is CommonJS. Depending on the version, import() hands back the exports
@@ -1217,7 +1227,7 @@ ${C.b("npx smolanalytics test")} — one sentence, a real browser, a verdict. No
 `;
 }
 
-async function runOnce({ url, test, plan: planPath, headed, maxSteps = 40, yes, retries = 1, evidenceDir = "", layout: layoutMode = "report", renderCheck = true, login = "", authFile = "", authDir = DEFAULT_AUTH_DIR, secrets = [], engine = DEFAULT_ENGINE, env = process.env, log = console.log, onRun, loadBrowser = loadPlaywright, share = false, maxCalls = 0,
+async function runOnce({ url, test, plan: planPath, headed, maxSteps = 40, yes, retries = 1, evidenceDir = "", layout: layoutMode = "report", renderCheck = true, login = "", authFile = "", authDir = DEFAULT_AUTH_DIR, secrets = [], engine = DEFAULT_ENGINE, env = process.env, log = console.log, onRun, loadBrowser = loadPlaywright, mayInstall = loadBrowser === loadPlaywright, share = false, maxCalls = 0,
   // True when runSuite is driving. The only thing it changes is how much is said about a missing
   // key: the suite says it once in its own header, and repeating the export line under every test
   // turned a fifty-test run into fifty copies of the same three sentences.
@@ -1261,11 +1271,49 @@ async function runOnce({ url, test, plan: planPath, headed, maxSteps = 40, yes, 
   // one where Playwright is not installed yet — the old order downloaded Chromium and then said the
   // key was wrong. WITH a recording the browser is loaded first exactly as before, because the
   // replay needs it and needs no key.
+  //
+  // A PATH IS NOT A RECORDING. In a suite every test arrives with a planPath — discover() names
+  // where its recording WOULD live — so `!planPath` was false for all of them and this guard never
+  // fired on the one path it was written for. MEASURED in CI on every run since 30 August: four
+  // tests, no key, no recordings, and the runner downloaded Chrome (187MB), ffmpeg and the
+  // headless shell before saying that nothing could run. Whether a recording exists on disk is
+  // the question, and the suite already asks it that way (hasPlan).
+  //
+  // AND AN ABSENT KEY IS THE COMMON CASE, NOT A SPECIAL ONE. keyProblem() is "" for a key that is
+  // simply not set, so this guard only ever caught a malformed key; the missing one fell through
+  // to the browser and was refused afterwards. Both are handled here now. The absent-key branch
+  // prints exactly what the post-browser branch printed and returns 2 without report(), because
+  // the suite already turns that exit into an errored row via noVerdictReason — the only thing
+  // that changes is that a browser is no longer fetched to be told it will not be used.
+  //
+  // AND ONLY WHEN SKIPPING THE BROWSER SAVES A DOWNLOAD. With Playwright already resolvable, or a
+  // loader somebody injected, loading is cheap and the older precedence stands: the browser is
+  // tried first, so a browser that will not start is reported as our outage rather than masked
+  // by a guess about the key (verdict.test.mjs pins that). `mayInstall` is decided where the
+  // loader's identity is known — here for a single test, in lib/suite.mjs before the pool wraps it.
   const earlyKeyIssue = keyProblem(process.env.ANTHROPIC_API_KEY);
-  if (earlyKeyIssue && !planPath) {
+  const keyAbsent = !process.env.ANTHROPIC_API_KEY;
+  const noRecording = !planPath || !existsSync(planPath);
+  const wouldDownload = mayInstall && !playwrightPresent();
+  if (keyAbsent && noRecording && wouldDownload) {
     if (inSuite) {
-      log(C.dim("  no recording that still fits, and ANTHROPIC_API_KEY cannot be used — see above."));
+      log(C.dim("  no recording that still fits, and no ANTHROPIC_API_KEY to run the agent with."));
     } else {
+      log(`\n${C.y("The agent needs a Claude API key.")}`);
+      log(C.dim(`  ${keyFix(env)}`));
+      { const where = keyWhere(env); if (where) log(C.dim(`  ${where}`)); }
+      if (!planPath) log(C.dim("  Replaying a recording (--plan) needs no key at all."));
+    }
+    return 2;
+  }
+  if (earlyKeyIssue && inSuite && noRecording && wouldDownload) {
+    // The header printed the diagnosis once; this row owes the reader only which half stopped it.
+    // No report(): the suite derives the errored row from exit 2, as it does on the later path.
+    log(C.dim("  no recording that still fits, and ANTHROPIC_API_KEY cannot be used — see above."));
+    return 2;
+  }
+  if (earlyKeyIssue && !planPath) {
+    {
       log(`\n${C.y(earlyKeyIssue)}`);
       log(C.dim("  Replaying a recording (--plan) needs no key at all."));
     }
