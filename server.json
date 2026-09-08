@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.Arjun0606/smolanalytics",
-  "description": "Agent-operated web + product analytics. 79 tools + 14 prompts; answers provably match the dashboard.",
+  "description": "End-to-end tests from one English sentence. An agent drives a real browser against a URL, a passing run is recorded and replayed with no model call, and every verdict comes back to your editor: run_tests, can_i_ship, list_tests.",
   "repository": {
     "url": "https://github.com/Arjun0606/smolanalytics",
     "source": "github"
@@ -22,5 +22,6 @@
         }
       ]
     }
-  ]
+  ],
+  "websiteUrl": "https://smolanalytics.com"
 }
