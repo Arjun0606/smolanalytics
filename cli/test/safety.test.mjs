@@ -713,7 +713,12 @@ describe("a URL with no scheme", () => {
     assert.ok(!/smoltest/.test(plain(r.stdout)), "nothing about the run should be printed ahead of the refusal");
   });
 
-  test("the CLI never prints a verdict for a schemeless host it could not reach", async () => {
+  // A REAL BROWSER, SO THE SAME SKIP AS EVERY OTHER TEST THAT NEEDS ONE. This ran unskipped in a CI
+  // that deliberately has no Playwright, and passed for ten days only because first-minute's
+  // no-key suite run downloaded Chromium as a side effect before this file got here. The day that
+  // download stopped (it should never have happened), this test met the runner with no browser
+  // and failed on its own control run. Without a browser it skips and says so, like its siblings.
+  test("the CLI never prints a verdict for a schemeless host it could not reach", noBrowser, async () => {
     // THE MEASURED BUG, REPRODUCED. The recording points at a server that IS running and DOES
     // serve the proof, so replaying it verbatim passes in half a second. --url names a different
     // host that resolves nowhere (.invalid is reserved by RFC 2606, so this is hermetic and the
