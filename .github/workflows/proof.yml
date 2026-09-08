@@ -1,6 +1,7 @@
-# THE PUBLIC PROOF. Every night the runner tests two real sites it does not control and publishes
-# each run with --share. A solo project cannot buy a compliance badge; it can show forty days of
-# verdicts anyone can open. The suite deliberately reads and never acts: no bets, no wallets, no
+# THE PUBLIC PROOF. Every night the runner tests two live production sites and publishes each run
+# with --share, whatever it finds. Both sites are mine, which smolanalytics.com/proof says out
+# loud: a proof page that overstates its own independence is worth less than no proof page. A solo
+# project cannot buy a compliance badge; it can show forty days of verdicts anyone can open. The suite deliberately reads and never acts: no bets, no wallets, no
 # signups — a proof that damages the site it is proving is not a proof.
 #
 # Needs one secret: ANTHROPIC_API_KEY. The first run is the agent; every run after replays the
