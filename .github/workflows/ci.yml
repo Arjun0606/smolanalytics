@@ -43,6 +43,18 @@ jobs:
       - name: sdk env detection
         run: node internal/api/sdktest/env.test.mjs
 
+      # mcp-publish.yml publishes this file on every tag, and the registry rejects it after the tag
+      # exists — v0.92.0 422'd on a description over the schema's 100-character cap, silently, in a
+      # workflow nobody watches. The two limits that can be hit by editing prose are checked here.
+      - name: server.json fits the registry schema
+        run: |
+          python3 - <<'EOF'
+          import json, re
+          d = json.load(open("server.json"))
+          assert 1 <= len(d["description"]) <= 100, f"description is {len(d['description'])} chars; the registry caps it at 100"
+          assert re.fullmatch(r"[a-zA-Z0-9.-]+/[a-zA-Z0-9._-]+", d["name"]), d["name"]
+          print("server.json ok:", len(d["description"]), "chars")
+          EOF
       - name: cli
         working-directory: cli
         run: node --test test/*.test.mjs

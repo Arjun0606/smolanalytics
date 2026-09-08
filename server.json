@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.Arjun0606/smolanalytics",
-  "description": "End-to-end tests from one English sentence. An agent drives a real browser against a URL, a passing run is recorded and replayed with no model call, and every verdict comes back to your editor: run_tests, can_i_ship, list_tests.",
+  "description": "End-to-end tests from one sentence: an agent drives a real browser, and passing runs replay free.",
   "repository": {
     "url": "https://github.com/Arjun0606/smolanalytics",
     "source": "github"
