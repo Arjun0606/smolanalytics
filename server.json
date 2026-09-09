@@ -21,6 +21,29 @@
           "description": "run the MCP server over stdio"
         }
       ]
+    },
+    {
+      "registryType": "npm",
+      "identifier": "smolanalytics",
+      "version": "0.21.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "runtimeArguments": [
+        {
+          "type": "positional",
+          "value": "mcp",
+          "description": "run the MCP server over stdio"
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "ANTHROPIC_API_KEY",
+          "description": "Your own Claude key. run_tests needs it for a test with no recording yet; a replay needs none.",
+          "isRequired": false,
+          "isSecret": true
+        }
+      ]
     }
   ],
   "websiteUrl": "https://smolanalytics.com"
