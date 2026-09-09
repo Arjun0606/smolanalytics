@@ -14,6 +14,48 @@ docker run -p 8080:8080 -v $PWD/data:/data \
 # the image binds 0.0.0.0, so a dashboard password is required (echo the value to keep it).
 ```
 
+## Docker Compose
+
+For a setup that persists across restarts, use [`docs/docker-compose.yml`](docs/docker-compose.yml) instead of a bare `docker run`. It wires up the same image with a bind-mounted `./data` folder, so your event log survives `down`/`up`.
+
+**1. Grab the file**
+
+```sh
+curl -O https://raw.githubusercontent.com/Arjun0606/smolanalytics/main/docs/docker-compose.yml
+```
+
+**2. Set your secrets**
+
+Open it and set `SMOLANALYTICS_PASSWORD` and `SMOLANALYTICS_WRITE_KEY` (both required — `serve` refuses to run on a public bind without a password). Generate real values:
+
+```sh
+openssl rand -hex 12   # password
+openssl rand -hex 16   # write key
+```
+
+Two ways to set them, pick one:
+- **Inline (default):** edit the values directly under `environment:`.
+- **`.env` file:** comment out the `environment:` block, uncomment `env_file:`, and put the same two vars in a `.env` file next to the compose file.
+
+Only one should be active at a time — if both are uncommented, `environment:` silently wins and your `.env` file is ignored.
+
+**3. Run it**
+
+```sh
+docker compose up -d
+```
+
+`localhost:8080` is up, data lives in `./data`.
+
+**4. Confirm persistence**
+
+```sh
+docker compose down
+docker compose up -d
+```
+
+Your login and data are still there.
+
 ## Guides
 
 - [Next.js](nextjs.md)
